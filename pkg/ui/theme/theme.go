@@ -3,6 +3,7 @@ package theme
 
 import (
 	"image/color"
+	"math"
 	"sort"
 	"strings"
 
@@ -11,7 +12,9 @@ import (
 
 // Palette and border set that a deck paints with
 type Theme struct {
-	Name        string
+	Name string
+	// What the skin looks like, in a few words
+	About       string
 	Bg          color.Color
 	Surface     color.Color
 	Text        color.Color
@@ -45,6 +48,7 @@ func palette(v ...uint32) [16]color.Color {
 func Blackwall() Theme {
 	return Theme{
 		Name:        "blackwall",
+		About:       "Near black with a red accent",
 		Bg:          Hex(0x05070a),
 		Surface:     Hex(0x0a0e13),
 		Text:        Hex(0xdfe9f2),
@@ -68,6 +72,7 @@ func Blackwall() Theme {
 func Light() Theme {
 	return Theme{
 		Name:        "light",
+		About:       "Light background",
 		Bg:          Hex(0xeef1f5),
 		Surface:     Hex(0xfafbfd),
 		Text:        Hex(0x141c26),
@@ -91,6 +96,7 @@ func Light() Theme {
 func Taro() Theme {
 	return Theme{
 		Name:        "taro",
+		About:       "Deep indigo with amber, cyan and magenta",
 		Bg:          Hex(0x070a12),
 		Surface:     Hex(0x0c1120),
 		Text:        Hex(0xd6def7),
@@ -114,6 +120,7 @@ func Taro() Theme {
 func Contrast() Theme {
 	return Theme{
 		Name:        "contrast",
+		About:       "High contrast black and white with thick borders",
 		Bg:          Hex(0x000000),
 		Surface:     Hex(0x000000),
 		Text:        Hex(0xffffff),
@@ -137,6 +144,7 @@ func Contrast() Theme {
 func Plain() Theme {
 	return Theme{
 		Name:        "plain",
+		About:       "16 colors and ASCII borders, for any terminal",
 		Bg:          lipgloss.Black,
 		Surface:     lipgloss.Black,
 		Text:        lipgloss.White,
@@ -160,6 +168,7 @@ func Plain() Theme {
 func Cyberpunk() Theme {
 	return Theme{
 		Name:        "cyberpunk",
+		About:       "Neon green on black",
 		Bg:          Hex(0x000a00),
 		Surface:     Hex(0x001200),
 		Text:        Hex(0x00e038),
@@ -182,6 +191,7 @@ func Cyberpunk() Theme {
 func Dracula() Theme {
 	return Theme{
 		Name:        "dracula",
+		About:       "Purple and pink on slate",
 		Bg:          Hex(0x282a36),
 		Surface:     Hex(0x21222c),
 		Text:        Hex(0xf8f8f2),
@@ -204,27 +214,87 @@ func Dracula() Theme {
 // DefaultName is the theme a session starts in, Light standing in for it on a light terminal
 const DefaultName = "blackwall"
 
-var themes = map[string]func() Theme{
-	"blackwall": Blackwall, "taro": Taro, "light": Light, "contrast": Contrast, "plain": Plain, "cyberpunk": Cyberpunk, "dracula": Dracula,
+// Skins by name, the ones of the kit and any an application added
+var skins = map[string]func() Theme{}
+
+func init() {
+	for _, skin := range []func() Theme{Blackwall, Taro, Light, Contrast, Plain, Cyberpunk, Dracula} {
+		Register(skin)
+	}
+}
+
+// Adds a skin under the name it gives itself, in the place of one already there by that name
+func Register(skin func() Theme) {
+	skins[skin().Name] = skin
 }
 
 // Theme by name, false for an unknown name
 func Named(name string) (Theme, bool) {
-	fn, ok := themes[strings.ToLower(strings.TrimSpace(name))]
+	fn, ok := skins[strings.ToLower(strings.TrimSpace(name))]
 	if !ok {
 		return Theme{}, false
 	}
 	return fn(), true
 }
 
+// Every skin, sorted by name
+func All() []Theme {
+	out := make([]Theme, 0, len(skins))
+	for _, name := range Names() {
+		out = append(out, skins[name]())
+	}
+	return out
+}
+
 // Theme names sorted
 func Names() []string {
-	out := make([]string, 0, len(themes))
-	for n := range themes {
+	out := make([]string, 0, len(skins))
+	for n := range skins {
 		out = append(out, n)
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Contrast ratio between two colors as the eye takes it, from 1 for the same lightness to 21 for black on white
+func Ratio(a, b color.Color) float64 {
+	hi, lo := luminance(a), luminance(b)
+	if hi < lo {
+		hi, lo = lo, hi
+	}
+	return (hi + 0.05) / (lo + 0.05)
+}
+
+// Least contrast at which a color still reads as text on a background
+const legible = 3
+
+// Text color that reads on the background: that of the skin, or its backdrop where the background is as light as the text
+func (t Theme) On(bg color.Color) color.Color {
+	if Ratio(t.Text, bg) >= Ratio(t.Bg, bg) {
+		return t.Text
+	}
+	return t.Bg
+}
+
+// The wanted color where it reads on the background, else the text color that does
+func (t Theme) Over(bg, want color.Color) color.Color {
+	if Ratio(want, bg) >= legible {
+		return want
+	}
+	return t.On(bg)
+}
+
+// How light a color is to the eye, from 0 for black to 1 for white
+func luminance(c color.Color) float64 {
+	r, g, b, _ := c.RGBA()
+	channel := func(v uint32) float64 {
+		s := float64(v) / 0xffff
+		if s <= 0.03928 {
+			return s / 12.92
+		}
+		return math.Pow((s+0.055)/1.055, 2.4)
+	}
+	return 0.2126*channel(r) + 0.7152*channel(g) + 0.0722*channel(b)
 }
 
 // Opaque color from a 24 bit RGB value
@@ -353,6 +423,7 @@ type Glyphs struct {
 	Notch     string
 	Grip      string
 	Back      string
+	Forward   string
 	Info      string
 	Success   string
 	Warn      string
@@ -393,7 +464,7 @@ func IcebathGlyphs() Glyphs {
 		Read: "◇", Write: "◆", Edit: "◈", Glob: "✶", Grep: "⚲", Shell: "⌁", Output: "⇩", Kill: "⊗", Fetch: "⇶", Spawn: "⟁", Record: "⌖", Plan: "≔", Server: "⇆", Tool: "⊳",
 		Steer: "⤷", Thinking: "∴", Compact: "⇊", Hook: "↯", Note: "◦", Error: "✘", Flag: "!", Ask: "?", Child: "⟁", Attach: "⎘", Cursor: "▍", Marked: "▮",
 		Live: "◉", Hollow: "○", Check: "✓", Skip: "⊠", Todo: "□", Done: "■", Active: "◈", Bullet: "▹", Mask: "∙", Fork: "⋔", Send: "➤", Voice: "∿", Speak: "♪",
-		Sep: "│", Ellipsis: "⋯", Close: "✕", Prompt: "$", Notch: "▍", Grip: "⊹", Back: "❮", Info: "◈", Success: "✓", Warn: "◬", Fail: "✘", Search: "⚲", None: "∅",
+		Sep: "│", Ellipsis: "⋯", Close: "✕", Prompt: "$", Notch: "▍", Grip: "⊹", Back: "❮", Forward: "❯", Info: "◈", Success: "✓", Warn: "◬", Fail: "✘", Search: "⚲", None: "∅",
 		Rule: "─", Dashed: "┈", Bar: "▎", Fill: "━", Slide: "┈", Thumb: "◆", SwitchOn: "━━●", SwitchOff: "●┈┈", Caret: "▎", Up: "⌃", Down: "⌄", Track: "┊", Heavy: "┃", Tick: "╂", HeavyTick: "╋", Hit: "◈", Full: "━", Empty: "─",
 		Ramp:    []rune("▁▂▃▄▅▆▇█"),
 		Spinner: []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"},
@@ -409,7 +480,7 @@ func ASCIIGlyphs() Glyphs {
 		Read: "r", Write: "w", Edit: "e", Glob: "*", Grep: "/", Shell: "$", Output: "v", Kill: "x", Fetch: "@", Spawn: "&", Record: "!", Plan: ":", Server: "=", Tool: ">",
 		Steer: "~", Thinking: ":", Compact: "v", Hook: "!", Note: "-", Error: "x", Flag: "!", Ask: "?", Child: "&", Attach: "+", Cursor: ">", Marked: "#",
 		Live: "*", Hollow: "o", Check: "+", Skip: "x", Todo: "_", Done: "#", Active: ">", Bullet: "-", Mask: "*", Fork: "Y", Send: ">", Voice: "~", Speak: "*",
-		Sep: "|", Ellipsis: "...", Close: "x", Prompt: "$", Notch: "|", Grip: "+", Back: "<", Info: "*", Success: "+", Warn: "!", Fail: "x", Search: "/", None: "-",
+		Sep: "|", Ellipsis: "...", Close: "x", Prompt: "$", Notch: "|", Grip: "+", Back: "<", Forward: ">", Info: "*", Success: "+", Warn: "!", Fail: "x", Search: "/", None: "-",
 		Rule: "-", Dashed: "-", Bar: "|", Fill: "=", Slide: "-", Thumb: "O", SwitchOn: "==O", SwitchOff: "O--", Caret: "|", Up: "^", Down: "v", Track: "|", Heavy: "#", Tick: "+", HeavyTick: "+", Hit: "*", Full: "#", Empty: "-",
 		Ramp:    []rune(".:-=+*#%"),
 		Spinner: []string{"|", "/", "-", "\\"},

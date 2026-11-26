@@ -2,36 +2,165 @@ syntax = "proto3";
 
 package icebath.provider.v1;
 
+// Providers of the profile in use, each a kind of provider with settings, models and accounts of its own
 service ProviderService {
+  // Providers the profile has
   rpc List(ListRequest) returns (ListResponse);
+  // Kinds of provider a profile can add
+  rpc Specs(SpecsRequest) returns (SpecsResponse);
   rpc Models(ModelsRequest) returns (ModelsResponse);
+  rpc Add(AddRequest) returns (AddResponse);
+  rpc Remove(RemoveRequest) returns (RemoveResponse);
+  rpc AddAccount(AddAccountRequest) returns (AddAccountResponse);
+  rpc RemoveAccount(RemoveAccountRequest) returns (RemoveAccountResponse);
+  rpc UseAccount(UseAccountRequest) returns (UseAccountResponse);
+}
+
+enum Origin {
+  ORIGIN_UNSPECIFIED = 0;
+  ORIGIN_SAVED = 1;
+  ORIGIN_ENVIRONMENT = 2;
+  ORIGIN_EXTERNAL = 3;
+  ORIGIN_UNNEEDED = 4;
+}
+
+message Account {
+  string name = 1;
+  string title = 2;
+  // Settings section of the account, its fields keyed below it
+  string section = 3;
+  // The account requests are made with
+  bool active = 4;
+  Origin credential_origin = 5;
+  string credential_source = 6;
 }
 
 message Provider {
+  // Name in the profile
+  string name = 1;
+  // Kind, by the name of its spec
+  string spec = 2;
+  string display_name = 3;
+  string description = 4;
+  string signup_url = 5;
+  string base_url = 6;
+  string api_mode = 7;
+  string default_model = 8;
+  // Models picked for it, every one it lists when empty
+  repeated string models = 9;
+  repeated string aliases = 10;
+  bool local = 11;
+  bool aggregator = 12;
+  // Where the credential of the account in use comes from
+  Origin credential_origin = 13;
+  string credential_source = 14;
+  repeated string key_env = 15;
+  // Whether its accounts keep an API key
+  bool keyed = 16;
+  // Settings section of the provider
+  string section = 17;
+  // Whether icebath can send it requests
+  bool usable = 18;
+  // Account in use, empty while it has none
+  string account = 19;
+  repeated Account accounts = 20;
+  // Whether a plugin registers its kind
+  bool known = 21;
+}
+
+message Spec {
   string name = 1;
   string display_name = 2;
   string description = 3;
   string signup_url = 4;
-  string base_url = 5;
-  string api_mode = 6;
-  string default_model = 7;
-  repeated string aliases = 8;
-  bool local = 9;
-  bool aggregator = 10;
-  string credential_source = 11;
-  repeated string key_env = 12;
+  string api_mode = 5;
+  bool local = 6;
+  bool aggregator = 7;
+  bool usable = 8;
+  // Credential found for the kind in the environment or another program, before any account
+  Origin detected_origin = 9;
+  string detected_source = 10;
+  repeated string key_env = 11;
+  // Providers of the profile of this kind
+  repeated string providers = 12;
 }
 
-message ListRequest {}
+message ListRequest {
+  // Profile to act on, the one in use when empty
+  string profile = 1;
+}
 
 message ListResponse {
   repeated Provider providers = 1;
 }
 
+message SpecsRequest {
+  // Profile to act on, the one in use when empty
+  string profile = 1;
+}
+
+message SpecsResponse {
+  repeated Spec specs = 1;
+}
+
 message ModelsRequest {
   string provider = 1;
+  // Profile to act on, the one in use when empty
+  string profile = 2;
 }
 
 message ModelsResponse {
   repeated string models = 1;
 }
+
+message AddRequest {
+  string spec = 1;
+  // Name in the profile, the kind's name, numbered when taken, when empty
+  string name = 2;
+  string title = 3;
+  // Profile to act on, the one in use when empty
+  string profile = 4;
+}
+
+message AddResponse {
+  Provider provider = 1;
+}
+
+message RemoveRequest {
+  string provider = 1;
+  // Profile to act on, the one in use when empty
+  string profile = 2;
+}
+
+message RemoveResponse {}
+
+message AddAccountRequest {
+  string provider = 1;
+  // Name of the account, default, numbered when taken, when empty
+  string name = 2;
+  string title = 3;
+  // Profile to act on, the one in use when empty
+  string profile = 4;
+}
+
+message AddAccountResponse {
+  Account account = 1;
+}
+
+message RemoveAccountRequest {
+  string provider = 1;
+  string account = 2;
+  // Profile to act on, the one in use when empty
+  string profile = 3;
+}
+
+message RemoveAccountResponse {}
+
+message UseAccountRequest {
+  string provider = 1;
+  string account = 2;
+  // Profile to act on, the one in use when empty
+  string profile = 3;
+}
+
+message UseAccountResponse {}

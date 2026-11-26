@@ -1,13 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "huggingface"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	APIKey       = Key + ".api_key"
-	DefaultModel = Key + ".default_model"
+	Title        = "Hugging Face"
+	BaseURL      = "https://router.huggingface.co/v1"
+	DefaultModel = ""
 )
 
 const (

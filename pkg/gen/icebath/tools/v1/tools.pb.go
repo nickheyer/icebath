@@ -22,11 +22,19 @@ const (
 )
 
 type Tool struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Toolset       string                 `protobuf:"bytes,2,opt,name=toolset,proto3" json:"toolset,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	Available     bool                   `protobuf:"varint,4,opt,name=available,proto3" json:"available,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Name        string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Toolset     string                 `protobuf:"bytes,2,opt,name=toolset,proto3" json:"toolset,omitempty"`
+	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Available   bool                   `protobuf:"varint,4,opt,name=available,proto3" json:"available,omitempty"`
+	// Name shown in the app, such as "Read file"
+	Title string `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
+	// Theme glyph the tool is marked with, such as "read" or "shell"
+	Icon string `protobuf:"bytes,6,opt,name=icon,proto3" json:"icon,omitempty"`
+	// Argument whose value names what a call works on, such as "path"
+	Subject string `protobuf:"bytes,7,opt,name=subject,proto3" json:"subject,omitempty"`
+	// Turned off in the settings
+	Disabled      bool `protobuf:"varint,8,opt,name=disabled,proto3" json:"disabled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -85,6 +93,34 @@ func (x *Tool) GetDescription() string {
 func (x *Tool) GetAvailable() bool {
 	if x != nil {
 		return x.Available
+	}
+	return false
+}
+
+func (x *Tool) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Tool) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
+}
+
+func (x *Tool) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *Tool) GetDisabled() bool {
+	if x != nil {
+		return x.Disabled
 	}
 	return false
 }
@@ -173,12 +209,16 @@ var File_icebath_tools_v1_tools_proto protoreflect.FileDescriptor
 
 const file_icebath_tools_v1_tools_proto_rawDesc = "" +
 	"\n" +
-	"\x1cicebath/tools/v1/tools.proto\x12\x10icebath.tools.v1\"t\n" +
+	"\x1cicebath/tools/v1/tools.proto\x12\x10icebath.tools.v1\"\xd4\x01\n" +
 	"\x04Tool\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\atoolset\x18\x02 \x01(\tR\atoolset\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1c\n" +
-	"\tavailable\x18\x04 \x01(\bR\tavailable\"\r\n" +
+	"\tavailable\x18\x04 \x01(\bR\tavailable\x12\x14\n" +
+	"\x05title\x18\x05 \x01(\tR\x05title\x12\x12\n" +
+	"\x04icon\x18\x06 \x01(\tR\x04icon\x12\x18\n" +
+	"\asubject\x18\a \x01(\tR\asubject\x12\x1a\n" +
+	"\bdisabled\x18\b \x01(\bR\bdisabled\"\r\n" +
 	"\vListRequest\"<\n" +
 	"\fListResponse\x12,\n" +
 	"\x05tools\x18\x01 \x03(\v2\x16.icebath.tools.v1.ToolR\x05tools2T\n" +

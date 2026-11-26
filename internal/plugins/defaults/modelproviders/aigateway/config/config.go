@@ -1,13 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "ai-gateway"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	APIKey       = Key + ".api_key"
-	DefaultModel = Key + ".default_model"
+	Title        = "Vercel AI Gateway"
+	BaseURL      = "https://ai-gateway.vercel.sh/v1"
+	DefaultModel = "google/gemini-3-flash"
 )
 
 const (

@@ -23,7 +23,7 @@ func Register(registry *models.Registry) {
 }
 
 func (c catalog) Models(ctx context.Context, route provider.Route) ([]string, bool) {
-	if route.Provider != c.name {
+	if route.Spec != c.name {
 		return nil, false
 	}
 	target, confirmed := endpoint(cmp.Or(route.BaseURL, c.base))

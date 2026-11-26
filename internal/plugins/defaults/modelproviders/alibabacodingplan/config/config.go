@@ -1,21 +1,17 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	IntlName         = "alibaba-coding-plan"
-	IntlKey          = pluginsconfig.Key + "." + IntlName
-	IntlBaseURL      = IntlKey + ".base_url"
-	IntlAPIKey       = IntlKey + ".api_key"
-	IntlDefaultModel = IntlKey + ".default_model"
+	IntlTitle        = "Alibaba Cloud (Coding Plan)"
+	IntlBaseURL      = "https://coding-intl.dashscope.aliyuncs.com/v1"
+	IntlDefaultModel = ""
 )
 
 const (
 	CNName         = "alibaba-coding-plan-cn"
-	CNKey          = pluginsconfig.Key + "." + CNName
-	CNBaseURL      = CNKey + ".base_url"
-	CNAPIKey       = CNKey + ".api_key"
-	CNDefaultModel = CNKey + ".default_model"
+	CNTitle        = "Alibaba Cloud (Coding Plan, China)"
+	CNBaseURL      = "https://coding.dashscope.aliyuncs.com/v1"
+	CNDefaultModel = ""
 )
 
 const (

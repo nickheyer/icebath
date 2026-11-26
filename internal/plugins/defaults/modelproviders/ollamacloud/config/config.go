@@ -1,13 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "ollama-cloud"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	APIKey       = Key + ".api_key"
-	DefaultModel = Key + ".default_model"
+	Title        = "Ollama Cloud"
+	BaseURL      = "https://ollama.com/v1"
+	DefaultModel = "nemotron-3-nano:30b"
 )
 
 const (

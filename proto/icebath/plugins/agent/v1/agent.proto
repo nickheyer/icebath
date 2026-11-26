@@ -38,6 +38,8 @@ message State {
   string model = 2;
   string reasoning_effort = 3;
   bool yolo = 4;
+  // Profile the session runs on
+  string profile = 5;
 }
 
 message SendRequest {

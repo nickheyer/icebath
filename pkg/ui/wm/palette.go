@@ -1,7 +1,6 @@
 package wm
 
 import (
-	"cmp"
 	"image/color"
 	"math"
 	"slices"
@@ -94,7 +93,7 @@ type Palette struct {
 	Context string
 	// Actions of Context by id
 	Actions map[string]func() tea.Cmd
-	// Hints of the actions of Context, shown ahead of the palette's own
+	// Buttons for the actions of Context
 	Extra []Hint
 	// Lines under the rows, read on every view
 	Notes func() []Note
@@ -240,43 +239,7 @@ func (p *Palette) Rows() int {
 	if len(p.items) == 0 || p.ask != nil {
 		return notes
 	}
-	return max(len(p.matches), 1) + notes + len(p.whole(p.w))
-}
-
-// Lines of the palette at most that spell out a lit row its row cuts short
-const wholeLines = 4
-
-// Whole title and detail of the lit row wrapped to w, for a row too long for its line, none when it fits
-func (p *Palette) whole(w int) []string {
-	if w <= 8 || len(p.items) == 0 || p.ask != nil {
-		return nil
-	}
-	it, ok := p.Lit()
-	if !ok {
-		return nil
-	}
-	text := it.Title
-	if it.Detail != "" {
-		text += "  " + it.Detail
-	}
-	if ansi.StringWidth(text) <= p.room(it, w) {
-		return nil
-	}
-	lines := strings.Split(ansi.Hardwrap(ansi.Wordwrap(text, w-4, ""), w-4, true), "\n")
-	if len(lines) > wholeLines {
-		lines = append(lines[:wholeLines-1], ansi.Truncate(strings.Join(lines[wholeLines-1:], " "), w-4, p.theme.Glyphs.Ellipsis))
-	}
-	return lines
-}
-
-// Columns a row of width w leaves the title and detail of the item, beside its keys
-func (p *Palette) room(it Item, w int) int {
-	rw := ansi.StringWidth(it.Keys)
-	avail := w - 2 - rw
-	if rw > 0 {
-		avail -= 2
-	}
-	return max(avail, 1)
+	return max(len(p.matches), 1) + notes
 }
 
 // Matches out of the items
@@ -306,37 +269,56 @@ func (p *Palette) Input(w int, bg color.Color) (string, int) {
 	return base.Foreground(t.Text).Render(text), caret
 }
 
-// Score of a fuzzy subsequence match with the matched positions, negative for none
-func fuzzy(query, text string) (int, []int) {
-	q := []rune(strings.ToLower(query))
+// Scores a query against a text and reports the matched positions, false when the text does not hold it. Each word of the query must run
+// through the text letter by letter, a letter that does not follow the one before it having to start a word, so "wfl" finds "Window: focus
+// left" and a few letters scattered through a sentence find nothing
+func fuzzy(query, text string) (int, []int, bool) {
 	t := []rune(strings.ToLower(text))
-	if len(q) == 0 {
-		return 0, nil
+	score := 0
+	var hits []int
+	for _, term := range strings.Fields(strings.ToLower(query)) {
+		s, at := match([]rune(term), t)
+		if at == nil {
+			return 0, nil, false
+		}
+		score += s
+		hits = append(hits, at...)
 	}
-	score, last := 0, -1
-	hits := make([]int, 0, len(q))
-	for _, r := range q {
-		pos := -1
-		for i := last + 1; i < len(t); i++ {
-			if t[i] == r {
-				pos = i
-				break
+	slices.Sort(hits)
+	return score, slices.Compact(hits), true
+}
+
+// Best run of one query word through the text, nil when it has none
+func match(q, t []rune) (int, []int) {
+	starts := func(i int) bool { return i == 0 || strings.ContainsRune(" :-./", t[i-1]) }
+	best, found := 0, []int(nil)
+	hits := make([]int, len(q))
+	var walk func(k, from, score int)
+	walk = func(k, from, score int) {
+		if k == len(q) {
+			if total := score - hits[0]; found == nil || total > best {
+				best, found = total, slices.Clone(hits)
 			}
+			return
 		}
-		if pos < 0 {
-			return -1, nil
+		for i := from; i < len(t); i++ {
+			next := k > 0 && i == hits[k-1]+1
+			if t[i] != q[k] || k > 0 && !next && !starts(i) {
+				continue
+			}
+			gain := 10
+			if next {
+				gain += 6
+			}
+			if starts(i) {
+				gain += 4
+			}
+			hits[k] = i
+			walk(k+1, i+1, score+gain)
 		}
-		score += 10
-		if pos == last+1 {
-			score += 6
-		}
-		if pos == 0 || t[pos-1] == ' ' || t[pos-1] == ':' || t[pos-1] == '-' || t[pos-1] == '.' {
-			score += 4
-		}
-		hits = append(hits, pos)
-		last = pos
 	}
-	return score - last, hits
+	walk(0, 0, 0)
+	return best, found
 }
 
 func (p *Palette) filter() {
@@ -348,21 +330,22 @@ func (p *Palette) filter() {
 			}
 			continue
 		}
-		s, hits := fuzzy(p.Query(), it.Title)
+		s, hits, ok := fuzzy(p.Query(), it.Title)
 		// A title that is the query, or starts with it, leads every looser match
 		switch title, q := strings.ToLower(it.Title), strings.ToLower(strings.TrimSpace(p.Query())); {
 		case q == "":
 		case title == q:
-			s += 200
+			s += 2000
 		case strings.HasPrefix(title, q):
-			s += 100
+			s += 1000
 		}
-		if s < 0 {
-			ds, _ := fuzzy(p.Query(), it.Detail)
-			if ds < 0 {
+		// A detail matches only where it holds the query as typed, and ranks under every title
+		if !ok {
+			at := strings.Index(strings.ToLower(it.Detail), strings.ToLower(strings.TrimSpace(p.Query())))
+			if at < 0 {
 				continue
 			}
-			s, hits = ds-20, nil
+			s, hits = -1000-at, nil
 		}
 		p.matches = append(p.matches, scored{item: it, score: s, hits: hits})
 	}
@@ -528,12 +511,7 @@ func (p *Palette) limit() int { return max(p.rows, 1) }
 func (p *Palette) View(w, h int) string {
 	p.w = w
 	notes := p.notes()
-	whole := p.whole(w)
-	// Rows short of the matches keep them, the whole text of the lit row making way
-	if h-len(notes)-len(whole) < min(len(p.matches), 3) {
-		whole = nil
-	}
-	p.rows = h - len(notes) - len(whole)
+	p.rows = h - len(notes)
 	p.reveal()
 	t := p.theme
 	var lines []string
@@ -549,9 +527,6 @@ func (p *Palette) View(w, h int) string {
 			m := p.matches[i]
 			lines = append(lines, p.row(m, i == lit, w))
 		}
-	}
-	for _, line := range whole {
-		lines = append(lines, lipgloss.NewStyle().Background(t.Surface).Foreground(t.TextDim).Render(ansi.Truncate("    "+line, max(w, 1), "")))
 	}
 	for _, n := range notes {
 		text := ansi.Truncate("  "+n.Text, max(w, 1), t.Glyphs.Ellipsis)
@@ -570,11 +545,11 @@ func (p *Palette) row(m scored, selected bool, w int) string {
 			bg = theme.Mix(t.Surface, t.Ice, 0.1)
 		}
 	}
-	fg, hit, dim, key := t.Text, t.Ice, t.TextDim, t.Ice
+	fg, hit, dim, key := t.On(bg), t.Over(bg, t.Ice), t.Over(bg, t.TextDim), t.Over(bg, t.Ice)
 	base := lipgloss.NewStyle().Background(bg)
 	lead := base.Render(" ")
 	if selected {
-		lead = base.Foreground(t.Accent).Render(t.Glyphs.Notch)
+		lead = base.Foreground(t.Over(bg, t.Accent)).Render(t.Glyphs.Notch)
 	}
 	var sb strings.Builder
 	runes := []rune(m.item.Title)
@@ -599,29 +574,22 @@ func (p *Palette) row(m scored, selected bool, w int) string {
 		detail = base.Foreground(dim).Render("  " + m.item.Detail)
 	}
 	rw := ansi.StringWidth(right)
-	left := ansi.Truncate(title+detail, p.room(m.item, w), t.Glyphs.Ellipsis)
+	avail := w - 2 - rw
+	if rw > 0 {
+		avail -= 2
+	}
+	left := ansi.Truncate(title+detail, max(avail, 1), t.Glyphs.Ellipsis)
 	pad := max(w-2-ansi.StringWidth(left)-rw, 1)
 	line := lead + left + base.Render(strings.Repeat(" ", pad)) + right + base.Render(" ")
 	return ansi.Truncate(line, w, "")
 }
 
-// Actions the palette answers, the yes and no of a question, else those of its own context ahead of the picker keys
+// Buttons of the palette: yes and no while it asks a question, else those of its own context
 func (p *Palette) Hints() []Hint {
 	if p.ask != nil {
 		return []Hint{{Action: "confirm.yes"}, {Action: "confirm.no"}}
 	}
-	closing := Hint{Action: "palette.close"}
-	if p.OnBack != nil {
-		closing.Label = lang.T(txt.KitHintBack)
-	}
-	out := append([]Hint(nil), p.Extra...)
-	if len(p.items) == 0 {
-		if closing.Label == "" {
-			closing.Label = lang.T(txt.KitHintCancel)
-		}
-		return append(out, Hint{Action: "palette.pick", Label: lang.T(txt.KitHintConfirm)}, closing)
-	}
-	return append(out, Hint{Action: "palette.down", Pair: "palette.up", Label: lang.T(txt.KitHintMove)}, Hint{Action: "palette.pick"}, closing)
+	return p.Extra
 }
 
 // Action the palette lists and the keymap fires, the manager's own or one the app registers
@@ -630,12 +598,12 @@ type Command struct {
 	Title string
 	// Title at the moment it is shown, for a title that follows the language of the application
 	Text func() string
-	// Line the palette shows beside the title, the doc of the keymap action of the id when empty
+	// What it does in a few words, shown beside the title when the title alone does not say
 	Detail string
-	// Other action ids that run the same thing, whose keys the palette shows when the id has none
-	Also []string
 	// Reports whether the command applies right now, always when nil
 	When func() bool
+	// Listed under every other command, where the way out of the application belongs
+	Last bool
 	Run  func() tea.Cmd
 }
 
@@ -664,8 +632,8 @@ func (m *Model) builtin() []Command {
 	}
 	out := []Command{
 		{ID: "palette", Run: m.OpenPalette},
-		{ID: "workspace.next", Title: "Workspace: next", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active + 1) % len(m.spaces)) }},
-		{ID: "workspace.prev", Title: "Workspace: previous", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active - 1 + len(m.spaces)) % len(m.spaces)) }},
+		{ID: "workspace.next", Title: "Space: next", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active + 1) % len(m.spaces)) }},
+		{ID: "workspace.prev", Title: "Space: previous", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active - 1 + len(m.spaces)) % len(m.spaces)) }},
 		{ID: "window.focus.left", Title: "Window: focus left", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Left) }},
 		{ID: "window.focus.right", Title: "Window: focus right", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Right) }},
 		{ID: "window.focus.up", Title: "Window: focus up", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Up) }},
@@ -676,16 +644,16 @@ func (m *Model) builtin() []Command {
 		{ID: "window.move.right", Title: "Window: move right", When: hasFocus, Run: func() tea.Cmd { return m.Move(Right) }},
 		{ID: "window.move.up", Title: "Window: move up", When: hasFocus, Run: func() tea.Cmd { return m.Move(Up) }},
 		{ID: "window.move.down", Title: "Window: move down", When: hasFocus, Run: func() tea.Cmd { return m.Move(Down) }},
-		{ID: "window.master", Title: "Window: swap master", When: hasTiles, Run: m.SwapMaster},
+		{ID: "window.master", Title: "Window: make main", When: hasTiles, Run: m.SwapMaster},
 		{ID: "window.zoom", Title: "Window: fullscreen", When: hasFocus, Run: m.ToggleZoom},
 		{ID: "window.float", Title: "Window: float", When: hasFocus, Run: m.ToggleFloat},
 		{ID: "window.close", Title: "Window: close", When: func() bool { e := m.focused(); return e != nil && closable(e.card) }, Run: m.CloseFocused},
-		{ID: "window.attention", Title: "Window: the one waiting on you", When: m.needsYou, Run: m.FocusAttention},
-		{ID: "tabs.join", Title: "Tab: join the window beside", When: func() bool {
+		{ID: "window.attention", Title: "Window: go to waiting window", When: m.needsYou, Run: m.FocusAttention},
+		{ID: "tabs.join", Title: "Tab: merge into next window", When: func() bool {
 			e := m.focused()
 			return e != nil && !e.floating && besideTile(m.Active(), e) != nil
 		}, Run: m.JoinTab},
-		{ID: "tabs.split", Title: "Tab: take out into its own window", When: hasGroup, Run: m.SplitTab},
+		{ID: "tabs.split", Title: "Tab: split into own window", When: hasGroup, Run: m.SplitTab},
 		{ID: "tabs.cycle", Title: "Tab: next", When: hasGroup, Run: func() tea.Cmd { return m.CycleTab(1) }},
 		{ID: "tabs.cycle.back", Title: "Tab: previous", When: hasGroup, Run: func() tea.Cmd { return m.CycleTab(-1) }},
 		{ID: "panel.close", When: func() bool {
@@ -694,17 +662,17 @@ func (m *Model) builtin() []Command {
 		}, Run: m.CloseFocused},
 		{ID: "window.grow", Title: "Window: grow", When: hasTiles, Run: func() tea.Cmd { return m.Resize(0.05) }},
 		{ID: "window.shrink", Title: "Window: shrink", When: hasTiles, Run: func() tea.Cmd { return m.Resize(-0.05) }},
-		{ID: "layout.reset", Title: "Layout: reset", When: func() bool { return m.Active() != nil }, Run: m.ResetLayout},
+		{ID: "layout.reset", Title: "Layout: reset sizes", When: func() bool { return m.Active() != nil }, Run: m.ResetLayout},
 		{ID: "layout.toggle", Title: "Layout: toggle", When: func() bool { return m.Active() != nil }, Run: m.ToggleLayout},
-		{ID: "layout.dwindle", Title: "Layout: dwindle", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Dwindle }, Run: func() tea.Cmd { return m.SetLayout(Dwindle) }},
-		{ID: "layout.main.more", Title: "Layout: more main", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master }, Run: func() tea.Cmd { return m.SetMainCount(1) }},
-		{ID: "layout.main.fewer", Title: "Layout: fewer main", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master && ws.MainCount() > 1 }, Run: func() tea.Cmd { return m.SetMainCount(-1) }},
+		{ID: "layout.dwindle", Title: "Layout: spiral", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Dwindle }, Run: func() tea.Cmd { return m.SetLayout(Dwindle) }},
+		{ID: "layout.main.more", Title: "Layout: more main windows", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master }, Run: func() tea.Cmd { return m.SetMainCount(1) }},
+		{ID: "layout.main.fewer", Title: "Layout: fewer main windows", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master && ws.MainCount() > 1 }, Run: func() tea.Cmd { return m.SetMainCount(-1) }},
 		{ID: "layout.split", Title: "Layout: flip split", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Dwindle }, Run: m.FlipSplit},
-		{ID: "layout.master", Title: "Layout: master", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Master }, Run: func() tea.Cmd { return m.SetLayout(Master) }},
+		{ID: "layout.master", Title: "Layout: main column", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Master }, Run: func() tea.Cmd { return m.SetLayout(Master) }},
 	}
 	for i := 1; i <= 9; i++ {
 		n := i
-		out = append(out, Command{ID: "workspace." + strconv.Itoa(n), Title: "Workspace " + strconv.Itoa(n), When: func() bool { return n <= len(m.spaces) }, Run: func() tea.Cmd { return m.Switch(n - 1) }})
+		out = append(out, Command{ID: "workspace." + strconv.Itoa(n), Title: "Space " + strconv.Itoa(n), When: func() bool { return n <= len(m.spaces) }, Run: func() tea.Cmd { return m.Switch(n - 1) }})
 	}
 	return out
 }
@@ -737,7 +705,6 @@ func (m *Model) command(id string) (Command, bool) {
 // Runs the command with the id, nil when none applies
 func (m *Model) Run(id string) tea.Cmd {
 	if c, ok := m.command(id); ok && c.Ready() {
-		m.remember(id)
 		return c.Run()
 	}
 	return nil
@@ -758,10 +725,11 @@ func (m *Model) SetKeys(km *keys.Map) {
 func (m *Model) dispatch(target *entry, msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	ctxs := contextsOf(target.card)
 	floating := target == m.overlay || target.host != nil
-	if floating && !slices.Contains(ctxs, keys.Palette) {
+	grab := raw(target.card)
+	// A floating card moves and closes with the palette keys, unless it takes every key as typed, as one recording a key does
+	if floating && !grab && !slices.Contains(ctxs, keys.Palette) {
 		ctxs = append(ctxs, keys.Palette)
 	}
-	grab := raw(target.card)
 	for _, id := range m.keys.Lookup(ctxs, msg) {
 		a, _ := m.keys.Action(id)
 		if grab && !slices.Contains(ctxs, a.Context) && !passes(target.card, msg) {
@@ -783,10 +751,10 @@ func (m *Model) dispatch(target *entry, msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			if !c.Ready() {
 				continue
 			}
-			m.remember(id)
 			return c.Run(), true
 		}
-		if !slices.Contains(ctxs, a.Context) {
+		// An action of the card's contexts it has no use for leaves the key to the next action bound to it
+		if !slices.Contains(ctxs, a.Context) || !answers(target.card, id) {
 			continue
 		}
 		return m.send(target, ActionMsg{ID: id}), true
@@ -800,7 +768,6 @@ func (m *Model) Fire(id string) tea.Cmd {
 		if !c.Ready() {
 			return m.nudge()
 		}
-		m.remember(id)
 		return c.Run()
 	}
 	target := m.overlay
@@ -829,38 +796,46 @@ func (m *Model) remember(id string) {
 
 // Opens the palette over titled ready commands and the focused card actions, recent first
 func (m *Model) OpenPalette() tea.Cmd {
-	if m.overlay != nil && !sticky(m.overlay) {
+	if _, open := m.Overlay().(*Palette); open {
 		return m.Dismiss()
 	}
-	var items []Item
-	listed, titled := map[string]bool{}, map[string]bool{}
-	for _, c := range m.Commands() {
-		if !c.Ready() || listed[c.ID] || c.Title == "" {
-			continue
+	var items, kit, last []Item
+	listed := map[string]bool{}
+	list := func(into *[]Item, commands []Command) {
+		for _, c := range commands {
+			if !c.Ready() || listed[c.ID] || c.Title == "" {
+				continue
+			}
+			listed[c.ID] = true
+			id, run := c.ID, c.Run
+			it := Item{ID: id, Title: c.TitleText(), Detail: c.Detail, Keys: m.keys.Display(id), Run: func() tea.Cmd { m.remember(id); return run() }}
+			if c.Last {
+				last = append(last, it)
+				continue
+			}
+			*into = append(*into, it)
 		}
-		listed[c.ID] = true
-		title := c.TitleText()
-		// Two rows under one title run the same thing by two ids, the first kept
-		key := strings.ToLower(title)
-		if titled[key] {
-			continue
-		}
-		titled[key] = true
-		id, run := c.ID, c.Run
-		ids := append([]string{id}, c.Also...)
-		items = append(items, Item{ID: id, Title: title, Detail: cmp.Or(c.Detail, m.doc(ids)), Keys: m.chord(ids), Run: func() tea.Cmd { m.remember(id); return run() }})
 	}
+	if m.commandSource != nil {
+		list(&items, m.commandSource())
+	}
+	list(&kit, m.builtin())
 	if e := m.focused(); e != nil {
-		title := e.card.Title()
+		card := shown(e.card)
+		kind := card.Title()
+		if k, ok := card.(Kinded); ok {
+			kind = k.Kind()
+		}
 		for _, a := range m.keys.InContexts(contextsOf(e.card)) {
-			if a.Quiet || a.Context == keys.Global || listed[a.ID] {
+			if a.Quiet || a.Context == keys.Global || listed[a.ID] || !answers(card, a.ID) {
 				continue
 			}
 			listed[a.ID] = true
 			id := a.ID
-			items = append(items, Item{ID: id, Title: title + ": " + a.LabelText(), Detail: a.DocText(), Keys: m.chord([]string{id}), Run: func() tea.Cmd { m.remember(id); return m.send(e, ActionMsg{ID: id}) }})
+			items = append(items, Item{ID: id, Title: kind + ": " + a.LabelText(), Keys: m.keys.Display(id), Run: func() tea.Cmd { m.remember(id); return m.send(e, ActionMsg{ID: id}) }})
 		}
 	}
+	items = append(append(items, kit...), last...)
 	rank := map[string]int{}
 	for i, id := range m.recent {
 		rank[id] = len(m.recent) - i
@@ -871,33 +846,10 @@ func (m *Model) OpenPalette() tea.Cmd {
 	return m.ShowOverlay(p)
 }
 
-// Doc line of the first of the ids the keymap has one for, a key after the leader counting as its target
-func (m *Model) doc(ids []string) string {
-	for _, id := range ids {
-		for _, at := range []string{id, "leader." + id} {
-			if a, ok := m.keys.Action(at); ok && a.DocText() != "" {
-				return a.DocText()
-			}
-		}
+// Card that shows in the place of c: the active tab of a tab group, c itself otherwise
+func shown(c Card) Card {
+	if g, ok := c.(*Tabs); ok {
+		return g.current()
 	}
-	return ""
-}
-
-// Key of the first of the ids bound to one, else the leader and the key after it
-func (m *Model) chord(ids []string) string {
-	for _, id := range ids {
-		if key := m.keys.Display(id); key != "" {
-			return key
-		}
-	}
-	leader := m.keys.Display("leader")
-	if leader == "" {
-		return ""
-	}
-	for _, id := range ids {
-		if key := m.keys.Display("leader." + id); key != "" {
-			return leader + " " + key
-		}
-	}
-	return ""
+	return c
 }

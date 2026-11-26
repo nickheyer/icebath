@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package icebath.profile.v1;
+
+service ProfileService {
+  rpc List(ListRequest) returns (ListResponse);
+  rpc Create(CreateRequest) returns (CreateResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  rpc Use(UseRequest) returns (UseResponse);
+}
+
+message Profile {
+  string name = 1;
+  // The profile whose settings are in use
+  bool active = 2;
+  // The profile that is always there and can't be deleted
+  bool default = 3;
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated Profile profiles = 1;
+}
+
+message CreateRequest {
+  string name = 1;
+  // Profile whose settings the new one starts with, none when empty
+  string from = 2;
+}
+
+message CreateResponse {
+  Profile profile = 1;
+}
+
+message DeleteRequest {
+  string name = 1;
+}
+
+message DeleteResponse {}
+
+message UseRequest {
+  string name = 1;
+}
+
+message UseResponse {
+  Profile profile = 1;
+}

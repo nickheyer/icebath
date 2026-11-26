@@ -30,6 +30,7 @@ import (
 	anthropicconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/anthropic/config"
 	"github.com/nickheyer/icebath/internal/provider"
 	browserutil "github.com/nickheyer/icebath/pkg/browser"
+	"github.com/spf13/cast"
 )
 
 const (
@@ -611,7 +612,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 		return ""
 	}
 	if IsRotationConsumedUncommitted(refreshToken, credPath) {
-		env.log().Debug("Refresh token was already consumed by an uncommitted rotation - refusing to replay it; run 'icebath auth add anthropic' or add again in ui.")
+		env.log().Debug("Refresh token was already used by an unsaved rotation, so it is not sent again. Sign in again from /providers.")
 		return ""
 	}
 	sum := sha256.Sum256([]byte(refreshToken))
@@ -629,7 +630,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 			spentRotationMu.Lock()
 			deadRefreshTokenPrints[fingerprint] = true
 			spentRotationMu.Unlock()
-			env.log().Warn(fmt.Sprintf("Claude Code OAuth refresh token is terminally invalid (%v); Icebath cannot use this login. Run 'icebath auth add anthropic' to give Icebath its own login.", err))
+			env.log().Warn(fmt.Sprintf("The Claude Code refresh token is no longer valid (%v), so icebath can't use that login. Sign in to Anthropic from /providers.", err))
 		} else {
 			env.log().Debug(fmt.Sprintf("Failed to refresh Claude Code token: %v", err))
 		}
@@ -637,7 +638,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 	}
 	ms, _ := anyFloat(refreshed["expires_at_ms"])
 	if err := writeClaudeCodeCredentialsFn(env, anyString(refreshed["access_token"]), anyString(refreshed["refresh_token"]), int64(ms), nil, refreshToken); err != nil {
-		env.log().Error(fmt.Sprintf("Anthropic OAuth refresh rotated the single-use token but could not commit it to %s (%v) - treating the refresh as failed, run 'icebath auth add anthropic' or login in the ui.", credPath, err))
+		env.log().Error(fmt.Sprintf("Anthropic sign-in refresh rotated the token but couldn't save it to %s (%v), so the refresh failed. Sign in again from /providers.", credPath, err))
 		MarkRotationConsumedUncommitted(credPath, refreshToken, anyString(creds["accessToken"]), anyString(current["accessToken"]), anyString(current["refreshToken"]))
 		return ""
 	}
@@ -734,7 +735,7 @@ func resolveClaudeCodeTokenFromCredentials(env PoolEnv, creds map[string]any) st
 	env.log().Debug("Claude Code credentials expired - attempting refresh")
 	refreshed := refreshClaudeCodeOAuthToken(env, creds)
 	if refreshed == "" {
-		env.log().Debug("Token refresh failed - run 'icebath auth add anthropic' to give Icebath its own login")
+		env.log().Debug("Token refresh failed. Sign in to Anthropic from /providers.")
 	}
 	return refreshed
 }
@@ -911,9 +912,11 @@ func fillRandom(buf []byte) {
 
 // PoolEnv is the dependency set the credential functions read and write through
 type PoolEnv struct {
-	Config *config.Config
-	Log    *slog.Logger
-	HTTP   *http.Client
+	// Fields of the account signed in with, and settings of its provider
+	Account  config.View
+	Provider config.View
+	Log      *slog.Logger
+	HTTP     *http.Client
 	// Call context of the token requests and the setup command
 	Ctx context.Context
 }
@@ -933,17 +936,17 @@ func (env PoolEnv) ctx() context.Context {
 	return context.Background()
 }
 
-// Value of a credential variable through the config key bound to it, the process environment for any other name
+// Value of a credential variable: the field of the account it stands for when the account keeps one, else the process environment
 func (env PoolEnv) secretStr(name string) string {
-	key, bound := map[string]string{
+	field, bound := map[string]string{
 		anthropicconfig.APIKeyEnv:     anthropicconfig.APIKey,
 		anthropicconfig.TokenEnv:      anthropicconfig.Token,
 		anthropicconfig.OAuthTokenEnv: anthropicconfig.OAuthToken,
 	}[name]
-	if !bound || env.Config == nil {
-		return os.Getenv(name)
+	if value := env.Account.GetString(field); bound && value != "" {
+		return value
 	}
-	return env.Config.GetString(key)
+	return os.Getenv(name)
 }
 
 // fileLock takes the cross process advisory lock for an auth path and returns its releaser
@@ -956,17 +959,18 @@ func (env PoolEnv) fileLock(authPath string, timeout time.Duration) (func(), err
 }
 
 // ExternalLoginsNotAdoptedNotice is printed once per process when a borrowed CLI login is skipped
-const ExternalLoginsNotAdoptedNotice = "External CLI logins (Codex CLI, Claude Code) are not adopted: " + anthropicconfig.AdoptExternalLogins + " is false. " +
-	"Icebath uses only its own logins; run `icebath auth add <provider>` to add one."
+const ExternalLoginsNotAdoptedNotice = "Logins from other CLIs (Codex CLI, Claude Code) are not used because " + anthropicconfig.AdoptExternalLogins + " of the provider is off. " +
+	"Sign in from /providers instead."
 
 var (
 	externalLoginsNoticeMu     sync.Mutex
 	externalLoginsNoticeLogged bool
 )
 
-// AdoptExternalLoginsEnabled is plugins.anthropic.adopt_external_logins, default true, logged once when off
+// AdoptExternalLoginsEnabled is adopt_external_logins of the provider, default true, logged once when off
 func AdoptExternalLoginsEnabled(env PoolEnv) bool {
-	enabled := env.Config == nil || env.Config.GetBool(anthropicconfig.AdoptExternalLogins)
+	adopt := env.Provider.Get(anthropicconfig.AdoptExternalLogins)
+	enabled := adopt == nil || cast.ToBool(adopt)
 	if !enabled {
 		externalLoginsNoticeMu.Lock()
 		if !externalLoginsNoticeLogged {

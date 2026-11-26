@@ -32,8 +32,6 @@ type Action struct {
 	Overlay bool
 	// Stays out of the palette, for editing and movement keys
 	Quiet bool
-	// Line of the leader strip the key is listed on, empty for the last line
-	Group string
 }
 
 // LabelText is the legend word of the action in the language of the application, the registered word when the application has none
@@ -186,21 +184,6 @@ func (m *Map) Sendable(id string) []string {
 		}
 	}
 	return out
-}
-
-// Keys to press for the action as text names them, the leader first for a key of the leader strip, empty while it is unbound
-func (m *Map) Chord(id string) string {
-	key := m.Display(id)
-	if key == "" {
-		return ""
-	}
-	if a, ok := m.Action(id); ok && a.Context == Leader {
-		if lead := m.Display("leader"); lead != "" {
-			return lead + " " + key
-		}
-		return ""
-	}
-	return key
 }
 
 // Changes the keys the action starts with, keeping the keys a person bound in its place and taking the new ones only while it holds the old

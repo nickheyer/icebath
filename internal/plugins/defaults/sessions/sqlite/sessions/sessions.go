@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	title TEXT NOT NULL,
 	directory TEXT NOT NULL,
 	created INTEGER NOT NULL,
-	updated INTEGER NOT NULL
+	updated INTEGER NOT NULL,
+	profile TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS messages (
 	id INTEGER PRIMARY KEY,
@@ -37,7 +38,11 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS messages_session ON messages (session);
 `
 
-const columns = `id, title, directory, created, updated`
+const columns = `id, title, directory, created, updated, profile`
+
+const used = `(title != '' OR EXISTS (SELECT 1 FROM messages WHERE session = sessions.id))`
+
+const stale = 24 * time.Hour
 
 type store struct {
 	config *config.Config
@@ -83,17 +88,21 @@ func (s *store) open() (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if _, err := db.Exec(`DELETE FROM sessions WHERE NOT `+used+` AND created < ?`, time.Now().Add(-stale).UnixMilli()); err != nil {
+		db.Close()
+		return nil, err
+	}
 	s.db = db
 	return db, nil
 }
 
-func (s *store) Create(directory string) (*sessionsv1.Session, error) {
+func (s *store) Create(directory, profile string) (*sessionsv1.Session, error) {
 	db, err := s.open()
 	if err != nil {
 		return nil, err
 	}
 	id, now := rand.Text(), time.Now().UnixMilli()
-	if _, err := db.Exec(`INSERT INTO sessions (`+columns+`) VALUES (?, '', ?, ?, ?)`, id, directory, now, now); err != nil {
+	if _, err := db.Exec(`INSERT INTO sessions (`+columns+`) VALUES (?, '', ?, ?, ?, ?)`, id, directory, now, now, profile); err != nil {
 		return nil, err
 	}
 	return s.Get(id)
@@ -104,7 +113,7 @@ func (s *store) List() ([]*sessionsv1.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(`SELECT ` + columns + ` FROM sessions ORDER BY updated DESC, rowid DESC`)
+	rows, err := db.Query(`SELECT ` + columns + ` FROM sessions WHERE ` + used + ` ORDER BY updated DESC, rowid DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +143,19 @@ func (s *store) Get(id string) (*sessionsv1.Session, error) {
 
 func (s *store) Rename(id, title string) error {
 	return s.change(`UPDATE sessions SET title = ? WHERE id = ?`, title, id)
+}
+
+func (s *store) Move(id, profile string) error {
+	return s.change(`UPDATE sessions SET profile = ? WHERE id = ?`, profile, id)
+}
+
+func (s *store) Clear(profile string) error {
+	db, err := s.open()
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`DELETE FROM sessions WHERE profile = ?`, profile)
+	return err
 }
 
 func (s *store) Delete(id string) error {
@@ -219,7 +241,7 @@ func (s *store) change(query string, args ...any) error {
 func scan(row interface{ Scan(...any) error }) (*sessionsv1.Session, error) {
 	session := new(sessionsv1.Session)
 	var created, updated int64
-	if err := row.Scan(&session.Id, &session.Title, &session.Directory, &created, &updated); err != nil {
+	if err := row.Scan(&session.Id, &session.Title, &session.Directory, &created, &updated, &session.Profile); err != nil {
 		return nil, err
 	}
 	session.Created = timestamppb.New(time.UnixMilli(created))

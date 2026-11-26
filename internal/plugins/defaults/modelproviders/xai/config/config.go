@@ -1,20 +1,17 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	XAIName         = "xai"
-	XAIKey          = pluginsconfig.Key + "." + XAIName
-	XAIBaseURL      = XAIKey + ".base_url"
-	XAIAPIKey       = XAIKey + ".api_key"
-	XAIDefaultModel = XAIKey + ".default_model"
+	XAITitle        = "xAI"
+	XAIBaseURL      = "https://api.x.ai/v1"
+	XAIDefaultModel = ""
 )
 
 const (
 	OAuthName         = "xai-oauth"
-	OAuthKey          = pluginsconfig.Key + "." + OAuthName
-	OAuthBaseURL      = OAuthKey + ".base_url"
-	OAuthDefaultModel = OAuthKey + ".default_model"
+	OAuthTitle        = "xAI Grok OAuth (SuperGrok / Premium+)"
+	OAuthBaseURL      = "https://api.x.ai/v1"
+	OAuthDefaultModel = ""
 )
 
 const (

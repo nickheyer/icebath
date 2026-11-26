@@ -1,6 +1,7 @@
 package cards
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 	"time"
@@ -9,21 +10,19 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/keys"
-	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
-	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 // Keymap context of the row keys every screen of things to manage answers the same way
 const HubContext = "hub"
 
-// Keymap context of the keys a hub answers on every view that takes no typing, help and reading again
+// Keymap context of the keys a hub answers on every view that takes no typing, stepping back and reading again
 const HubViewContext = "hub.view"
 
 // Keys shared by every screen of things to manage, registered with the keymap of the app
 func RegisterHubKeys(km *keys.Map) {
-	for name, doc := range map[string]string{HubContext: "screens of things to manage, the keys of a row", HubViewContext: "screens of things to manage, help and reading again"} {
+	for name, doc := range map[string]string{HubContext: "dialog rows", HubViewContext: "dialogs"} {
 		if keys.ContextDocs[name] == "" {
 			if err := keys.AddContext(name, doc); err != nil {
 				panic(err)
@@ -31,16 +30,14 @@ func RegisterHubKeys(km *keys.Map) {
 		}
 	}
 	for _, a := range []keys.Action{
-		{ID: "hub.use", Context: HubContext, Label: "open", Doc: "open or use the highlighted row", Default: []string{"enter"}},
-		{ID: "hub.add", Context: HubContext, Label: "add", Doc: "add a new one", Default: []string{"a"}},
-		{ID: "hub.edit", Context: HubContext, Label: "edit", Doc: "change the highlighted row", Default: []string{"e"}},
-		{ID: "hub.rename", Context: HubContext, Label: "rename", Doc: "rename the highlighted row", Default: []string{"r"}},
-		{ID: "hub.remove", Context: HubContext, Label: "remove", Doc: "remove the highlighted row after a confirmation", Default: []string{"x"}},
-		{ID: "hub.default", Context: HubContext, Label: "default", Doc: "make the highlighted row the default", Default: []string{"d"}},
-		{ID: "hub.toggle", Context: HubContext, Label: "toggle", Doc: "turn the highlighted row on or off", Default: []string{"t"}},
-		{ID: "hub.help", Context: HubViewContext, Label: "help", Doc: "show what the screen and the highlighted row do, and every key", Default: []string{"?"}},
-		{ID: "hub.back", Context: HubViewContext, Label: "back", Doc: "go back one step, closing the screen from its first view", Default: []string{"esc"}},
-		{ID: "hub.refresh", Context: HubViewContext, Label: "refresh", Doc: "read the rows again", Default: []string{"ctrl+r"}},
+		{ID: "hub.use", Context: HubContext, Label: "open", Doc: "open or use the selected row", Default: []string{"enter"}, Quiet: true},
+		{ID: "hub.add", Context: HubContext, Label: "add", Doc: "add a new item", Default: []string{"alt+n"}, Quiet: true},
+		{ID: "hub.edit", Context: HubContext, Label: "edit", Doc: "edit the selected row", Default: []string{"ctrl+e"}, Quiet: true},
+		{ID: "hub.rename", Context: HubContext, Label: "rename", Doc: "rename the selected row", Default: []string{"f2"}, Quiet: true},
+		{ID: "hub.remove", Context: HubContext, Label: "remove", Doc: "remove the selected row", Default: []string{"ctrl+d"}, Quiet: true},
+		{ID: "hub.reset", Context: HubContext, Label: "reset", Doc: "reset the selected row to its default", Quiet: true},
+		{ID: "hub.back", Context: HubViewContext, Label: "back", Doc: "go back, or close the dialog", Default: []string{"esc"}, Quiet: true},
+		{ID: "hub.refresh", Context: HubViewContext, Label: "refresh", Doc: "reload the rows", Default: []string{"ctrl+r"}, Quiet: true},
 	} {
 		km.Register(a)
 	}
@@ -71,11 +68,6 @@ type hubNoteExpired struct {
 }
 
 func (m hubNoteExpired) Addressee() wm.Card { return m.hub }
-
-// View of a hub that adds help lines of its own to the help page, such as what the highlighted row does
-type Helper interface {
-	HelpLines() []string
-}
 
 // Screen of things to manage: views stacked over one root list, the same keys on each, with a note line along the bottom for progress and errors
 type Hub struct {
@@ -109,6 +101,7 @@ var _ interface {
 	wm.Sized
 	wm.Backer
 	wm.Grabber
+	wm.Answerer
 } = (*Hub)(nil)
 
 // Builds a hub over its root view, sized from the screen it floats over
@@ -229,15 +222,17 @@ func (h *Hub) send(c wm.Card, msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
+// Title of the first view, and from a view opened over it the mark that steps back and the trail to that view
 func (h *Hub) Title() string {
 	root := h.Root().Title()
 	if len(h.stack) == 1 {
 		return root
 	}
+	back := h.env.Theme.Glyphs.Back + " " + root
 	if title := h.Top().Title(); title != "" && title != root {
-		return root + " › " + title
+		return back + " " + h.env.Theme.Glyphs.Forward + " " + title
 	}
-	return root
+	return back
 }
 
 func (h *Hub) Glyph() string {
@@ -253,15 +248,43 @@ func (h *Hub) Init() tea.Cmd { return h.Root().Init() }
 
 func (h *Hub) Selectable() bool { return true }
 
-// Opens near the whole screen on a small terminal and at a readable width on a large one
+// Columns and rows a hub takes on a screen with room to spare around it
+const hubWidth, hubHeight = 104, 30
+
+// Least the screen must show around a hub for it to float; with less it covers the screen, since a sliver of what lies beneath only reads as noise
+const hubMarginX, hubMarginY = 12, 3
+
+// View of a hub that knows how many rows it fills at a width, so the hub opens no taller than what it holds
+type Fitted interface {
+	Rows(w int) int
+}
+
+// Fewest rows a hub opens with, room for an empty view to say so
+const hubLeast = 7
+
+// Opens at a readable width in the middle of a large screen and over the whole of a small one, as tall as the tallest of its views needs
 func (h *Hub) MinSize() (int, int) {
 	sw, sh := 120, 40
 	if h.screen != nil {
 		sw, sh = h.screen()
 	}
-	w := min(sw-4, max(sw*9/10, 76), 132)
-	ht := min(sh-4, max(sh*8/10, 18))
-	return max(w-2, 20), max(ht-2, 6)
+	w := hubWidth
+	if sw-w < 2*hubMarginX {
+		w = sw
+	}
+	ht := hubLeast
+	for _, view := range h.stack {
+		rows := hubHeight
+		if f, ok := view.(Fitted); ok {
+			rows = f.Rows(cmp.Or(h.w, w))
+		}
+		ht = max(ht, min(rows, hubHeight))
+	}
+	// A row for the note of the hub, so one arriving moves nothing
+	if ht++; sh-ht < 2*hubMarginY {
+		ht = sh
+	}
+	return w, ht
 }
 
 // Every key as typed while the view on top asks for it
@@ -270,17 +293,27 @@ func (h *Hub) Raw() bool {
 	return ok && r.Raw()
 }
 
-// Keymap contexts of the view on top, with help and reading again while it takes no typing
+// Keymap contexts of the view on top, with going back and reloading while it takes no typing, or while the typing it takes only filters a
+// list to pick from; a key being recorded, a question or a cell being edited keeps them out
 func (h *Hub) Contexts() []string {
 	var out []string
 	if c, ok := h.Top().(wm.Contexter); ok {
 		out = c.Contexts()
 	}
 	// A form answers esc itself and may take any letter, so the hub's own keys stay out of it
-	if _, form := h.Top().(*Form); !form && !takesTyping(out) {
+	_, form := h.Top().(*Form)
+	list, listed := h.Top().(*List)
+	filtering := listed && list.Picks() && slices.Contains(out, keys.Search)
+	if !form && (filtering || !takesTyping(out)) {
 		out = append(slices.Clone(out), HubViewContext)
 	}
 	return out
+}
+
+// Whether the view on top has a use for the action, so a key it leaves unused goes on to the next action bound to it
+func (h *Hub) Answers(action string) bool {
+	a, ok := h.Top().(wm.Answerer)
+	return !ok || a.Answers(action)
 }
 
 // Whether a view with these contexts takes typed text, so letter keys must reach it
@@ -294,20 +327,12 @@ func takesTyping(ctxs []string) bool {
 	return false
 }
 
-// Legend of the view on top, then help and back
+// Buttons of the view on top
 func (h *Hub) Hints() []wm.Hint {
-	var out []wm.Hint
 	if c, ok := h.Top().(wm.Hinter); ok {
-		out = c.Hints()
+		return c.Hints()
 	}
-	if !slices.Contains(h.Contexts(), HubViewContext) {
-		return out
-	}
-	out = append(out, wm.Hint{Action: "hub.help"})
-	if len(h.stack) > 1 {
-		out = append(out, wm.Hint{Action: "hub.back"})
-	}
-	return out
+	return nil
 }
 
 func (h *Hub) Status() string {
@@ -394,11 +419,6 @@ func (h *Hub) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 				}
 				return h, wm.RequestDismissOf(h)
 			}
-		case "hub.help":
-			if p, ok := h.Top().(*Page); ok && p.help {
-				return h, h.Pop()
-			}
-			return h, h.Push(h.helpPage())
 		}
 		if h.level == NoteFailed {
 			h.Quiet()
@@ -448,41 +468,6 @@ func (h *Hub) noteLine(w int) string {
 		text = render.Dim(text, t)
 	}
 	return render.Fit(text, w, t)
-}
-
-// Page of help for the view on top: its own lines, then every key in force with what it does
-func (h *Hub) helpPage() *Page {
-	top := h.Top()
-	var lines []string
-	if hp, ok := top.(Helper); ok {
-		lines = append(lines, hp.HelpLines()...)
-	}
-	var ctxs []string
-	if c, ok := top.(wm.Contexter); ok {
-		ctxs = c.Contexts()
-	}
-	ctxs = append(slices.Clone(ctxs), HubViewContext)
-	if len(lines) > 0 {
-		lines = append(lines, "")
-	}
-	lines = append(lines, render.Heading(lang.T(txt.KitHubKeys), h.env.Theme))
-	seen := map[string]bool{}
-	list, isList := top.(*List)
-	for _, a := range h.env.Keys.InContexts(ctxs) {
-		chord := h.env.Keys.Display(a.ID)
-		if a.Context == keys.Global || seen[a.ID] || chord == "" {
-			continue
-		}
-		// A list leaves out the shared keys and its own keys it has no action for
-		if isList && (a.Context == HubContext || a.Context == list.ctx) && !list.answers(a.ID) {
-			continue
-		}
-		seen[a.ID] = true
-		lines = append(lines, "  "+padRight(chord, 12)+" "+a.DocText())
-	}
-	p := NewPage(h.env, PageSpec{Title: lang.T(txt.KitHubHelp), Key: h.key + ":help", Lines: func(int) []string { return lines }})
-	p.help = true
-	return p
 }
 
 // Text padded with spaces to n cells

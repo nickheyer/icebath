@@ -15,14 +15,43 @@ import (
 
 type Handler func(ctx context.Context, call *Call) string
 
+// Glyphs the app can mark a tool with
+const (
+	IconRead   = "read"
+	IconWrite  = "write"
+	IconEdit   = "edit"
+	IconFind   = "find"
+	IconSearch = "search"
+	IconShell  = "shell"
+	IconOutput = "output"
+	IconKill   = "kill"
+	IconFetch  = "fetch"
+	IconAgent  = "agent"
+	IconRecord = "record"
+	IconPlan   = "plan"
+	IconServer = "server"
+)
+
+// Tool a plugin adds: what the model sees, what runs, and how the app shows it
 type Def struct {
-	Name           string
-	Toolset        string
+	Name    string
+	Toolset string
+	// Name shown in the app, the tool name when empty
+	Title string
+	// Glyph the app marks the tool with, one of the Icon names, a generic one when empty
+	Icon string
+	// Argument whose value the app shows next to the title, such as "path"; the first text argument when empty
+	Subject string
+	// Kinds of risky action the tool asks approval for, each the reason it hands to Env.Approve, offered in the approvals allowlist
+	Risks          []string
 	Schema         map[string]any
 	Handler        Handler
 	Check          func(env *Env) bool
 	MaxResultChars int
 }
+
+// Name shown in the app
+func (d Def) Label() string { return cmp.Or(d.Title, d.Name) }
 
 type Call struct {
 	Name       string
@@ -57,6 +86,19 @@ func (r *Registry) Tools() []Def {
 		defs = append(defs, registrant.Tools()...)
 	}
 	return defs
+}
+
+// Every kind of risky action the tools ask approval for, as values a setting may take, each about the tool that asks
+func (r *Registry) Risks() []config.Option {
+	var options []config.Option
+	for _, def := range r.Tools() {
+		for _, risk := range def.Risks {
+			if !slices.ContainsFunc(options, func(option config.Option) bool { return option.Value == risk }) {
+				options = append(options, config.Option{Value: risk, Title: risk, About: def.Label()})
+			}
+		}
+	}
+	return options
 }
 
 func (r *Registry) Definitions(env *Env) []map[string]any {
@@ -106,9 +148,10 @@ func (r *Registry) dispatch(ctx context.Context, call *Call) string {
 }
 
 func (r *Registry) available(env *Env) []Def {
+	disabled := env.Config.GetStringSlice(toolsconfig.Disabled)
 	var defs []Def
 	for _, def := range r.Tools() {
-		if def.Schema != nil && def.Handler != nil && (def.Check == nil || def.Check(env)) {
+		if def.Schema != nil && def.Handler != nil && !slices.Contains(disabled, def.Name) && (def.Check == nil || def.Check(env)) {
 			defs = append(defs, def)
 		}
 	}
@@ -120,8 +163,15 @@ type Tools struct {
 }
 
 func New(cfg *config.Config) *Tools {
-	toolsconfig.Register(cfg)
-	return &Tools{}
+	t := &Tools{}
+	toolsconfig.Register(cfg, func() []config.Option {
+		var options []config.Option
+		for _, def := range t.Tools() {
+			options = append(options, config.Option{Value: def.Name, Title: def.Label(), About: def.Name})
+		}
+		return options
+	})
+	return t
 }
 
 func Bind[T any](run func(ctx context.Context, call *Call, args T) (string, error)) Handler {

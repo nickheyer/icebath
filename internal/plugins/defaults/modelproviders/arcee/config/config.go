@@ -1,13 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "arcee"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	APIKey       = Key + ".api_key"
-	DefaultModel = Key + ".default_model"
+	Title        = "Arcee AI"
+	BaseURL      = "https://api.arcee.ai/api/v1"
+	DefaultModel = ""
 )
 
 const (

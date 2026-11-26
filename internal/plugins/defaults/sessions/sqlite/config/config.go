@@ -1,8 +1,8 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
+import sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
 
 const (
-	Key  = pluginsconfig.Key + ".sqlite"
+	Key  = sessionsconfig.Key + ".sqlite"
 	Path = Key + ".path"
 )

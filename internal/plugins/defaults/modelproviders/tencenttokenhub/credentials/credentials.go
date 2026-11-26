@@ -1,12 +1,11 @@
 package credentials
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/credentials"
 	tencenttokenhubconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/tencenttokenhub/config"
 )
 
-func Register(registry *credentials.Registry, cfg *config.Config) {
-	registry.Register(credentials.Keyed{Config: cfg, Provider: tencenttokenhubconfig.TokenHubName, Key: tencenttokenhubconfig.TokenHubAPIKey, Variables: []string{tencenttokenhubconfig.TokenHubAPIKeyEnv}})
-	registry.Register(credentials.Keyed{Config: cfg, Provider: tencenttokenhubconfig.TokenPlanName, Key: tencenttokenhubconfig.TokenPlanAPIKey, Variables: []string{tencenttokenhubconfig.TokenPlanAPIKeyEnv}})
+func Register(registry *credentials.Registry) {
+	registry.Register(credentials.Keyed{Provider: tencenttokenhubconfig.TokenHubName, Variables: []string{tencenttokenhubconfig.TokenHubAPIKeyEnv}})
+	registry.Register(credentials.Keyed{Provider: tencenttokenhubconfig.TokenPlanName, Variables: []string{tencenttokenhubconfig.TokenPlanAPIKeyEnv}})
 }

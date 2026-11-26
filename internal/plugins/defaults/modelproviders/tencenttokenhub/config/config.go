@@ -1,21 +1,17 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	TokenHubName         = "tencent-tokenhub"
-	TokenHubKey          = pluginsconfig.Key + "." + TokenHubName
-	TokenHubBaseURL      = TokenHubKey + ".base_url"
-	TokenHubAPIKey       = TokenHubKey + ".api_key"
-	TokenHubDefaultModel = TokenHubKey + ".default_model"
+	TokenHubTitle        = "Tencent TokenHub"
+	TokenHubBaseURL      = "https://tokenhub.tencentmaas.com/v1"
+	TokenHubDefaultModel = ""
 )
 
 const (
 	TokenPlanName         = "tencent-tokenplan"
-	TokenPlanKey          = pluginsconfig.Key + "." + TokenPlanName
-	TokenPlanBaseURL      = TokenPlanKey + ".base_url"
-	TokenPlanAPIKey       = TokenPlanKey + ".api_key"
-	TokenPlanDefaultModel = TokenPlanKey + ".default_model"
+	TokenPlanTitle        = "Tencent TokenPlan"
+	TokenPlanBaseURL      = "https://api.lkeap.cloud.tencent.com/plan/anthropic"
+	TokenPlanDefaultModel = ""
 )
 
 const (

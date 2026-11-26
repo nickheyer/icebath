@@ -1,25 +1,23 @@
 package credentials
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/credentials"
 	bedrockconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/bedrock/config"
 	"github.com/nickheyer/icebath/internal/provider"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 )
 
-type source struct {
-	config *config.Config
+type source struct{}
+
+func Register(registry *credentials.Registry) {
+	registry.Register(source{})
 }
 
-func Register(registry *credentials.Registry, cfg *config.Config) {
-	registry.Register(source{config: cfg})
-}
-
-func (s source) Credential(name string) (credentials.Credential, bool) {
-	if name != bedrockconfig.Name {
+func (source) Credential(account credentials.Account) (credentials.Credential, bool) {
+	if account.Spec() != bedrockconfig.Name {
 		return credentials.Credential{}, false
 	}
-	credential, ok := credentials.Lookup(s.config, bedrockconfig.APIKey, bedrockconfig.APIKeyEnv)
+	credential, ok := credentials.Lookup(account.Fields, providerconfig.APIKeyField, bedrockconfig.APIKeyEnv)
 	credential.Auth = provider.AuthAPIKey
 	return credential, ok
 }

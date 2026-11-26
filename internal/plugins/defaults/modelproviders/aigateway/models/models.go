@@ -20,7 +20,7 @@ func Register(registry *models.Registry) {
 
 func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool) {
 	key := strings.TrimSpace(route.APIKey)
-	if route.Provider != aigatewayconfig.Name || key == "" {
+	if route.Spec != aigatewayconfig.Name || key == "" {
 		return nil, false
 	}
 	headers := map[string]string{"Authorization": "Bearer " + key, "User-Agent": models.UserAgent}

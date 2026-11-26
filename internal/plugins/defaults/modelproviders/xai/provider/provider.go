@@ -1,25 +1,22 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	xaiconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/xai/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	base := p.config.GetString(xaiconfig.XAIBaseURL)
-	oauthBase := p.config.GetString(xaiconfig.OAuthBaseURL)
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	base := xaiconfig.XAIBaseURL
+	oauthBase := xaiconfig.OAuthBaseURL
+	return []provider.Spec{{
 		Name:               xaiconfig.XAIName,
-		DisplayName:        "xAI",
+		DisplayName:        xaiconfig.XAITitle,
 		BaseURL:            base,
 		BaseURLEnv:         xaiconfig.BaseURLEnv,
 		ModelsURL:          provider.ModelsURL(base),
@@ -28,7 +25,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{xaiconfig.APIKeyEnv},
 		Aliases:            []string{"grok", "x-ai", "x.ai"},
-		DefaultModel:       p.config.GetString(xaiconfig.XAIDefaultModel),
+		DefaultModel:       xaiconfig.XAIDefaultModel,
 		Headers:            map[string]string{"User-Agent": "Icebath-Agent/dev"},
 		ModelListing:       true,
 		HealthCheck:        true,
@@ -36,7 +33,7 @@ func (p profiles) Profiles() []provider.Profile {
 		ModelsDevID:        xaiconfig.XAIName,
 	}, {
 		Name:               xaiconfig.OAuthName,
-		DisplayName:        "xAI Grok OAuth (SuperGrok / Premium+)",
+		DisplayName:        xaiconfig.OAuthTitle,
 		BaseURL:            oauthBase,
 		BaseURLEnv:         xaiconfig.BaseURLEnv,
 		ModelsURL:          provider.ModelsURL(oauthBase),
@@ -44,7 +41,7 @@ func (p profiles) Profiles() []provider.Profile {
 		Auth:               provider.AuthOAuth,
 		AuthType:           provider.AuthTypeOAuthExternal,
 		Aliases:            []string{"grok-oauth", "x-ai-oauth", "xai-grok-oauth"},
-		DefaultModel:       p.config.GetString(xaiconfig.OAuthDefaultModel),
+		DefaultModel:       xaiconfig.OAuthDefaultModel,
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,

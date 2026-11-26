@@ -1,19 +1,25 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
+import providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 
 const (
-	Name                = "anthropic"
-	Key                 = pluginsconfig.Key + "." + Name
-	BaseURL             = Key + ".base_url"
-	APIKey              = Key + ".api_key"
-	Token               = Key + ".token"
-	OAuthToken          = Key + ".oauth_token"
-	RefreshToken        = Key + ".refresh_token"
-	TokenExpires        = Key + ".token_expires"
-	AdoptExternalLogins = Key + ".adopt_external_logins"
-	DefaultModel        = Key + ".default_model"
+	Name         = "anthropic"
+	Title        = "Anthropic"
+	BaseURL      = "https://api.anthropic.com"
+	DefaultModel = "claude-haiku-4-5-20251001"
 )
+
+// Fields of an account, below its name
+const (
+	APIKey       = providerconfig.APIKeyField
+	Token        = "token"
+	OAuthToken   = "oauth_token"
+	RefreshToken = "refresh_token"
+	TokenExpires = "token_expires"
+)
+
+// Settings of a provider, below its name
+const AdoptExternalLogins = "adopt_external_logins"
 
 const (
 	APIKeyEnv     = "ANTHROPIC_API_KEY"

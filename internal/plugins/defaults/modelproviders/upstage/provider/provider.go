@@ -1,26 +1,23 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	upstageconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/upstage/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	return []provider.Spec{{
 		Name:               upstageconfig.Name,
-		DisplayName:        "Upstage Solar",
-		Description:        "Upstage (Solar API)",
+		DisplayName:        upstageconfig.Title,
+		Description:        "Solar models",
 		SignupURL:          "https://console.upstage.ai/api-keys",
-		BaseURL:            p.config.GetString(upstageconfig.BaseURL),
+		BaseURL:            upstageconfig.BaseURL,
 		BaseURLEnv:         upstageconfig.BaseURLEnv,
 		ModelsURL:          upstageconfig.ModelsURL,
 		Mode:               provider.ModeChatCompletions,
@@ -28,7 +25,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{upstageconfig.APIKeyEnv},
 		Aliases:            []string{"solar"},
-		DefaultModel:       p.config.GetString(upstageconfig.DefaultModel),
+		DefaultModel:       upstageconfig.DefaultModel,
 		FallbackModels:     []string{"solar-pro3"},
 		ModelListing:       true,
 		HealthCheck:        true,

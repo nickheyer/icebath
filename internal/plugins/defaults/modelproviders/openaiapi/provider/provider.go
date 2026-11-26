@@ -1,24 +1,21 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	openaiapiconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/openaiapi/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	base := p.config.GetString(openaiapiconfig.BaseURL)
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	base := openaiapiconfig.BaseURL
+	return []provider.Spec{{
 		Name:               openaiapiconfig.Name,
-		DisplayName:        "OpenAI API",
+		DisplayName:        openaiapiconfig.Title,
 		BaseURL:            base,
 		BaseURLEnv:         openaiapiconfig.BaseURLEnv,
 		ModelsURL:          provider.ModelsURL(base),
@@ -26,7 +23,7 @@ func (p profiles) Profiles() []provider.Profile {
 		Auth:               provider.AuthAPIKey,
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{openaiapiconfig.APIKeyEnv},
-		DefaultModel:       p.config.GetString(openaiapiconfig.DefaultModel),
+		DefaultModel:       openaiapiconfig.DefaultModel,
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,

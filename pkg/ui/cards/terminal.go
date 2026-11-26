@@ -149,7 +149,7 @@ func (t *Terminal) Title() string {
 	if t.line != "" {
 		return render.Truncate(t.line, 40, t.env.Theme)
 	}
-	return "TERMINAL " + strconv.Itoa(t.id)
+	return "Terminal " + strconv.Itoa(t.id)
 }
 
 func (t *Terminal) Glyph() string       { return t.env.Theme.Glyphs.Terminal }
@@ -234,12 +234,7 @@ func (t *Terminal) startDir() string {
 
 // Command the configured shell runs, the login shell when none is configured
 func (t *Terminal) command() term.Command {
-	cmd := term.DefaultShell()
-	if line := t.setting("terminal_shell"); line != "" {
-		if words, err := ShellWords(line); err == nil && len(words) > 0 {
-			cmd = term.Command{Path: words[0], Args: words[1:]}
-		}
-	}
+	cmd := t.env.Shell()
 	if t.line != "" {
 		cmd = lineCommand(cmd, t.line)
 	}
@@ -275,7 +270,7 @@ func (t *Terminal) setting(key string) string {
 
 // Rows of scrollback the settings ask for
 func (t *Terminal) scrollback() int {
-	if n, err := strconv.Atoi(t.setting("terminal_scrollback")); err == nil && n >= 0 {
+	if n, err := strconv.Atoi(t.setting(TerminalScrollback)); err == nil && n >= 0 {
 		return n
 	}
 	return DefaultScrollback
@@ -390,7 +385,13 @@ func (t *Terminal) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		if msg.s != t.sess {
 			return t, nil
 		}
-		return t, tea.Batch(t.drain(), t.wait(msg.s))
+		drained := t.drain()
+		// A line waiting for the shell goes in once its prompt is out, so the line is echoed once and after the prompt
+		if t.pending != "" {
+			msg.s.Input([]byte(t.pending + "\r"))
+			t.pending = ""
+		}
+		return t, tea.Batch(drained, t.wait(msg.s))
 	case termExitMsg:
 		if msg.s != t.sess || t.exit != nil {
 			return t, nil
@@ -434,7 +435,7 @@ func (t *Terminal) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	case wm.ActionMsg:
 		return t, t.act(msg.ID)
 	case SettingChangedMsg:
-		if msg.Key == "terminal_scrollback" && t.sess != nil {
+		if msg.Key == TerminalScrollback && t.sess != nil {
 			t.sess.Emu.SetScrollback(t.scrollback())
 			t.scroll = min(t.scroll, t.sess.Emu.ScrollbackLen())
 		}
@@ -485,7 +486,7 @@ func (t *Terminal) started(msg termStartMsg) tea.Cmd {
 	t.starting = false
 	if msg.err != nil {
 		t.err = msg.err
-		return tea.Batch(t.end(TerminalEnd{Err: msg.err}), wm.Notify("terminal: "+msg.err.Error(), wm.Error))
+		return tea.Batch(t.end(TerminalEnd{Err: msg.err}), wm.Notify("Shell failed to start: "+msg.err.Error(), wm.Error))
 	}
 	if t.closed {
 		go msg.s.Close()
@@ -495,10 +496,6 @@ func (t *Terminal) started(msg termStartMsg) tea.Cmd {
 	t.scrolled = msg.s.Emu.Scrolled()
 	if t.w > 0 && t.h > 0 {
 		msg.s.Resize(t.w, t.h)
-	}
-	if t.pending != "" {
-		msg.s.Input([]byte(t.pending + "\r"))
-		t.pending = ""
 	}
 	if t.focused {
 		msg.s.Input(msg.s.Emu.Focus(t.hostFocus))
@@ -602,14 +599,14 @@ func (t *Terminal) pasteText(text string) tea.Cmd {
 // Carries out a keymap action
 func (t *Terminal) act(id string) tea.Cmd {
 	switch {
-	case id == "view.start" || id == "view.find":
+	case id == "view.start":
 		if t.sess == nil {
 			return nil
 		}
 		if t.reader == nil {
 			t.reader = NewReader(t, t.env.Keys)
 		}
-		t.reader.Start(id == "view.find")
+		t.reader.Start(false)
 		return nil
 	case t.reading():
 		cmd, _ := t.reader.Action(id)
@@ -656,9 +653,9 @@ func (t *Terminal) act(id string) tea.Cmd {
 	case "terminal.lock":
 		t.locked = !t.locked
 		if t.locked {
-			return wm.Notify("keys locked to the shell, "+t.env.keyed("terminal.lock", "unlocks"), wm.Info)
+			return wm.Notify("Keys locked to the shell. "+t.env.keyed("terminal.lock", "to unlock."), wm.Info)
 		}
-		return wm.Notify("window keys unlocked", wm.Info)
+		return wm.Notify("Keys unlocked", wm.Info)
 	case "terminal.clear":
 		if t.sess != nil {
 			t.sess.Emu.ClearScrollback()
@@ -704,7 +701,7 @@ func (t *Terminal) jumpPrompt(d int) tea.Cmd {
 	}
 	row, ok := t.sess.Emu.Prompt(t.top(), d)
 	if !ok {
-		return wm.Notify("no prompt that way, shells mark prompts with OSC 133", wm.Info)
+		return wm.Notify("No more prompts (needs shell integration)", wm.Info)
 	}
 	t.show(row)
 	return nil
@@ -734,10 +731,10 @@ func (t *Terminal) copy() tea.Cmd {
 	}
 	text := e.Text(*sel)
 	if strings.TrimSpace(text) == "" {
-		return wm.Notify("nothing to copy", wm.Info)
+		return wm.Notify("Nothing to copy", wm.Info)
 	}
 	n := strings.Count(text, "\n") + 1
-	return tea.Batch(clip.Copy(text), wm.Notify("copied "+render.Count(n, "line"), wm.Success))
+	return tea.Batch(clip.Copy(text), wm.Notify("Copied "+render.Count(n, "line"), wm.Success))
 }
 
 // Position of a content cell in absolute rows
@@ -1023,7 +1020,7 @@ func (t *Terminal) Paint(buf *uv.Buffer) {
 	e.Draw(buf, term.View{
 		Scroll: t.scroll, Colors: th.Terminal, Fg: th.Text, Bg: th.Surface,
 		SelFg: th.Bg, SelBg: th.Ice, Selection: t.sel,
-		Matches: t.spans, MatchFg: th.Text, MatchBg: th.SteelBright, Current: current, CurFg: th.Bg, CurBg: th.Accent,
+		Matches: t.spans, MatchFg: th.On(th.SteelBright), MatchBg: th.SteelBright, Current: current, CurFg: th.Bg, CurBg: th.Accent,
 	})
 	if t.scroll > 0 {
 		t.paintScrollbar(buf)
@@ -1058,7 +1055,7 @@ func (t *Terminal) startText() string {
 	if t.err != nil {
 		return lipgloss.NewStyle().Foreground(th.Alarm).Render(th.Glyphs.Fail+" "+t.err.Error()) + lipgloss.NewStyle().Foreground(th.TextDim).Render(", "+lang.T(txt.KitTerminalEnterRestarts))
 	}
-	return render.Dim("starting "+filepath.Base(t.command().Path), th)
+	return render.Dim("Starting "+filepath.Base(t.command().Path), th)
 }
 
 // Plain words of how the program ended, for the notice the window leaves as it closes
@@ -1079,20 +1076,20 @@ func (t *Terminal) exitText() string {
 	var state string
 	switch {
 	case t.err != nil:
-		state = base.Foreground(th.Alarm).Render(" " + th.Glyphs.Fail + " " + t.err.Error() + " ")
+		state = base.Foreground(th.Over(th.Steel, th.Alarm)).Render(" " + th.Glyphs.Fail + " " + t.err.Error() + " ")
 	case t.exit.Err != nil:
-		state = base.Foreground(th.Alarm).Render(" " + th.Glyphs.Fail + " " + t.exit.Err.Error() + " ")
+		state = base.Foreground(th.Over(th.Steel, th.Alarm)).Render(" " + th.Glyphs.Fail + " " + t.exit.Err.Error() + " ")
 	case t.exit.Signal != "":
-		state = base.Foreground(th.Alarm).Render(" " + th.Glyphs.Fail + " " + t.exit.Signal + " ")
+		state = base.Foreground(th.Over(th.Steel, th.Alarm)).Render(" " + th.Glyphs.Fail + " " + t.exit.Signal + " ")
 	case t.exit.Code != 0:
-		state = base.Foreground(th.Alarm).Render(fmt.Sprintf(" %s exit %d ", th.Glyphs.Fail, t.exit.Code))
+		state = base.Foreground(th.Over(th.Steel, th.Alarm)).Render(fmt.Sprintf(" %s exit %d ", th.Glyphs.Fail, t.exit.Code))
 	default:
-		state = base.Foreground(th.Alive).Render(" " + th.Glyphs.Success + " exit 0 ")
+		state = base.Foreground(th.Over(th.Steel, th.Alive)).Render(" " + th.Glyphs.Success + " exit 0 ")
 	}
 	if t.ended {
-		return state + base.Foreground(th.TextDim).Render(" "+lang.T(txt.KitTerminalEnterCloses)+" ")
+		return state + base.Foreground(th.Over(th.Steel, th.TextDim)).Render(" "+lang.T(txt.KitTerminalEnterCloses)+" ")
 	}
-	return state + base.Foreground(th.TextDim).Render(" "+lang.T(txt.KitTerminalEnterRestarts)+" ")
+	return state + base.Foreground(th.Over(th.Steel, th.TextDim)).Render(" "+lang.T(txt.KitTerminalEnterRestarts)+" ")
 }
 
 // Writes styled text on one row of the buffer, from the left edge
@@ -1108,10 +1105,10 @@ func (t *Terminal) paintSearch(buf *uv.Buffer) {
 	th := t.env.Theme
 	w := buf.Width()
 	base := lipgloss.NewStyle().Background(th.Steel)
-	right := base.Foreground(th.TextDim).Render(" " + t.searchCount() + " ")
+	right := base.Foreground(th.Over(th.Steel, th.TextDim)).Render(" " + t.searchCount() + " ")
 	room := max(w-ansi.StringWidth(right)-4, 1)
 	query, _ := t.input().Line(room)
-	left := base.Foreground(th.Accent).Render(" "+th.Glyphs.Search+" ") + base.Foreground(th.Text).Render(query)
+	left := base.Foreground(th.Over(th.Steel, th.Accent)).Render(" "+th.Glyphs.Search+" ") + base.Foreground(th.Over(th.Steel, th.Text)).Render(query)
 	pad := max(w-ansi.StringWidth(left)-ansi.StringWidth(right), 0)
 	line := left + base.Render(strings.Repeat(" ", pad)) + right
 	uv.NewStyledString(ansi.Truncate(line, w, "")).Draw(cells{buf}, uv.Rect(0, buf.Height()-1, w, 1))
@@ -1218,17 +1215,15 @@ func (t *Terminal) Status() string {
 	return strings.Join(parts, " "+th.Glyphs.Sep+" ")
 }
 
-// Actions worth a reminder
+// Buttons while the scrollback is read or the shell has ended. A running shell takes every key and shows none
 func (t *Terminal) Hints() []wm.Hint {
 	switch {
 	case t.reading():
 		return t.reader.Hints()
-	case t.searching:
-		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: lang.T(txt.KitHintMatches)}, {Action: "search.close"}}
-	case !t.live():
-		return []wm.Hint{{Action: "terminal.restart"}, {Action: "terminal.copy"}}
+	case t.searching || t.live():
+		return nil
 	}
-	return []wm.Hint{{Action: "terminal.copy"}, {Action: "terminal.paste"}, {Action: "terminal.search"}, {Action: "terminal.scroll.up", Pair: "terminal.scroll.down", Label: lang.T(txt.KitHintScroll)}, {Action: "terminal.lock"}}
+	return []wm.Hint{{Action: "terminal.restart"}, {Action: "terminal.copy"}}
 }
 
 // Absolute row of the oldest row the scrollback keeps

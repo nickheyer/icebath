@@ -78,12 +78,14 @@ func (Role) EnumDescriptor() ([]byte, []int) {
 }
 
 type Session struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Directory     string                 `protobuf:"bytes,3,opt,name=directory,proto3" json:"directory,omitempty"`
-	Created       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created,proto3" json:"created,omitempty"`
-	Updated       *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=updated,proto3" json:"updated,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title     string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Directory string                 `protobuf:"bytes,3,opt,name=directory,proto3" json:"directory,omitempty"`
+	Created   *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created,proto3" json:"created,omitempty"`
+	Updated   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=updated,proto3" json:"updated,omitempty"`
+	// Profile the session runs on: its providers, accounts and settings
+	Profile       string `protobuf:"bytes,6,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -151,6 +153,13 @@ func (x *Session) GetUpdated() *timestamppb.Timestamp {
 		return x.Updated
 	}
 	return nil
+}
+
+func (x *Session) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
 }
 
 type ToolCall struct {
@@ -306,8 +315,10 @@ func (x *Message) GetCarriers() map[string][]byte {
 }
 
 type CreateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Directory     string                 `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Directory string                 `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`
+	// Profile the session runs on, the one in use when empty
+	Profile       string `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -345,6 +356,13 @@ func (*CreateRequest) Descriptor() ([]byte, []int) {
 func (x *CreateRequest) GetDirectory() string {
 	if x != nil {
 		return x.Directory
+	}
+	return ""
+}
+
+func (x *CreateRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
 	}
 	return ""
 }
@@ -741,13 +759,14 @@ var File_icebath_sessions_v1_sessions_proto protoreflect.FileDescriptor
 
 const file_icebath_sessions_v1_sessions_proto_rawDesc = "" +
 	"\n" +
-	"\"icebath/sessions/v1/sessions.proto\x12\x13icebath.sessions.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb9\x01\n" +
+	"\"icebath/sessions/v1/sessions.proto\x12\x13icebath.sessions.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd3\x01\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1c\n" +
 	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x124\n" +
 	"\acreated\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\acreated\x124\n" +
-	"\aupdated\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\aupdated\"L\n" +
+	"\aupdated\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\aupdated\x12\x18\n" +
+	"\aprofile\x18\x06 \x01(\tR\aprofile\"L\n" +
 	"\bToolCall\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -764,9 +783,10 @@ const file_icebath_sessions_v1_sessions_proto_rawDesc = "" +
 	"\bcarriers\x18\a \x03(\v2*.icebath.sessions.v1.Message.CarriersEntryR\bcarriers\x1a;\n" +
 	"\rCarriersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"-\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"G\n" +
 	"\rCreateRequest\x12\x1c\n" +
-	"\tdirectory\x18\x01 \x01(\tR\tdirectory\"H\n" +
+	"\tdirectory\x18\x01 \x01(\tR\tdirectory\x12\x18\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\"H\n" +
 	"\x0eCreateResponse\x126\n" +
 	"\asession\x18\x01 \x01(\v2\x1c.icebath.sessions.v1.SessionR\asession\"\r\n" +
 	"\vListRequest\"H\n" +

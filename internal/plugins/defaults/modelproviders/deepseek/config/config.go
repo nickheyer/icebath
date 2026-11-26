@@ -1,13 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "deepseek"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	APIKey       = Key + ".api_key"
-	DefaultModel = Key + ".default_model"
+	Title        = "DeepSeek"
+	BaseURL      = "https://api.deepseek.com/v1"
+	DefaultModel = "deepseek-flash"
 )
 
 const (

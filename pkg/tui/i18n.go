@@ -32,39 +32,7 @@ var enCatalog = func() enCatalogFile {
 	return c
 }()
 
-// English entries whose wording depends on an argument, chosen in code
-var enLogic = map[txt.Key]func(args []any) string{
-	txt.StatusSessionCount: func(args []any) string {
-		word := "more sessions"
-		if n, isNumber := argNumber(arg(args, 0)); isNumber && n == 1 {
-			word = "more session"
-		}
-		return argText(arg(args, 0)) + " " + word
-	},
-}
-
 var positionalRe = regexp.MustCompile(`\{(\d+)\}`)
-
-// Argument at index, nil past the end
-func arg(args []any, i int) any {
-	if i < len(args) {
-		return args[i]
-	}
-	return nil
-}
-
-// Value of a numeric catalog argument, false for anything else
-func argNumber(v any) (float64, bool) {
-	switch t := v.(type) {
-	case int:
-		return float64(t), true
-	case int64:
-		return float64(t), true
-	case float64:
-		return t, true
-	}
-	return 0, false
-}
 
 // Text of a catalog argument, numbers in their shortest decimal form
 func argText(v any) string {
@@ -138,9 +106,6 @@ func catalogText(key txt.Key, args ...any) string {
 	}
 	if packed {
 		return formatPositional(text, args)
-	}
-	if logic, coded := enLogic[key]; coded {
-		return logic(args)
 	}
 	return formatPositional(enCatalog.Formats[name], args)
 }

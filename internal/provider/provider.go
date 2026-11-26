@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/internal/config"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 )
 
@@ -56,19 +58,23 @@ func AuthKindOf(authType string) AuthKind {
 	return AuthAPIKey
 }
 
-type Profile struct {
-	Name                       string
-	DisplayName                string
-	Description                string
-	SignupURL                  string
-	BaseURL                    string
-	BaseURLEnv                 string
-	ModelsURL                  string
-	Mode                       APIMode
-	Auth                       AuthKind
-	AuthType                   string
-	KeyEnv                     []string
-	Aliases                    []string
+// Kind of provider a plugin registers: its API, how it signs in and its defaults. A profile has providers of these kinds, each with
+// settings and accounts of its own
+type Spec struct {
+	Name        string
+	DisplayName string
+	Description string
+	SignupURL   string
+	// Base URL a provider of the kind starts with, and the variable that sets it for all of them
+	BaseURL    string
+	BaseURLEnv string
+	ModelsURL  string
+	Mode       APIMode
+	Auth       AuthKind
+	AuthType   string
+	KeyEnv     []string
+	Aliases    []string
+	// Model a provider of the kind starts with
 	DefaultModel               string
 	FallbackModels             []string
 	Headers                    map[string]string
@@ -86,6 +92,14 @@ type Profile struct {
 	Hostnames                  []string
 	PerModelMode               func(model string) APIMode
 	AmbientCredentials         bool
+
+	// Settings each provider of the kind keeps besides its title, base URL, default model and models, keyed by their names below it
+	Settings []config.Setting
+	// Fields each account of a provider of the kind keeps, keyed by their names below it: an API key when none are named
+	Account []config.Setting
+	// Kind as one provider has it, from its settings once its base URL and default model are set, for a kind whose API or address
+	// depends on more of them
+	Resolve func(spec Spec, settings config.View) Spec
 
 	SupportsStreaming          *bool
 	SupportsPromptCacheKey     bool
@@ -179,16 +193,16 @@ func parseBase(base string) (*url.URL, bool) {
 	return parsed, err == nil
 }
 
-func (p Profile) Label() string {
-	if p.DisplayName != "" {
-		return p.DisplayName
+func (s Spec) Label() string {
+	if s.DisplayName != "" {
+		return s.DisplayName
 	}
-	return p.Name
+	return s.Name
 }
 
-func (p Profile) KeyEnvNames() []string {
-	out := make([]string, 0, len(p.KeyEnv))
-	for _, v := range p.KeyEnv {
+func (s Spec) KeyEnvNames() []string {
+	out := make([]string, 0, len(s.KeyEnv))
+	for _, v := range s.KeyEnv {
 		if strings.HasSuffix(v, "_BASE_URL") || strings.HasSuffix(v, "_URL") {
 			continue
 		}
@@ -198,14 +212,17 @@ func (p Profile) KeyEnvNames() []string {
 }
 
 type Route struct {
+	// Provider of the profile, by its name there
 	Provider string
-	Model    string
-	BaseURL  string
-	APIKey   string
-	Headers  map[string]string
-	Mode     APIMode
-	Auth     AuthKind
-	Local    bool
+	// Kind of the provider, by the name of its spec
+	Spec    string
+	Model   string
+	BaseURL string
+	APIKey  string
+	Headers map[string]string
+	Mode    APIMode
+	Auth    AuthKind
+	Local   bool
 }
 
 type Reasoning struct {
@@ -310,7 +327,7 @@ func KindOf(status int) ErrorKind {
 type Factory func(route Route) (Client, error)
 
 type Registrant interface {
-	Profiles() []Profile
+	Specs() []Spec
 }
 
 type Registry struct {
@@ -321,34 +338,37 @@ func (r *Registry) Register(registrant Registrant) {
 	r.registrants = append(r.registrants, registrant)
 }
 
-func (r *Registry) Profiles() []Profile {
-	var profiles []Profile
+func (r *Registry) Specs() []Spec {
+	var specs []Spec
 	for _, registrant := range r.registrants {
-		profiles = append(profiles, registrant.Profiles()...)
+		specs = append(specs, registrant.Specs()...)
 	}
-	return profiles
+	return specs
 }
 
-func (r *Registry) Profile(name string) (Profile, bool) {
+// Spec of the kind with the name, or with it as an alias
+func (r *Registry) Spec(name string) (Spec, bool) {
 	key := strings.ToLower(strings.TrimSpace(name))
-	profiles := r.Profiles()
-	for _, profile := range profiles {
-		if profile.Name == key {
-			return profile, true
+	specs := r.Specs()
+	for _, spec := range specs {
+		if spec.Name == key {
+			return spec, true
 		}
 	}
-	for _, profile := range profiles {
-		if slices.Contains(profile.Aliases, key) {
-			return profile, true
+	for _, spec := range specs {
+		if slices.Contains(spec.Aliases, key) {
+			return spec, true
 		}
 	}
-	return Profile{}, false
+	return Spec{}, false
 }
 
 type Provider struct {
 	Registry
 }
 
-func New() *Provider {
-	return &Provider{}
+func New(cfg *config.Config) *Provider {
+	p := &Provider{}
+	providerconfig.Register(cfg, sections{registry: &p.Registry})
+	return p
 }

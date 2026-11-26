@@ -1,13 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "stepfun"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	APIKey       = Key + ".api_key"
-	DefaultModel = Key + ".default_model"
+	Title        = "StepFun Step Plan"
+	BaseURL      = "https://api.stepfun.ai/step_plan/v1"
+	DefaultModel = "step-3.5-flash"
 )
 
 const (

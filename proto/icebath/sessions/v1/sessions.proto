@@ -26,6 +26,8 @@ message Session {
   string directory = 3;
   google.protobuf.Timestamp created = 4;
   google.protobuf.Timestamp updated = 5;
+  // Profile the session runs on: its providers, accounts and settings
+  string profile = 6;
 }
 
 message ToolCall {
@@ -46,6 +48,8 @@ message Message {
 
 message CreateRequest {
   string directory = 1;
+  // Profile the session runs on, the one in use when empty
+  string profile = 2;
 }
 
 message CreateResponse {

@@ -207,20 +207,31 @@ func minSize(c Card) (int, int) {
 	return 0, 0
 }
 
-// One action a card answers, painted in the bottom edge of the focused card with its bound key
+// A button on the bottom edge of the focused card. Enter presses the first one, tab moves to the next, a click presses any
 type Hint struct {
 	Action string
-	// Second action shown with the first as a pair such as j/k
-	Pair string
-	// Word shown instead of the action label when set
+	// Word on the button, the label of the action when empty
 	Label string
-	// Every chord of the action the terminal can send, slash separated, instead of the first
-	All bool
 }
 
-// Card that names the actions it answers while focused
+// Card with buttons: the things to do with what it shows now, the one enter does first
 type Hinter interface {
 	Hints() []Hint
+}
+
+// Card that names its kind, such as Chat or Terminal, for the commands the palette lists for it
+type Kinded interface {
+	Kind() string
+}
+
+// Card that says which actions of its contexts it has a use for, so the palette lists those and no others
+type Answerer interface {
+	Answers(action string) bool
+}
+
+func answers(c Card, action string) bool {
+	a, ok := c.(Answerer)
+	return !ok || a.Answers(action)
 }
 
 func hintsOf(c Card) []Hint {

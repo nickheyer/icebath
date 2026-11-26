@@ -1,25 +1,22 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	actualconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/actual/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	base := p.config.GetString(actualconfig.BaseURL)
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	base := actualconfig.BaseURL
+	return []provider.Spec{{
 		Name:               actualconfig.Name,
-		DisplayName:        "Actual Computer",
-		Description:        "Actual Computer - hosted inference via api.actual.inc, or local offline inference via model.base_url in config.yaml",
+		DisplayName:        actualconfig.Title,
+		Description:        "Hosted inference, or a local server set as its base URL",
 		SignupURL:          "https://actual.inc",
 		BaseURL:            base,
 		BaseURLEnv:         actualconfig.BaseURLEnv,
@@ -29,7 +26,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{actualconfig.APIKeyEnv},
 		Aliases:            []string{"actual-computer", "actualcomputer", "aci"},
-		DefaultModel:       p.config.GetString(actualconfig.DefaultModel),
+		DefaultModel:       actualconfig.DefaultModel,
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,

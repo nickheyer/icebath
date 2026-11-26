@@ -2,6 +2,7 @@ package wm
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,15 +28,18 @@ const (
 	rClose
 )
 
-// Column of the close button inside the top edge of a frame
-func closeX(f Box) int { return f.X + f.W - 3 }
+// Cells of the close button in the top edge of a frame: the mark with a space either side, so it reads as a button and is easy to hit
+const closeW = 3
+
+// First column of the close button, which ends two cells short of the right corner
+func closeX(f Box) int { return f.X + f.W - 2 - closeW }
 
 // Part of the frame box under the stage point
 func regionOf(f Box, x, y int) region {
 	switch {
 	case !f.contains(x, y):
 		return rNone
-	case y == f.Y && x == closeX(f) && f.W >= minTitleW:
+	case y == f.Y && x >= closeX(f) && x < closeX(f)+closeW && f.W >= minTitleW:
 		return rClose
 	case y == f.Y:
 		return rTitle
@@ -56,13 +60,13 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	if target == nil {
 		target = m.focused()
 	}
-	if m.leader {
-		m.leader = false
-		return m.leaderKey(target, msg)
-	}
-	if m.startsLeader(target, msg) {
-		m.leader = true
-		return m.wake()
+	// The palette key pressed again in an empty palette is meant for the window under it, a program in a terminal that uses the key itself
+	if p, open := m.Overlay().(*Palette); open && p.Query() == "" && slices.Contains(m.keys.Lookup([]string{keys.Global}, msg), "palette") {
+		under := m.focused()
+		if under == nil {
+			return m.Dismiss()
+		}
+		return tea.Batch(m.Dismiss(), m.send(under, msg))
 	}
 	if target == nil {
 		if cmd, ok := m.dispatch(&entry{card: blank{}}, msg); ok {
@@ -83,58 +87,68 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		s.lastKey = m.now()
 		guard = tea.Batch(sheetTick(sheetBurstGap), m.wake())
 	}
+	if cmd, ok := m.button(target, msg); ok {
+		return tea.Batch(guard, cmd)
+	}
 	if cmd, ok := m.dispatch(target, msg); ok {
 		return tea.Batch(guard, cmd)
 	}
 	return tea.Batch(guard, m.send(target, msg))
 }
 
-// Whether the key is the leader, which every window takes except the keybind editor while it records a key
-func (m *Model) startsLeader(target *entry, msg tea.KeyPressMsg) bool {
-	if target != nil && slices.Contains(contextsOf(target.card), keys.Capture) {
-		return false
+// Keys of the buttons on the bottom edge of the target: tab and shift+tab move between them, left and right too while the card takes no
+// text, and enter presses the one they moved to, or the first when the card has no use for enter itself. Any other key goes back to the first
+func (m *Model) button(target *entry, msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	// A card taking every key as typed, as one recording a key does, gets enter and tab too
+	if raw(target.card) {
+		return nil, false
 	}
-	return slices.Contains(m.keys.Lookup([]string{keys.Global}, msg), "leader")
+	n := len(target.buttons)
+	step := 0
+	switch msg.String() {
+	case "enter":
+		if n == 0 || target.button >= n {
+			return nil, false
+		}
+		if target.button == 0 && m.binds(target, msg) {
+			return nil, false
+		}
+		id := target.buttons[target.button]
+		target.button = 0
+		return tea.Batch(m.fireAt(target, id), m.wake()), true
+	case "tab":
+		step = 1
+	case "shift+tab":
+		step = -1
+	case "right":
+		if !slices.Contains(contextsOf(target.card), keys.Text) {
+			step = 1
+		}
+	case "left":
+		if !slices.Contains(contextsOf(target.card), keys.Text) {
+			step = -1
+		}
+	}
+	if step == 0 || n < 2 || m.binds(target, msg) {
+		if step == 0 {
+			target.button = 0
+		}
+		return nil, false
+	}
+	target.button = (target.button + step + n) % n
+	target.dirty = true
+	return m.wake(), true
 }
 
-// Key after the leader: the leader again goes to the window as itself, for programs that use it, any other the action or command it names, a key
-// naming none doing nothing
-func (m *Model) leaderKey(target *entry, msg tea.KeyPressMsg) tea.Cmd {
-	if slices.Contains(m.keys.Lookup([]string{keys.Global}, msg), "leader") {
-		if target == nil {
-			return nil
+// Whether the card binds the key in a context of its own to an action it has a use for
+func (m *Model) binds(target *entry, msg tea.KeyPressMsg) bool {
+	ctxs := contextsOf(target.card)
+	for _, id := range m.keys.Lookup(ctxs, msg) {
+		if a, ok := m.keys.Action(id); ok && a.Context != keys.Global && slices.Contains(ctxs, a.Context) && answers(target.card, id) {
+			return true
 		}
-		return m.send(target, msg)
 	}
-	for _, id := range m.keys.Lookup([]string{keys.Leader}, msg) {
-		action, isLeader := strings.CutPrefix(id, "leader.")
-		if !isLeader || action == "literal" {
-			continue
-		}
-		if action == "cancel" {
-			return nil
-		}
-		return m.Fire(action)
-	}
-	return nil
-}
-
-// Whether a key of the leader strip does something for the focused window: its command is ready, or its action belongs to a context the window
-// answers; a key naming neither is for any window
-func (m *Model) leaderApplies(a keys.Action) bool {
-	target := strings.TrimPrefix(a.ID, "leader.")
-	if c, ok := m.command(target); ok {
-		return c.Ready()
-	}
-	act, ok := m.keys.Action(target)
-	if !ok {
-		return true
-	}
-	var ctxs []string
-	if e := m.focused(); e != nil {
-		ctxs = contextsOf(e.card)
-	}
-	return slices.Contains(ctxs, act.Context)
+	return false
 }
 
 // Card standing in for an empty stage so global binds still fire
@@ -147,9 +161,6 @@ func (blank) View(int, int) string           { return "" }
 
 // Routes the mouse to the bar, the overlay, or the card under the pointer
 func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
-	if _, click := msg.(tea.MouseClickMsg); click {
-		m.leader = false
-	}
 	mo := msg.Mouse()
 	sx, sy := mo.X, mo.Y-barHeight
 	if m.overlay != nil {
@@ -195,6 +206,36 @@ func (m *Model) overlayMouse(msg tea.MouseMsg, sx, sy int) tea.Cmd {
 		return nil
 	}
 	f := m.overlay.frame()
+	// The top edge of an overlay carries its way out: the close mark, and the title that steps back from a view opened over the first
+	if reg := regionOf(f, sx, sy); reg == rClose || reg == rTitle {
+		_, palette := m.overlay.card.(*Palette)
+		closes := reg == rClose && !palette && closable(m.overlay.card)
+		switch msg := msg.(type) {
+		case tea.MouseMotionMsg:
+			if hot := closes; hot != (m.hover == m.overlay && m.hoverEdge == rClose) {
+				m.hover, m.hoverEdge = nil, rNone
+				if hot {
+					m.hover, m.hoverEdge = m.overlay, rClose
+				}
+				return m.wake()
+			}
+		case tea.MouseClickMsg:
+			if msg.Button != tea.MouseLeft {
+				return nil
+			}
+			if closes {
+				return m.Dismiss()
+			}
+			if b, steps := m.overlay.card.(Backer); steps && b.Back() {
+				m.overlay.dirty = true
+				return m.wake()
+			}
+		}
+		return nil
+	}
+	if m.hover == m.overlay {
+		m.hover, m.hoverEdge = nil, rNone
+	}
 	if !f.contains(sx, sy) {
 		if _, click := msg.(tea.MouseClickMsg); click && !sticky(m.overlay) {
 			return m.Dismiss()
@@ -582,7 +623,7 @@ func (m *Model) ShowOverlay(c Card) tea.Cmd {
 		}
 	}
 	m.letGo()
-	m.sel, m.leader = nil, false
+	m.sel = nil
 	e := m.newEntry(c, nil)
 	e.shownAt = m.now()
 	m.overlay = e
@@ -714,13 +755,21 @@ func (m *Model) hintAt(e *entry, x int) string {
 	return ""
 }
 
-// Runs the command with the id, or fires the action at the entry
+// Start of the id an arrow of a button row carries, the number of the button it brings into view after it
+const buttonAt = "wm.button."
+
+// Runs the command with the id, or fires the action at the entry. An arrow of the button row moves to the button it points at
 func (m *Model) fireAt(e *entry, id string) tea.Cmd {
+	if at, arrow := strings.CutPrefix(id, buttonAt); arrow {
+		if i, err := strconv.Atoi(at); err == nil && i < len(e.buttons) {
+			e.button, e.dirty = i, true
+		}
+		return m.wake()
+	}
 	if c, ok := m.command(id); ok {
 		if !c.Ready() {
 			return m.nudge()
 		}
-		m.remember(id)
 		return c.Run()
 	}
 	return m.send(e, ActionMsg{ID: id})

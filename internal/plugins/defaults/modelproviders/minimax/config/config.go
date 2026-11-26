@@ -1,28 +1,24 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	GlobalName         = "minimax"
-	GlobalKey          = pluginsconfig.Key + "." + GlobalName
-	GlobalBaseURL      = GlobalKey + ".base_url"
-	GlobalAPIKey       = GlobalKey + ".api_key"
-	GlobalDefaultModel = GlobalKey + ".default_model"
+	GlobalTitle        = "MiniMax"
+	GlobalBaseURL      = "https://api.minimax.io/anthropic"
+	GlobalDefaultModel = "MiniMax-M3"
 )
 
 const (
 	CNName         = "minimax-cn"
-	CNKey          = pluginsconfig.Key + "." + CNName
-	CNBaseURL      = CNKey + ".base_url"
-	CNAPIKey       = CNKey + ".api_key"
-	CNDefaultModel = CNKey + ".default_model"
+	CNTitle        = "MiniMax (China)"
+	CNBaseURL      = "https://api.minimaxi.com/anthropic"
+	CNDefaultModel = "MiniMax-M3"
 )
 
 const (
 	OAuthName         = "minimax-oauth"
-	OAuthKey          = pluginsconfig.Key + "." + OAuthName
-	OAuthBaseURL      = OAuthKey + ".base_url"
-	OAuthDefaultModel = OAuthKey + ".default_model"
+	OAuthTitle        = "MiniMax (OAuth)"
+	OAuthBaseURL      = "https://api.minimax.io/anthropic"
+	OAuthDefaultModel = "MiniMax-M2.7"
 )
 
 const (

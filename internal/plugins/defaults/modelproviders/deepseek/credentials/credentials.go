@@ -1,11 +1,10 @@
 package credentials
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/credentials"
 	deepseekconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/deepseek/config"
 )
 
-func Register(registry *credentials.Registry, cfg *config.Config) {
-	registry.Register(credentials.Keyed{Config: cfg, Provider: deepseekconfig.Name, Key: deepseekconfig.APIKey, Variables: []string{deepseekconfig.APIKeyEnv}})
+func Register(registry *credentials.Registry) {
+	registry.Register(credentials.Keyed{Provider: deepseekconfig.Name, Variables: []string{deepseekconfig.APIKeyEnv}})
 }

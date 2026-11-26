@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect/v2"
 
 	"github.com/nickheyer/icebath/internal/app"
+	appapp "github.com/nickheyer/icebath/internal/app/app"
 	"github.com/nickheyer/icebath/internal/cli"
 	"github.com/nickheyer/icebath/internal/client"
 	"github.com/nickheyer/icebath/internal/config"
@@ -21,6 +22,10 @@ import (
 	"github.com/nickheyer/icebath/internal/models"
 	"github.com/nickheyer/icebath/internal/plugins"
 	"github.com/nickheyer/icebath/internal/plugins/defaults"
+	"github.com/nickheyer/icebath/internal/profile"
+	profileapp "github.com/nickheyer/icebath/internal/profile/app"
+	profilecli "github.com/nickheyer/icebath/internal/profile/cli"
+	profileserver "github.com/nickheyer/icebath/internal/profile/server"
 	"github.com/nickheyer/icebath/internal/provider"
 	providerapp "github.com/nickheyer/icebath/internal/provider/app"
 	providercli "github.com/nickheyer/icebath/internal/provider/cli"
@@ -54,43 +59,47 @@ func run(ctx context.Context, args []string) (err error) {
 	}
 	dir := filepath.Join(userDir, "icebath")
 
-	st, err := state.Load(dir)
-	if err != nil {
-		return err
-	}
-
 	cfg := config.New(dir)
+	pr := profile.New(cfg)
+	st := state.New(dir)
+	pr.Register(st)
 	srv := server.New(cfg)
-	a := app.New()
+	a := app.New(cfg)
 	c := cli.New()
-	p := provider.New()
-	t := transport.New()
+	p := provider.New(cfg)
+	cn := providerapp.New()
+	t := transport.New(cfg)
 	cr := credentials.New()
 	m := models.New()
 	tl := tools.New(cfg)
 	s := sessions.New(cfg)
 	sl := slash.New()
+	pr.Register(s)
+	defaults.Register(plugins.New(cfg, srv, a, c, pr, p, cn, t, cr, m, tl, s, sl))
 	statecli.Register(c, st)
+	profileserver.Register(srv, pr)
+	profileapp.Register(a)
+	profilecli.Register(c)
+	appapp.Register(a)
 	configserver.Register(srv, cfg)
 	configapp.Register(a)
-	providerserver.Register(srv, cfg, p, cr, m)
-	providerapp.Register(a)
+	providerserver.Register(srv, cfg, p, t, cr, m)
+	providerapp.Register(a, cn)
 	providercli.Register(c)
 	sessionsserver.Register(srv, cfg, s)
 	slashserver.Register(srv, sl)
 	toolsserver.Register(srv, cfg, tl)
 	toolsapp.Register(a)
-	defaults.Register(plugins.New(cfg, srv, a, c, p, t, cr, m, tl, s, sl))
 	defer func() {
 		err = errors.Join(err, srv.Close(), s.Close())
 	}()
+	if err := pr.Load(); err != nil {
+		return err
+	}
 
 	if len(args) > 0 && args[0] == "server" {
 		if len(args) > 1 {
 			return errors.New("server takes no arguments")
-		}
-		if err := cfg.Load(); err != nil {
-			return err
 		}
 		return srv.Serve(ctx)
 	}
@@ -100,9 +109,6 @@ func run(ctx context.Context, args []string) (err error) {
 		conn = client.Remote(st.Backend)
 	} else {
 		conn = client.InProcess(srv.Services())
-		if err := cfg.Load(); err != nil {
-			return err
-		}
 	}
 
 	if len(args) == 0 {

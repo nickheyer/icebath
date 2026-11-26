@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/provider"
+	transportconfig "github.com/nickheyer/icebath/internal/transport/config"
 )
 
 type Registrant interface {
@@ -30,7 +32,7 @@ func (r *Registry) Factories() map[provider.APIMode]provider.Factory {
 func (r *Registry) Client(route provider.Route) (provider.Client, error) {
 	factory, ok := r.Factories()[route.Mode]
 	if !ok {
-		return nil, fmt.Errorf("provider %s: no adapter registered for api mode %q", route.Provider, route.Mode)
+		return nil, fmt.Errorf("%s uses the %s API, which icebath doesn't support.", route.Provider, route.Mode)
 	}
 	return factory(route)
 }
@@ -39,6 +41,7 @@ type Transport struct {
 	Registry
 }
 
-func New() *Transport {
+func New(cfg *config.Config) *Transport {
+	transportconfig.Register(cfg)
 	return &Transport{}
 }

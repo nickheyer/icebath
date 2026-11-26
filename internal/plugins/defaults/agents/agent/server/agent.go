@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -20,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/internal/models"
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
 	"github.com/nickheyer/icebath/internal/provider"
-	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/internal/sessions"
 	sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
 	"github.com/nickheyer/icebath/internal/slash"
@@ -54,6 +54,7 @@ type run struct {
 	mu        sync.Mutex
 	watchers  map[chan *agentv1.WatchResponse]struct{}
 	queue     []string
+	again     bool
 	busy      bool
 	stop      context.CancelFunc
 	text      strings.Builder
@@ -62,9 +63,11 @@ type run struct {
 	answer    chan error
 	allowed   map[string]bool
 	yolo      bool
-	provider  string
-	model     string
-	effort    string
+	// Profile the session runs on, whose providers, accounts and settings it uses
+	profile  string
+	provider string
+	model    string
+	effort   string
 	// Notices of the session, kept so a watcher that comes later, the first one of a new session included, still sees them
 	notices []notice
 }
@@ -75,8 +78,13 @@ type notice struct {
 	text  string
 }
 
-// Notices a session keeps at most, the oldest dropped first
 const keptNotices = 200
+
+var named = regexp.MustCompile(`^/[A-Za-z][A-Za-z0-9_-]*$`)
+
+func echo(line string) string {
+	return "`" + strings.ReplaceAll(line, "`", "'") + "`"
+}
 
 func (a *Agent) Close() error {
 	a.mu.Lock()
@@ -92,25 +100,31 @@ func (a *Agent) Send(ctx context.Context, id, text string) error {
 		return err
 	}
 	if text = strings.TrimSpace(text); text == "" {
-		return connect.NewError(connect.CodeInvalidArgument, "nothing to send")
+		return connect.NewError(connect.CodeInvalidArgument, "Nothing to send")
 	}
+	line, _, _ := strings.Cut(text, "\n")
+	word, _, _ := strings.Cut(line, " ")
 	if command, argument, ok := a.slash.Command(text); ok {
 		note, err := command.Run(ctx, &slash.Call{SessionID: id, Argument: argument})
 		if err != nil {
-			note = "Error: " + err.Error()
+			note = err.Error()
 		}
 		if note != "" {
 			r.mu.Lock()
-			a.notify(r, note)
+			a.notify(r, echo(line)+"\n\n"+note)
 			r.mu.Unlock()
 		}
 		return nil
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if named.MatchString(word) {
+		a.notify(r, echo(line)+"\n\nUnknown command "+word+". Type /help to list commands.")
+		return nil
+	}
 	r.queue = append(r.queue, text)
 	if r.busy {
-		a.notify(r, "queued for the next turn")
+		a.notify(r, "Queued. It sends when the current reply finishes.")
 		return nil
 	}
 	return a.start(r)
@@ -183,10 +197,10 @@ func (a *Agent) Watch(ctx context.Context, id string, send func(*agentv1.WatchRe
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-a.ctx.Done():
-			return connect.NewError(connect.CodeUnavailable, "shutting down")
+			return connect.NewError(connect.CodeUnavailable, "icebath is shutting down")
 		case event, ok := <-events:
 			if !ok {
-				return connect.NewError(connect.CodeAborted, "fell behind the session")
+				return connect.NewError(connect.CodeAborted, "Fell behind the session")
 			}
 			if err := send(event); err != nil {
 				return err
@@ -204,24 +218,32 @@ func (a *Agent) run(id string) (*run, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := store.Get(id); err != nil {
+	session, err := store.Get(id)
+	if err != nil {
 		return nil, err
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	r := a.runs[id]
 	if r == nil {
-		r = &run{id: id, watchers: map[chan *agentv1.WatchResponse]struct{}{}, allowed: map[string]bool{}}
+		r = &run{id: id, profile: session.GetProfile(), watchers: map[chan *agentv1.WatchResponse]struct{}{}, allowed: map[string]bool{}}
 		a.runs[id] = r
 	}
 	return r, nil
+}
+
+// Settings of the profile the session runs on
+func (a *Agent) settings(r *run) *config.Config {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return a.config.In(r.profile)
 }
 
 func (a *Agent) start(r *run) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.ctx.Err() != nil {
-		return connect.NewError(connect.CodeUnavailable, "shutting down")
+		return connect.NewError(connect.CodeUnavailable, "icebath is shutting down")
 	}
 	r.busy = true
 	r.publish(busyEvent(true))
@@ -234,14 +256,18 @@ func (a *Agent) work(r *run) {
 	defer a.working.Done()
 	for {
 		r.mu.Lock()
-		if len(r.queue) == 0 || a.ctx.Err() != nil {
+		if len(r.queue) == 0 && !r.again || a.ctx.Err() != nil {
 			r.busy = false
 			r.publish(busyEvent(false))
 			r.mu.Unlock()
 			return
 		}
-		text := r.queue[0]
-		r.queue = r.queue[1:]
+		text := ""
+		if r.again {
+			r.again = false
+		} else {
+			text, r.queue = r.queue[0], r.queue[1:]
+		}
 		ctx, stop := context.WithCancel(a.ctx)
 		r.stop = stop
 		r.mu.Unlock()
@@ -251,9 +277,9 @@ func (a *Agent) work(r *run) {
 		r.reasoning.Reset()
 		switch {
 		case ctx.Err() != nil:
-			a.notify(r, "stopped")
+			a.notify(r, "Stopped.")
 		case err != nil:
-			a.notify(r, "Error: "+err.Error())
+			a.notify(r, "**Error:** "+err.Error())
 		}
 		r.mu.Unlock()
 		stop()
@@ -269,33 +295,36 @@ func (a *Agent) turn(ctx context.Context, r *run, text string) error {
 	if err != nil {
 		return err
 	}
-	if session.GetTitle() == "" {
+	if session.GetTitle() == "" && text != "" {
 		line, _, _ := strings.Cut(text, "\n")
 		title := []rune(line)
 		if err := store.Rename(r.id, string(title[:min(len(title), 60)])); err != nil {
 			return err
 		}
 	}
-	if err := a.append(store, r, &sessionsv1.Message{Role: sessionsv1.Role_ROLE_USER, Text: text}); err != nil {
-		return err
+	if text != "" {
+		if err := a.append(store, r, &sessionsv1.Message{Role: sessionsv1.Role_ROLE_USER, Text: text}); err != nil {
+			return err
+		}
 	}
-	env := &tools.Env{Cwd: session.GetDirectory(), Config: a.config, Approve: func(ctx context.Context, action, reason string) error {
+	settings := a.settings(r)
+	env := &tools.Env{Cwd: session.GetDirectory(), Config: settings, Approve: func(ctx context.Context, action, reason string) error {
 		return a.ask(ctx, r, action, reason)
 	}}
 	for turns := 0; ; turns++ {
-		if limit := a.config.GetInt(agentconfig.MaxTurns); limit > 0 && turns == limit {
-			return fmt.Errorf("stopped after %d turns", limit)
+		if limit := settings.GetInt(agentconfig.MaxTurns); limit > 0 && turns == limit {
+			return fmt.Errorf("Stopped at the step limit (%d). Change it in /settings, under Agent.", limit)
 		}
 		messages, err := store.Messages(r.id)
 		if err != nil {
 			return err
 		}
-		profile, route, err := a.route(r)
+		instance, route, err := a.route(r)
 		if err != nil {
 			return err
 		}
 		if route.Model == "" {
-			return fmt.Errorf("provider %s has no model set: pick one with /model", route.Provider)
+			return fmt.Errorf("No model is set for %s. Pick one with /model.", route.Provider)
 		}
 		client, err := a.transports.Client(route)
 		if err != nil {
@@ -303,9 +332,9 @@ func (a *Agent) turn(ctx context.Context, r *run, text string) error {
 		}
 		response, err := a.complete(ctx, r, client, &provider.Request{
 			Model:     route.Model,
-			Messages:  append([]*sessionsv1.Message{{Role: sessionsv1.Role_ROLE_SYSTEM, Text: a.prompt(session)}}, messages...),
+			Messages:  append([]*sessionsv1.Message{{Role: sessionsv1.Role_ROLE_SYSTEM, Text: a.prompt(settings, session)}}, messages...),
 			Tools:     a.tools.Definitions(env),
-			MaxTokens: profile.DefaultMaxTokens,
+			MaxTokens: instance.Spec.DefaultMaxTokens,
 			Reasoning: provider.Reasoning{Effort: a.effort(r)},
 			SessionID: r.id,
 		})
@@ -321,7 +350,7 @@ func (a *Agent) turn(ctx context.Context, r *run, text string) error {
 					return err
 				}
 			}
-			return fmt.Errorf("reply cut off: %s", response.FinishReason)
+			return fmt.Errorf("The provider ended the reply early (%s).", response.FinishReason)
 		}
 		if err := a.append(store, r, reply); err != nil {
 			return err
@@ -362,7 +391,7 @@ func (a *Agent) complete(ctx context.Context, r *run, client provider.Client, re
 			return response, nil
 		}
 		failure, ok := errors.AsType[*provider.APIError](err)
-		if !ok || !failure.Retryable() || streamed || attempt >= a.config.GetInt(agentconfig.APIMaxRetries) {
+		if !ok || !failure.Retryable() || streamed || attempt >= a.settings(r).GetInt(agentconfig.APIMaxRetries) {
 			return nil, err
 		}
 		select {
@@ -373,37 +402,39 @@ func (a *Agent) complete(ctx context.Context, r *run, client provider.Client, re
 	}
 }
 
-func (a *Agent) route(r *run) (provider.Profile, provider.Route, error) {
+func (a *Agent) route(r *run) (provider.Instance, provider.Route, error) {
+	settings := a.settings(r)
 	r.mu.Lock()
 	name, model := r.provider, r.model
 	r.mu.Unlock()
-	profile, err := a.profile(cmp.Or(name, a.config.GetString(agentconfig.Provider)))
+	instance, err := a.instance(settings, cmp.Or(name, settings.GetString(agentconfig.Provider)))
 	if err != nil {
-		return profile, provider.Route{}, err
+		return instance, provider.Route{}, err
 	}
-	route, err := a.credentials.Route(profile, cmp.Or(model, a.config.GetString(agentconfig.Model)))
-	return profile, route, err
+	route, err := a.credentials.Route(instance, cmp.Or(model, settings.GetString(agentconfig.Model)))
+	return instance, route, err
 }
 
-func (a *Agent) profile(name string) (provider.Profile, error) {
+// Provider of the profile with the name, or the first one connected for no name
+func (a *Agent) instance(settings *config.Config, name string) (provider.Instance, error) {
 	if name != "" {
-		profile, ok := a.providers.Profile(name)
+		instance, ok := a.providers.Instance(settings, name)
 		if !ok {
-			return profile, fmt.Errorf("unknown provider %q", name)
+			return instance, fmt.Errorf("Profile %s has no provider named %s.", settings.Profile(), name)
 		}
-		return profile, nil
+		return instance, nil
 	}
 	wires := a.transports.Factories()
-	for _, profile := range a.providers.Profiles() {
-		if _, wired := wires[profile.Mode]; !wired || profile.Hidden || profile.BaseURL == "" || providerconfig.IsRemoved(a.config, profile.Name) {
+	for _, instance := range a.providers.Instances(settings) {
+		if _, wired := wires[instance.Spec.Mode]; !wired || !instance.Known || instance.Spec.BaseURL == "" {
 			continue
 		}
 		// A local server needs no credential, so having one proves nothing: it is used only when chosen with /model --provider
-		if _, ok := a.credentials.Credential(profile.Name); ok && !profile.Local {
-			return profile, nil
+		if _, ok := a.credentials.Credential(credentials.Of(instance, "")); ok && !instance.Spec.Local {
+			return instance, nil
 		}
 	}
-	return provider.Profile{}, errors.New("no provider has a credential: the providers screen lists them and where to get one, or choose a local server with /model --provider lmstudio")
+	return provider.Instance{}, fmt.Errorf("No provider of profile %s is connected. Add one with /providers, or pick a local model with /model.", settings.Profile())
 }
 
 func (a *Agent) state(r *run) *agentv1.WatchResponse {
@@ -412,6 +443,7 @@ func (a *Agent) state(r *run) *agentv1.WatchResponse {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return &agentv1.WatchResponse{Event: &agentv1.WatchResponse_State{State: &agentv1.State{
+		Profile:         r.profile,
 		Provider:        route.Provider,
 		Model:           route.Model,
 		ReasoningEffort: effort,
@@ -429,10 +461,10 @@ func (a *Agent) changed(r *run) {
 func (a *Agent) effort(r *run) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return cmp.Or(r.effort, a.config.GetString(agentconfig.ReasoningEffort))
+	return cmp.Or(r.effort, a.config.In(r.profile).GetString(agentconfig.ReasoningEffort))
 }
 
-func (a *Agent) prompt(session *sessionsv1.Session) string {
+func (a *Agent) prompt(settings *config.Config, session *sessionsv1.Session) string {
 	prompt := fmt.Sprintf(`You are icebath, an agent working for its user through tools on their machine.
 
 Working directory: %s
@@ -442,7 +474,7 @@ Date: %s
 Do the work with your tools instead of describing it, and keep going until the request is done. Read a file before you change it. Report what you did and what failed as it is.`,
 		session.GetDirectory(), runtime.GOOS, runtime.GOARCH, time.Now().Format(time.DateOnly))
 	if rules, err := os.ReadFile(filepath.Join(session.GetDirectory(), "AGENTS.md")); err == nil {
-		prompt += "\n\nProject instructions from AGENTS.md:\n\n" + string(rules[:min(len(rules), a.config.GetInt(agentconfig.ContextFileMaxChars))])
+		prompt += "\n\nProject instructions from AGENTS.md:\n\n" + string(rules[:min(len(rules), settings.GetInt(agentconfig.ContextFileMaxChars))])
 	}
 	return prompt
 }
@@ -460,8 +492,9 @@ func (a *Agent) append(store sessions.Store, r *run, message *sessionsv1.Message
 }
 
 func (a *Agent) ask(ctx context.Context, r *run, action, reason string) error {
+	settings := a.settings(r)
 	r.mu.Lock()
-	if r.yolo || r.allowed[reason] || a.config.GetString(agentconfig.ApprovalsMode) == agentconfig.ApprovalsOff || slices.Contains(a.config.GetStringSlice(agentconfig.ApprovalsAllowlist), reason) {
+	if r.yolo || r.allowed[reason] || settings.GetString(agentconfig.ApprovalsMode) == agentconfig.ApprovalsOff || slices.Contains(settings.GetStringSlice(agentconfig.ApprovalsAllowlist), reason) {
 		r.mu.Unlock()
 		return nil
 	}
@@ -472,8 +505,8 @@ func (a *Agent) ask(ctx context.Context, r *run, action, reason string) error {
 	var err error
 	select {
 	case err = <-answer:
-	case <-time.After(time.Duration(a.config.GetInt(agentconfig.ApprovalsTimeout)) * time.Second):
-		err = errors.New("denied: nobody answered in time")
+	case <-time.After(time.Duration(settings.GetInt(agentconfig.ApprovalsTimeout)) * time.Second):
+		err = errors.New("Approval timed out, so the command was not run.")
 	case <-ctx.Done():
 		err = ctx.Err()
 	}
@@ -486,6 +519,7 @@ func (a *Agent) ask(ctx context.Context, r *run, action, reason string) error {
 		}
 	}
 	r.approval, r.answer = nil, nil
+	r.publish(approvalEvent(&agentv1.Approval{}))
 	return err
 }
 
@@ -525,7 +559,9 @@ func (a *Agent) notify(r *run, text string) {
 
 // Drops the notices given after the first keep messages, for a session cut back to them, r.mu held
 func (r *run) forget(keep int) {
-	r.notices = slices.DeleteFunc(r.notices, func(n notice) bool { return n.after > keep })
+	for i := range r.notices {
+		r.notices[i].after = min(r.notices[i].after, keep)
+	}
 }
 
 func messageEvent(message *sessionsv1.Message) *agentv1.WatchResponse {

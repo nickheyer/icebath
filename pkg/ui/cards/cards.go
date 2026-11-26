@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/nickheyer/icebath/pkg/term"
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -16,6 +17,14 @@ import (
 
 // Rows of scrollback a terminal window keeps when no setting names a count
 const DefaultScrollback = 10000
+
+// Names of the settings the cards read from the environment
+const (
+	// Command line of the program a terminal window starts, the shell of the system when empty
+	TerminalShell = "terminal_shell"
+	// Rows of scrollback a terminal window keeps
+	TerminalScrollback = "terminal_scrollback"
+)
 
 // Live state every card may read, nil members standing for parts the app did not build
 type Env struct {
@@ -37,6 +46,18 @@ type Env struct {
 	Graphics *gfx.Terminal
 	// Hands a message to the program from outside its update loop
 	Send func(tea.Msg)
+}
+
+// Program a terminal window starts: the command line the settings name, else the shell of the system
+func (e *Env) Shell() term.Command {
+	if e.Settings != nil {
+		if line := e.Settings()[TerminalShell]; line != "" {
+			if words, err := ShellWords(line); err == nil && len(words) > 0 {
+				return term.Command{Path: words[0], Args: words[1:]}
+			}
+		}
+	}
+	return term.DefaultShell()
 }
 
 // First key of the action the terminal can send, as a legend shows it
@@ -103,18 +124,18 @@ func listMove(id string, sel, n, page int) int {
 	return sel
 }
 
-// Table lines cut to room rows keeping the header and the cursor row, with the first row index
-func window(table []string, sel, room int) ([]string, int) {
-	if len(table) <= room || room <= render.TableHead {
+// Table lines cut to room rows keeping its head rows and the cursor row, with the first row index
+func window(table []string, sel, room, head int) ([]string, int) {
+	if len(table) <= room || room <= head {
 		return table, 0
 	}
-	body := room - render.TableHead
+	body := room - head
 	start := 0
 	if sel >= body {
 		start = sel - body + 1
 	}
-	end := min(len(table), render.TableHead+start+body)
-	return append(append([]string(nil), table[:render.TableHead]...), table[render.TableHead+start:end]...), start
+	end := min(len(table), head+start+body)
+	return append(append([]string(nil), table[:head]...), table[head+start:end]...), start
 }
 
 // Dim text centered in w by h, for a card with nothing to show

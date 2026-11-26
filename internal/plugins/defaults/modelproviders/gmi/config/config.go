@@ -1,13 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "gmi"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	APIKey       = Key + ".api_key"
-	DefaultModel = Key + ".default_model"
+	Title        = "GMI Cloud"
+	BaseURL      = "https://api.gmi-serving.com/v1"
+	DefaultModel = "google/gemini-3.1-flash-lite-preview"
 )
 
 const (

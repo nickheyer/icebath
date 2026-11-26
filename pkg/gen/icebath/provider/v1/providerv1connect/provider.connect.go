@@ -26,8 +26,21 @@ const (
 const (
 	// ProviderServiceListProcedure is the procedure name of the ProviderService's List RPC.
 	ProviderServiceListProcedure = "/icebath.provider.v1.ProviderService/List"
+	// ProviderServiceSpecsProcedure is the procedure name of the ProviderService's Specs RPC.
+	ProviderServiceSpecsProcedure = "/icebath.provider.v1.ProviderService/Specs"
 	// ProviderServiceModelsProcedure is the procedure name of the ProviderService's Models RPC.
 	ProviderServiceModelsProcedure = "/icebath.provider.v1.ProviderService/Models"
+	// ProviderServiceAddProcedure is the procedure name of the ProviderService's Add RPC.
+	ProviderServiceAddProcedure = "/icebath.provider.v1.ProviderService/Add"
+	// ProviderServiceRemoveProcedure is the procedure name of the ProviderService's Remove RPC.
+	ProviderServiceRemoveProcedure = "/icebath.provider.v1.ProviderService/Remove"
+	// ProviderServiceAddAccountProcedure is the procedure name of the ProviderService's AddAccount RPC.
+	ProviderServiceAddAccountProcedure = "/icebath.provider.v1.ProviderService/AddAccount"
+	// ProviderServiceRemoveAccountProcedure is the procedure name of the ProviderService's
+	// RemoveAccount RPC.
+	ProviderServiceRemoveAccountProcedure = "/icebath.provider.v1.ProviderService/RemoveAccount"
+	// ProviderServiceUseAccountProcedure is the procedure name of the ProviderService's UseAccount RPC.
+	ProviderServiceUseAccountProcedure = "/icebath.provider.v1.ProviderService/UseAccount"
 )
 
 var (
@@ -38,6 +51,13 @@ var (
 			Procedure:  ProviderServiceListProcedure,
 		}
 	})
+	providerServiceSpecsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("Specs"),
+			Procedure:  ProviderServiceSpecsProcedure,
+		}
+	})
 	providerServiceModelsSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
 			StreamType: connect.StreamTypeUnary,
@@ -45,12 +65,55 @@ var (
 			Procedure:  ProviderServiceModelsProcedure,
 		}
 	})
+	providerServiceAddSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("Add"),
+			Procedure:  ProviderServiceAddProcedure,
+		}
+	})
+	providerServiceRemoveSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("Remove"),
+			Procedure:  ProviderServiceRemoveProcedure,
+		}
+	})
+	providerServiceAddAccountSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("AddAccount"),
+			Procedure:  ProviderServiceAddAccountProcedure,
+		}
+	})
+	providerServiceRemoveAccountSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("RemoveAccount"),
+			Procedure:  ProviderServiceRemoveAccountProcedure,
+		}
+	})
+	providerServiceUseAccountSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("UseAccount"),
+			Procedure:  ProviderServiceUseAccountProcedure,
+		}
+	})
 )
 
 // ProviderServiceClient is a client for the icebath.provider.v1.ProviderService service.
 type ProviderServiceClient interface {
+	// Providers the profile has
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
+	// Kinds of provider a profile can add
+	Specs(context.Context, *v1.SpecsRequest) (*v1.SpecsResponse, error)
 	Models(context.Context, *v1.ModelsRequest) (*v1.ModelsResponse, error)
+	Add(context.Context, *v1.AddRequest) (*v1.AddResponse, error)
+	Remove(context.Context, *v1.RemoveRequest) (*v1.RemoveResponse, error)
+	AddAccount(context.Context, *v1.AddAccountRequest) (*v1.AddAccountResponse, error)
+	RemoveAccount(context.Context, *v1.RemoveAccountRequest) (*v1.RemoveAccountResponse, error)
+	UseAccount(context.Context, *v1.UseAccountRequest) (*v1.UseAccountResponse, error)
 }
 
 // NewProviderServiceClient constructs a client for the icebath.provider.v1.ProviderService service.
@@ -61,8 +124,16 @@ func NewProviderServiceClient(client *connect.Client) ProviderServiceClient {
 
 // ProviderServiceHandler is an implementation of the icebath.provider.v1.ProviderService service.
 type ProviderServiceHandler interface {
+	// Providers the profile has
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
+	// Kinds of provider a profile can add
+	Specs(context.Context, *v1.SpecsRequest) (*v1.SpecsResponse, error)
 	Models(context.Context, *v1.ModelsRequest) (*v1.ModelsResponse, error)
+	Add(context.Context, *v1.AddRequest) (*v1.AddResponse, error)
+	Remove(context.Context, *v1.RemoveRequest) (*v1.RemoveResponse, error)
+	AddAccount(context.Context, *v1.AddAccountRequest) (*v1.AddAccountResponse, error)
+	RemoveAccount(context.Context, *v1.RemoveAccountRequest) (*v1.RemoveAccountResponse, error)
+	UseAccount(context.Context, *v1.UseAccountRequest) (*v1.UseAccountResponse, error)
 }
 
 // RegisterProviderServiceHandler registers svc as the icebath.provider.v1.ProviderService
@@ -71,7 +142,13 @@ func RegisterProviderServiceHandler(server *connect.Server, svc ProviderServiceH
 	adapter := providerServiceHandler{svc: svc}
 	server.Register(
 		connect.Method{Spec: providerServiceListSpec(), Handler: adapter.list},
+		connect.Method{Spec: providerServiceSpecsSpec(), Handler: adapter.specs},
 		connect.Method{Spec: providerServiceModelsSpec(), Handler: adapter.models},
+		connect.Method{Spec: providerServiceAddSpec(), Handler: adapter.add},
+		connect.Method{Spec: providerServiceRemoveSpec(), Handler: adapter.remove},
+		connect.Method{Spec: providerServiceAddAccountSpec(), Handler: adapter.addAccount},
+		connect.Method{Spec: providerServiceRemoveAccountSpec(), Handler: adapter.removeAccount},
+		connect.Method{Spec: providerServiceUseAccountSpec(), Handler: adapter.useAccount},
 	)
 }
 
@@ -82,8 +159,32 @@ func (UnimplementedProviderServiceHandler) List(context.Context, *v1.ListRequest
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.List is not implemented")
 }
 
+func (UnimplementedProviderServiceHandler) Specs(context.Context, *v1.SpecsRequest) (*v1.SpecsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Specs is not implemented")
+}
+
 func (UnimplementedProviderServiceHandler) Models(context.Context, *v1.ModelsRequest) (*v1.ModelsResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Models is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) Add(context.Context, *v1.AddRequest) (*v1.AddResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Add is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) Remove(context.Context, *v1.RemoveRequest) (*v1.RemoveResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Remove is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) AddAccount(context.Context, *v1.AddAccountRequest) (*v1.AddAccountResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.AddAccount is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) RemoveAccount(context.Context, *v1.RemoveAccountRequest) (*v1.RemoveAccountResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.RemoveAccount is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) UseAccount(context.Context, *v1.UseAccountRequest) (*v1.UseAccountResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.UseAccount is not implemented")
 }
 
 type providerServiceClient struct {
@@ -98,9 +199,57 @@ func (c *providerServiceClient) List(ctx context.Context, req *v1.ListRequest) (
 	return &res, nil
 }
 
+func (c *providerServiceClient) Specs(ctx context.Context, req *v1.SpecsRequest) (*v1.SpecsResponse, error) {
+	var res v1.SpecsResponse
+	if err := c.client.CallUnary(ctx, providerServiceSpecsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 func (c *providerServiceClient) Models(ctx context.Context, req *v1.ModelsRequest) (*v1.ModelsResponse, error) {
 	var res v1.ModelsResponse
 	if err := c.client.CallUnary(ctx, providerServiceModelsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) Add(ctx context.Context, req *v1.AddRequest) (*v1.AddResponse, error) {
+	var res v1.AddResponse
+	if err := c.client.CallUnary(ctx, providerServiceAddSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) Remove(ctx context.Context, req *v1.RemoveRequest) (*v1.RemoveResponse, error) {
+	var res v1.RemoveResponse
+	if err := c.client.CallUnary(ctx, providerServiceRemoveSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) AddAccount(ctx context.Context, req *v1.AddAccountRequest) (*v1.AddAccountResponse, error) {
+	var res v1.AddAccountResponse
+	if err := c.client.CallUnary(ctx, providerServiceAddAccountSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) RemoveAccount(ctx context.Context, req *v1.RemoveAccountRequest) (*v1.RemoveAccountResponse, error) {
+	var res v1.RemoveAccountResponse
+	if err := c.client.CallUnary(ctx, providerServiceRemoveAccountSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) UseAccount(ctx context.Context, req *v1.UseAccountRequest) (*v1.UseAccountResponse, error) {
+	var res v1.UseAccountResponse
+	if err := c.client.CallUnary(ctx, providerServiceUseAccountSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -120,12 +269,84 @@ func (h providerServiceHandler) list(ctx context.Context, _ connect.Spec, stream
 	return stream.Send(res)
 }
 
+func (h providerServiceHandler) specs(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SpecsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Specs(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
 func (h providerServiceHandler) models(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
 	var req v1.ModelsRequest
 	if err := stream.Receive(&req); err != nil {
 		return err
 	}
 	res, err := h.svc.Models(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) add(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.AddRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Add(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) remove(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RemoveRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Remove(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) addAccount(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.AddAccountRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.AddAccount(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) removeAccount(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RemoveAccountRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RemoveAccount(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) useAccount(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.UseAccountRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.UseAccount(ctx, &req)
 	if err != nil {
 		return err
 	}

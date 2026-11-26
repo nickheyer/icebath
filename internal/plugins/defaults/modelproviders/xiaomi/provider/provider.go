@@ -1,24 +1,21 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	xiaomiconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/xiaomi/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	base := p.config.GetString(xiaomiconfig.BaseURL)
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	base := xiaomiconfig.BaseURL
+	return []provider.Spec{{
 		Name:         xiaomiconfig.Name,
-		DisplayName:  "Xiaomi MiMo",
+		DisplayName:  xiaomiconfig.Title,
 		BaseURL:      base,
 		BaseURLEnv:   xiaomiconfig.BaseURLEnv,
 		ModelsURL:    provider.ModelsURL(base),
@@ -27,7 +24,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:     provider.AuthTypeAPIKey,
 		KeyEnv:       []string{xiaomiconfig.APIKeyEnv},
 		Aliases:      []string{"mimo", "xiaomi-mimo"},
-		DefaultModel: p.config.GetString(xiaomiconfig.DefaultModel),
+		DefaultModel: xiaomiconfig.DefaultModel,
 		ModelListing: true,
 		Vision:       true,
 		ModelsDevID:  xiaomiconfig.Name,

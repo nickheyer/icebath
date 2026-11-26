@@ -5,19 +5,22 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect/v2"
+	"go.yaml.in/yaml/v3"
 
+	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
+	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
-	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1/agentv1connect"
+	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
-	"github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1/sessionsv1connect"
 	slashv1 "github.com/nickheyer/icebath/pkg/gen/icebath/slash/v1"
-	"github.com/nickheyer/icebath/pkg/gen/icebath/slash/v1/slashv1connect"
+	toolsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/tools/v1"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -26,39 +29,46 @@ import (
 )
 
 const (
-	approvalContext = "approval"
-	reconnect       = 3 * time.Second
-	completions     = 50
+	reconnect   = 3 * time.Second
+	completions = 50
+	titled      = 60
 )
 
-var shells = 1000
-
 type chat struct {
+	desk     *desk
 	kit      *tui.Kit
-	sessions sessionsv1connect.SessionServiceClient
-	agents   agentv1connect.AgentServiceClient
-	slash    slashv1connect.SlashServiceClient
-	commands []*slashv1.Command
-	pick     func() tea.Cmd
-	open     func(session *sessionsv1.Session) tea.Cmd
 	composer *cards.Composer
 	markdown *render.Markdown
 	shell    *cards.Terminal
-	key      string
-	id       string
+	sheet    *approval
+	commands []*slashv1.Command
+	// Tools of the server by name, for the title, glyph and subject of each call
+	tools map[string]*toolsv1.Tool
+	key   string
+	id    string
+	// Profile the session runs on, the one in use when the chat was opened until the session is made
+	profile  string
 	title    string
+	named    string
 	starting bool
-	note     string
+	entering bool
+	replying bool
+	unseen   bool
+	stranded bool
+	waiting  []string
 	epoch    int
 	stop     context.CancelFunc
-	asked    *agentv1.Approval
-	warned   *agentv1.Approval
 
 	log      transcript
+	folds    map[string]bool
+	expanded bool
+	thinking string
 	rendered map[string][]string
+	kept     map[string][]string
 	width    int
-	lines    []string
+	lines    []row
 	rows     int
+	shown    int
 	top      int
 	follow   bool
 	prompt   int
@@ -73,74 +83,112 @@ var _ interface {
 	wm.Contexter
 	wm.Selectable
 	wm.Sized
+	wm.Kinded
+	wm.Answerer
+	wm.Grabber
+	wm.SheetHolder
 } = (*chat)(nil)
 
-func newChat(kit *tui.Kit, sessions sessionsv1connect.SessionServiceClient, agents agentv1connect.AgentServiceClient, slash slashv1connect.SlashServiceClient, key string, session *sessionsv1.Session) *chat {
-	if _, registered := kit.Env.Keys.Action("approval.once"); !registered {
-		if keys.ContextDocs[approvalContext] == "" {
-			if err := keys.AddContext(approvalContext, "answering a command that waits for approval"); err != nil {
-				panic(err)
-			}
-		}
-		for _, action := range []keys.Action{
-			{ID: "approval.once", Context: approvalContext, Label: "approve", Doc: "run the command this once", Default: []string{"y", "enter"}},
-			{ID: "approval.session", Context: approvalContext, Label: "for this session", Doc: "run the command, and others like it until the session ends", Default: []string{"s"}},
-			{ID: "approval.always", Context: approvalContext, Label: "always", Doc: "run the command, and others like it from now on", Default: []string{"a"}},
-			{ID: "approval.deny", Context: approvalContext, Label: "deny", Doc: "do not run the command", Default: []string{"n"}},
-		} {
-			kit.Env.Keys.Register(action)
-		}
-	}
+func newChat(desk *desk, key string, session *sessionsv1.Session, profile string) *chat {
+	kit := desk.kit
 	c := &chat{
+		desk:     desk,
 		kit:      kit,
-		sessions: sessions,
-		agents:   agents,
-		slash:    slash,
 		composer: cards.NewComposer(kit.Env.Theme, kit.Env.Keys, "", kit.Env.WorkDir),
 		markdown: render.NewMarkdown(),
 		key:      key,
 		id:       session.GetId(),
+		profile:  cmp.Or(session.GetProfile(), profile),
 		title:    session.GetTitle(),
+		folds:    map[string]bool{},
 		follow:   true,
 	}
 	c.composer.SessionID = key
 	c.composer.Literal = true
 	c.composer.History = kit.History
-	c.composer.Hint = "Message the agent, / for commands, ! for a shell line"
+	c.composer.Hint = c.hint()
 	c.composer.OnStop = c.interrupt
-	c.composer.Apply = func(text string, replace int) tea.Cmd {
-		typed := []rune(c.composer.Value())
-		return c.composer.SetValue(string(typed[:min(replace, len(typed))]) + text)
-	}
+	c.composer.Apply = c.take
 	return c
 }
 
-func (c *chat) Title() string       { return cmp.Or(c.title, "New chat") }
+// Text the empty prompt shows: what typing does, and the shell a leading ! runs a line in
+func (c *chat) hint() string {
+	return "Message the agent · / for commands · ! to run in " + filepath.Base(c.kit.Env.Shell().Path)
+}
+
+func (c *chat) Title() string { return cmp.Or(c.title, "New chat") }
+
+// Profile the chat acts on: the one its session runs on now, empty for the one in use before it has a session
+func (c *chat) on() string          { return cmp.Or(c.log.state.GetProfile(), c.profile) }
 func (c *chat) Key() string         { return c.key }
+func (c *chat) Kind() string        { return "Chat" }
 func (c *chat) Glyph() string       { return c.kit.Env.Theme.Glyphs.Session }
 func (c *chat) Selectable() bool    { return true }
 func (c *chat) MinSize() (int, int) { return 40, 10 }
 
+func (c *chat) Answers(action string) bool {
+	return action != "composer.attachments.clear"
+}
+
+func (c *chat) Grabs(_, y int) bool {
+	return y >= 0 && y < c.shown && c.top+y < len(c.lines) && c.lines[c.top+y].fold != ""
+}
+
 func (c *chat) Init() tea.Cmd {
 	load := tui.Async(func() func() tea.Cmd {
-		response, err := c.slash.List(c.kit.Env.Ctx, &slashv1.ListRequest{})
+		ctx := c.kit.Env.Ctx
+		response, err := c.desk.slash.List(ctx, &slashv1.ListRequest{})
+		listed, listErr := c.desk.tools.List(ctx, &toolsv1.ListRequest{})
+		var thinking string
+		if setting, err := c.desk.settings.Get(ctx, &configv1.GetRequest{Key: agentconfig.Thinking, Profile: c.on()}); err == nil {
+			yaml.Unmarshal([]byte(setting.GetSetting().GetValue()), &thinking)
+		}
 		return func() tea.Cmd {
 			if err == nil {
 				c.commands = response.GetCommands()
+			}
+			if listErr == nil {
+				c.tools = map[string]*toolsv1.Tool{}
+				for _, tool := range listed.GetTools() {
+					c.tools[tool.GetName()] = tool
+				}
+			}
+			if c.thinking == "" {
+				c.thinking = thinking
 			}
 			return nil
 		}
 	})
 	if c.id == "" {
-		return load
+		return tea.Batch(load, c.check())
 	}
 	return tea.Batch(load, c.watch())
 }
 
+func (c *chat) check() tea.Cmd {
+	return tui.Async(func() func() tea.Cmd {
+		ctx := c.kit.Env.Ctx
+		response, err := c.desk.providers.List(ctx, &providerv1.ListRequest{Profile: c.on()})
+		stranded := err == nil && !slices.ContainsFunc(response.GetProviders(), func(provider *providerv1.Provider) bool {
+			return provider.GetUsable() && provider.GetCredentialOrigin() != providerv1.Origin_ORIGIN_UNSPECIFIED
+		})
+		if stranded {
+			var chosen string
+			if setting, err := c.desk.settings.Get(ctx, &configv1.GetRequest{Key: agentconfig.Provider, Profile: c.on()}); err == nil {
+				yaml.Unmarshal([]byte(setting.GetSetting().GetValue()), &chosen)
+			}
+			stranded = chosen == ""
+		}
+		return func() tea.Cmd {
+			c.stranded = stranded
+			return nil
+		}
+	})
+}
+
 func (c *chat) Status() string {
 	switch {
-	case c.note != "":
-		return c.note
 	case c.log.approval != nil:
 		return "waiting for approval"
 	case c.log.busy:
@@ -150,10 +198,13 @@ func (c *chat) Status() string {
 		return status
 	}
 	state := c.log.state
-	if state.GetModel() == "" {
-		return state.GetProvider()
+	status := state.GetProvider()
+	if state.GetModel() != "" {
+		status += "/" + state.GetModel()
 	}
-	status := state.GetProvider() + "/" + state.GetModel()
+	if profile := c.on(); profile != "" {
+		status = strings.TrimSpace("@" + profile + " " + status)
+	}
 	if state.GetReasoningEffort() != "" {
 		status += " " + state.GetReasoningEffort()
 	}
@@ -185,12 +236,15 @@ func (c *chat) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		if c.stop != nil {
 			c.stop()
 		}
+		c.desk.closed(c)
 	case wm.FocusMsg:
-		focus := c.composer.SetFocus(msg.Focused)
 		if msg.Focused {
-			return c, tea.Batch(focus, c.raise())
+			c.unseen = false
 		}
-		return c, focus
+		if msg.Focused && c.stranded {
+			return c, tea.Batch(c.composer.SetFocus(true), c.check())
+		}
+		return c, c.composer.SetFocus(msg.Focused)
 	case wm.ActionMsg:
 		return c, c.action(msg.ID)
 	case tea.KeyPressMsg, tea.PasteMsg:
@@ -204,30 +258,55 @@ func (c *chat) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		case tea.MouseWheelDown:
 			c.scroll(3)
 		}
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft && c.Grabs(msg.X, msg.Y) {
+			id := c.lines[c.top+msg.Y].fold
+			c.folds[id] = !c.open(id, c.unfolded(id))
+			c.follow = false
+		}
 	case tui.ThemeMsg:
 		c.composer.SetTheme(c.kit.Env.Theme)
 		c.rendered = nil
+	case cards.SettingChangedMsg:
+		switch msg.Key {
+		case cards.TerminalShell:
+			if !c.replying {
+				c.composer.Hint = c.hint()
+			}
+		case agentconfig.Thinking:
+			var thinking string
+			if yaml.Unmarshal([]byte(msg.Value), &thinking) == nil && thinking != "" {
+				c.thinking = thinking
+				c.refold(":thinking")
+			}
+		}
 	case cards.SubmitMsg:
-		if msg.Session != c.key {
-			break
+		if msg.Session == c.key {
+			return c, c.submit(msg.Text)
 		}
-		if line, shell := strings.CutPrefix(msg.Text, "!"); shell && strings.TrimSpace(line) != "" {
-			return c, c.run(strings.TrimSpace(line))
-		}
-		if cmd, ok := c.local(msg.Text); ok {
-			return c, cmd
-		}
-		if name, ok := c.unknown(msg.Text); ok {
-			c.note = "no command /" + name + ": try /help"
-			return c, c.composer.SetValue(msg.Text)
-		}
-		return c, c.send(msg.Text)
 	}
 	return c, nil
 }
 
+func (c *chat) unfolded(id string) bool {
+	if strings.HasSuffix(id, ":thinking") {
+		return c.thinking == agentconfig.ThinkingOpen
+	}
+	return c.expanded
+}
+
+func (c *chat) refold(suffixes ...string) {
+	for id := range c.folds {
+		for _, suffix := range suffixes {
+			if strings.HasSuffix(id, suffix) {
+				delete(c.folds, id)
+			}
+		}
+	}
+}
+
 func (c *chat) action(id string) tea.Cmd {
-	page := max(c.rows-2, 1)
+	page := max(c.shown-2, 1)
 	switch id {
 	case "session.scroll.up":
 		c.scroll(-page)
@@ -237,46 +316,83 @@ func (c *chat) action(id string) tea.Cmd {
 		c.top, c.follow = 0, false
 	case "session.scroll.end":
 		c.follow = true
-	case "session.expand":
-		c.log.expanded = true
-	case "session.collapse":
-		c.log.expanded = false
+	case "session.expand", "session.collapse":
+		c.expanded = id == "session.expand"
+		c.refold(":call", ":result")
 	case "session.thinking":
-		c.log.quiet = !c.log.quiet
-	case "session.stop":
-		if c.composer.Searching() || c.composer.Completing() || !c.log.busy {
-			return c.composer.Action(id)
+		if c.thinking == agentconfig.ThinkingOpen {
+			c.thinking = agentconfig.ThinkingFolded
+		} else {
+			c.thinking = agentconfig.ThinkingOpen
 		}
-		return c.interrupt()
+		c.refold(":thinking")
+	case "session.stop":
+		switch {
+		case c.composer.Searching() || c.composer.Completing():
+			return c.composer.Action(id)
+		case c.replying && c.composer.Empty():
+			c.replying, c.composer.Hint = false, c.hint()
+			return c.ask()
+		case c.log.busy && !c.replying:
+			return c.interrupt()
+		}
+		c.follow = true
 	case "complete.start":
 		c.paths()
 	case "composer.send":
-		if c.log.approval != nil && c.composer.Empty() {
-			return c.ask(c.log.approval)
-		}
-		return c.composer.Action(id)
-	default:
+		c.entering = true
+		before := c.composer.Value()
 		cmd := c.composer.Action(id)
-		c.complete()
+		c.entering = false
+		if now := c.composer.Value(); now != before && now != "" {
+			c.complete()
+		}
+		return cmd
+	default:
+		before := c.composer.Value()
+		cmd := c.composer.Action(id)
+		if c.composer.Value() != before {
+			c.complete()
+		}
 		return cmd
 	}
 	return nil
 }
 
+func (c *chat) take(text string, replace int) tea.Cmd {
+	typed := []rune(c.composer.Value())
+	set := c.composer.SetValue(string(typed[:min(replace, len(typed))]) + text)
+	if command, ok := c.command(text); c.entering && replace == 0 && ok && !strings.Contains(command.GetUsage(), "<") {
+		return tea.Batch(set, c.composer.Send())
+	}
+	return set
+}
+
 func (c *chat) complete() {
 	value := c.composer.Value()
-	name, typing := strings.CutPrefix(value, "/")
-	if !typing || strings.ContainsAny(name, " \n") {
+	typed, typing := strings.CutPrefix(value, "/")
+	if !typing || strings.Contains(typed, "\n") {
+		return
+	}
+	if strings.Contains(typed, " ") {
+		if command, ok := c.command(value); ok && command.GetUsage() != "" {
+			c.composer.Offer(value, []cards.Offer{{Display: "/" + command.GetName() + " " + command.GetUsage(), Meta: command.GetHelp()}}, 0)
+		}
 		return
 	}
 	var offers []cards.Offer
 	for _, command := range c.catalog() {
-		if strings.HasPrefix(command.GetName(), name) {
-			offers = append(offers, cards.Offer{
-				Text:    "/" + command.GetName() + " ",
-				Display: strings.TrimSpace("/" + command.GetName() + " " + command.GetUsage()),
-				Meta:    command.GetHelp(),
-			})
+		name := command.GetName()
+		if !strings.HasPrefix(name, typed) {
+			for _, alias := range command.GetAliases() {
+				if strings.HasPrefix(alias, typed) {
+					name = alias
+					break
+				}
+			}
+		}
+		if strings.HasPrefix(name, typed) {
+			offers = append(offers, cards.Offer{Text: "/" + name + " ", Display: "/" + name, Meta: command.GetHelp()})
 		}
 	}
 	c.composer.Offer(value, offers, 0)
@@ -316,7 +432,7 @@ func (c *chat) paths() {
 }
 
 func (c *chat) scroll(rows int) {
-	last := max(len(c.lines)-c.rows, 0)
+	last := max(len(c.lines)-c.shown, 0)
 	c.top = min(max(c.top+rows, 0), last)
 	c.follow = c.top == last
 }
@@ -327,85 +443,126 @@ func (c *chat) View(w, h int) string {
 	prompt := min(c.composer.Height(), max(h-3, 1))
 	c.rows = max(h-prompt-1, 1)
 	c.prompt = c.rows + 1
-	c.layout(w)
-	last := max(len(c.lines)-c.rows, 0)
+	c.shown = c.rows
+	if c.sheet != nil {
+		c.shown = max(c.rows-len(c.sheet.lines(max(w-4, 1)))-2, 1)
+	}
+	if w != c.width {
+		c.width, c.rendered = w, nil
+	}
+	c.kept = map[string][]string{}
+	if c.lines = c.paint(w); len(c.lines) == 0 && c.stranded {
+		c.lines = []row{{}, {text: render.Dim("No provider connected. Type /providers to connect one.", c.kit.Env.Theme)}}
+	}
+	c.rendered = c.kept
+	last := max(len(c.lines)-c.shown, 0)
 	if c.follow {
 		c.top = last
 	}
 	c.top = min(c.top, last)
 	body := make([]string, c.rows)
-	copy(body, c.lines[c.top:min(c.top+c.rows, len(c.lines))])
+	for i := range c.shown {
+		if c.top+i < len(c.lines) {
+			body[i] = c.lines[c.top+i].text
+		}
+	}
 	above := cards.OverlayPopup(append(body, ""), c.composer.Popup(w))
 	return strings.Join(append(above, c.composer.View(w, prompt)), "\n")
 }
 
-func (c *chat) layout(w int) {
-	if w != c.width {
-		c.width, c.rendered = w, nil
+func (c *chat) submit(text string) tea.Cmd {
+	c.follow = true
+	if c.replying {
+		c.replying, c.composer.Hint = false, c.hint()
+		return c.decide(agentv1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED, strings.TrimSpace(text))
 	}
-	blocks := c.log.blocks()
-	rendered := make(map[string][]string, len(blocks))
-	c.lines = c.lines[:0]
-	for i, block := range blocks {
-		lines, ok := c.rendered[block]
-		if !ok {
-			lines = strings.Split(strings.Trim(c.markdown.Render(block, w, c.kit.Env.Theme), "\n"), "\n")
-		}
-		rendered[block] = lines
-		if i > 0 {
-			c.lines = append(c.lines, "")
-		}
-		c.lines = append(c.lines, lines...)
+	if line, shell := strings.CutPrefix(text, "!"); shell && strings.TrimSpace(line) != "" {
+		return c.run(strings.TrimSpace(line))
 	}
-	c.rendered = rendered
+	if cmd, ok := c.local(text); ok {
+		return cmd
+	}
+	if cmd, ok := c.kit.Slash(text); ok {
+		return cmd
+	}
+	return c.send(text)
 }
 
 func (c *chat) run(line string) tea.Cmd {
 	if c.shell != nil && c.kit.WM.Has(c.shell.Key()) {
 		return c.shell.Run(line)
 	}
-	shells++
-	c.shell = cards.NewTerminal(c.kit.Env, shells, c.kit.Env.WorkDir())
+	c.shell = c.kit.Terminal()
 	return tea.Batch(c.kit.WM.OpenHere(c.shell), c.shell.Run(line), c.kit.WM.Focus(c))
 }
 
 func (c *chat) send(text string) tea.Cmd {
 	if c.starting {
-		c.note = "starting the session"
-		return c.composer.SetValue(text)
+		c.waiting = append(c.waiting, text)
+		return nil
 	}
-	id, epoch := c.id, c.epoch
+	id, epoch, named, profile := c.id, c.epoch, c.named, c.profile
 	c.starting = id == ""
 	if c.title == "" && !strings.HasPrefix(text, "/") {
-		c.title, _, _ = strings.Cut(text, "\n")
+		line, _, _ := strings.Cut(text, "\n")
+		c.title = string([]rune(line)[:min(utf8.RuneCountInString(line), titled)])
 	}
 	return tui.Async(func() func() tea.Cmd {
 		ctx := c.kit.Env.Ctx
 		var err error
 		if id == "" {
 			var response *sessionsv1.CreateResponse
-			if response, err = c.sessions.Create(ctx, &sessionsv1.CreateRequest{Directory: c.kit.Env.WorkDir()}); err == nil {
-				id = response.GetSession().GetId()
+			if response, err = c.desk.sessions.Create(ctx, &sessionsv1.CreateRequest{Directory: c.kit.Env.WorkDir(), Profile: profile}); err == nil {
+				id, profile = response.GetSession().GetId(), response.GetSession().GetProfile()
+			}
+			if err == nil && named != "" {
+				_, err = c.desk.sessions.Rename(ctx, &sessionsv1.RenameRequest{Id: id, Title: named})
 			}
 		}
 		if err == nil {
-			_, err = c.agents.Send(ctx, &agentv1.SendRequest{SessionId: id, Text: text})
+			_, err = c.desk.agents.Send(ctx, &agentv1.SendRequest{SessionId: id, Text: text})
 		}
 		return func() tea.Cmd {
 			if epoch != c.epoch {
 				return nil
 			}
-			var watch tea.Cmd
+			var cmds []tea.Cmd
 			if c.starting && id != "" {
-				c.id = id
-				watch = c.watch()
+				c.id, c.named, c.profile = id, "", profile
+				cmds = append(cmds, c.watch())
 			}
-			c.starting, c.note = false, ""
+			c.starting = false
 			if err != nil {
-				c.note = "error: " + strings.ReplaceAll(err.Error(), "\n", " ")
-				return tea.Batch(watch, c.composer.SetValue(text))
+				c.log.note("**Not sent:** " + tui.Reason(err))
+				if c.composer.Empty() {
+					cmds = append(cmds, c.composer.SetValue(text))
+				}
 			}
-			return watch
+			waiting := c.waiting
+			c.waiting = nil
+			for _, next := range waiting {
+				cmds = append(cmds, c.send(next))
+			}
+			if strings.HasPrefix(text, "/") && err == nil {
+				cmds = append(cmds, c.retitle())
+			}
+			return tea.Batch(cmds...)
+		}
+	})
+}
+
+func (c *chat) retitle() tea.Cmd {
+	id, epoch := c.id, c.epoch
+	if id == "" {
+		return nil
+	}
+	return tui.Async(func() func() tea.Cmd {
+		response, err := c.desk.sessions.Get(c.kit.Env.Ctx, &sessionsv1.GetRequest{Id: id})
+		return func() tea.Cmd {
+			if err == nil && epoch == c.epoch && response.GetSession().GetTitle() != "" {
+				c.title = response.GetSession().GetTitle()
+			}
+			return nil
 		}
 	})
 }
@@ -416,14 +573,24 @@ func (c *chat) interrupt() tea.Cmd {
 		return nil
 	}
 	return tui.Async(func() func() tea.Cmd {
-		_, err := c.agents.Stop(c.kit.Env.Ctx, &agentv1.StopRequest{SessionId: id})
+		_, err := c.desk.agents.Stop(c.kit.Env.Ctx, &agentv1.StopRequest{SessionId: id})
 		return func() tea.Cmd {
 			if err != nil {
-				c.note = "error: " + err.Error()
+				c.log.note("**Couldn't stop:** " + tui.Reason(err))
 			}
 			return nil
 		}
 	})
+}
+
+func (c *chat) reset() {
+	if c.stop != nil {
+		c.stop()
+	}
+	c.epoch++
+	c.id, c.title, c.named, c.stop, c.starting, c.waiting = "", "", "", nil, false, nil
+	c.log, c.folds, c.rendered = transcript{}, map[string]bool{}, nil
+	c.top, c.follow = 0, true
 }
 
 func (c *chat) watch() tea.Cmd {
@@ -434,7 +601,7 @@ func (c *chat) watch() tea.Cmd {
 	c.stop = stop
 	id, epoch := c.id, c.epoch
 	return func() tea.Msg {
-		stream, err := c.agents.Watch(ctx, &agentv1.WatchRequest{SessionId: id})
+		stream, err := c.desk.agents.Watch(ctx, &agentv1.WatchRequest{SessionId: id})
 		if err == nil {
 			defer stream.Close()
 		}
@@ -459,11 +626,22 @@ func (c *chat) received(epoch int, response *agentv1.WatchResponse, replay bool)
 		return nil
 	}
 	if replay {
-		c.log = transcript{expanded: c.log.expanded, quiet: c.log.quiet}
-		c.note = ""
+		c.log.replay()
 	}
-	c.log.apply(response)
-	return c.raise()
+	busy := c.log.busy
+	taken := c.log.apply(response)
+	var cmds []tea.Cmd
+	if response.GetRewind() != nil {
+		c.folds = map[string]bool{}
+	}
+	if taken != "" && c.composer.Empty() {
+		cmds = append(cmds, c.composer.SetValue(taken))
+	}
+	if busy && !c.log.busy {
+		c.unseen = c.kit.Focused() != wm.Card(c)
+		cmds = append(cmds, c.retitle())
+	}
+	return tea.Batch(append(cmds, c.ask())...)
 }
 
 func (c *chat) dropped(epoch int, err error) tea.Cmd {
@@ -472,10 +650,10 @@ func (c *chat) dropped(epoch int, err error) tea.Cmd {
 	}
 	c.log.busy = false
 	if connect.CodeOf(err) == connect.CodeNotFound {
-		c.note = "error: this session no longer exists"
-		return nil
+		c.log.note("**This session was deleted.** Send a message to start a new one.")
+		c.id, c.title, c.stop = "", "", nil
+		return c.ask()
 	}
-	c.note = "connection lost, reconnecting"
 	return tui.Async(func() func() tea.Cmd {
 		select {
 		case <-time.After(reconnect):
@@ -486,69 +664,6 @@ func (c *chat) dropped(epoch int, err error) tea.Cmd {
 				return nil
 			}
 			return c.watch()
-		}
-	})
-}
-
-func (c *chat) raise() tea.Cmd {
-	approval := c.log.approval
-	if approval == nil || approval == c.asked {
-		return nil
-	}
-	if c.kit.WM.Overlay() == nil && c.kit.Focused() == wm.Card(c) {
-		return c.ask(approval)
-	}
-	if approval == c.warned {
-		return nil
-	}
-	c.warned = approval
-	return tea.Batch(c.kit.WM.Attention(c, wm.Pulse), c.kit.WM.Toast(c.Title()+" waits for your approval", wm.Warn, wm.DefaultToastTTL))
-}
-
-func (c *chat) ask(approval *agentv1.Approval) tea.Cmd {
-	c.asked = approval
-	var hub *cards.Hub
-	answer := func(scope agentv1.ApprovalScope) func(*cards.Page) tea.Cmd {
-		return func(*cards.Page) tea.Cmd {
-			return tea.Batch(c.kit.WM.DismissCard(hub), c.decide(scope))
-		}
-	}
-	look := c.kit.Env.Theme
-	hub = c.kit.Hub(c.key+":approval", cards.NewPage(c.kit.Env, cards.PageSpec{
-		Title:   "Approve " + approval.GetReason() + "?",
-		Key:     c.key + ":approval",
-		Context: approvalContext,
-		Lines: func(int) []string {
-			lines := []string{render.Heading(c.Title(), look), render.Warm(approval.GetReason(), look), ""}
-			return append(lines, strings.Split(approval.GetCommand(), "\n")...)
-		},
-		Hints: func(*cards.Page) []wm.Hint {
-			return []wm.Hint{{Action: "approval.once"}, {Action: "approval.session"}, {Action: "approval.always"}, {Action: "approval.deny"}}
-		},
-		Actions: map[string]func(*cards.Page) tea.Cmd{
-			"approval.once":    answer(agentv1.ApprovalScope_APPROVAL_SCOPE_ONCE),
-			"approval.session": answer(agentv1.ApprovalScope_APPROVAL_SCOPE_SESSION),
-			"approval.always":  answer(agentv1.ApprovalScope_APPROVAL_SCOPE_ALWAYS),
-			"approval.deny":    answer(agentv1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED),
-		},
-	}))
-	return c.kit.WM.ShowOverlay(hub)
-}
-
-func (c *chat) decide(scope agentv1.ApprovalScope) tea.Cmd {
-	id := c.id
-	return tui.Async(func() func() tea.Cmd {
-		var err error
-		if scope == agentv1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED {
-			_, err = c.agents.Deny(c.kit.Env.Ctx, &agentv1.DenyRequest{SessionId: id})
-		} else {
-			_, err = c.agents.Approve(c.kit.Env.Ctx, &agentv1.ApproveRequest{SessionId: id, Scope: scope})
-		}
-		return func() tea.Cmd {
-			if err != nil {
-				c.note = "error: " + strings.ReplaceAll(err.Error(), "\n", " ")
-			}
-			return nil
 		}
 	})
 }

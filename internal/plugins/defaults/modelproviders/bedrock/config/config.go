@@ -1,13 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "bedrock"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	APIKey       = Key + ".api_key"
-	DefaultModel = Key + ".default_model"
+	Title        = "AWS Bedrock"
+	BaseURL      = "https://bedrock-runtime.us-east-1.amazonaws.com"
+	DefaultModel = ""
 )
 
 const (

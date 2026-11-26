@@ -35,8 +35,18 @@ const (
 	tableGap    = 3
 )
 
-// Rows the table spends above its first row, the header and the rule under it
+// Rows a table with column titles spends above its first row, the header and the rule under it
 const TableHead = 2
+
+// Rows the table of these columns spends above its first row, none when no column has a title
+func Head(cols []Column) int {
+	for _, c := range cols {
+		if c.Title != "" {
+			return TableHead
+		}
+	}
+	return 0
+}
 
 // Narrowest a flex column shrinks to before columns are dropped from the right
 const minFlex = 8
@@ -128,8 +138,8 @@ func TableMarked(cols []Column, rows [][]string, width int, selected int, marked
 	_, widths := Columns(cols, rows, width)
 	head := lipgloss.NewStyle().Foreground(t.TextDim).Bold(true)
 	body := lipgloss.NewStyle().Foreground(t.Text)
-	sel := lipgloss.NewStyle().Foreground(t.Text).Background(t.Steel).Bold(true)
-	mark := lipgloss.NewStyle().Foreground(t.Ice).Background(t.Steel).Bold(true)
+	sel := lipgloss.NewStyle().Foreground(t.On(t.Steel)).Background(t.Steel).Bold(true)
+	mark := lipgloss.NewStyle().Foreground(t.Over(t.Steel, t.Ice)).Background(t.Steel).Bold(true)
 	field := lipgloss.NewStyle().Foreground(t.Ice).Background(t.Bg).Bold(true)
 	chosen := lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Bold(true)
 	tinted := lipgloss.NewStyle().Foreground(t.Text).Background(t.Ghost)
@@ -194,11 +204,15 @@ func TableMarked(cols []Column, rows [][]string, width int, selected int, marked
 		titles[i] = lang.Upper(c.Title)
 	}
 	var sb strings.Builder
-	sb.WriteString(line(titles, head, head.Render(strings.Repeat(" ", tableGutter)), nil))
-	sb.WriteString("\n")
-	sb.WriteString(lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Rule, width)))
-	for i, r := range rows {
+	if Head(cols) > 0 {
+		sb.WriteString(line(titles, head, head.Render(strings.Repeat(" ", tableGutter)), nil))
 		sb.WriteString("\n")
+		sb.WriteString(lipgloss.NewStyle().Foreground(t.Steel).Render(strings.Repeat(t.Glyphs.Rule, width)))
+	}
+	for i, r := range rows {
+		if i > 0 || Head(cols) > 0 {
+			sb.WriteString("\n")
+		}
 		if i != selected && marked != nil && marked(i) {
 			sb.WriteString(line(r, tinted, tick.Render(t.Glyphs.Marked)+tinted.Render(strings.Repeat(" ", tableGutter-1)), nil))
 			continue
@@ -207,7 +221,12 @@ func TableMarked(cols []Column, rows [][]string, width int, selected int, marked
 			sb.WriteString(line(r, body, body.Render(strings.Repeat(" ", tableGutter)), nil))
 			continue
 		}
-		sb.WriteString(line(r, sel, mark.Render(t.Glyphs.Cursor)+sel.Render(strings.Repeat(" ", tableGutter-1)), edit))
+		// The lit row paints every cell in its own color, so a cell tinted for the plain rows still reads on the steel behind it
+		plain := make([]string, len(r))
+		for j, cell := range r {
+			plain[j] = ansi.Strip(cell)
+		}
+		sb.WriteString(line(plain, sel, mark.Render(t.Glyphs.Cursor)+sel.Render(strings.Repeat(" ", tableGutter-1)), edit))
 	}
 	return sb.String()
 }

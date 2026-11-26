@@ -20,7 +20,7 @@ func Register(registry *models.Registry) {
 }
 
 func (c *catalog) Models(ctx context.Context, route provider.Route) ([]string, bool) {
-	if route.Provider != openrouterconfig.Name {
+	if route.Spec != openrouterconfig.Name {
 		return nil, false
 	}
 	c.mu.Lock()

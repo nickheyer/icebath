@@ -1,31 +1,21 @@
 package credentials
 
 import (
-	"os"
-
-	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/credentials"
 	customconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/custom/config"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 )
 
-type source struct {
-	config *config.Config
+type source struct{}
+
+func Register(registry *credentials.Registry) {
+	registry.Register(source{})
 }
 
-func Register(registry *credentials.Registry, cfg *config.Config) {
-	registry.Register(source{config: cfg})
-}
-
-func (s source) Credential(name string) (credentials.Credential, bool) {
-	entry, ok := customconfig.Entries(s.config)[name]
-	if !ok {
+// API key of the account, else of the variable the endpoint names
+func (source) Credential(account credentials.Account) (credentials.Credential, bool) {
+	if account.Spec() != customconfig.Name {
 		return credentials.Credential{}, false
 	}
-	if key := customconfig.Field(entry, customconfig.APIKey); key != "" {
-		return credentials.Credential{APIKey: key, Source: "config"}, true
-	}
-	if variable := customconfig.Field(entry, customconfig.KeyEnv); variable != "" && os.Getenv(variable) != "" {
-		return credentials.Credential{APIKey: os.Getenv(variable), Source: variable}, true
-	}
-	return credentials.Credential{}, false
+	return credentials.Lookup(account.Fields, providerconfig.APIKeyField, account.Provider.Spec.KeyEnv...)
 }

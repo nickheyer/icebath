@@ -14,7 +14,7 @@ const optionBase = "1234567890-=qwertyuiop[]\\asdfghjkl;'zxcvbnm,./"
 const optionRow = "¡™£¢∞§¶•ªº–≠œ∑´®†¥¨ˆøπ“‘«åß∂ƒ©˙∆˚¬…æΩ≈ç√∫˜µ≤≥÷"
 
 // Characters Option and shift together type over the base keys on a US Mac keyboard
-const optionShiftRow = "⁄€‹›ﬁﬂ‡°·‚-±Œ„´‰ˇÁ¨ˆØ∏”’»ÅÍÎÏ˝ÓÔÒÚÆ¸˛Ç◊ı˜Â¯˘¿"
+const optionShiftRow = "⁄€‹›ﬁﬂ‡°·‚—±Œ„´‰ˇÁ¨ˆØ∏”’»ÅÍÎÏ˝ÓÔÒÚÆ¸˛Ç◊ı˜Â¯˘¿"
 
 // Alt chords each Option typed character stands for, the unshifted chord first where both rows type it
 var option = func() map[rune][]string {

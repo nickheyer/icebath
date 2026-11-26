@@ -1,17 +1,12 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
-	Key       = pluginsconfig.Key + ".custom"
-	Providers = Key + ".providers"
+	Name  = "custom"
+	Title = "Custom endpoint"
 )
 
+// Names of the settings of a custom endpoint, below its name in the profile
 const (
-	BaseURL      = "base_url"
-	APIKey       = "api_key"
-	KeyEnv       = "key_env"
-	APIMode      = "api_mode"
-	DefaultModel = "default_model"
-	DisplayName  = "name"
+	APIMode = "api_mode"
+	KeyEnv  = "key_env"
 )

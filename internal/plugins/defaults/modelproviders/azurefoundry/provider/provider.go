@@ -3,27 +3,24 @@ package provider
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/internal/config"
 	azurefoundryconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/azurefoundry/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
 var responsesPrefixes = []string{"gpt-5", "codex", "gpt-codex", "o1", "o3", "o4"}
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	base := p.config.GetString(azurefoundryconfig.BaseURL)
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	base := azurefoundryconfig.BaseURL
+	return []provider.Spec{{
 		Name:               azurefoundryconfig.Name,
-		DisplayName:        "Azure Foundry",
-		Description:        "Microsoft Foundry - OpenAI-compatible endpoint (user-supplied base URL)",
+		DisplayName:        azurefoundryconfig.Title,
+		Description:        "OpenAI-compatible; set your endpoint as the base URL",
 		SignupURL:          "https://ai.azure.com/",
 		BaseURL:            base,
 		BaseURLEnv:         azurefoundryconfig.BaseURLEnv,
@@ -33,7 +30,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{azurefoundryconfig.APIKeyEnv},
 		Aliases:            []string{"azure", "azure-ai-foundry", "azure-ai"},
-		DefaultModel:       p.config.GetString(azurefoundryconfig.DefaultModel),
+		DefaultModel:       azurefoundryconfig.DefaultModel,
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,

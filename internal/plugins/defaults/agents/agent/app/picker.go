@@ -1,108 +1,139 @@
 package app
 
 import (
+	"cmp"
+	"slices"
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 
+	providerapp "github.com/nickheyer/icebath/internal/provider/app"
 	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
-	"github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1/providerv1connect"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-type picker struct {
-	kit       *tui.Kit
-	providers providerv1connect.ProviderServiceClient
-	chat      *chat
-	hub       *cards.Hub
-	rows      []*providerv1.Provider
-	loaded    bool
-	err       error
+type offer struct {
+	provider *providerv1.Provider
+	model    string
 }
 
-func (p *picker) open() tea.Cmd {
-	list := cards.NewList(p.kit.Env, cards.ListSpec{
+type picker struct {
+	chat    *chat
+	list    *cards.List
+	rows    []offer
+	failed  []string
+	pending int
+	loaded  bool
+	err     error
+}
+
+func (c *chat) pick() tea.Cmd {
+	p := &picker{chat: c}
+	kit := c.kit
+	var hub *cards.Hub
+	p.list = cards.NewList(kit.Env, cards.ListSpec{
 		Title:   "Model",
+		Glyph:   kit.Env.Theme.Glyphs.Models,
 		Key:     "model",
 		Context: cards.HubContext,
 		Primary: "hub.use",
-		Columns: []render.Column{{Title: "Provider"}, {Title: "Credential"}, {Title: "Default model", Flex: 1}},
+		Pick:    true,
+		Search:  "Search models",
+		Columns: []render.Column{{}, {Title: "Model", Flex: 1}, {Title: "Provider"}},
 		Rows: func() [][]string {
 			rows := make([][]string, len(p.rows))
-			for i, entry := range p.rows {
-				rows[i] = []string{entry.GetDisplayName(), entry.GetCredentialSource(), entry.GetDefaultModel()}
+			for i, row := range p.rows {
+				mark := ""
+				if p.current(row) {
+					mark = kit.Env.Theme.Glyphs.Live
+				}
+				rows[i] = []string{mark, row.model, row.provider.GetDisplayName()}
 			}
 			return rows
 		},
-		Empty: func() string {
-			switch {
-			case p.err != nil:
-				return p.err.Error()
-			case !p.loaded:
-				return "Loading…"
+		Banner: func() string {
+			if len(p.failed) == 0 {
+				return ""
 			}
-			return "No provider has a credential yet"
+			return "Couldn't list models for " + strings.Join(p.failed, ", ")
 		},
-		Hints: func(*cards.List, int) []wm.Hint {
-			return []wm.Hint{{Action: "hub.use", Label: "models"}}
+		Empty: func() string {
+			return tui.Waiting(p.loaded && p.pending == 0, p.err, "No provider of this profile is connected")
+		},
+		Free: map[string]bool{"hub.add": true},
+		Hints: func(_ *cards.List, i int) []wm.Hint {
+			if i < 0 {
+				return []wm.Hint{{Action: "hub.add", Label: "providers"}}
+			}
+			return []wm.Hint{{Action: "hub.use", Label: "use"}, {Action: "hub.add", Label: "providers"}}
 		},
 		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"hub.use": func(_ *cards.List, i int) tea.Cmd { return p.models(p.rows[i]) },
+			"hub.use": func(_ *cards.List, i int) tea.Cmd {
+				row := p.rows[i]
+				return tea.Batch(kit.WM.DismissCard(hub), c.send("/model "+row.model+" --provider "+row.provider.GetName()))
+			},
+			"hub.add": func(*cards.List, int) tea.Cmd { return kit.Open(providerapp.Screen, "@"+c.on()) },
 		},
 	})
-	p.hub = p.kit.Hub("model", list)
-	return tea.Batch(p.kit.WM.ShowOverlay(p.hub), tui.Async(func() func() tea.Cmd {
-		response, err := p.providers.List(p.kit.Env.Ctx, &providerv1.ListRequest{})
+	hub = kit.Hub("model", p.list)
+	return tea.Batch(kit.WM.ShowOverlay(hub), tui.Async(func() func() tea.Cmd {
+		response, err := c.desk.providers.List(kit.Env.Ctx, &providerv1.ListRequest{Profile: c.on()})
 		return func() tea.Cmd {
 			p.err, p.loaded = err, true
-			for _, entry := range response.GetProviders() {
-				if entry.GetCredentialSource() != "" || entry.GetLocal() {
-					p.rows = append(p.rows, entry)
+			var cmds []tea.Cmd
+			for _, provider := range response.GetProviders() {
+				if provider.GetUsable() && (provider.GetCredentialOrigin() != providerv1.Origin_ORIGIN_UNSPECIFIED || provider.GetLocal()) {
+					p.pending++
+					cmds = append(cmds, p.load(provider))
+				}
+			}
+			return tea.Batch(cmds...)
+		}
+	}))
+}
+
+func (p *picker) current(row offer) bool {
+	state := p.chat.log.state
+	return state.GetProvider() == row.provider.GetName() && state.GetModel() == row.model
+}
+
+// Adds the models of the provider: those picked for it, else every one it lists
+func (p *picker) load(provider *providerv1.Provider) tea.Cmd {
+	kit := p.chat.kit
+	return tui.Async(func() func() tea.Cmd {
+		models := provider.GetModels()
+		var err error
+		if len(models) == 0 {
+			var response *providerv1.ModelsResponse
+			response, err = p.chat.desk.providers.Models(kit.Env.Ctx, &providerv1.ModelsRequest{Provider: provider.GetName(), Profile: p.chat.on()})
+			models = response.GetModels()
+		}
+		return func() tea.Cmd {
+			p.pending--
+			if err != nil && !provider.GetLocal() {
+				p.failed = append(p.failed, provider.GetDisplayName())
+			}
+			if provider.GetDefaultModel() != "" && !slices.Contains(models, provider.GetDefaultModel()) && (err == nil || !provider.GetLocal()) {
+				models = append(models, provider.GetDefaultModel())
+			}
+			for _, model := range models {
+				p.rows = append(p.rows, offer{provider: provider, model: model})
+			}
+			slices.SortStableFunc(p.rows, func(a, b offer) int {
+				return cmp.Or(strings.Compare(a.provider.GetDisplayName(), b.provider.GetDisplayName()), strings.Compare(a.model, b.model))
+			})
+			if !p.list.Filtered() {
+				p.list.Refresh()
+				for i, row := range p.rows {
+					if p.current(row) {
+						p.list.Select(i)
+					}
 				}
 			}
 			return nil
 		}
-	}))
-}
-
-func (p *picker) models(entry *providerv1.Provider) tea.Cmd {
-	var ids []string
-	note := "Loading…"
-	list := cards.NewList(p.kit.Env, cards.ListSpec{
-		Title:   entry.GetDisplayName(),
-		Key:     "model:" + entry.GetName(),
-		Context: cards.HubContext,
-		Primary: "hub.use",
-		Pick:    true,
-		Columns: []render.Column{{Title: "Model", Flex: 1}},
-		Rows: func() [][]string {
-			rows := make([][]string, len(ids))
-			for i, id := range ids {
-				rows[i] = []string{id}
-			}
-			return rows
-		},
-		Empty: func() string { return note },
-		Hints: func(*cards.List, int) []wm.Hint {
-			return []wm.Hint{{Action: "hub.use", Label: "use"}}
-		},
-		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"hub.use": func(_ *cards.List, i int) tea.Cmd {
-				return tea.Batch(p.kit.WM.DismissCard(p.hub), p.chat.send("/model "+ids[i]+" --provider "+entry.GetName()))
-			},
-		},
 	})
-	return tea.Batch(p.hub.Push(list), tui.Async(func() func() tea.Cmd {
-		response, err := p.providers.Models(p.kit.Env.Ctx, &providerv1.ModelsRequest{Provider: entry.GetName()})
-		return func() tea.Cmd {
-			switch ids = response.GetModels(); {
-			case err != nil:
-				note = err.Error()
-			case len(ids) == 0:
-				note = "No models listed"
-			}
-			return nil
-		}
-	}))
 }

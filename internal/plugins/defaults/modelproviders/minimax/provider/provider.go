@@ -1,24 +1,21 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	minimaxconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/minimax/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	return []provider.Spec{{
 		Name:               minimaxconfig.GlobalName,
-		DisplayName:        "MiniMax",
-		BaseURL:            p.config.GetString(minimaxconfig.GlobalBaseURL),
+		DisplayName:        minimaxconfig.GlobalTitle,
+		BaseURL:            minimaxconfig.GlobalBaseURL,
 		BaseURLEnv:         minimaxconfig.GlobalBaseURLEnv,
 		ModelsURL:          minimaxconfig.GlobalModelsURL,
 		Mode:               provider.ModeAnthropicMessages,
@@ -26,7 +23,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{minimaxconfig.GlobalAPIKeyEnv},
 		Aliases:            []string{"mini-max"},
-		DefaultModel:       p.config.GetString(minimaxconfig.GlobalDefaultModel),
+		DefaultModel:       minimaxconfig.GlobalDefaultModel,
 		DefaultAuxModel:    "MiniMax-M3",
 		ModelListing:       true,
 		HealthCheck:        true,
@@ -34,8 +31,8 @@ func (p profiles) Profiles() []provider.Profile {
 		ModelsDevID:        "minimax",
 	}, {
 		Name:               minimaxconfig.CNName,
-		DisplayName:        "MiniMax (China)",
-		BaseURL:            p.config.GetString(minimaxconfig.CNBaseURL),
+		DisplayName:        minimaxconfig.CNTitle,
+		BaseURL:            minimaxconfig.CNBaseURL,
 		BaseURLEnv:         minimaxconfig.CNBaseURLEnv,
 		ModelsURL:          minimaxconfig.CNModelsURL,
 		Mode:               provider.ModeAnthropicMessages,
@@ -43,7 +40,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{minimaxconfig.CNAPIKeyEnv},
 		Aliases:            []string{"minimax-china", "minimax_cn"},
-		DefaultModel:       p.config.GetString(minimaxconfig.CNDefaultModel),
+		DefaultModel:       minimaxconfig.CNDefaultModel,
 		DefaultAuxModel:    "MiniMax-M3",
 		ModelListing:       true,
 		HealthCheck:        true,
@@ -51,16 +48,16 @@ func (p profiles) Profiles() []provider.Profile {
 		ModelsDevID:        "minimax-cn",
 	}, {
 		Name:               minimaxconfig.OAuthName,
-		DisplayName:        "MiniMax (OAuth)",
-		Description:        "MiniMax via OAuth browser flow - no API key required",
+		DisplayName:        minimaxconfig.OAuthTitle,
+		Description:        "Browser sign-in, no API key",
 		SignupURL:          "https://api.minimax.io/",
-		BaseURL:            p.config.GetString(minimaxconfig.OAuthBaseURL),
+		BaseURL:            minimaxconfig.OAuthBaseURL,
 		ModelsURL:          minimaxconfig.OAuthModelsURL,
 		Mode:               provider.ModeAnthropicMessages,
 		Auth:               provider.AuthOAuth,
 		AuthType:           provider.AuthTypeOAuthMiniMax,
 		Aliases:            []string{"minimax_oauth", "minimax-portal", "minimax-global", "minimax-oauth-io"},
-		DefaultModel:       p.config.GetString(minimaxconfig.OAuthDefaultModel),
+		DefaultModel:       minimaxconfig.OAuthDefaultModel,
 		DefaultAuxModel:    "MiniMax-M2.7",
 		ModelListing:       true,
 		HealthCheck:        true,

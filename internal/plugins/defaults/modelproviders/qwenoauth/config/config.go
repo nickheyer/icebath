@@ -1,12 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "qwen-oauth"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	DefaultModel = Key + ".default_model"
+	Title        = "Qwen OAuth"
+	BaseURL      = "https://portal.qwen.ai/v1"
+	DefaultModel = ""
 )
 
 const (

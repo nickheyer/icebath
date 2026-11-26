@@ -237,11 +237,8 @@ func (d *detailPane) gutter(env *Env) gutter {
 	return gutter{h: d.rows, total: d.total, offset: d.scroll, visible: d.rows, up: env.Keys.First("detail.scroll.up"), down: env.Keys.First("detail.scroll.down")}
 }
 
-// Lines of the pane for row owner placed top rows down and rows tall, wrapped to fit beside the scrollbar
-func (d *detailPane) view(lines []string, owner, top, rows, w int, env *Env) string {
-	if owner != d.owner {
-		d.scroll, d.owner = 0, owner
-	}
+// Lines of a detail wrapped to fit the pane at width w beside its scrollbar
+func (d *detailPane) wrap(lines []string, w int) []string {
 	bw := w
 	if w >= minGutterWidth {
 		bw = w - 2
@@ -252,6 +249,19 @@ func (d *detailPane) view(lines []string, owner, top, rows, w int, env *Env) str
 			body = append(body, "  "+part)
 		}
 	}
+	return body
+}
+
+// Lines of the pane for row owner placed top rows down and rows tall, wrapped to fit beside the scrollbar
+func (d *detailPane) view(lines []string, owner, top, rows, w int, env *Env) string {
+	if owner != d.owner {
+		d.scroll, d.owner = 0, owner
+	}
+	bw := w
+	if w >= minGutterWidth {
+		bw = w - 2
+	}
+	body := d.wrap(lines, w)
 	d.top, d.rows, d.total = top, max(rows, 0), len(body)
 	d.by(0)
 	shown := body[min(d.scroll, len(body)):]
@@ -333,6 +343,8 @@ func (d *detailPane) wheel(y, n int) bool {
 type searchBar struct {
 	in     *field.Field
 	active bool
+	// Always takes typing once opened, as the bar of a list to pick from does
+	pinned bool
 	// Columns the query had in the last view, where its caret was placed
 	room int
 }
@@ -348,12 +360,12 @@ func (b *searchBar) input() *field.Field {
 // Takes typing, keeping any query it already holds
 func (b *searchBar) Open() { b.active = true }
 
-// Keeps the query and stops taking typing
-func (b *searchBar) Accept() { b.active = false }
+// Keeps the query and stops taking typing, a pinned bar going on taking it
+func (b *searchBar) Accept() { b.active = b.active && b.pinned }
 
-// Drops the query and stops taking typing
+// Drops the query and stops taking typing, a pinned bar going on taking it
 func (b *searchBar) Close() {
-	b.active = false
+	b.active = b.active && b.pinned
 	b.in = nil
 }
 
@@ -374,7 +386,7 @@ func (b *searchBar) Toggle() {
 
 // Keymap contexts while the bar takes typing, the toggle key closing it again until the first character, the field keys last
 func (b *searchBar) Contexts() []string {
-	if b.Query() == "" {
+	if b.Query() == "" && !b.pinned {
 		return []string{keys.Search, keys.Filter, keys.Text}
 	}
 	return []string{keys.Search, keys.Text}

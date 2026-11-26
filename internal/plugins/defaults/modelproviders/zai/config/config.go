@@ -1,13 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "zai"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	APIKey       = Key + ".api_key"
-	DefaultModel = Key + ".default_model"
+	Title        = "Z.AI (GLM)"
+	BaseURL      = "https://api.z.ai/api/paas/v4"
+	DefaultModel = "glm-4.5-flash"
 )
 
 const (

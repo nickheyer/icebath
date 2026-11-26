@@ -1,9 +1,9 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
+import transportconfig "github.com/nickheyer/icebath/internal/transport/config"
 
 const (
-	Key       = pluginsconfig.Key + ".anthropicmessages"
+	Key       = transportconfig.Key + ".anthropicmessages"
 	MaxTokens = Key + ".max_tokens"
 	Fallbacks = Key + ".fallbacks"
 )

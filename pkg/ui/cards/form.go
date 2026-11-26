@@ -26,7 +26,7 @@ const (
 
 // Keys of forms, registered with the hub keys
 func registerFormKeys(km *keys.Map) {
-	for name, doc := range map[string]string{FormContext: "forms, every row", FormTextContext: "forms, a row typed into", FormPickContext: "forms, a row picked from"} {
+	for name, doc := range map[string]string{FormContext: "forms", FormTextContext: "form text fields", FormPickContext: "form choice fields"} {
 		if keys.ContextDocs[name] == "" {
 			if err := keys.AddContext(name, doc); err != nil {
 				panic(err)
@@ -36,10 +36,10 @@ func registerFormKeys(km *keys.Map) {
 	for _, a := range []keys.Action{
 		{ID: "form.next", Context: FormContext, Label: "next", Doc: "move to the next field", Default: []string{"down", "tab"}, Quiet: true},
 		{ID: "form.prev", Context: FormContext, Label: "previous", Doc: "move to the previous field", Default: []string{"up", "shift+tab"}, Quiet: true},
-		{ID: "form.submit", Context: FormContext, Label: "done", Doc: "check the fields and send the form", Default: []string{"ctrl+s"}},
-		{ID: "form.cancel", Context: FormContext, Label: "cancel", Doc: "close the form without sending it", Default: []string{"esc"}},
-		{ID: "form.enter", Context: FormTextContext, Label: "next", Doc: "keep the text and move on, sending the form from its last field", Default: []string{"enter"}},
-		{ID: "form.toggle", Context: FormPickContext, Label: "change", Doc: "switch the field, pick from its choices or press the button", Default: []string{"enter", "space"}},
+		{ID: "form.submit", Context: FormContext, Label: "submit", Doc: "submit the form", Default: []string{"ctrl+s"}},
+		{ID: "form.cancel", Context: FormContext, Label: "cancel", Doc: "close the form without saving", Default: []string{"esc"}},
+		{ID: "form.enter", Context: FormTextContext, Label: "next", Doc: "go to the next field, or submit from the last one", Default: []string{"enter"}},
+		{ID: "form.toggle", Context: FormPickContext, Label: "change", Doc: "toggle, choose or press the selected field", Default: []string{"enter", "space"}},
 		{ID: "form.choice.next", Context: FormPickContext, Label: "next choice", Doc: "move to the next choice", Default: []string{"right"}, Quiet: true},
 		{ID: "form.choice.prev", Context: FormPickContext, Label: "previous choice", Doc: "move to the previous choice", Default: []string{"left"}, Quiet: true},
 	} {
@@ -113,7 +113,7 @@ type FormSpec struct {
 	// Keymap context of the form's own actions and those actions by id
 	Context string
 	Actions map[string]func(f *Form) tea.Cmd
-	// Legend of the form's own actions, ahead of the form keys
+	// Buttons for the form's own actions
 	Hints []wm.Hint
 }
 
@@ -314,15 +314,7 @@ func (f *Form) Contexts() []string {
 	return append(out, FormPickContext, FormContext)
 }
 
-func (f *Form) Hints() []wm.Hint {
-	out := slices.Clone(f.spec.Hints)
-	if fd := f.field(); fd != nil && typed(fd.Kind) {
-		out = append(out, wm.Hint{Action: "form.enter"})
-	} else {
-		out = append(out, wm.Hint{Action: "form.toggle"})
-	}
-	return append(out, wm.Hint{Action: "form.next", Pair: "form.prev", Label: lang.T(txt.KitHintMove)}, wm.Hint{Action: "form.submit"}, wm.Hint{Action: "form.cancel"})
-}
+func (f *Form) Hints() []wm.Hint { return f.spec.Hints }
 
 // Value of a field by id, empty for an unknown one
 func (f *Form) Value(id string) string {
@@ -623,7 +615,7 @@ func (f *Form) layout(w int) []formLine {
 			if f.spec.Submit == "" {
 				label = " " + lang.T(txt.KitFormSend) + " "
 			}
-			style := lipgloss.NewStyle().Foreground(t.Text).Background(t.SteelBright)
+			style := lipgloss.NewStyle().Foreground(t.On(t.SteelBright)).Background(t.SteelBright)
 			if focused {
 				style = lipgloss.NewStyle().Foreground(t.Bg).Background(t.Accent).Bold(true)
 			}
@@ -645,7 +637,7 @@ func (f *Form) layout(w int) []formLine {
 			continue
 		}
 		if fd.Kind == FieldButton {
-			style := lipgloss.NewStyle().Foreground(t.Text).Background(t.SteelBright)
+			style := lipgloss.NewStyle().Foreground(t.On(t.SteelBright)).Background(t.SteelBright)
 			if focused {
 				style = lipgloss.NewStyle().Foreground(t.Bg).Background(t.Accent).Bold(true)
 			}
@@ -787,6 +779,9 @@ func (f *Form) View(w, h int) string {
 	}
 	return strings.Join(out, "\n")
 }
+
+// Rows the form fills at the width
+func (f *Form) Rows(w int) int { return len(f.layout(w)) }
 
 func (f *Form) Cursor() *tea.Cursor {
 	if f.cx < 0 {

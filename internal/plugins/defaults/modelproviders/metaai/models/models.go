@@ -19,7 +19,7 @@ func Register(registry *models.Registry) {
 }
 
 func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool) {
-	if route.Provider != metaaiconfig.Name {
+	if route.Spec != metaaiconfig.Name {
 		return nil, false
 	}
 	live, ok := models.List(ctx, route, "")

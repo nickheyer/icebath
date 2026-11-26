@@ -8,19 +8,70 @@ service ConfigService {
   rpc Set(SetRequest) returns (SetResponse);
 }
 
-message Setting {
-  string key = 1;
-  string value = 2;
+enum Kind {
+  KIND_UNSPECIFIED = 0;
+  KIND_TEXT = 1;
+  KIND_NUMBER = 2;
+  KIND_TOGGLE = 3;
+  KIND_CHOICE = 4;
+  KIND_LIST = 5;
+  KIND_TABLE = 6;
 }
 
-message ListRequest {}
+enum Source {
+  SOURCE_UNSPECIFIED = 0;
+  SOURCE_DEFAULT = 1;
+  SOURCE_FILE = 2;
+  SOURCE_ENVIRONMENT = 3;
+}
+
+message Option {
+  string value = 1;
+  string title = 2;
+  string description = 3;
+}
+
+message Setting {
+  string key = 1;
+  string section = 2;
+  string title = 3;
+  string description = 4;
+  Kind kind = 5;
+  bool secret = 6;
+  bool internal = 7;
+  string value = 8;
+  string default_value = 9;
+  Source source = 10;
+  string variable = 11;
+  repeated string env = 12;
+  repeated Option options = 13;
+}
+
+message Section {
+  string key = 1;
+  string parent = 2;
+  string title = 3;
+  string description = 4;
+  // Kept once for every profile rather than in the profile in use
+  bool global = 5;
+}
+
+message ListRequest {
+  // Profile to act on, the one in use when empty
+  string profile = 1;
+}
 
 message ListResponse {
-  repeated Setting settings = 1;
+  repeated Section sections = 1;
+  repeated Setting settings = 2;
+  // Profile whose settings are listed, those every profile shares aside
+  string profile = 3;
 }
 
 message GetRequest {
   string key = 1;
+  // Profile to act on, the one in use when empty
+  string profile = 2;
 }
 
 message GetResponse {
@@ -30,6 +81,8 @@ message GetResponse {
 message SetRequest {
   string key = 1;
   string value = 2;
+  // Profile to act on, the one in use when empty
+  string profile = 3;
 }
 
 message SetResponse {}

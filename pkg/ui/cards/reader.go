@@ -297,7 +297,7 @@ func (r *Reader) Mark(row int, line string, t theme.Theme) string {
 		if h.row != row {
 			continue
 		}
-		st := lipgloss.NewStyle().Background(t.SteelBright).Foreground(t.Text)
+		st := lipgloss.NewStyle().Background(t.SteelBright).Foreground(t.On(t.SteelBright))
 		if i == r.hit {
 			st = lipgloss.NewStyle().Background(t.Accent).Foreground(t.Bg)
 		}
@@ -328,7 +328,7 @@ func (r *Reader) MarkBuffer(buf *uv.Buffer, top int, t theme.Theme) {
 			if hit.row != row {
 				continue
 			}
-			bg, fg := t.SteelBright, t.Text
+			bg, fg := t.SteelBright, t.On(t.SteelBright)
 			if i == r.hit {
 				bg, fg = t.Accent, t.Bg
 			}
@@ -362,7 +362,7 @@ func (r *Reader) Line(w int, t theme.Theme) (string, int) {
 			lead = "?"
 		}
 		text, caret := r.typing.Line(max(w-3, 1))
-		line := base.Foreground(t.Accent).Bold(true).Render(" "+lead) + base.Foreground(t.Text).Render(text)
+		line := base.Foreground(t.Over(t.Steel, t.Accent)).Bold(true).Render(" "+lead) + base.Foreground(t.Over(t.Steel, t.Text)).Render(text)
 		return render.Fit(line+base.Render(strings.Repeat(" ", max(w-ansi.StringWidth(line), 0))), w, t), 2 + caret
 	}
 	parts := []string{lang.T(txt.KitReaderMode), lang.T(txt.KitReaderAt, r.cursor+1, r.src.ReadRows())}
@@ -384,8 +384,8 @@ func (r *Reader) Line(w int, t theme.Theme) (string, int) {
 			legend = append(legend, k+" "+a.LabelText())
 		}
 	}
-	left := base.Foreground(t.Accent).Bold(true).Render(" "+parts[0]) + base.Foreground(t.Text).Render(" · "+strings.Join(parts[1:], " · "))
-	right := base.Foreground(t.TextDim).Render(strings.Join(legend, " · ") + " ")
+	left := base.Foreground(t.Over(t.Steel, t.Accent)).Bold(true).Render(" "+parts[0]) + base.Foreground(t.Over(t.Steel, t.Text)).Render(" · "+strings.Join(parts[1:], " · "))
+	right := base.Foreground(t.Over(t.Steel, t.TextDim)).Render(strings.Join(legend, " · ") + " ")
 	if ansi.StringWidth(left)+ansi.StringWidth(right)+1 > w {
 		right = ""
 	}
@@ -393,12 +393,12 @@ func (r *Reader) Line(w int, t theme.Theme) (string, int) {
 	return render.Fit(left+base.Render(strings.Repeat(" ", pad))+right, w, t), -1
 }
 
-// Keys worth a reminder while reading
+// Buttons while reading, none while a search is typed
 func (r *Reader) Hints() []wm.Hint {
 	if r.typing != nil {
-		return []wm.Hint{{Action: "search.accept"}, {Action: "search.close"}}
+		return nil
 	}
-	return []wm.Hint{{Action: "view.down", Pair: "view.up"}, {Action: "view.prompt.next", Pair: "view.prompt.prev"}, {Action: "view.search"}, {Action: "view.copy"}, {Action: "view.leave"}}
+	return []wm.Hint{{Action: "view.copy"}, {Action: "view.select"}, {Action: "view.search"}, {Action: "view.leave"}}
 }
 
 // Row the cursor is on

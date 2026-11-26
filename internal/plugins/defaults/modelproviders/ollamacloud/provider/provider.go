@@ -1,24 +1,21 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	ollamacloudconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/ollamacloud/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	return []provider.Spec{{
 		Name:               ollamacloudconfig.Name,
-		DisplayName:        "Ollama Cloud",
-		BaseURL:            p.config.GetString(ollamacloudconfig.BaseURL),
+		DisplayName:        ollamacloudconfig.Title,
+		BaseURL:            ollamacloudconfig.BaseURL,
 		BaseURLEnv:         ollamacloudconfig.BaseURLEnv,
 		ModelsURL:          ollamacloudconfig.ModelsURL,
 		Mode:               provider.ModeChatCompletions,
@@ -26,7 +23,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{ollamacloudconfig.APIKeyEnv},
 		Aliases:            []string{"ollama_cloud"},
-		DefaultModel:       p.config.GetString(ollamacloudconfig.DefaultModel),
+		DefaultModel:       ollamacloudconfig.DefaultModel,
 		DefaultAuxModel:    "nemotron-3-nano:30b",
 		ModelListing:       true,
 		HealthCheck:        true,

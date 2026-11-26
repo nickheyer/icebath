@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"path/filepath"
 
@@ -33,13 +34,17 @@ func (s *service) store() (sessions.Store, error) {
 
 func (s *service) Create(_ context.Context, request *sessionsv1.CreateRequest) (*sessionsv1.CreateResponse, error) {
 	if !filepath.IsAbs(request.GetDirectory()) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, "directory must be an absolute path")
+		return nil, connect.NewError(connect.CodeInvalidArgument, "Directory must be an absolute path")
 	}
 	store, err := s.store()
 	if err != nil {
 		return nil, err
 	}
-	session, err := store.Create(request.GetDirectory())
+	profile := cmp.Or(request.GetProfile(), s.config.Profile())
+	if !s.config.Exists(profile) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "No profile named "+profile)
+	}
+	session, err := store.Create(request.GetDirectory(), profile)
 	if err != nil {
 		return nil, err
 	}

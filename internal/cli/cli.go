@@ -41,9 +41,9 @@ func (c *CLI) Run(ctx context.Context, conn *connect.Client, args []string) erro
 		Short: "A tiling agentic harness",
 		Long: `A tiling agentic harness.
 
-  icebath             opens the terminal app
-  icebath server      serves a backend for app and cli to connect to
-  icebath <command>   runs one command and exits`,
+  icebath             open the terminal app
+  icebath server      run a backend the app and CLI can connect to
+  icebath <command>   run one command and exit`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}

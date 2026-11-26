@@ -1,13 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "kilocode"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	APIKey       = Key + ".api_key"
-	DefaultModel = Key + ".default_model"
+	Title        = "Kilo Code"
+	BaseURL      = "https://api.kilo.ai/api/gateway"
+	DefaultModel = "google/gemini-3.6-flash"
 )
 
 const (

@@ -299,6 +299,10 @@ type entry struct {
 	tinted   screen
 	view     string
 	hints    []hintSpan
+	// Actions of the buttons of the card, in order, whether or not the bottom edge has room to show them all
+	buttons []string
+	// Button that enter presses now, the first unless tab moved on, and the first one in view
+	button, first int
 	// Sheets the card asked to show inside its frame, the first one showing and the rest waiting behind it
 	sheets []*entry
 	// Card a sheet sits in, nil for any other entry
@@ -307,7 +311,7 @@ type entry struct {
 	shownAt, lastKey time.Time
 }
 
-// Columns one legend entry covers on the bottom edge, in stage coordinates
+// Columns one button covers on the bottom edge, in stage coordinates
 type hintSpan struct {
 	x0, x1 int
 	id     string

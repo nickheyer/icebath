@@ -18,7 +18,7 @@ func Register(registry *models.Registry) {
 }
 
 func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool) {
-	if route.Provider != routerconfig.Name {
+	if route.Spec != routerconfig.Name {
 		return nil, false
 	}
 	headers := map[string]string{"Accept": "application/json", "User-Agent": models.UserAgent}

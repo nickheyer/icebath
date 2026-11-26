@@ -56,7 +56,7 @@ func (c *client) Stream(ctx context.Context, request *provider.Request, fn provi
 	options := []option.RequestOption{option.WithMaxRetries(0), option.WithBaseURL(normalized(c.route.BaseURL))}
 	token := isOAuthToken(strings.TrimSpace(c.route.APIKey))
 	subscription := token && !bearer(c.route.BaseURL) && !isThirdPartyAnthropicEndpoint(c.route.BaseURL)
-	identity := token && (isNativeAnthropicHost(c.route.BaseURL) || strings.EqualFold(strings.TrimSpace(c.route.Provider), "anthropic"))
+	identity := token && (isNativeAnthropicHost(c.route.BaseURL) || c.route.Spec == "anthropic")
 	switch key := c.route.APIKey; {
 	case key == "":
 	case c.route.Auth == provider.AuthOAuth || bearer(c.route.BaseURL) || subscription:

@@ -4,8 +4,9 @@ import (
 	"image/color"
 	"math"
 	"regexp"
-	"slices"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -13,7 +14,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
-	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
@@ -77,16 +77,13 @@ func (m *Model) View() tea.View {
 		m.paintBody(m.overlay, 0, true, 0)
 	}
 	m.paintToasts()
-	m.paintLeader()
 	m.paintSelection(buf)
 	v := tea.NewView(buf.Render())
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeAllMotion
 	v.BackgroundColor = m.theme.Bg
 	v.WindowTitle = m.title
-	if !m.leader {
-		v.Cursor = m.cursor()
-	}
+	v.Cursor = m.cursor()
 	v.ReportFocus = true
 	v.KeyboardEnhancements.ReportEventTypes = true
 	v.ProgramStatus = m.status
@@ -193,27 +190,50 @@ func (m *Model) paintWorkspace(ws *Workspace, dx int, shown bool) {
 	}
 }
 
-// Dim invitation in the middle of a stage holding no cards, naming the key of every bound hint action
+// Block in the middle of a stage holding no cards: a dim line saying so, then a row for every bound hint action, its key and what it does
 func (m *Model) paintEmpty(dx int, veil float64) {
 	t := m.theme
-	parts := []string{lang.T(txt.KitWmNothingOpen)}
+	type offer struct{ key, label string }
+	var offers []offer
+	keyW, labelW := 0, 0
 	for _, id := range m.empty {
 		a, ok := m.keys.Action(id)
 		k := m.keys.Display(id)
 		if !ok || k == "" {
 			continue
 		}
-		parts = append(parts, k+" "+a.LabelText())
+		label := a.LabelText()
+		if first, size := utf8.DecodeRuneInString(label); size > 0 {
+			label = lang.Upper(string(first)) + label[size:]
+		}
+		offers = append(offers, offer{key: k, label: label})
+		keyW, labelW = max(keyW, ansi.StringWidth(k)), max(labelW, ansi.StringWidth(label))
 	}
-	text := strings.Join(parts, " "+t.Glyphs.Sep+" ")
+	head := lang.T(txt.KitWmNothingOpen)
+	w := ansi.StringWidth(head)
+	if len(offers) > 0 {
+		w = max(w, keyW+2+labelW)
+	}
+	h := 1
+	if len(offers) > 0 {
+		h += 1 + len(offers)
+	}
 	st := m.stage()
-	tw := ansi.StringWidth(text)
-	if st.W < tw+2 || st.H < 1 {
+	if st.W < w+2 || st.H < h {
 		return
 	}
-	x, y := st.X+(st.W-tw)/2+dx, st.Y+st.H/2+barHeight
-	label := lipgloss.NewStyle().Background(t.Bg).Foreground(theme.Mix(t.TextDim, t.Bg, veil)).Render(text)
-	uv.NewStyledString(label).Draw(m.buf, uv.Rect(x, y, tw, 1))
+	x, y := st.X+(st.W-w)/2+dx, st.Y+(st.H-h)/2+barHeight
+	fade := func(c color.Color) lipgloss.Style {
+		return lipgloss.NewStyle().Background(t.Bg).Foreground(theme.Mix(c, t.Bg, veil))
+	}
+	draw := func(text string, row int) {
+		uv.NewStyledString(text).Draw(m.buf, uv.Rect(x, y+row, ansi.StringWidth(text), 1))
+	}
+	draw(fade(t.TextDim).Render(head), 0)
+	for i, o := range offers {
+		key := o.key + strings.Repeat(" ", keyW-ansi.StringWidth(o.key)+2)
+		draw(fade(t.Accent).Render(key)+fade(t.Text).Render(o.label), 2+i)
+	}
 }
 
 // Faintly lit box with a ghost ring where a carried card will land
@@ -300,13 +320,10 @@ func (m *Model) paintBody(e *entry, dx int, shown bool, veil float64) {
 	}
 	m.content(e, c.W, c.H, (1-p.lit)*contentDim).Draw(face, uv.Rect(c.X, c.Y, c.W, c.H))
 	right := 0
-	if closable(e.card) && w >= minTitleW && e.ws != nil {
-		right = 2
-		fg := theme.Mix(t.TextDim, t.Text, p.lit)
-		if m.hover == e && m.hoverEdge == rClose {
-			fg = t.Alarm
-		}
-		m.put(face, closeX(f), 0, t.Glyphs.Close, uv.Style{Fg: fg, Bg: t.Surface, Attrs: uv.AttrBold})
+	_, palette := e.card.(*Palette)
+	if closable(e.card) && w >= minTitleW && (e.ws != nil || e == m.overlay && !palette) {
+		right = closeW + 1
+		m.paintClose(face, f, m.hover == e && m.hoverEdge == rClose, p.lit)
 	}
 	sw := m.paintStatus(face, e, w-right, w-6-right-max(ansi.StringWidth(" "+t.Glyphs.Notch+" "+e.card.Title()+" "), minTitleW), p.lit)
 	avail := w - 4 - right
@@ -534,7 +551,7 @@ func (m *Model) paintTitle(face screen, e *entry, avail int, lit float64) {
 	if lit > 0.5 {
 		notch = t.Glyphs.Notch
 	}
-	if m.hover == e && m.hoverGrip && (m.hoverEdge == rTitle || m.hoverEdge == rClose) {
+	if m.hover == e && m.hoverGrip && e.ws != nil && (m.hoverEdge == rTitle || m.hoverEdge == rClose) {
 		notch = t.Glyphs.Grip
 	}
 	label := base.Render(" ") +
@@ -627,9 +644,10 @@ func (m *Model) paintToasts() {
 		return
 	}
 	t := m.theme
+	limit := max(10, m.width/2)
 	base := lipgloss.NewStyle().Background(t.Surface)
-	y := barHeight
-	for _, tt := range m.toasts {
+	for i, tt := range m.toasts {
+		y := barHeight + i*toastGap
 		if y >= m.height {
 			break
 		}
@@ -642,142 +660,16 @@ func (m *Model) paintToasts() {
 		case Error:
 			glyph, fg = t.Glyphs.Fail, t.Alarm
 		}
-		lines := m.toastLines(tt.text)
-		gw := ansi.StringWidth(glyph)
-		labels := make([]string, len(lines))
-		lw := 0
-		for j, line := range lines {
-			mark := base.Render(strings.Repeat(" ", gw))
-			if j == 0 {
-				mark = base.Foreground(fg).Bold(true).Render(glyph)
-			}
-			labels[j] = base.Render(" ") + mark + base.Render(" ") + base.Foreground(t.Text).Render(line) + base.Render(" ")
-			lw = max(lw, ansi.StringWidth(labels[j]))
-		}
+		text := ansi.Truncate(tt.text, limit-4, t.Glyphs.Ellipsis)
+		label := base.Render(" ") + base.Foreground(fg).Bold(true).Render(glyph) + base.Render(" ") + base.Foreground(t.Text).Render(text) + base.Render(" ")
+		lw := ansi.StringWidth(label)
 		slide := min(max(tt.x.Pos, 0), 1)
 		x := m.width - m.gapOutX - lw + int(math.Round(tt.x.Pos*float64(lw+m.gapOutX)))
 		alpha := 1 - slide
-		face := m.face(lw, len(lines))
-		for j, label := range labels {
-			m.pad(x-1, y+j, lw+2, alpha)
-			uv.NewStyledString(label).Draw(face, uv.Rect(0, j, lw, 1))
-		}
-		m.stamp(face, placed{x: x, y: y, w: lw, h: len(lines), alpha: alpha})
-		y += len(lines) - 1 + toastGap
-	}
-}
-
-// Lines a toast shows at most before the rest gives way to an ellipsis
-const toastLines = 3
-
-// Text of a toast wrapped to the toast width, the whole of it up to toastLines lines
-func (m *Model) toastLines(text string) []string {
-	room := max(10, m.width/2) - 4
-	lines := strings.Split(ansi.Hardwrap(ansi.Wordwrap(text, room, ""), room, true), "\n")
-	if len(lines) > toastLines {
-		lines = append(lines[:toastLines-1], ansi.Truncate(strings.Join(lines[toastLines-1:], " "), room, m.theme.Glyphs.Ellipsis))
-	}
-	return lines
-}
-
-// Strip of the keys the leader waits for across the bottom of the stage, one line per group, the leader chord ahead of the first
-func (m *Model) paintLeader() {
-	if !m.leader || m.width < 20 {
-		return
-	}
-	t := m.theme
-	base := lipgloss.NewStyle().Background(t.Surface)
-	item := func(chord, text string) string {
-		return base.Foreground(t.Accent).Bold(true).Render(chord) + base.Render(" ") + base.Foreground(t.Text).Render(text)
-	}
-	var order []string
-	groups := map[string][]string{}
-	add := func(group, it string) {
-		if _, seen := groups[group]; !seen {
-			order = append(order, group)
-		}
-		groups[group] = append(groups[group], it)
-	}
-	// Keys of one set of directions, such as focus left, down, up and right, shown as one item
-	var dir struct {
-		group, parent, label string
-		chords               []string
-	}
-	flush := func() {
-		if len(dir.chords) > 0 {
-			add(dir.group, item(strings.Join(dir.chords, " "), dir.label))
-		}
-		dir.parent, dir.chords = "", nil
-	}
-	for _, a := range m.keys.InContexts([]string{keys.Leader}) {
-		chord := m.keys.Display(a.ID)
-		if a.Context != keys.Leader || a.Quiet || chord == "" || !m.leaderApplies(a) {
-			continue
-		}
-		cut := strings.LastIndexByte(a.ID, '.')
-		parent, way := a.ID[:cut], a.ID[cut+1:]
-		if !slices.Contains([]string{"left", "down", "up", "right"}, way) {
-			flush()
-			add(a.Group, item(chord, a.LabelText()))
-			continue
-		}
-		if parent != dir.parent {
-			flush()
-			dir.group, dir.parent = a.Group, parent
-			dir.label = lang.OfID("keys.", parent, ".label", strings.TrimSuffix(a.Label, " "+way))
-		}
-		dir.chords = append(dir.chords, chord)
-	}
-	flush()
-	if literal, ok := m.keys.Action("leader.literal"); ok {
-		if chord := m.keys.Display("leader"); chord != "" {
-			add(literal.Group, item(chord, literal.LabelText()))
-		}
-	}
-	if cancel, ok := m.keys.Action("leader.cancel"); ok {
-		if chord := m.keys.Display(cancel.ID); chord != "" {
-			add(cancel.Group, item(chord, cancel.LabelText()))
-		}
-	}
-	head := base.Foreground(t.Ice).Bold(true).Render(m.keys.Display("leader")) + base.Render("  ")
-	indent := base.Render(strings.Repeat(" ", ansi.StringWidth(head)))
-	sep := base.Render("   ")
-	wrap := m.width - 4 - ansi.StringWidth(head)
-	var lines []string
-	for _, g := range order {
-		line := ""
-		for _, it := range groups[g] {
-			if line != "" && ansi.StringWidth(line)+ansi.StringWidth(sep)+ansi.StringWidth(it) > wrap {
-				lines = append(lines, line)
-				line = ""
-			}
-			if line != "" {
-				line += sep
-			}
-			line += it
-		}
-		lines = append(lines, line)
-	}
-	for i := range lines {
-		prefix := indent
-		if i == 0 {
-			prefix = head
-		}
-		lines[i] = prefix + lines[i]
-	}
-	limit := m.width - 4
-	top := m.height - len(lines) - 1
-	if top < barHeight {
-		lines = lines[barHeight-top:]
-		top = barHeight
-	}
-	for i, l := range lines {
-		y := top + i
-		row := base.Render(" ") + l + base.Render(strings.Repeat(" ", max(0, limit-ansi.StringWidth(l))+1))
-		w := ansi.StringWidth(row)
-		face := m.face(w, 1)
-		uv.NewStyledString(row).Draw(face, uv.Rect(0, 0, w, 1))
-		m.stamp(face, placed{x: 1, y: y, w: w, h: 1, alpha: 1})
+		m.pad(x-1, y, lw+2, alpha)
+		face := m.face(lw, 1)
+		uv.NewStyledString(label).Draw(face, uv.Rect(0, 0, lw, 1))
+		m.stamp(face, placed{x: x, y: y, w: lw, h: 1, alpha: alpha})
 	}
 }
 
@@ -820,6 +712,25 @@ func (m *Model) perimeter(x, y, w, h int, fn func(px, py int, ch string)) {
 	for j := h - 2; j >= 1; j-- {
 		fn(x, y+j, b.Left)
 	}
+}
+
+// Close button in the top edge of the frame: the mark bold on a raised cell with a space either side, brighter as the card is lit and red
+// under the pointer
+func (m *Model) paintClose(face screen, f Box, hot bool, lit float64) {
+	t := m.theme
+	st := uv.Style{Fg: theme.Mix(t.TextDim, t.Text, 0.5+0.5*lit), Bg: theme.Mix(t.Surface, t.Steel, 0.7), Attrs: uv.AttrBold}
+	switch {
+	case hot && t.Plain:
+		st = uv.Style{Fg: t.Text, Bg: t.Surface, Attrs: uv.AttrBold | uv.AttrReverse}
+	case hot:
+		st = uv.Style{Fg: t.Bg, Bg: t.Alarm, Attrs: uv.AttrBold}
+	case t.Plain:
+		st = uv.Style{Fg: t.Text, Bg: t.Surface, Attrs: uv.AttrBold}
+	}
+	x := closeX(f)
+	m.put(face, x, 0, " ", st)
+	m.put(face, x+1, 0, t.Glyphs.Close, st)
+	m.put(face, x+2, 0, " ", st)
 }
 
 // Border color at perimeter index k, lit by focus with corner brackets, an urgency pulse and a hovered grip
@@ -1049,95 +960,128 @@ func (m *Model) frame() screen {
 
 func (screen) WidthMethod() uv.WidthMethod { return uv.WidthMethod(ansi.GraphemeWidth) }
 
-// Writes the card's bound keys into the bottom edge, skipping those that do not fit, lighting the hovered one
+// Paints the buttons of the card into its bottom edge and records the columns each covers. The one enter presses is lit, and each names its
+// key after its label while every button fits with its key. When the edge is too narrow for all of them the row slides to keep the lit one
+// in view, an arrow on each side that has more
 func (m *Model) paintHints(face screen, e *entry, x0, y, sx, w int) {
-	e.hints = e.hints[:0]
-	hints := append([]Hint(nil), hintsOf(e.card)...)
-	if ctxs := contextsOf(e.card); e.ws != nil && closable(e.card) {
-		switch {
-		case slices.Contains(ctxs, keys.Panel):
-			hints = append(hints, Hint{Action: "panel.close"})
-		case ctxs == nil:
-			hints = append(hints, Hint{Action: "window.close"})
+	e.hints, e.buttons = e.hints[:0], e.buttons[:0]
+	var labels, chords []string
+	for _, h := range hintsOf(e.card) {
+		if label := m.buttonLabel(h); label != "" {
+			labels = append(labels, label)
+			chords = append(chords, m.keys.Display(h.Action))
+			e.buttons = append(e.buttons, h.Action)
 		}
 	}
-	avail := w - 4
-	if len(hints) == 0 || avail < minTitleW {
+	room := w - 6
+	if len(labels) == 0 || room < minTitleW {
+		e.buttons = e.buttons[:0]
 		return
 	}
+	if e.button >= len(labels) {
+		e.button = 0
+	}
+	n := len(labels)
+	keyed := 0
+	for i := range labels {
+		keyed += ansi.StringWidth(labels[i]) + 2
+		if chords[i] != "" {
+			keyed += ansi.StringWidth(chords[i]) + 1
+		}
+	}
+	if keyed > room {
+		chords = make([]string, n)
+	}
+	// Cells a button takes: its label and its key, if shown, with a space at either end
+	span := func(i int) int {
+		width := ansi.StringWidth(labels[i]) + 2
+		if chords[i] != "" {
+			width += ansi.StringWidth(chords[i]) + 1
+		}
+		return width
+	}
+	first, last := min(e.first, e.button), 0
+	for {
+		used := 0
+		if first > 0 {
+			used = 2
+		}
+		for last = first; last < n; last++ {
+			more := 0
+			if last+1 < n {
+				more = 2
+			}
+			if width := span(last); used+width+more <= room {
+				used += width
+			} else if last == first {
+				labels[last] = ansi.Truncate(labels[last], max(room-used-more-2, 1), m.theme.Glyphs.Ellipsis)
+				last++
+				break
+			} else {
+				break
+			}
+		}
+		if e.button < last {
+			break
+		}
+		first++
+	}
+	e.first = first
 	t := m.theme
 	base := lipgloss.NewStyle().Background(t.Surface)
+	dim := base.Foreground(t.TextDim)
 	var sb strings.Builder
+	col := sx + x0 + 3
 	sb.WriteString(base.Render(" "))
-	col := sx + x0 + 2 + 1
-	used := 1
-	for _, h := range hints {
-		key, label := m.hintText(h)
-		if key == "" {
-			continue
+	arrow := func(glyph string, to int) {
+		sb.WriteString(dim.Render(glyph))
+		e.hints = append(e.hints, hintSpan{x0: col, x1: col + 2, id: buttonAt + strconv.Itoa(to)})
+		col += 2
+	}
+	if first > 0 {
+		arrow(t.Glyphs.Back+" ", first-1)
+	}
+	for i := first; i < last; i++ {
+		st, key := dim, base.Foreground(theme.Mix(t.TextDim, t.Surface, 0.45))
+		switch {
+		case i == e.button && t.Plain:
+			st = base.Foreground(t.Text).Bold(true).Reverse(true)
+			key = st.Bold(false)
+		case i == e.button:
+			st = lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Bold(true)
+			key = lipgloss.NewStyle().Foreground(theme.Mix(t.Bg, t.Ice, 0.35)).Background(t.Ice)
+		case m.hover == e && m.hintHot == e.buttons[i]:
+			st = base.Foreground(t.Text)
 		}
-		sep := ""
-		if len(e.hints) > 0 {
-			sep = base.Foreground(t.Steel).Render(" " + t.Glyphs.Sep + " ")
+		width := span(i)
+		if chords[i] == "" {
+			sb.WriteString(st.Render(" " + labels[i] + " "))
+		} else {
+			sb.WriteString(st.Render(" "+labels[i]) + key.Render(" "+chords[i]) + st.Render(" "))
 		}
-		hot := m.hover == e && m.hintHot == h.Action && h.Action != ""
-		text := base.Foreground(t.Ice).Bold(hot).Render(key)
-		if label != "" {
-			labelFg := t.TextDim
-			if hot {
-				labelFg = t.Text
-			}
-			text += base.Foreground(labelFg).Render(" " + label)
-		}
-		width := ansi.StringWidth(text)
-		if used+ansi.StringWidth(sep)+width+1 > avail {
-			continue
-		}
-		sb.WriteString(sep)
-		col += ansi.StringWidth(sep)
-		e.hints = append(e.hints, hintSpan{x0: col, x1: col + width, id: h.Action})
-		sb.WriteString(text)
+		e.hints = append(e.hints, hintSpan{x0: col, x1: col + width, id: e.buttons[i]})
 		col += width
-		used += ansi.StringWidth(sep) + width
 	}
-	if len(e.hints) == 0 {
-		return
+	if last < n {
+		arrow(" "+t.Glyphs.Forward, last)
 	}
 	sb.WriteString(base.Render(" "))
-	uv.NewStyledString(sb.String()).Draw(face, uv.Rect(x0+2, y, used+1, 1))
+	uv.NewStyledString(sb.String()).Draw(face, uv.Rect(x0+2, y, col-(sx+x0+3)+2, 1))
 }
 
-// Key and label a hint paints, the key empty when the terminal can send none of its chords
-func (m *Model) hintText(h Hint) (string, string) {
-	first := func(id string) string {
-		if c := m.keys.Sendable(id); len(c) > 0 {
-			return c[0]
-		}
-		return ""
-	}
-	var key string
-	switch {
-	case h.Pair != "":
-		key = keys.Pair(first(h.Action), first(h.Pair))
-	case h.All:
-		shown := []string{}
-		for _, c := range m.keys.Sendable(h.Action) {
-			shown = append(shown, keys.Format(c))
-		}
-		key = strings.Join(shown, "/")
-	default:
-		key = m.keys.Display(h.Action)
-	}
-	if key == "" {
-		return "", ""
-	}
+// Word on a button, its own or the label of its action, with a capital first letter
+func (m *Model) buttonLabel(h Hint) string {
 	label := h.Label
 	if label == "" {
 		if a, ok := m.keys.Action(h.Action); ok {
 			label = a.LabelText()
 		}
 	}
-	return key, label
+	first, size := utf8.DecodeRuneInString(label)
+	if size == 0 {
+		return ""
+	}
+	return lang.Upper(string(first)) + label[size:]
 }
 
 // Writes the card's own footer, its status, into the bottom edge on the frame surface, one part from the left corner and one up to the

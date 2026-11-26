@@ -1,13 +1,10 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	Name         = "gemini"
-	Key          = pluginsconfig.Key + "." + Name
-	BaseURL      = Key + ".base_url"
-	APIKey       = Key + ".api_key"
-	DefaultModel = Key + ".default_model"
+	Title        = "Google AI Studio"
+	BaseURL      = "https://generativelanguage.googleapis.com/v1beta"
+	DefaultModel = "gemini-3.6-flash"
 )
 
 const (

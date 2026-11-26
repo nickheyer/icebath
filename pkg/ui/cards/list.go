@@ -7,9 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
-	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -28,7 +26,7 @@ type ListSpec struct {
 	Actions map[string]func(l *List, i int) tea.Cmd
 	// Actions that apply with no row under the cursor
 	Free map[string]bool
-	// Legend of the row under the cursor in place of every action of the context, -1 for none
+	// Buttons for the row under the cursor, -1 for none, the one enter presses first. Every action of the context when nil
 	Hints   func(l *List, i int) []wm.Hint
 	Empty   func() string
 	OnFocus func(l *List) tea.Cmd
@@ -46,9 +44,9 @@ type ListSpec struct {
 	Input *ListInput
 	// Columns that give way, first to last, when the width cannot hold every column at a readable width
 	Yield []int
-	// Lines the help of a hub shows for row i, the detail of the row when nil
-	Help func(i int) []string
-	// A list to pick from: the filter bar takes typing from the start and enter on it runs Primary on the highlighted row
+	// Words the empty filter field shows, such as "Search sessions"
+	Search string
+	// A list to pick from: typing filters it from the first key and enter runs Primary on the highlighted row
 	Pick bool
 }
 
@@ -76,7 +74,6 @@ type List struct {
 	// Columns of the spec in view at the last paint, and the column of the row typed into among them
 	keep     []int
 	inputCol int
-	help     func(i int) []string
 	pick     bool
 }
 
@@ -91,17 +88,16 @@ var _ interface {
 	wm.Contexter
 	wm.Raw
 	wm.Selectable
+	wm.Answerer
 } = (*List)(nil)
 
 // Builds the table from the spec, each action handed the list and the row under the cursor
 func NewList(env *Env, spec ListSpec) *List {
 	l := &List{lister: &lister{env: env, title: spec.Title, glyph: spec.Glyph, id: spec.Key, ctx: spec.Context, primary: spec.Primary, cols: spec.Columns, rows: spec.Rows, detail: spec.Detail, free: spec.Free, empty: spec.Empty, follow: spec.Follow},
-		all: spec.Columns, allRows: spec.Rows, yield: spec.Yield, help: spec.Help, pick: spec.Pick}
+		all: spec.Columns, allRows: spec.Rows, yield: spec.Yield, pick: spec.Pick}
+	l.bar.pinned, l.search = spec.Pick, spec.Search
 	if len(spec.Yield) > 0 && spec.Rows != nil {
 		l.lister.rows = l.shownRows
-	}
-	if spec.Detail == nil && spec.Rows != nil {
-		l.lister.detail = l.whole
 	}
 	l.actions = make(map[string]func(*lister, int) tea.Cmd, len(spec.Actions))
 	for id, fn := range spec.Actions {
@@ -147,8 +143,7 @@ func (l *List) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		switch m := msg.(type) {
 		case wm.ActionMsg:
 			if m.ID == "search.accept" {
-				l.bar.Accept()
-				return l, l.act(l.primary)
+				return l, l.act(l.entered())
 			}
 		case wm.FocusMsg:
 			_, cmd := l.lister.Update(msg)
@@ -162,69 +157,36 @@ func (l *List) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	return l, cmd
 }
 
-// Reports whether the list has an action for the keymap action
-func (l *List) answers(id string) bool {
-	_, ok := l.actions[id]
-	return ok
+// Action enter runs in a list to pick from: the first button shown for the row under the cursor, the one lit, else the primary action
+func (l *List) entered() string {
+	if l.hints != nil {
+		if hints := l.hints(l.lister, l.index()); len(hints) > 0 {
+			return hints[0].Action
+		}
+	}
+	return l.primary
 }
 
-// Every column of row i at full length, the detail of a list whose spec has none
-func (l *List) whole(i int) []string {
-	rows := l.allRows()
-	if i < 0 || i >= len(rows) {
-		return nil
-	}
-	var lines []string
-	for c, cell := range rows[i] {
-		if strings.TrimSpace(ansi.Strip(cell)) == "" {
-			continue
-		}
-		if c < len(l.all) && l.all[c].Title != "" {
-			cell = render.Heading(l.all[c].Title, l.env.Theme) + "  " + cell
-		}
-		lines = append(lines, cell)
-	}
-	return lines
-}
-
-// Reports whether the table shows less than the whole of row i: a cell cut short, or a column that gave way holding text
-func (l *List) cut(i int) bool {
-	if l.lister.cut(i) {
+// Reports whether the list has a use for the keymap action: one of its own context only while it shows a button for it, or, for a list
+// without buttons of its own, while it has that action and a row for it; any other action always. A key whose action the list has no use
+// for goes on to the next action bound to it, such as the text keys of its filter
+func (l *List) Answers(id string) bool {
+	if l.ctx == "" {
 		return true
 	}
-	if len(l.keep) == 0 || len(l.keep) == len(l.all) {
+	if a, ok := l.env.Keys.Action(id); !ok || a.Context != l.ctx {
+		return true
+	}
+	if l.hints != nil {
+		for _, hint := range l.hints(l.lister, l.index()) {
+			if hint.Action == id {
+				return true
+			}
+		}
 		return false
 	}
-	rows := l.allRows()
-	if i < 0 || i >= len(rows) {
-		return false
-	}
-	for c, cell := range rows[i] {
-		if !slices.Contains(l.keep, c) && strings.TrimSpace(ansi.Strip(cell)) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// Legend of the table, a pick list naming its filter bar keys for what they do there: enter picks and esc goes back
-func (l *List) Hints() []wm.Hint {
-	out := l.lister.Hints()
-	if l.detail != nil && !l.bar.Active() && l.edit == nil && l.ask == nil && l.capture == nil && !l.typing() && (l.detailShown() || l.cut(l.index())) {
-		out = append(out, wm.Hint{Action: "list.detail"})
-	}
-	if !l.pick {
-		return out
-	}
-	for i, h := range out {
-		switch h.Action {
-		case "search.accept":
-			out[i].Label = lang.T(txt.KitHintPick)
-		case "search.close":
-			out[i].Label = lang.T(txt.KitHintBack)
-		}
-	}
-	return out
+	_, has := l.actions[id]
+	return has && (l.free[id] || l.index() >= 0)
 }
 
 // Puts the cursor on the shown row whose first cell is the query, else starts with it, else has a word starting with it
@@ -342,20 +304,6 @@ func (l *List) shownRows() [][]string {
 	return out
 }
 
-// Lines the help of a hub shows for the row under the cursor
-func (l *List) HelpLines() []string {
-	i := l.index()
-	switch {
-	case i < 0:
-		return nil
-	case l.help != nil:
-		return l.help(i)
-	case l.detail != nil:
-		return l.detail(i)
-	}
-	return nil
-}
-
 // Opens the filter bar holding the text, the rows narrowed to those holding it
 func (l *List) Filter(text string) {
 	l.bar.Open()
@@ -365,6 +313,9 @@ func (l *List) Filter(text string) {
 
 // Reports whether the filter narrows the rows
 func (l *List) Filtered() bool { return l.bar.Query() != "" }
+
+// Text the filter holds
+func (l *List) Query() string { return l.bar.Query() }
 
 // Recomputes the rows now
 func (l *List) Refresh() { l.refresh() }
@@ -398,6 +349,27 @@ func (l *List) SetTyped(text string) {
 
 // Opens the detail pane of the selected row when closed and closes it when open
 func (l *List) ToggleDetail() tea.Cmd { return toggleDetail(l.lister, l.index()) }
+
+// Rows the list fills: every row under the head with room for the filter field and a question, and the detail pane under a rule
+func (l *List) Rows(w int) int {
+	table := render.Head(l.cols) + len(l.data)
+	switch {
+	case len(l.data) == 0:
+		return hubLeast
+	case l.detailShown():
+		return table + 1 + l.paneRows(w, 2*detailRows) + 3
+	}
+	return table + 3
+}
+
+// Rows a list leaves under its table for the detail of the highlighted row when it sizes itself
+const detailRows = 8
+
+// Takes the next key pressed, under the words that ask for it, and hands its chord over
+func (l *List) Capture(asking string, done func(chord string) tea.Cmd) {
+	l.asking = asking
+	l.capture = func(_ *lister, chord string) tea.Cmd { return done(chord) }
+}
 
 // Asks a yes or no question along the bottom of the list, yes running the action
 func (l *List) Confirm(text string, yes func() tea.Cmd) { l.confirm(text, yes) }

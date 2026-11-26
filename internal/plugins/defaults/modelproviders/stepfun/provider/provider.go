@@ -1,24 +1,21 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	stepfunconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/stepfun/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	return []provider.Spec{{
 		Name:               stepfunconfig.Name,
-		DisplayName:        "StepFun Step Plan",
-		BaseURL:            p.config.GetString(stepfunconfig.BaseURL),
+		DisplayName:        stepfunconfig.Title,
+		BaseURL:            stepfunconfig.BaseURL,
 		BaseURLEnv:         stepfunconfig.BaseURLEnv,
 		ModelsURL:          stepfunconfig.ModelsURL,
 		Mode:               provider.ModeChatCompletions,
@@ -26,7 +23,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{stepfunconfig.APIKeyEnv},
 		Aliases:            []string{"step", "stepfun-coding-plan"},
-		DefaultModel:       p.config.GetString(stepfunconfig.DefaultModel),
+		DefaultModel:       stepfunconfig.DefaultModel,
 		DefaultAuxModel:    "step-3.5-flash",
 		ModelListing:       true,
 		HealthCheck:        true,

@@ -1,24 +1,21 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	arceeconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/arcee/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	return []provider.Spec{{
 		Name:               arceeconfig.Name,
-		DisplayName:        "Arcee AI",
-		BaseURL:            p.config.GetString(arceeconfig.BaseURL),
+		DisplayName:        arceeconfig.Title,
+		BaseURL:            arceeconfig.BaseURL,
 		BaseURLEnv:         arceeconfig.BaseURLEnv,
 		ModelsURL:          arceeconfig.ModelsURL,
 		Mode:               provider.ModeChatCompletions,
@@ -26,7 +23,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{arceeconfig.APIKeyEnv},
 		Aliases:            []string{"arcee-ai", "arceeai"},
-		DefaultModel:       p.config.GetString(arceeconfig.DefaultModel),
+		DefaultModel:       arceeconfig.DefaultModel,
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,

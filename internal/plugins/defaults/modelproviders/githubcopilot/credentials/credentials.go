@@ -1,35 +1,33 @@
 package credentials
 
 import (
-	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/credentials"
 	githubcopilotconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/githubcopilot/config"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 )
 
 var prefixes = []string{"gho_", "github_pat_", "ghu_"}
 
-type source struct {
-	config *config.Config
+type source struct{}
+
+func Register(registry *credentials.Registry) {
+	registry.Register(source{})
 }
 
-func Register(registry *credentials.Registry, cfg *config.Config) {
-	registry.Register(source{config: cfg})
-}
-
-func (s source) Credential(name string) (credentials.Credential, bool) {
-	if name != githubcopilotconfig.CopilotName {
+// GitHub token of the account, else of the first variable that holds one Copilot takes
+func (source) Credential(account credentials.Account) (credentials.Credential, bool) {
+	if account.Spec() != githubcopilotconfig.CopilotName {
 		return credentials.Credential{}, false
 	}
-	for _, variable := range []string{githubcopilotconfig.CopilotTokenEnv, githubcopilotconfig.GHTokenEnv, githubcopilotconfig.GitHubTokenEnv} {
-		if token := strings.TrimSpace(os.Getenv(variable)); supported(token) {
-			return credentials.Credential{APIKey: token, Source: variable}, true
-		}
+	if found, ok := credentials.Lookup(account.Fields, providerconfig.APIKeyField); ok && supported(found.APIKey) {
+		return found, true
 	}
-	if token := strings.TrimSpace(s.config.GetString(githubcopilotconfig.CopilotAPIKey)); supported(token) {
-		return credentials.Credential{APIKey: token, Source: "config"}, true
+	for _, variable := range []string{githubcopilotconfig.CopilotTokenEnv, githubcopilotconfig.GHTokenEnv, githubcopilotconfig.GitHubTokenEnv} {
+		if found, ok := credentials.FromEnv(variable); ok && supported(found.APIKey) {
+			return found, true
+		}
 	}
 	return credentials.Credential{}, false
 }

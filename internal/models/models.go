@@ -46,7 +46,7 @@ type Listed struct {
 }
 
 func (l Listed) Models(ctx context.Context, route provider.Route) ([]string, bool) {
-	if route.Provider != l.Provider {
+	if route.Spec != l.Provider {
 		return nil, false
 	}
 	if l.Public {

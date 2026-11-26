@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/credentials"
 	anthropicconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/anthropic/config"
 	"github.com/nickheyer/icebath/internal/provider"
@@ -16,55 +15,62 @@ const early = 5 * time.Minute
 
 var renewing sync.Mutex
 
-type source struct {
-	config *config.Config
+type source struct{}
+
+func Register(registry *credentials.Registry) {
+	registry.Register(source{})
 }
 
-func (s source) renew() {
+// Environment of the credential functions for the account
+func Env(account credentials.Account) PoolEnv {
+	return PoolEnv{Account: account.Fields, Provider: account.Provider.Settings}
+}
+
+// Renews the sign-in of the account before it expires, keeping the new tokens in it
+func renew(account credentials.Account) {
 	renewing.Lock()
 	defer renewing.Unlock()
-	refresh := s.config.GetString(anthropicconfig.RefreshToken)
-	if refresh == "" || time.Now().Add(early).UnixMilli() < int64(s.config.GetInt(anthropicconfig.TokenExpires)) {
+	fields := account.Fields
+	refresh := fields.GetString(anthropicconfig.RefreshToken)
+	if refresh == "" || time.Now().Add(early).UnixMilli() < int64(fields.GetInt(anthropicconfig.TokenExpires)) {
 		return
 	}
-	state, err := RefreshAnthropicOAuthPure(PoolEnv{Config: s.config}, refresh, true)
+	state, err := RefreshAnthropicOAuthPure(Env(account), refresh, true)
 	if err != nil {
-		slog.Warn("Anthropic sign in could not be renewed", "error", err)
+		slog.Warn("Anthropic sign in could not be renewed", "account", account.Name, "error", err)
 		if IsTerminalAnthropicRefreshError(err) {
-			err = s.store(anthropicconfig.RefreshToken, nil, anthropicconfig.TokenExpires, nil)
+			err = store(account, anthropicconfig.RefreshToken, nil, anthropicconfig.TokenExpires, nil)
 		}
 	} else {
 		expires, _ := state["expires_at_ms"].(float64)
-		err = s.store(anthropicconfig.Token, state["access_token"], anthropicconfig.RefreshToken, state["refresh_token"], anthropicconfig.TokenExpires, int64(expires))
+		err = store(account, anthropicconfig.Token, state["access_token"], anthropicconfig.RefreshToken, state["refresh_token"], anthropicconfig.TokenExpires, int64(expires))
 	}
 	if err != nil {
-		slog.Warn("Anthropic sign in could not be saved", "error", err)
+		slog.Warn("Anthropic sign in could not be saved", "account", account.Name, "error", err)
 	}
 }
 
-func (s source) store(pairs ...any) error {
+func store(account credentials.Account, pairs ...any) error {
 	for i := 0; i < len(pairs); i += 2 {
-		if err := s.config.Set(pairs[i].(string), pairs[i+1]); err != nil {
+		if err := account.Fields.Set(pairs[i].(string), pairs[i+1]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func Register(registry *credentials.Registry, cfg *config.Config) {
-	registry.Register(source{config: cfg})
-}
-
-func (s source) Credential(name string) (credentials.Credential, bool) {
-	if name != anthropicconfig.Name {
+func (source) Credential(account credentials.Account) (credentials.Credential, bool) {
+	if account.Spec() != anthropicconfig.Name {
 		return credentials.Credential{}, false
 	}
-	s.renew()
-	token := ResolveAnthropicToken(PoolEnv{Config: s.config})
+	if account.Name != "" {
+		renew(account)
+	}
+	token := ResolveAnthropicToken(Env(account))
 	if token == "" {
 		return credentials.Credential{}, false
 	}
-	credential := credentials.Credential{APIKey: token, Auth: provider.AuthAPIKey, Source: "claude_code"}
+	credential := credentials.Credential{APIKey: token, Auth: provider.AuthAPIKey, Origin: credentials.External, Source: "Claude Code"}
 	if IsAnthropicOAuthToken(token) {
 		credential.Auth = provider.AuthOAuth
 	}
@@ -73,8 +79,8 @@ func (s source) Credential(name string) (credentials.Credential, bool) {
 		{anthropicconfig.OAuthToken, anthropicconfig.OAuthTokenEnv},
 		{anthropicconfig.APIKey, anthropicconfig.APIKeyEnv},
 	} {
-		if found, ok := credentials.Lookup(s.config, bound[0], bound[1]); ok && strings.TrimSpace(found.APIKey) == token {
-			credential.Source = found.Source
+		if found, ok := credentials.Lookup(account.Fields, bound[0], bound[1]); ok && strings.TrimSpace(found.APIKey) == token {
+			credential.Origin, credential.Source = found.Origin, found.Source
 			break
 		}
 	}

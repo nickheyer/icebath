@@ -20,7 +20,7 @@ func Register(registry *models.Registry) {
 }
 
 func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool) {
-	if route.Provider != anthropicconfig.Name || route.APIKey == "" {
+	if route.Spec != anthropicconfig.Name || route.APIKey == "" {
 		return nil, false
 	}
 	headers := map[string]string{"anthropic-version": "2023-06-01", "Accept": "application/json"}

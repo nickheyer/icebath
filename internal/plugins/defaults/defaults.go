@@ -11,10 +11,10 @@ import (
 )
 
 func Register(registries *plugins.Registries) {
-	examples.Register(registries)
-	sessions.Register(registries)
-	transports.Register(registries)
-	modelproviders.Register(registries)
-	tools.Register(registries)
 	agents.Register(registries)
+	tools.Register(registries)
+	modelproviders.Register(registries)
+	transports.Register(registries)
+	sessions.Register(registries)
+	examples.Register(registries)
 }

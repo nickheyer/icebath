@@ -7,9 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/ui/keys"
-	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
-	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -21,7 +19,7 @@ type PageSpec struct {
 	// Keymap context of the page's own actions and those actions by id
 	Context string
 	Actions map[string]func(p *Page) tea.Cmd
-	// Legend of the page's own actions, ahead of the scroll keys
+	// Buttons for the page's own actions
 	Hints func(p *Page) []wm.Hint
 	// Keeps the last line in view while the page sits at its end, for output that grows
 	Follow bool
@@ -36,9 +34,7 @@ type Page struct {
 	top  int
 	// Whether the page sits at its last line, kept there while it grows
 	pinned bool
-	// Whether the page is the help of a hub
-	help bool
-	n, h int
+	n, h   int
 }
 
 // Window manager interfaces the page answers
@@ -75,14 +71,10 @@ func (p *Page) Contexts() []string {
 }
 
 func (p *Page) Hints() []wm.Hint {
-	var out []wm.Hint
-	if p.spec.Hints != nil {
-		out = p.spec.Hints(p)
+	if p.spec.Hints == nil {
+		return nil
 	}
-	if p.n > p.h {
-		out = append(out, wm.Hint{Action: "list.down", Pair: "list.up", Label: lang.T(txt.KitHintScroll)})
-	}
-	return out
+	return p.spec.Hints(p)
 }
 
 // Count of lines out of view above and below
@@ -137,7 +129,8 @@ func (p *Page) scroll(id string) {
 	p.pinned = p.spec.Follow && p.top == last
 }
 
-func (p *Page) View(w, h int) string {
+// Lines of the page wrapped to the width
+func (p *Page) wrapped(w int) []string {
 	var lines []string
 	if p.spec.Lines != nil {
 		for _, line := range p.spec.Lines(max(w-2, 8)) {
@@ -148,6 +141,19 @@ func (p *Page) View(w, h int) string {
 			lines = append(lines, wrapWords(line, max(w-2, 8))...)
 		}
 	}
+	return lines
+}
+
+// Rows the page fills: those it painted last, and before its first paint those its lines wrap to at the width
+func (p *Page) Rows(w int) int {
+	if p.h > 0 {
+		return p.n
+	}
+	return len(p.wrapped(w))
+}
+
+func (p *Page) View(w, h int) string {
+	lines := p.wrapped(w)
 	p.n, p.h = len(lines), h
 	last := max(p.n-h, 0)
 	if p.pinned {

@@ -19,6 +19,9 @@ import (
 
 const toolset = "file"
 
+// Reason a write outside the working directory asks approval for
+const outside = "writes outside the working directory"
+
 type registrant struct{}
 
 func Register(registry *tools.Registry) {
@@ -30,6 +33,9 @@ func (registrant) Tools() []tools.Def {
 		{
 			Name:    "read_file",
 			Toolset: toolset,
+			Title:   "Read",
+			Icon:    tools.IconRead,
+			Subject: "path",
 			Schema: tools.Schema(
 				"Read a text file. Each line comes back as NUMBER|TEXT. A long file is read in pages with offset and limit.",
 				[]string{"path"},
@@ -44,6 +50,10 @@ func (registrant) Tools() []tools.Def {
 		{
 			Name:    "write_file",
 			Toolset: toolset,
+			Title:   "Write",
+			Icon:    tools.IconWrite,
+			Subject: "path",
+			Risks:   []string{outside},
 			Schema: tools.Schema(
 				"Write a file, replacing everything in it. Missing parent folders are created. To change part of a file, use patch.",
 				[]string{"path", "content"},
@@ -57,6 +67,10 @@ func (registrant) Tools() []tools.Def {
 		{
 			Name:    "patch",
 			Toolset: toolset,
+			Title:   "Edit",
+			Icon:    tools.IconEdit,
+			Subject: "path",
+			Risks:   []string{outside},
 			Schema: tools.Schema(
 				"Replace text in a file. old_string must match the file exactly, and only once unless replace_all is true.",
 				[]string{"path", "old_string", "new_string"},
@@ -72,6 +86,9 @@ func (registrant) Tools() []tools.Def {
 		{
 			Name:    "search_files",
 			Toolset: toolset,
+			Title:   "Search",
+			Icon:    tools.IconSearch,
+			Subject: "pattern",
 			Schema: tools.Schema(
 				"Search inside files with a regular expression, or find files by name. Paths in the result are relative to the working directory.",
 				[]string{"pattern"},
@@ -289,7 +306,7 @@ func resolve(directory, path string) string {
 
 func guard(ctx context.Context, call *tools.Call, path string) error {
 	if name, err := filepath.Rel(call.Env.Cwd, path); err != nil || !filepath.IsLocal(name) {
-		return call.Env.Approve(ctx, "write "+path, "writes outside the working directory")
+		return call.Env.Approve(ctx, "write "+path, outside)
 	}
 	return nil
 }

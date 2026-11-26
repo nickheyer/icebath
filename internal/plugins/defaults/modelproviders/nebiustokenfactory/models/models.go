@@ -16,7 +16,7 @@ func Register(registry *models.Registry) {
 }
 
 func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool) {
-	if route.Provider != nebiustokenfactoryconfig.Name {
+	if route.Spec != nebiustokenfactoryconfig.Name {
 		return nil, false
 	}
 	return models.List(ctx, route, target(route.BaseURL))

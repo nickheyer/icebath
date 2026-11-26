@@ -259,7 +259,7 @@ func (d *Sections) head(t theme.Theme, s Section, shown string, w int) string {
 	hot := d.Hover == "sec:"+s.ID
 	title := lipgloss.NewStyle().Foreground(t.Ice).Bold(true).Render(lang.Upper(s.Title))
 	if hot {
-		title = lipgloss.NewStyle().Foreground(t.Text).Background(t.Steel).Bold(true).Render(" " + lang.Upper(s.Title) + " ")
+		title = lipgloss.NewStyle().Foreground(t.On(t.Steel)).Background(t.Steel).Bold(true).Render(" " + lang.Upper(s.Title) + " ")
 	}
 	left := lipgloss.NewStyle().Foreground(t.TextDim).Render(mark) + " " + title
 	right := render.Dim(s.Count, t)

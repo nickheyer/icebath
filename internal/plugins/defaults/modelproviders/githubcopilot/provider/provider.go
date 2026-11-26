@@ -8,25 +8,26 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	githubcopilotconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/githubcopilot/config"
 	"github.com/nickheyer/icebath/internal/provider"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 )
 
 var responsesFamily = regexp.MustCompile(`^gpt-(\d+)`)
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	base := p.config.GetString(githubcopilotconfig.CopilotBaseURL)
-	acpBase := p.config.GetString(githubcopilotconfig.ACPBaseURL)
-	return []provider.Profile{{
-		Name:                      githubcopilotconfig.CopilotName,
-		DisplayName:               "GitHub Copilot",
-		Description:               "GitHub Copilot (Uses GITHUB_TOKEN or icebath auth add copilot)",
+func (specs) Specs() []provider.Spec {
+	base := githubcopilotconfig.CopilotBaseURL
+	acpBase := githubcopilotconfig.ACPBaseURL
+	return []provider.Spec{{
+		Name:        githubcopilotconfig.CopilotName,
+		DisplayName: githubcopilotconfig.CopilotTitle,
+		Description: "Copilot models with a GitHub token",
+		Account: []config.Setting{{Key: providerconfig.APIKeyField, Title: "GitHub token", About: "Token of a GitHub account with Copilot, starting with gho_, github_pat_ or ghu_",
+			Default: "", Secret: true}},
 		BaseURL:                   base,
 		BaseURLEnv:                githubcopilotconfig.CopilotBaseURLEnv,
 		ModelsURL:                 provider.ModelsURL(base),
@@ -35,7 +36,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:                  provider.AuthTypeAPIKey,
 		KeyEnv:                    []string{githubcopilotconfig.CopilotTokenEnv, githubcopilotconfig.GHTokenEnv, githubcopilotconfig.GitHubTokenEnv},
 		Aliases:                   []string{"github-copilot", "github-models", "github-model", "github"},
-		DefaultModel:              p.config.GetString(githubcopilotconfig.CopilotDefaultModel),
+		DefaultModel:              githubcopilotconfig.CopilotDefaultModel,
 		Aggregator:                true,
 		ModelListing:              true,
 		HealthCheck:               true,
@@ -69,8 +70,8 @@ func (p profiles) Profiles() []provider.Profile {
 		ResponsesReasoningFromProfile:    true,
 	}, {
 		Name:                  githubcopilotconfig.ACPName,
-		DisplayName:           "GitHub Copilot ACP",
-		Description:           "GitHub Copilot ACP (Spawns copilot --acp --stdio)",
+		DisplayName:           githubcopilotconfig.ACPTitle,
+		Description:           "Runs copilot --acp --stdio",
 		BaseURL:               acpBase,
 		BaseURLEnv:            githubcopilotconfig.ACPBaseURLEnv,
 		ModelsURL:             provider.ModelsURL(acpBase),
@@ -78,7 +79,7 @@ func (p profiles) Profiles() []provider.Profile {
 		Auth:                  provider.AuthOAuth,
 		AuthType:              provider.AuthTypeExternalProcess,
 		Aliases:               []string{"github-copilot-acp", "copilot-acp-agent"},
-		DefaultModel:          p.config.GetString(githubcopilotconfig.ACPDefaultModel),
+		DefaultModel:          githubcopilotconfig.ACPDefaultModel,
 		ModelListing:          true,
 		HealthCheck:           true,
 		VisionToolMessages:    true,

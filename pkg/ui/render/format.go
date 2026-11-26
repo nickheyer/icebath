@@ -41,8 +41,11 @@ func Count(n int, noun string) string {
 		return "1 " + noun
 	}
 	suffix := "s"
-	if strings.HasSuffix(noun, "ch") || strings.HasSuffix(noun, "s") || strings.HasSuffix(noun, "x") {
+	switch {
+	case strings.HasSuffix(noun, "ch"), strings.HasSuffix(noun, "sh"), strings.HasSuffix(noun, "s"), strings.HasSuffix(noun, "x"):
 		suffix = "es"
+	case len(noun) > 1 && noun[len(noun)-1] == 'y' && !strings.ContainsRune("aeiou", rune(noun[len(noun)-2])):
+		noun, suffix = noun[:len(noun)-1], "ies"
 	}
 	return fmt.Sprintf("%d %s%s", n, noun, suffix)
 }
@@ -164,35 +167,35 @@ func Divider(width int, t theme.Theme) string {
 	return st.Render(strings.Repeat(t.Glyphs.Dashed, left)+" ") + lipgloss.NewStyle().Foreground(t.SteelBright).Render(t.Glyphs.Info) + st.Render(" "+strings.Repeat(t.Glyphs.Dashed, right))
 }
 
-// Glyph that stands for a tool by name
-func ToolGlyph(name string, t theme.Theme) string {
+// Glyph of a tool icon a tool registers, such as "read" or "shell", the plain tool glyph for an unknown icon
+func ToolGlyph(icon string, t theme.Theme) string {
 	g := t.Glyphs
-	switch {
-	case name == "Read":
+	switch icon {
+	case "read":
 		return g.Read
-	case name == "Write":
+	case "write":
 		return g.Write
-	case name == "Edit":
+	case "edit":
 		return g.Edit
-	case name == "Glob":
+	case "find":
 		return g.Glob
-	case name == "Grep":
+	case "search":
 		return g.Grep
-	case name == "Shell":
+	case "shell":
 		return g.Shell
-	case name == "ShellOutput":
+	case "output":
 		return g.Output
-	case name == "KillShell":
+	case "kill":
 		return g.Kill
-	case name == "WebFetch":
+	case "fetch":
 		return g.Fetch
-	case name == "Agent":
+	case "agent":
 		return g.Spawn
-	case name == "Record":
+	case "record":
 		return g.Record
-	case name == "Plan":
+	case "plan":
 		return g.Plan
-	case strings.HasPrefix(name, "mcp__"):
+	case "server":
 		return g.Server
 	}
 	return g.Tool

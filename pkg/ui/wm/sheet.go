@@ -416,18 +416,3 @@ func (m *Model) needsYou() bool {
 	}
 	return false
 }
-
-// How long the note saying where the keys went stays
-const focusToastTTL = 2 * time.Second
-
-// Short note naming the card the keys go to now, after a card opened or the focused one closed
-func (m *Model) focusToast(e *entry) tea.Cmd {
-	if e == nil {
-		return nil
-	}
-	title := strings.TrimSpace(e.card.Title())
-	if title == "" {
-		return nil
-	}
-	return m.Toast(lang.T(txt.KitWmFocusMoved, title), Info, focusToastTTL)
-}

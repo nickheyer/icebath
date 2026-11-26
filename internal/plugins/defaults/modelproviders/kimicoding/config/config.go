@@ -1,21 +1,17 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	GlobalName         = "kimi-coding"
-	GlobalKey          = pluginsconfig.Key + "." + GlobalName
-	GlobalBaseURL      = GlobalKey + ".base_url"
-	GlobalAPIKey       = GlobalKey + ".api_key"
-	GlobalDefaultModel = GlobalKey + ".default_model"
+	GlobalTitle        = "Kimi / Moonshot"
+	GlobalBaseURL      = GlobalEndpoint
+	GlobalDefaultModel = "kimi-k2-turbo-preview"
 )
 
 const (
 	CNName         = "kimi-coding-cn"
-	CNKey          = pluginsconfig.Key + "." + CNName
-	CNBaseURL      = CNKey + ".base_url"
-	CNAPIKey       = CNKey + ".api_key"
-	CNDefaultModel = CNKey + ".default_model"
+	CNTitle        = "Kimi / Moonshot (China)"
+	CNBaseURL      = CNEndpoint
+	CNDefaultModel = "kimi-k2-turbo-preview"
 )
 
 const (

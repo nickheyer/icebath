@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -20,9 +21,11 @@ type Agent interface {
 	Deny(sessionID, reason string) error
 	Yolo(sessionID string) (bool, error)
 	Model(ctx context.Context, sessionID, model, provider, effort string, reset, global bool) (string, error)
+	Reasoning(sessionID, level string, global bool) (string, error)
 	Status(sessionID string) (string, error)
-	Approvals(mode string) (string, error)
-	Diff(ctx context.Context, sessionID string) (string, error)
+	Approvals(sessionID, mode string) (string, error)
+	Profile(sessionID, name string) (string, error)
+	Diff(ctx context.Context, sessionID, argument string) (string, error)
 }
 
 type commands struct {
@@ -36,20 +39,25 @@ func Register(registry *slash.Registry, agent Agent) {
 
 func (c commands) Commands() []slash.Command {
 	return []slash.Command{
-		{Name: "help", Usage: "[filter]", Help: "Show available commands", Run: c.help},
-		{Name: "title", Usage: "[name]", Help: "Show the title of this session, or set it", Run: c.title},
-		{Name: "retry", Help: "Retry the last message", Run: c.retry},
-		{Name: "undo", Usage: "[N]", Help: "Back up N user turns and what followed them", Run: c.undo},
-		{Name: "approve", Usage: "[session|always]", Help: "Approve a pending dangerous command, and others like it for this session or from now on", Run: c.approve},
-		{Name: "deny", Usage: "[reason]", Help: "Deny a pending dangerous command", Run: c.deny},
-		{Name: "yolo", Help: "Toggle YOLO mode (skip all dangerous command approvals)", Run: c.yolo},
-		{Name: "status", Help: "Show session, model, token, and context info", Run: c.status},
-		{Name: "reasoning", Usage: "[level]", Help: "Manage reasoning effort and display", Run: c.reasoning},
-		{Name: "approvals", Usage: "[manual|off]", Help: "Show or set the persistent dangerous-command approval mode", Run: c.approvals},
-		{Name: "diff", Help: "Show git changes in the working directory", Run: c.diff},
-		{Name: "version", Aliases: []string{"v"}, Help: "Show icebath version", Run: c.version},
-		{Name: "model", Usage: "[model|reset] [--provider name] [--reasoning level] [--global|--session]", Help: "Show the model and the ones the provider serves, or switch model for this session", Run: c.model},
+		{Name: "help", Usage: "[filter]", Help: "List commands", Run: c.help},
+		{Name: "title", Usage: "[title]", Help: "Show or set the session title", Run: c.title},
+		{Name: "retry", Help: "Regenerate the last reply", Run: c.retry},
+		{Name: "undo", Usage: "[n]", Help: "Remove the last message, or last n, and the replies, to edit and resend", Run: c.undo},
+		{Name: "approve", Usage: "[session|always]", Help: "Allow the pending command once, for this session, or always", Run: c.approve},
+		{Name: "deny", Usage: "[reason]", Help: "Deny the pending command, optionally saying why", Run: c.deny},
+		{Name: "yolo", Help: "Toggle approvals off for this session", Run: c.yolo},
+		{Name: "status", Help: "Show session info", Run: c.status},
+		{Name: "reasoning", Usage: "[level|reset] [--global]", Help: "Show or set the reasoning effort", Run: c.reasoning},
+		{Name: "approvals", Usage: "[manual|off]", Help: "Show or set the approval mode", Run: c.approvals},
+		{Name: "diff", Usage: "[staged|all] [--stat] [path...]", Help: "Show uncommitted git changes", Run: c.diff},
+		{Name: "version", Aliases: []string{"v"}, Help: "Show the icebath version", Run: c.version},
+		{Name: "profile", Usage: "[name]", Help: "Show the profile this session runs on, or switch it to another", Run: c.profile},
+		{Name: "model", Usage: "[model|reset] [--provider name] [--reasoning level] [--global|--session]", Help: "Show or switch the model", Run: c.model},
 	}
+}
+
+func (c commands) profile(_ context.Context, call *slash.Call) (string, error) {
+	return c.agent.Profile(call.SessionID, call.Argument)
 }
 
 func (c commands) help(_ context.Context, call *slash.Call) (string, error) {
@@ -62,7 +70,7 @@ func (c commands) help(_ context.Context, call *slash.Call) (string, error) {
 		fmt.Fprintf(&out, "- `%s` %s\n", line, command.Help)
 	}
 	if out.Len() == 0 {
-		return "no command matches " + call.Argument, nil
+		return "No commands match " + call.Argument, nil
 	}
 	return out.String(), nil
 }
@@ -80,14 +88,16 @@ func (c commands) undo(_ context.Context, call *slash.Call) (string, error) {
 	if call.Argument != "" {
 		var err error
 		if count, err = strconv.Atoi(call.Argument); err != nil || count < 1 {
-			return "", errors.New("usage: /undo [N]")
+			return "", errors.New("Usage: /undo [n]")
 		}
 	}
-	text, err := c.agent.Undo(call.SessionID, count)
-	if err != nil {
+	if _, err := c.agent.Undo(call.SessionID, count); err != nil {
 		return "", err
 	}
-	return "took back: " + text, nil
+	if count == 1 {
+		return "Removed the last message.", nil
+	}
+	return fmt.Sprintf("Removed the last %d messages.", count), nil
 }
 
 func (c commands) approve(_ context.Context, call *slash.Call) (string, error) {
@@ -95,7 +105,7 @@ func (c commands) approve(_ context.Context, call *slash.Call) (string, error) {
 	case "", "session", "always":
 		return "", c.agent.Approve(call.SessionID, call.Argument)
 	}
-	return "", errors.New("usage: /approve [session|always]")
+	return "", errors.New("Usage: /approve [session|always]")
 }
 
 func (c commands) deny(_ context.Context, call *slash.Call) (string, error) {
@@ -108,28 +118,30 @@ func (c commands) yolo(_ context.Context, call *slash.Call) (string, error) {
 	case err != nil:
 		return "", err
 	case on:
-		return "yolo on: risky commands run without asking", nil
+		return "Approvals off for this session.", nil
 	}
-	return "yolo off: risky commands ask first", nil
+	return "Approvals on.", nil
 }
 
 func (c commands) status(_ context.Context, call *slash.Call) (string, error) {
 	return c.agent.Status(call.SessionID)
 }
 
-func (c commands) reasoning(ctx context.Context, call *slash.Call) (string, error) {
-	if strings.ContainsAny(call.Argument, " \t") {
-		return "", errors.New("usage: /reasoning [level]")
+func (c commands) reasoning(_ context.Context, call *slash.Call) (string, error) {
+	words := strings.Fields(call.Argument)
+	global := slices.Contains(words, "--global")
+	if words = slices.DeleteFunc(words, func(word string) bool { return word == "--global" }); len(words) > 1 {
+		return "", errors.New("Usage: /reasoning [level|reset] [--global]")
 	}
-	return c.agent.Model(ctx, call.SessionID, "", "", call.Argument, false, false)
+	return c.agent.Reasoning(call.SessionID, strings.Join(words, ""), global)
 }
 
 func (c commands) approvals(_ context.Context, call *slash.Call) (string, error) {
-	return c.agent.Approvals(call.Argument)
+	return c.agent.Approvals(call.SessionID, call.Argument)
 }
 
 func (c commands) diff(ctx context.Context, call *slash.Call) (string, error) {
-	return c.agent.Diff(ctx, call.SessionID)
+	return c.agent.Diff(ctx, call.SessionID, call.Argument)
 }
 
 func (c commands) version(context.Context, *slash.Call) (string, error) {
@@ -141,7 +153,7 @@ func (c commands) version(context.Context, *slash.Call) (string, error) {
 }
 
 func (c commands) model(ctx context.Context, call *slash.Call) (string, error) {
-	const usage = "usage: /model [model|reset] [--provider name] [--reasoning level] [--global|--session]"
+	const usage = "Usage: /model [model|reset] [--provider name] [--reasoning level] [--global|--session]"
 	var model, provider, effort string
 	var reset, global bool
 	words := strings.Fields(call.Argument)

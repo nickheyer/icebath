@@ -9,7 +9,7 @@ import (
 )
 
 func Register(registries *plugins.Registries) {
-	config.Register(registries.Config)
+	config.Register(registries.Config, registries.Provider.Options(registries.Config), registries.Tools.Risks)
 	agent := server.Register(
 		registries.Server,
 		registries.Config,

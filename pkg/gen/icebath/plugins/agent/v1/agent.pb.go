@@ -228,8 +228,10 @@ type State struct {
 	Model           string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
 	ReasoningEffort string                 `protobuf:"bytes,3,opt,name=reasoning_effort,json=reasoningEffort,proto3" json:"reasoning_effort,omitempty"`
 	Yolo            bool                   `protobuf:"varint,4,opt,name=yolo,proto3" json:"yolo,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Profile the session runs on
+	Profile       string `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *State) Reset() {
@@ -288,6 +290,13 @@ func (x *State) GetYolo() bool {
 		return x.Yolo
 	}
 	return false
+}
+
+func (x *State) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
 }
 
 type SendRequest struct {
@@ -852,12 +861,13 @@ const file_icebath_plugins_agent_v1_agent_proto_rawDesc = "" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"$\n" +
 	"\x06Rewind\x12\x1a\n" +
-	"\bmessages\x18\x01 \x01(\rR\bmessages\"x\n" +
+	"\bmessages\x18\x01 \x01(\rR\bmessages\"\x92\x01\n" +
 	"\x05State\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x14\n" +
 	"\x05model\x18\x02 \x01(\tR\x05model\x12)\n" +
 	"\x10reasoning_effort\x18\x03 \x01(\tR\x0freasoningEffort\x12\x12\n" +
-	"\x04yolo\x18\x04 \x01(\bR\x04yolo\"@\n" +
+	"\x04yolo\x18\x04 \x01(\bR\x04yolo\x12\x18\n" +
+	"\aprofile\x18\x05 \x01(\tR\aprofile\"@\n" +
 	"\vSendRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +

@@ -22,9 +22,10 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 	return []tui.Screen{{
 		ID:    "apluginexample",
 		Title: "apluginexample",
-		Short: "The example plugin's greeting",
-		Open: func(kit *tui.Kit) tea.Cmd {
-			text := "Loading..."
+		Short: "Show the example plugin's greeting",
+		Slash: []string{"apluginexample"},
+		Open: func(kit *tui.Kit, _ string) tea.Cmd {
+			text := "Loading…"
 			page := cards.NewPage(kit.Env, cards.PageSpec{
 				Title: "apluginexample",
 				Key:   "apluginexample",
@@ -34,7 +35,7 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 				response, err := service.Greet(kit.Env.Ctx, &apluginexamplev1.GreetRequest{})
 				return func() tea.Cmd {
 					if text = response.GetGreeting(); err != nil {
-						text = "error: " + err.Error()
+						text = tui.Reason(err)
 					}
 					return nil
 				}

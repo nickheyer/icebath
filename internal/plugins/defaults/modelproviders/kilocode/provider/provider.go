@@ -1,24 +1,21 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	kilocodeconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/kilocode/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	base := p.config.GetString(kilocodeconfig.BaseURL)
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	base := kilocodeconfig.BaseURL
+	return []provider.Spec{{
 		Name:               kilocodeconfig.Name,
-		DisplayName:        "Kilo Code",
+		DisplayName:        kilocodeconfig.Title,
 		BaseURL:            base,
 		BaseURLEnv:         kilocodeconfig.BaseURLEnv,
 		ModelsURL:          provider.ModelsURL(base),
@@ -27,7 +24,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{kilocodeconfig.APIKeyEnv},
 		Aliases:            []string{"kilo-code", "kilo", "kilo-gateway"},
-		DefaultModel:       p.config.GetString(kilocodeconfig.DefaultModel),
+		DefaultModel:       kilocodeconfig.DefaultModel,
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,

@@ -1,9 +1,11 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
+import toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
 
 const (
-	Key            = pluginsconfig.Key + ".terminal"
+	Key            = toolsconfig.Key + ".terminal"
 	Timeout        = Key + ".timeout"
 	EnvPassthrough = Key + ".env_passthrough"
+	Shell          = Key + ".shell"
+	Scrollback     = Key + ".scrollback"
 )

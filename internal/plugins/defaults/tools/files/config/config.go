@@ -1,8 +1,8 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
+import toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
 
 const (
-	Key          = pluginsconfig.Key + ".files"
+	Key          = toolsconfig.Key + ".files"
 	ReadMaxChars = Key + ".read_max_chars"
 )

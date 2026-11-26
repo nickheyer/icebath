@@ -1,21 +1,17 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	ZenName         = "opencode-zen"
-	ZenKey          = pluginsconfig.Key + "." + ZenName
-	ZenBaseURL      = ZenKey + ".base_url"
-	ZenAPIKey       = ZenKey + ".api_key"
-	ZenDefaultModel = ZenKey + ".default_model"
+	ZenTitle        = "OpenCode Zen"
+	ZenBaseURL      = "https://opencode.ai/zen/v1"
+	ZenDefaultModel = "gemini-3-flash"
 )
 
 const (
 	GoName         = "opencode-go"
-	GoKey          = pluginsconfig.Key + "." + GoName
-	GoBaseURL      = GoKey + ".base_url"
-	GoAPIKey       = GoKey + ".api_key"
-	GoDefaultModel = GoKey + ".default_model"
+	GoTitle        = "OpenCode Go"
+	GoBaseURL      = "https://opencode.ai/zen/go/v1"
+	GoDefaultModel = "glm-5"
 )
 
 const (

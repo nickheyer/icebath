@@ -15,7 +15,7 @@ func Register(registry *models.Registry) {
 }
 
 func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool) {
-	if route.Provider != actualconfig.Name {
+	if route.Spec != actualconfig.Name {
 		return nil, false
 	}
 	return models.List(ctx, route, actualconfig.NormalizeBaseURL(route.BaseURL)+"/models")

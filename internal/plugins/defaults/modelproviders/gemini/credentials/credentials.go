@@ -1,11 +1,10 @@
 package credentials
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/credentials"
 	geminiconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/gemini/config"
 )
 
-func Register(registry *credentials.Registry, cfg *config.Config) {
-	registry.Register(credentials.Keyed{Config: cfg, Provider: geminiconfig.Name, Key: geminiconfig.APIKey, Variables: []string{geminiconfig.GoogleAPIKeyEnv, geminiconfig.GeminiAPIKeyEnv}})
+func Register(registry *credentials.Registry) {
+	registry.Register(credentials.Keyed{Provider: geminiconfig.Name, Variables: []string{geminiconfig.GoogleAPIKeyEnv, geminiconfig.GeminiAPIKeyEnv}})
 }

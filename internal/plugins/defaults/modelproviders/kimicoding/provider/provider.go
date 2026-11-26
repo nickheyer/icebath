@@ -1,24 +1,21 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	kimicodingconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/kimicoding/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	return []provider.Spec{{
 		Name:               kimicodingconfig.GlobalName,
-		DisplayName:        "Kimi / Moonshot",
-		BaseURL:            p.config.GetString(kimicodingconfig.GlobalBaseURL),
+		DisplayName:        kimicodingconfig.GlobalTitle,
+		BaseURL:            kimicodingconfig.GlobalBaseURL,
 		BaseURLEnv:         kimicodingconfig.GlobalBaseURLEnv,
 		ModelsURL:          kimicodingconfig.GlobalModelsURL,
 		Mode:               provider.ModeChatCompletions,
@@ -26,7 +23,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{kimicodingconfig.GlobalAPIKeyEnv, kimicodingconfig.GlobalCodingAPIKeyEnv},
 		Aliases:            []string{"kimi", "moonshot", "kimi-for-coding"},
-		DefaultModel:       p.config.GetString(kimicodingconfig.GlobalDefaultModel),
+		DefaultModel:       kimicodingconfig.GlobalDefaultModel,
 		DefaultAuxModel:    "kimi-k2-turbo-preview",
 		Headers:            map[string]string{"HTTP-Referer": "https://github.com/nickheyer/icebath", "X-Title": "Icebath Agent", "User-Agent": "IcebathAgent/dev", "Accept-Encoding": "gzip"},
 		ModelListing:       true,
@@ -37,15 +34,15 @@ func (p profiles) Profiles() []provider.Profile {
 		ModelsDevID:        "kimi-for-coding",
 	}, {
 		Name:               kimicodingconfig.CNName,
-		DisplayName:        "Kimi / Moonshot (China)",
-		BaseURL:            p.config.GetString(kimicodingconfig.CNBaseURL),
+		DisplayName:        kimicodingconfig.CNTitle,
+		BaseURL:            kimicodingconfig.CNBaseURL,
 		ModelsURL:          kimicodingconfig.CNModelsURL,
 		Mode:               provider.ModeChatCompletions,
 		Auth:               provider.AuthAPIKey,
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{kimicodingconfig.CNAPIKeyEnv},
 		Aliases:            []string{"kimi-cn", "moonshot-cn"},
-		DefaultModel:       p.config.GetString(kimicodingconfig.CNDefaultModel),
+		DefaultModel:       kimicodingconfig.CNDefaultModel,
 		DefaultAuxModel:    "kimi-k2-turbo-preview",
 		Headers:            map[string]string{"HTTP-Referer": "https://github.com/nickheyer/icebath", "X-Title": "Icebath Agent", "User-Agent": "IcebathAgent/dev", "Accept-Encoding": "gzip"},
 		ModelListing:       true,

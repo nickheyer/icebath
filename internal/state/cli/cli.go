@@ -20,7 +20,7 @@ func (c commands) Commands(*connect.Client) []*cobra.Command {
 	return []*cobra.Command{
 		{
 			Use:   "connect <url>",
-			Short: "Talk to the server at <url> from now on",
+			Short: "Use the server at <url> from now on",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(_ *cobra.Command, args []string) error {
 				return c.state.SetBackend(args[0])
@@ -28,7 +28,7 @@ func (c commands) Commands(*connect.Client) []*cobra.Command {
 		},
 		{
 			Use:   "disconnect",
-			Short: "Go back to the server inside this process",
+			Short: "Go back to the built-in server",
 			Args:  cobra.NoArgs,
 			RunE: func(*cobra.Command, []string) error {
 				return c.state.SetBackend("")

@@ -11,6 +11,14 @@ message Tool {
   string toolset = 2;
   string description = 3;
   bool available = 4;
+  // Name shown in the app, such as "Read file"
+  string title = 5;
+  // Theme glyph the tool is marked with, such as "read" or "shell"
+  string icon = 6;
+  // Argument whose value names what a call works on, such as "path"
+  string subject = 7;
+  // Turned off in the settings
+  bool disabled = 8;
 }
 
 message ListRequest {}

@@ -1,26 +1,23 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	deepseekconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/deepseek/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	return []provider.Spec{{
 		Name:                       deepseekconfig.Name,
-		DisplayName:                "DeepSeek",
-		Description:                "DeepSeek - native DeepSeek API",
+		DisplayName:                deepseekconfig.Title,
+		Description:                "DeepSeek models",
 		SignupURL:                  "https://platform.deepseek.com/",
-		BaseURL:                    p.config.GetString(deepseekconfig.BaseURL),
+		BaseURL:                    deepseekconfig.BaseURL,
 		BaseURLEnv:                 deepseekconfig.BaseURLEnv,
 		ModelsURL:                  deepseekconfig.ModelsURL,
 		Mode:                       provider.ModeChatCompletions,
@@ -28,7 +25,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:                   provider.AuthTypeAPIKey,
 		KeyEnv:                     []string{deepseekconfig.APIKeyEnv},
 		Aliases:                    []string{"deepseek-chat", "deep-seek"},
-		DefaultModel:               p.config.GetString(deepseekconfig.DefaultModel),
+		DefaultModel:               deepseekconfig.DefaultModel,
 		DefaultAuxModel:            "deepseek-flash",
 		FallbackModels:             []string{"deepseek-v4-pro", "deepseek-flash"},
 		ModelListing:               true,

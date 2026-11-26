@@ -62,6 +62,17 @@ var dangerous = []danger{
 	{regexp.MustCompile(start + `(?:npm|pnpm|yarn|pip3?|brew)\s+(?:-\S+\s+)*(?:uninstall|remove|rm|un)\b`), "package uninstall"},
 }
 
+// Reasons a command asks approval for, each once
+func risks() []string {
+	var reasons []string
+	for _, entry := range dangerous {
+		if !slices.Contains(reasons, entry.reason) {
+			reasons = append(reasons, entry.reason)
+		}
+	}
+	return reasons
+}
+
 func match(list []danger, command string) string {
 	for _, entry := range list {
 		if entry.pattern.MatchString(command) {
@@ -81,6 +92,10 @@ func (registrant) Tools() []tools.Def {
 	return []tools.Def{{
 		Name:    "terminal",
 		Toolset: toolset,
+		Title:   "Shell",
+		Icon:    tools.IconShell,
+		Subject: "command",
+		Risks:   risks(),
 		Schema: tools.Schema(
 			"Run a shell command in the working directory and return its output and exit code. Every call starts a new shell, so a changed directory or variable does not carry over. The command is stopped when its timeout passes, so do not start servers or other background processes. For files, prefer read_file, search_files, patch and write_file over cat, grep, sed and echo.",
 			[]string{"command"},

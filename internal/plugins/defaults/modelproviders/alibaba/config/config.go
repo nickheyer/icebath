@@ -1,37 +1,31 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	IntlName         = "alibaba"
-	IntlKey          = pluginsconfig.Key + "." + IntlName
-	IntlBaseURL      = IntlKey + ".base_url"
-	IntlAPIKey       = IntlKey + ".api_key"
-	IntlDefaultModel = IntlKey + ".default_model"
+	IntlTitle        = "Qwen Cloud"
+	IntlBaseURL      = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+	IntlDefaultModel = ""
 )
 
 const (
 	CNName         = "alibaba-cn"
-	CNKey          = pluginsconfig.Key + "." + CNName
-	CNBaseURL      = CNKey + ".base_url"
-	CNAPIKey       = CNKey + ".api_key"
-	CNDefaultModel = CNKey + ".default_model"
+	CNTitle        = "Alibaba Cloud DashScope (China)"
+	CNBaseURL      = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+	CNDefaultModel = ""
 )
 
 const (
 	TokenPlanName         = "alibaba-token-plan"
-	TokenPlanKey          = pluginsconfig.Key + "." + TokenPlanName
-	TokenPlanBaseURL      = TokenPlanKey + ".base_url"
-	TokenPlanAPIKey       = TokenPlanKey + ".api_key"
-	TokenPlanDefaultModel = TokenPlanKey + ".default_model"
+	TokenPlanTitle        = "Alibaba Cloud (Token Plan)"
+	TokenPlanBaseURL      = "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+	TokenPlanDefaultModel = ""
 )
 
 const (
 	TokenPlanCNName         = "alibaba-token-plan-cn"
-	TokenPlanCNKey          = pluginsconfig.Key + "." + TokenPlanCNName
-	TokenPlanCNBaseURL      = TokenPlanCNKey + ".base_url"
-	TokenPlanCNAPIKey       = TokenPlanCNKey + ".api_key"
-	TokenPlanCNDefaultModel = TokenPlanCNKey + ".default_model"
+	TokenPlanCNTitle        = "Alibaba Cloud (Token Plan, China)"
+	TokenPlanCNBaseURL      = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+	TokenPlanCNDefaultModel = ""
 )
 
 const (

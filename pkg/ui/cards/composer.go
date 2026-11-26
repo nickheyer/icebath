@@ -522,8 +522,9 @@ func (c *Composer) Completing() bool {
 	return comp != nil && !comp.info
 }
 
-// Shows the candidates the app found for a prompt text, the first one highlighted, none closing the popup. An answer for a text no longer
-// typed is dropped; the list on screen follows the typing on its own until the answer for the current text replaces it
+// Shows the candidates the app found for a prompt text, none closing the popup. The first one is highlighted, unless the popup already showed
+// this text and its highlighted row is offered again, which keeps the highlight. An answer for a text no longer typed is dropped; the list on
+// screen follows the typing on its own until the answer for the current text replaces it
 func (c *Composer) Offer(value string, offers []Offer, replace int) {
 	if value != c.ta.Value() {
 		return
@@ -533,6 +534,7 @@ func (c *Composer) Offer(value string, offers []Offer, replace int) {
 		return
 	}
 	c.quiet = ""
+	prev := c.live()
 	comp := &completion{value: value, replace: replace, info: true}
 	for _, o := range offers {
 		label := o.Display
@@ -544,11 +546,10 @@ func (c *Composer) Offer(value string, offers []Offer, replace int) {
 		comp.texts = append(comp.texts, o.Text)
 		comp.info = comp.info && o.Text == ""
 	}
-	// Offering again for the same text keeps the highlight on the row it was on, so a caller refreshing after every key does not snap it back to the top
-	if old := c.comp; old != nil && old.value == value && old.idx < len(old.texts) {
-		for i, text := range comp.texts {
-			if text == old.texts[old.idx] {
-				comp.idx, comp.moved = i, old.moved
+	if prev != nil && prev.replace == replace && prev.idx < len(prev.items) {
+		for i := range comp.items {
+			if comp.items[i] == prev.items[prev.idx] && comp.texts[i] == prev.texts[prev.idx] {
+				comp.idx, comp.moved = i, prev.moved
 				break
 			}
 		}
@@ -1095,7 +1096,7 @@ var imageTypes = map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".
 func (c *Composer) attach(path string) tea.Cmd {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return wm.Notify("no path", wm.Warn)
+		return wm.Notify("Not a file path", wm.Warn)
 	}
 	if strings.HasPrefix(path, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -1107,14 +1108,14 @@ func (c *Composer) attach(path string) tea.Cmd {
 	}
 	media, ok := imageTypes[strings.ToLower(filepath.Ext(path))]
 	if !ok {
-		return wm.Notify("not a png, jpeg, gif or webp", wm.Warn)
+		return wm.Notify("Only PNG, JPEG, GIF and WebP images can be attached", wm.Warn)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return wm.Notify(err.Error(), wm.Error)
 	}
 	c.attachments = append(c.attachments, attachment{Path: path, Media: media, Data: data})
-	return wm.Notify("attached "+filepath.Base(path)+" ("+render.Bytes(int64(len(data)))+")", wm.Success)
+	return wm.Notify("Attached "+filepath.Base(path)+" ("+render.Bytes(int64(len(data)))+")", wm.Success)
 }
 
 // Attaches the image at the path, as the attach command does
@@ -1184,7 +1185,7 @@ func (c *Composer) placeholder(w int) string {
 	}
 	hint := c.Hint
 	if hint == "" {
-		hint = lang.T(txt.KitComposerPlaceholder, c.keys.Chord("palette"))
+		hint = lang.T(txt.KitComposerPlaceholder, c.keys.Display("palette"))
 	}
 	line := lipgloss.NewStyle().Foreground(prompt).Render(c.ta.Prompt) + lipgloss.NewStyle().Foreground(t.TextDim).Render(hint)
 	return render.Fit(line, w, t)
@@ -1272,48 +1273,20 @@ func (c *Composer) Popup(w int) []string {
 	dim := lipgloss.NewStyle().Foreground(t.TextDim).Background(t.Surface)
 	lit := lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Bold(true)
 	var rows []string
-	// Names take the width of the longest one in view, up to half the popup, so a usage line is not cut to a stub
-	nameW := 0
+	// The names take the width of the longest one in view, up to half the popup
+	names := 0
 	for i := from; i < from+limit && i < len(comp.items); i++ {
-		nameW = max(nameW, ansi.StringWidth(ansi.Strip(comp.items[i])))
+		names = max(names, ansi.StringWidth(ansi.Strip(comp.items[i])))
 	}
-	nameW = min(nameW, max(w/2, 14))
+	names = min(names, max(w/2, 14))
 	for i := from; i < from+limit && i < len(comp.items); i++ {
 		name, desc := " "+ansi.Strip(comp.items[i]), ""
 		if i < len(comp.descs) && comp.descs[i] != "" {
-			name, desc = " "+render.Fit(ansi.Strip(comp.items[i]), nameW, t)+" ", ansi.Strip(comp.descs[i])
+			name, desc = " "+render.Fit(ansi.Strip(comp.items[i]), names, t)+"  ", ansi.Strip(comp.descs[i])
 		}
 		line := render.Fit(name+desc, w, t)
 		if i == comp.idx && !comp.info {
-			// The lit row spells out what its line cuts short, the name and the description wrapped under their columns
-			full := " " + ansi.Strip(comp.items[i])
-			if ansi.StringWidth(name+desc) <= w && ansi.StringWidth(full) <= nameW+1 {
-				rows = append(rows, lit.Render(line))
-				continue
-			}
-			lead := strings.Repeat(" ", nameW+2)
-			wrapped := []string{}
-			if ansi.StringWidth(full) > nameW+1 {
-				wrapped = append(wrapped, strings.Split(render.Wrap(full, max(w, 1)), "\n")...)
-			}
-			text := strings.TrimRight(name, " ") + " "
-			if len(wrapped) > 0 {
-				text = lead
-			}
-			if room := w - nameW - 2; room > 8 && desc != "" {
-				for j, part := range strings.Split(render.Wrap(desc, room), "\n") {
-					if j == 0 {
-						wrapped = append(wrapped, render.Fit(text, nameW+2, t)+part)
-					} else {
-						wrapped = append(wrapped, lead+part)
-					}
-				}
-			} else if desc != "" {
-				wrapped = append(wrapped, strings.Split(render.Wrap(" "+desc, max(w-1, 1)), "\n")...)
-			}
-			for _, part := range wrapped {
-				rows = append(rows, lit.Render(render.Fit(part, w, t)))
-			}
+			rows = append(rows, lit.Render(line))
 			continue
 		}
 		cut := min(ansi.StringWidth(name), ansi.StringWidth(line))

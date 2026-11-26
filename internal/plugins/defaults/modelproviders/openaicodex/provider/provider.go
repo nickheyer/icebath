@@ -1,24 +1,21 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	openaicodexconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/openaicodex/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	base := p.config.GetString(openaicodexconfig.BaseURL)
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	base := openaicodexconfig.BaseURL
+	return []provider.Spec{{
 		Name:               openaicodexconfig.Name,
-		DisplayName:        "ChatGPT or Codex Subscription",
+		DisplayName:        openaicodexconfig.Title,
 		BaseURL:            base,
 		BaseURLEnv:         openaicodexconfig.BaseURLEnv,
 		ModelsURL:          provider.ModelsURL(base),
@@ -26,7 +23,7 @@ func (p profiles) Profiles() []provider.Profile {
 		Auth:               provider.AuthOAuth,
 		AuthType:           provider.AuthTypeOAuthExternal,
 		Aliases:            []string{"codex", "openai_codex", "chatgpt", "chatgpt-codex"},
-		DefaultModel:       p.config.GetString(openaicodexconfig.DefaultModel),
+		DefaultModel:       openaicodexconfig.DefaultModel,
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,

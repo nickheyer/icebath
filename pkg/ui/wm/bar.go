@@ -11,7 +11,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/anim"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // What a workspace or a waiting item reports, later signals needing the person more
@@ -424,7 +426,7 @@ type fieldText struct {
 	keyTint color.Color
 }
 
-// Waiting item the app raised, else the palette with the key that opens it
+// Waiting item the app raised, else the empty field of the palette with the key that opens it
 func (m *Model) closedField() fieldText {
 	t := m.theme
 	if n := m.notice; n.Text != "" {
@@ -434,8 +436,7 @@ func (m *Model) closedField() fieldText {
 		}
 		return ft
 	}
-	palette, _ := m.keys.Action("palette")
-	return fieldText{mark: t.Glyphs.Prompt, tint: t.Accent, words: palette.LabelText(), key: m.keys.Display("palette"), keyTint: t.TextDim}
+	return fieldText{mark: t.Glyphs.Prompt, tint: t.Accent, words: lang.T(txt.KitWmCommandPlaceholder), key: m.keys.Display("palette"), keyTint: t.TextDim}
 }
 
 // Columns the closed field wants for its text and key, within its bounds
@@ -742,25 +743,10 @@ func spansWidth(ss []span) int {
 	return w
 }
 
-// Text at the right of the open field, the match count of a picker or the keys a prompt or a question answers
+// Text at the right of the open field, the match count of a picker
 func (m *Model) inputTail(p *Palette, bg color.Color) []span {
-	t := m.theme
-	if len(p.items) > 0 && !p.Asking() {
-		return []span{{p.Tally(), uv.Style{Fg: t.TextDim, Bg: bg}}}
+	if len(p.items) == 0 || p.Asking() {
+		return nil
 	}
-	var out []span
-	for _, h := range p.Hints() {
-		key, label := m.hintText(h)
-		if key == "" {
-			continue
-		}
-		if len(out) > 0 {
-			out = append(out, span{m.dialSep(), uv.Style{Fg: t.Steel, Bg: bg}})
-		}
-		out = append(out, span{key, uv.Style{Fg: t.Ice, Bg: bg}})
-		if label != "" {
-			out = append(out, span{" " + label, uv.Style{Fg: t.TextDim, Bg: bg}})
-		}
-	}
-	return out
+	return []span{{p.Tally(), uv.Style{Fg: m.theme.TextDim, Bg: bg}}}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/server"
 	"github.com/nickheyer/icebath/internal/tools"
+	toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
 	toolsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/tools/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/tools/v1/toolsv1connect"
 )
@@ -29,6 +30,7 @@ func (s *service) Mount(services *connect.Server) {
 
 func (s *service) List(context.Context, *toolsv1.ListRequest) (*toolsv1.ListResponse, error) {
 	env := &tools.Env{Config: s.config}
+	disabled := s.config.GetStringSlice(toolsconfig.Disabled)
 	defs := s.tools.Tools()
 	slices.SortFunc(defs, func(a, b tools.Def) int {
 		return cmp.Or(cmp.Compare(a.Toolset, b.Toolset), cmp.Compare(a.Name, b.Name))
@@ -41,6 +43,10 @@ func (s *service) List(context.Context, *toolsv1.ListRequest) (*toolsv1.ListResp
 			Toolset:     def.Toolset,
 			Description: description,
 			Available:   def.Schema != nil && def.Handler != nil && (def.Check == nil || def.Check(env)),
+			Title:       def.Label(),
+			Icon:        def.Icon,
+			Subject:     def.Subject,
+			Disabled:    slices.Contains(disabled, def.Name),
 		})
 	}
 	return response, nil

@@ -1,29 +1,26 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	vertexconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/vertex/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	return []provider.Spec{{
 		Name:               vertexconfig.Name,
-		DisplayName:        "Google Vertex AI",
-		BaseURL:            p.config.GetString(vertexconfig.BaseURL),
+		DisplayName:        vertexconfig.Title,
+		BaseURL:            vertexconfig.BaseURL,
 		Mode:               provider.ModeChatCompletions,
 		Auth:               provider.AuthGCPOAuth,
 		AuthType:           provider.AuthTypeVertex,
 		Aliases:            []string{"google-vertex", "vertex-ai", "gcp-vertex", "vertexai"},
-		DefaultModel:       p.config.GetString(vertexconfig.DefaultModel),
+		DefaultModel:       vertexconfig.DefaultModel,
 		HealthCheck:        true,
 		VisionToolMessages: true,
 		ModelsDevID:        vertexconfig.Name,

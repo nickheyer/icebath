@@ -1,25 +1,22 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/internal/config"
 	metaaiconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/metaai/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	base := p.config.GetString(metaaiconfig.BaseURL)
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	base := metaaiconfig.BaseURL
+	return []provider.Spec{{
 		Name:             metaaiconfig.Name,
-		DisplayName:      "Meta Model API",
-		Description:      "Meta Muse Spark family (Meta Superintelligence Labs)",
+		DisplayName:      metaaiconfig.Title,
+		Description:      "Muse Spark models",
 		SignupURL:        "https://developer.meta.com/ai/",
 		BaseURL:          base,
 		BaseURLEnv:       metaaiconfig.BaseURLEnv,
@@ -29,7 +26,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:         provider.AuthTypeAPIKey,
 		KeyEnv:           []string{metaaiconfig.APIKeyEnv, metaaiconfig.MetaAPIKeyEnv, metaaiconfig.MetaModelAPIKeyEnv},
 		Aliases:          []string{"meta", "muse", "muse-spark", "model-api", "msl"},
-		DefaultModel:     p.config.GetString(metaaiconfig.DefaultModel),
+		DefaultModel:     metaaiconfig.DefaultModel,
 		FallbackModels:   []string{"muse-spark-1.2"},
 		ModelListing:     true,
 		HealthCheck:      true,

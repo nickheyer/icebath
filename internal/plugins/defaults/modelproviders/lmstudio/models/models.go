@@ -18,7 +18,7 @@ func Register(registry *models.Registry) {
 }
 
 func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool) {
-	if route.Provider != lmstudioconfig.Name {
+	if route.Spec != lmstudioconfig.Name {
 		return nil, false
 	}
 	root := serverRoot(route.BaseURL)

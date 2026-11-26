@@ -9,9 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/keys"
-	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
-	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Rows above the active card, the strip and the blank row under it
@@ -138,6 +136,14 @@ func (g *Tabs) Selectable() bool {
 
 // Takes every key as typed while the active tab does
 func (g *Tabs) Raw() bool { return raw(g.current()) }
+
+// Whether the shown tab has a use for the action
+func (g *Tabs) Answers(action string) bool {
+	if shown := g.current(); shown != nil {
+		return answers(shown, action)
+	}
+	return true
+}
 
 // Keeps the frame clock running while any tab needs it
 func (g *Tabs) Awake() bool {
@@ -369,7 +375,5 @@ func (g *Tabs) Animate(dt float64) bool {
 	return moved
 }
 
-// Actions of the active tab, then the tab switching one that reaches the manager even past a raw tab
-func (g *Tabs) Hints() []Hint {
-	return append(append([]Hint(nil), hintsOf(g.current())...), Hint{Action: "tabs.cycle", Label: lang.T(txt.KitHintNextTab)})
-}
+// Buttons of the active tab
+func (g *Tabs) Hints() []Hint { return hintsOf(g.current()) }

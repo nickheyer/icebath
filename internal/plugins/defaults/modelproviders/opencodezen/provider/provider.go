@@ -4,7 +4,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/internal/config"
 	opencodezenconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/opencodezen/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
@@ -49,20 +48,18 @@ var goModels = []string{
 	"qwen3.5-plus", "hy3", "hy3-preview", "muse-spark-1.2-contributor", "muse-spark-1.3-contributor",
 }
 
-type profiles struct {
-	config *config.Config
+type specs struct{}
+
+func Register(registry *provider.Registry) {
+	registry.Register(specs{})
 }
 
-func Register(registry *provider.Registry, cfg *config.Config) {
-	registry.Register(profiles{config: cfg})
-}
-
-func (p profiles) Profiles() []provider.Profile {
-	zenBase := p.config.GetString(opencodezenconfig.ZenBaseURL)
-	goBase := p.config.GetString(opencodezenconfig.GoBaseURL)
-	return []provider.Profile{{
+func (specs) Specs() []provider.Spec {
+	zenBase := opencodezenconfig.ZenBaseURL
+	goBase := opencodezenconfig.GoBaseURL
+	return []provider.Spec{{
 		Name:               opencodezenconfig.ZenName,
-		DisplayName:        "OpenCode Zen",
+		DisplayName:        opencodezenconfig.ZenTitle,
 		BaseURL:            zenBase,
 		BaseURLEnv:         opencodezenconfig.ZenBaseURLEnv,
 		ModelsURL:          provider.ModelsURL(zenBase),
@@ -71,7 +68,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:           provider.AuthTypeAPIKey,
 		KeyEnv:             []string{opencodezenconfig.ZenAPIKeyEnv},
 		Aliases:            []string{"opencode", "opencode_zen", "zen"},
-		DefaultModel:       p.config.GetString(opencodezenconfig.ZenDefaultModel),
+		DefaultModel:       opencodezenconfig.ZenDefaultModel,
 		Headers:            attribution(),
 		Aggregator:         true,
 		ModelListing:       true,
@@ -83,7 +80,7 @@ func (p profiles) Profiles() []provider.Profile {
 		StaticModels:       slices.Clone(zenModels),
 	}, {
 		Name:            opencodezenconfig.GoName,
-		DisplayName:     "OpenCode Go",
+		DisplayName:     opencodezenconfig.GoTitle,
 		BaseURL:         goBase,
 		BaseURLEnv:      opencodezenconfig.GoBaseURLEnv,
 		ModelsURL:       provider.ModelsURL(goBase),
@@ -92,7 +89,7 @@ func (p profiles) Profiles() []provider.Profile {
 		AuthType:        provider.AuthTypeAPIKey,
 		KeyEnv:          []string{opencodezenconfig.GoAPIKeyEnv},
 		Aliases:         []string{"opencode_go", "go", "opencode-go-sub"},
-		DefaultModel:    p.config.GetString(opencodezenconfig.GoDefaultModel),
+		DefaultModel:    opencodezenconfig.GoDefaultModel,
 		Headers:         attribution(),
 		Aggregator:      true,
 		ModelListing:    true,

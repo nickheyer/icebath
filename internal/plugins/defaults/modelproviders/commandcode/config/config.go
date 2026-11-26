@@ -1,21 +1,17 @@
 package config
 
-import pluginsconfig "github.com/nickheyer/icebath/internal/plugins/config"
-
 const (
 	ChatName         = "commandcode"
-	ChatKey          = pluginsconfig.Key + "." + ChatName
-	ChatBaseURL      = ChatKey + ".base_url"
-	ChatAPIKey       = ChatKey + ".api_key"
-	ChatDefaultModel = ChatKey + ".default_model"
+	ChatTitle        = "CommandCode"
+	ChatBaseURL      = Endpoint
+	ChatDefaultModel = ""
 )
 
 const (
 	AnthropicName         = "commandcode-anthropic"
-	AnthropicKey          = pluginsconfig.Key + "." + AnthropicName
-	AnthropicBaseURL      = AnthropicKey + ".base_url"
-	AnthropicAPIKey       = AnthropicKey + ".api_key"
-	AnthropicDefaultModel = AnthropicKey + ".default_model"
+	AnthropicTitle        = "CommandCode (Anthropic)"
+	AnthropicBaseURL      = Endpoint
+	AnthropicDefaultModel = ""
 )
 
 const (
