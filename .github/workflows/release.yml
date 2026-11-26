@@ -42,6 +42,8 @@ jobs:
       - run: make test
       # Termux deletes superseded archives, so each release carries its own copy of every pool pin
       - name: Fetch the Termux pool archives the pm pins name
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: packaging/termux/fetch.sh "$RUNNER_TEMP/termux-pool"
       - uses: actions/upload-artifact@v7
         with:

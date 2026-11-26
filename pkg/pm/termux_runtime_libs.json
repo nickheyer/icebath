@@ -22,9 +22,9 @@
       "version": "3.3.11"
     },
     "fontconfig": {
-      "sha256": "7f8b70dd7ca85b1e7cbb14a11e9e6bd4ce3189ab985aa7af51145484d85f2c61",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/fontconfig/fontconfig_2.18.3_aarch64.deb",
-      "version": "2.18.3"
+      "sha256": "c0e36ace6e698259bb362925f377e0c3d728079ee124d7c3655de6900da43b10",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/fontconfig/fontconfig_2.18.4_aarch64.deb",
+      "version": "2.18.4"
     },
     "freetype": {
       "sha256": "fe217807b22aa40029874eb1d9e01b89a01b5f1e4f0556c4de9c8e83c4db4256",
@@ -47,9 +47,9 @@
       "version": "1.26-1"
     },
     "glib": {
-      "sha256": "132d8ce961d96a7252fd4bc2228bddd385b1b17b706a46caae6d541ae0e4b2c0",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/g/glib/glib_2.90.1_aarch64.deb",
-      "version": "2.90.1"
+      "sha256": "22237d7b0df4e65a81c0bb68767ebec4fbf5769dbb2849217ecfd8bf25ed11f4",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/g/glib/glib_2.90.2_aarch64.deb",
+      "version": "2.90.2"
     },
     "glslang": {
       "sha256": "c5b5d6cb57d5841966c4b07033d319ebf6a3df61347a484b9dc5e332d29cd721",
@@ -57,9 +57,9 @@
       "version": "16.6.0"
     },
     "harfbuzz": {
-      "sha256": "0ad02ed6650599800fb60c06f1a358c9666795fc371940278b7b69ef4c925d88",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/h/harfbuzz/harfbuzz_15.1.0-1_aarch64.deb",
-      "version": "15.1.0-1"
+      "sha256": "956483c3f898fe522d10a494b2c33c221c0c9e9a4c8fc218c142e004f4e4385d",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/h/harfbuzz/harfbuzz_15.2.0_aarch64.deb",
+      "version": "15.2.0"
     },
     "highway": {
       "sha256": "71b8e0c231ab6b66827374543d55997a5cb02d8882f5d53e059ba78cd2511da1",
@@ -147,9 +147,9 @@
       "version": "7.1.1"
     },
     "libexpat": {
-      "sha256": "0e4411f01f6fb664f3f04f9420289472f9afc30db01ea1c5d1e57fd9fa2354be",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libe/libexpat/libexpat_2.10.0_aarch64.deb",
-      "version": "2.10.0"
+      "sha256": "ac744cb7cd047997da4410ca11d356ca9c952aa474b14a0032414d5677e0fbf1",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/libe/libexpat/libexpat_2.11.0_aarch64.deb",
+      "version": "2.11.0"
     },
     "libffi": {
       "sha256": "9e13f3b5c40625c384101992bb669a278e07d9e2baa37d286d7ed164288fab1a",
@@ -347,9 +347,9 @@
       "version": "2.15.4-1"
     },
     "libyaml": {
-      "sha256": "fad02df630fcee4219133112377965d119543a9d999dcbc6e19a2c1550bf2b60",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/liby/libyaml/libyaml_0.2.5-5_aarch64.deb",
-      "version": "0.2.5-5"
+      "sha256": "f705cff4a619cb97ac67e8ca22a62271e90f1fa1de93c9688eaab90c839e04df",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/liby/libyaml/libyaml_0.2.7_aarch64.deb",
+      "version": "0.2.7"
     },
     "libzimg": {
       "sha256": "a776d30cdb5734fa8feb17fb89fe8a67d14d64e491777d9b62b0fd714a9b59e8",
@@ -412,9 +412,9 @@
       "version": "4.3.0"
     },
     "vulkan-loader-generic": {
-      "sha256": "8043459b6d4efd4834b756c6eeb539e8ae184d71046ffddff3ca75e85b1fcb27",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/v/vulkan-loader-generic/vulkan-loader-generic_1.4.368_aarch64.deb",
-      "version": "1.4.368"
+      "sha256": "47c2147bf49093bcf6898fc202b2c5856e8dddf58b7b49f901bf28da4e5611a8",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/v/vulkan-loader-generic/vulkan-loader-generic_1.4.369_aarch64.deb",
+      "version": "1.4.369"
     },
     "xvidcore": {
       "sha256": "2f358b11fd750935b43ac19f09bb7c4228e007079426e0b73ee8bae1ddf26fc1",
@@ -427,9 +427,9 @@
       "version": "1.4"
     },
     "zstd": {
-      "sha256": "e1b4a5113648da8de189620ba1fce74c48b2d0833d9043391b9a1c91fb606fd3",
-      "url": "https://packages.termux.dev/apt/termux-main/pool/main/z/zstd/zstd_1.5.7-1_aarch64.deb",
-      "version": "1.5.7-1"
+      "sha256": "c487af7d68664585cc5187330acc7a7a054614cb742fcbb1d8a62e214bb3368a",
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/z/zstd/zstd_1.6.0_aarch64.deb",
+      "version": "1.6.0"
     }
   }
 }

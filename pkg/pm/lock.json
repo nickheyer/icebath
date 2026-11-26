@@ -110,8 +110,8 @@
           "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n9.0.1-11-ge47273f4d9-linuxarm64-gpl-9.0.tar.xz"
         },
         "linux-arm64-bionic": {
-          "sha256": "7a785ef62993ed8e0181fb0dcedae39ba7f62827c1150aa1bf805926d9bdf0da",
-          "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/ffmpeg/ffmpeg_9.0.2-2_aarch64.deb"
+          "sha256": "82d7fb867e1dbf209c79396c6f9a058e460d2fb098baef40c13c0bd535f6227f",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/ffmpeg/ffmpeg_9.1_aarch64.deb"
         },
         "linux-x64": {
           "sha256": "182c1b509720e939bb47bfb47dc29cc0c298640401128e3dce8627d10707eb5a",
@@ -593,8 +593,8 @@
           "url": "https://github.com/astral-sh/uv/releases/download/0.13.5/uv-aarch64-unknown-linux-gnu.tar.gz"
         },
         "linux-arm64-bionic": {
-          "sha256": "175576fbfe8198fa994e31a6b87986c5ffda19935770e0ffee64bc22885f7677",
-          "url": "https://packages.termux.dev/apt/termux-main/pool/main/u/uv/uv_0.13.9_aarch64.deb"
+          "sha256": "391cfdf9b1c5d1c7510769c63a9973286000a2fc0e55e9d5fe11b59daff1ce3c",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/u/uv/uv_0.13.10_aarch64.deb"
         },
         "linux-arm64-musl": {
           "sha256": "7906c79adb21c81abd559841ba76bb1d9af9d791acac7a041b2972e03ae16538",
