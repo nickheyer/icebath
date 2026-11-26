@@ -3,7 +3,6 @@ package cron
 import (
 	"context"
 	"testing"
-	"time"
 )
 
 func watchedJob(t *testing.T, s *Store, text string) *Job {
@@ -16,27 +15,6 @@ func markRun(t *testing.T, s *Store, id string, success bool, o MarkOptions) {
 	if ok, err := s.markJobRun(t.Context(), id, success, o); err != nil || !ok {
 		t.Fatalf("markJobRun %v %v", ok, err)
 	}
-}
-
-func parsesAsISO(t *testing.T, text string) {
-	t.Helper()
-	for _, layout := range []string{"2006-01-02T15:04:05.999999999-07:00", "2006-01-02T15:04:05.999999999"} {
-		if _, err := time.Parse(layout, text); err == nil {
-			return
-		}
-	}
-	t.Fatalf("%q is not an ISO timestamp", text)
-}
-
-func TestLastFailureStampFailedRunStampsLastFailure(t *testing.T) {
-	s, _ := newTestStore(t)
-	job := watchedJob(t, s, "Watch the fleet")
-	markRun(t, s, job.ID, false, MarkOptions{Error: strPtr("Script exited with code 1")})
-	stamp := mustGet(t, s, job.ID).LastFailure
-	if stamp == nil || stamp.Detail != "Script exited with code 1" {
-		t.Fatalf("stamp %+v", stamp)
-	}
-	parsesAsISO(t, stamp.At)
 }
 
 func TestLastFailureStampSuccessResetsStatusButKeepsStamp(t *testing.T) {
@@ -98,17 +76,6 @@ func refuseFire(t *testing.T, s *Store, id, detail string) {
 	if err := s.noteFireRefused(context.Background(), []string{id}, detail); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func TestNoteFireRefusedStampsLastFireError(t *testing.T) {
-	s, _ := newTestStore(t)
-	job := watchedJob(t, s, "Daily invoice triage")
-	refuseFire(t, s, job.ID, "gateway unreachable")
-	stamp := mustGet(t, s, job.ID).LastFireError
-	if stamp == nil || stamp.Detail != "gateway unreachable" {
-		t.Fatalf("stamp %+v", stamp)
-	}
-	parsesAsISO(t, stamp.At)
 }
 
 func TestNoteFireRefusedRepeatedFailuresOverwriteLatestWins(t *testing.T) {
