@@ -16,12 +16,16 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/internal/config"
+	cuconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/computeruse/config"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 var (
-	statusGlyph  = map[string]string{"pass": "✅", "fail": "❌", "skip": "⏭️"}
-	overallGlyph = map[string]string{"ok": "✅", "degraded": "⚠️", "failed": "❌"}
+	// Mark of a check by its status, a skipped one said in words
+	statusMark = map[string]string{"pass": "✓", "fail": "✗"}
+	// Mark and words of the whole report by its verdict
+	overallMark  = map[string]string{"ok": "✓", "degraded": "⚠", "failed": "✗"}
+	overallSaid  = map[string]string{"ok": "works", "degraded": "works only in part", "failed": "does not work"}
 	versionRe    = regexp.MustCompile(`(\p{Nd}+\.\p{Nd}+\.\p{Nd}+(?:[-+][\p{L}\p{N}_.]+)?)`)
 	versionToken = regexp.MustCompile(`(\p{Nd}+\.\p{Nd}+(?:\.\p{Nd}+)?(?:[-+][\p{L}\p{N}_.]+)?)`)
 	// Check of each grant, by the field of check_permissions it reads
@@ -29,17 +33,16 @@ var (
 )
 
 const (
-	tccHint         = "Grant %s to CuaDriver in System Settings → Privacy & Security."
-	zeroDisplayMsg  = "ScreenCaptureKit reachable but 0 shareable display(s) — every capture will return 0x0."
-	zeroDisplayHint = "Wake the built-in display, connect a monitor or HDMI dummy dongle (e.g. Headless Ghost), or enable a virtual display (Screen " +
-		"Sharing/VNC, BetterDisplay). Verify with `system_profiler SPDisplaysDataType`."
-	prunedUnitMsg  = "Exec targets %s which no longer exists — a cua-driver upgrade pruned that release directory"
-	prunedUnitHint = "Point the %s at ~/.cua-driver/packages/current/cua-driver — `current` survives upgrades; versioned packages/releases/<version>/ " +
-		"dirs are pruned (only the last 5 are kept)"
-	deadDaemonMsg = "%s is configured to run `cua-driver serve` but no daemon is listening on %s — the unit is not running (crash loop, stopped, or " +
-		"never started)"
-	deadDaemonHint = "Check `systemctl --user status %s` / `journalctl --user -u %s`; a driver reinstall does not start the daemon and cannot fix a " +
-		"broken unit"
+	tccHint         = "Grant %s to CuaDriver in System Settings › Privacy & Security."
+	zeroDisplayMsg  = "macOS can capture the screen, but it has no display to share, so every screenshot comes out empty."
+	zeroDisplayHint = "Wake the built-in display, connect a monitor or a dummy HDMI plug such as Headless Ghost, or turn on a virtual display with " +
+		"Screen Sharing, VNC or BetterDisplay. Check the displays with system_profiler SPDisplaysDataType."
+	prunedUnitMsg  = "It runs %s, which an update of cua-driver removed."
+	prunedUnitHint = "Point the %s at ~/.cua-driver/packages/current/cua-driver, which stays in place across updates. The folders of older " +
+		"versions are removed, and only the last 5 are kept."
+	deadDaemonMsg  = "%s should run cua-driver serve, but nothing answers on %s, so the service crashed, was stopped or never started."
+	deadDaemonHint = "Check it with systemctl --user status %s or journalctl --user -u %s. Installing the driver again neither starts the " +
+		"service nor repairs it."
 )
 
 // A health_report the driver denied or that is no real report, which a report composed from probes stands in for
@@ -95,13 +98,13 @@ func keysOf(m map[string]any) string {
 			}
 		}
 	})
-	return "['" + strings.Join(keys, "', '") + "']"
+	return strings.Join(keys, ", ")
 }
 
 // Report of a health_report result, unavailable when it was refused or carries no report
 func reportOf(result map[string]any) (map[string]any, error) {
 	if result["isError"] == true {
-		return nil, &unavailable{firstText(result, "health_report returned isError=true")}
+		return nil, &unavailable{firstText(result, "cua-driver refused to give its health report")}
 	}
 	if validReport(result["structuredContent"]) {
 		return result["structuredContent"].(map[string]any), nil
@@ -113,9 +116,9 @@ func reportOf(result map[string]any) (map[string]any, error) {
 		}
 	}
 	if sc, ok := result["structuredContent"].(map[string]any); ok {
-		return nil, &unavailable{"health_report structuredContent lacks schema_version/overall/checks (keys=" + keysOf(sc) + ")"}
+		return nil, &unavailable{"the health report of cua-driver lacks the parts icebath reads and holds only " + keysOf(sc)}
 	}
-	return nil, &exchangeError{"health_report response carried neither structuredContent nor a parseable JSON text block. Result keys: " + keysOf(result)}
+	return nil, &exchangeError{"cua-driver answered without a health report icebath can read. Its answer holds only " + keysOf(result)}
 }
 
 // One request of an exchange, named in what its failure says
@@ -133,15 +136,14 @@ func (d *Driver) exchange(ctx context.Context, cfg *config.Config, binary string
 		defer cancel()
 		switch err := call(ctx); {
 		case errors.Is(err, errClosed):
-			tail := "(empty)"
 			if lines := c.stderr.last(3); len(lines) > 0 {
-				tail = "['" + strings.Join(lines, "', '") + "']"
+				return &exchangeError{fmt.Sprintf("cua-driver stopped without answering “%s”. It last printed: %s", method, strings.Join(lines, " / "))}
 			}
-			return &exchangeError{fmt.Sprintf("cua-driver mcp produced no response for '%s'. stderr tail: %s", method, tail)}
+			return &exchangeError{fmt.Sprintf("cua-driver stopped without answering “%s” and printed nothing", method)}
 		case errors.Is(err, context.DeadlineExceeded):
-			return &exchangeError{fmt.Sprintf("cua-driver mcp did not answer '%s' within %gs", method, timeout.Seconds())}
+			return &exchangeError{fmt.Sprintf("cua-driver did not answer “%s” within %s", method, strs.Span(timeout))}
 		case err != nil:
-			return &exchangeError{fmt.Sprintf("%s JSON-RPC error: %s", method, err)}
+			return &exchangeError{fmt.Sprintf("cua-driver refused “%s”: %s", method, err)}
 		}
 		return nil
 	})
@@ -235,11 +237,11 @@ func (d *Driver) probe(ctx context.Context, cfg *config.Config, binary string) (
 func (d *Driver) versionCheck(ctx context.Context, cfg *config.Config, binary string) (string, string) {
 	out, err := d.run(ctx, cfg, binary, 5*time.Second, "--version")
 	if err != nil {
-		return "fail", "--version failed: " + err.Error()
+		return "fail", "cua-driver --version failed: " + err.Error() + "."
 	}
 	text := strings.TrimSpace(out.stdout + out.stderr)
 	if out.code != 0 && text == "" {
-		return "fail", fmt.Sprintf("--version exited %d", out.code)
+		return "fail", fmt.Sprintf("cua-driver --version ended with exit code %d.", out.code)
 	}
 	status := "pass"
 	if out.code != 0 {
@@ -248,23 +250,23 @@ func (d *Driver) versionCheck(ctx context.Context, cfg *config.Config, binary st
 	if m := versionRe.FindStringSubmatch(text); m != nil {
 		return status, m[1]
 	}
-	return status, cmp.Or(firstLine(text, 1<<30), "unknown")
+	return status, cmp.Or(firstLine(text, 1<<30), "Unknown")
 }
 
 // Row of one grant check_permissions reports
 func grantRow(p *probes, platform, field, label string, bound bool) check {
 	if p.permissions == nil {
 		if p.permErr != "" {
-			return check{"status": "fail", "message": p.permErr}
+			return check{"status": "fail", "message": sentence(p.permErr)}
 		}
-		return check{"status": "skip", "message": "check_permissions unavailable"}
+		return check{"status": "skip", "message": "cua-driver could not report its permissions."}
 	}
 	granted, ok := p.permissions[field].(bool)
 	if !ok {
 		if bound && platform != "darwin" {
-			return check{"status": "skip", "message": "not applicable on " + platform}
+			return check{"status": "skip", "message": "Not needed on " + system(platform) + "."}
 		}
-		return check{"status": "skip", "message": field + " field absent from check_permissions"}
+		return check{"status": "skip", "message": "cua-driver did not report whether " + label + " is granted."}
 	}
 	if !granted {
 		return check{"status": "fail", "message": label + " is not granted.", "hint": fmt.Sprintf(tccHint, label), "data": map[string]any{field: false}}
@@ -273,8 +275,8 @@ func grantRow(p *probes, platform, field, label string, bound bool) check {
 	if field == "screen_recording" {
 		data["screen_recording_capturable"] = p.permissions["screen_recording_capturable"]
 		if data["screen_recording_capturable"] == false {
-			return check{"status": "fail", "message": "Screen Recording granted but not capturable.", "data": data,
-				"hint": "Screen Recording permission may need a restart of CuaDriver or a re-grant in System Settings."}
+			return check{"status": "fail", "message": "Screen Recording is granted, but the screen still cannot be captured.", "data": data,
+				"hint": "Restart CuaDriver, or grant Screen Recording again in System Settings."}
 		}
 	}
 	return check{"status": "pass", "message": label + " is granted.", "data": data}
@@ -285,23 +287,23 @@ func axRow(p *probes) check {
 	granted := p.permissions != nil && p.permissions["accessibility"] == true
 	switch {
 	case p.appsProbed && p.appsOK:
-		message := "list_apps succeeded"
+		message := "cua-driver could list the open apps."
 		if p.apps != nil {
-			message += fmt.Sprintf(" (%d apps)", *p.apps)
+			message = "cua-driver listed " + strs.Count(*p.apps, "open app") + "."
 		}
 		return check{"status": "pass", "message": message}
 	case p.appsProbed && p.appsErr != "":
-		return check{"status": "fail", "message": p.appsErr}
+		return check{"status": "fail", "message": sentence(p.appsErr)}
 	case p.appsProbed:
-		message := "list_apps failed"
+		message := "cua-driver could not list the open apps."
 		if granted {
-			message += " despite accessibility grant"
+			message = "cua-driver could not list the open apps, even though Accessibility is granted."
 		}
 		return check{"status": "fail", "message": message}
 	case granted:
-		return check{"status": "pass", "message": "inferred from accessibility grant (list_apps not probed)"}
+		return check{"status": "pass", "message": "Accessibility is granted, so this should work. Listing the open apps was not tried."}
 	}
-	return check{"status": "skip", "message": "not probed"}
+	return check{"status": "skip", "message": "Not checked."}
 }
 
 // Report of schema version 1 composed from CLI and MCP probes, for a driver whose health_report was denied
@@ -315,19 +317,19 @@ func (d *Driver) fallback(ctx context.Context, cfg *config.Config, binary, reaso
 	if v := show(p.version); p.version != nil && v != "" {
 		status, version = "pass", v
 	}
-	short := strings.TrimSpace(cmp.Or(reason, "health_report unavailable"))
+	short := strings.TrimSpace(cmp.Or(reason, "cua-driver gave no health report"))
 	if utf8.RuneCountInString(short) > 160 {
-		short = strs.Head(short, 157) + "..."
+		short = strs.Head(short, 159) + "…"
 	}
 	message := version
 	if status == "pass" {
 		message = "cua-driver " + version
 	} else if message == "" {
-		message = "version unknown"
+		message = "Version unknown."
 	}
-	platformRow := check{"status": "pass", "message": "platform=" + platform}
+	platformRow := check{"status": "pass", "message": system(platform) + "."}
 	if !slices.Contains([]string{"darwin", "linux", "windows"}, platform) {
-		platformRow = check{"status": "fail", "message": "platform=" + platform + " (unsupported)"}
+		platformRow = check{"status": "fail", "message": "Computer use does not work on " + system(platform) + "."}
 	}
 	rows := []struct {
 		name string
@@ -335,11 +337,12 @@ func (d *Driver) fallback(ctx context.Context, cfg *config.Config, binary, reaso
 	}{
 		{"binary_version", check{"status": status, "message": message}},
 		{"platform_supported", platformRow},
-		{"session_active", check{"status": "skip", "message": "not probed (doctor does not open a cua session)"}},
+		{"session_active", check{"status": "skip", "message": "Not checked, as the doctor starts no session of cua-driver."}},
 		{"tcc_accessibility", grantRow(p, platform, "accessibility", "Accessibility", false)},
 		{"tcc_screen_recording", grantRow(p, platform, "screen_recording", "Screen Recording", true)},
 		{"ax_capability", axRow(p)},
-		{"health_report_path", check{"status": "skip", "message": "fallback composite (cua-driver 0.10 unclassified health_report); cause: " + short}},
+		{"health_report_path", check{"status": "skip", "message": "These checks come from icebath itself, as older drivers such as 0.10 give no " +
+			"health report it can read. " + sentence(short)}},
 	}
 	if out, err := d.run(ctx, cfg, binary, 8*time.Second, "doctor"); err == nil {
 		if text := strings.TrimSpace(out.stdout + out.stderr); text != "" {
@@ -374,7 +377,7 @@ func (d *Driver) fallback(ctx context.Context, cfg *config.Config, binary, reaso
 		driver = "?"
 	}
 	return map[string]any{"schema_version": "1", "platform": platform, "driver_version": driver, "overall": overall, "checks": checks, "fallback": true,
-		"fallback_reason": cmp.Or(reason, "health_report unavailable")}, nil
+		"fallback_reason": cmp.Or(reason, "cua-driver gave no health report")}, nil
 }
 
 func checksOf(r map[string]any) []map[string]any {
@@ -425,7 +428,7 @@ func staleUnitGuard(r map[string]any) {
 		if !ok {
 			continue
 		}
-		r["checks"] = append(checks, map[string]any{"name": "daemon unit (" + u.unit + ")", "status": "fail", "message": fmt.Sprintf(prunedUnitMsg, u.exec),
+		r["checks"] = append(checks, map[string]any{"name": "service file " + u.unit, "status": "fail", "message": fmt.Sprintf(prunedUnitMsg, u.exec),
 			"hint": fmt.Sprintf(prunedUnitHint, u.kind)})
 		degrade(r)
 	}
@@ -447,10 +450,10 @@ func (d *Driver) daemonGuard(ctx context.Context, cfg *config.Config, r map[stri
 		}
 		shown := cmp.Or(u.socket, "the default socket")
 		if listening {
-			checks = append(checks, map[string]any{"name": "daemon (" + u.unit + ")", "status": "pass", "message": "cua-driver serve is listening on " + shown})
+			checks = append(checks, map[string]any{"name": "service " + u.unit, "status": "pass", "message": "cua-driver serve answers on " + shown + "."})
 			continue
 		}
-		checks = append(checks, map[string]any{"name": "daemon (" + u.unit + ")", "status": "fail", "message": fmt.Sprintf(deadDaemonMsg, u.unit, shown),
+		checks = append(checks, map[string]any{"name": "service " + u.unit, "status": "fail", "message": fmt.Sprintf(deadDaemonMsg, u.unit, shown),
 			"hint": fmt.Sprintf(deadDaemonHint, u.unit, u.unit)})
 		degrade(r)
 	}
@@ -488,41 +491,58 @@ func or(m map[string]any, k string, def any) any {
 
 // The report as the driver prints it: identity, environment, then each check with its hint and data
 func printReport(w io.Writer, r map[string]any, color bool, identity, environment map[string]any) {
-	platform, reported, overall := show(or(r, "platform", "?")), or(r, "driver_version", "?"), show(or(r, "overall", "?"))
+	platform, reported, overall := system(show(or(r, "platform", ""))), or(r, "driver_version", ""), show(or(r, "overall", ""))
 	cli := ""
 	if v := identity["cli_version"]; config.Truthy(v) {
 		cli = show(v)
 	}
 	red, yellow, green, reset, dim := "", "", "", "", ""
-	if _, known := overallGlyph[overall]; color && known {
+	if _, known := overallMark[overall]; color && known {
 		red, yellow, green, reset, dim = "\033[31m", "\033[33m", "\033[32m", "\033[0m", "\033[2m"
 	}
 	tone := map[string]string{"failed": red, "degraded": yellow, "ok": green}[overall]
 	tones := map[string]string{"pass": green, "fail": red, "skip": dim}
-	lines := []string{fmt.Sprintf("%s cua-driver %s on %s — %s%s%s", cmp.Or(overallGlyph[overall], "•"), cmp.Or(cli, show(reported)), platform, tone, overall, reset)}
+	driver := strings.TrimSpace("cua-driver " + cmp.Or(cli, show(reported)))
+	if platform != "" {
+		driver += " on " + platform
+	}
+	head := driver + " reports “" + overall + "”."
+	if said, known := overallSaid[overall]; known {
+		head = overallMark[overall] + " " + driver + " " + said + "."
+	}
+	lines := []string{tone + head + reset}
 	if b := identity["resolved_binary"]; config.Truthy(b) {
-		lines = append(lines, fmt.Sprintf("  %sbinary: %s%s", dim, show(b), reset))
+		lines = append(lines, fmt.Sprintf("  %sProgram: %s%s", dim, show(b), reset))
 	}
 	if rv := show(reported); cli != "" && config.Truthy(reported) && !strings.Contains(cli, rv) && !strings.Contains(rv, cli) {
-		lines = append(lines, fmt.Sprintf("  %s--version: %s%s", dim, cli, reset), fmt.Sprintf("  %shealth_report.driver_version: %s%s", dim, rv, reset))
+		lines = append(lines, fmt.Sprintf("  %sVersion the program gives: %s%s", dim, cli, reset),
+			fmt.Sprintf("  %sVersion its health report gives: %s%s", dim, rv, reset))
 	}
 	if len(environment) > 0 {
-		lines = append(lines, fmt.Sprintf("  %senvironment: current CLI process%s", dim, reset),
-			fmt.Sprintf("  %sgateway environment was not checked; active gateway computer_use sessions use that process environment%s", dim, reset))
+		lines = append(lines, fmt.Sprintf("  %sThese checks ran with the variables of this command, not with those of the icebath server.%s", dim, reset),
+			fmt.Sprintf("  %sThe agent's computer use runs in the server, so its results there may differ.%s", dim, reset))
 	}
 	if identity["version_mismatch"] == true {
-		lines = append(lines, fmt.Sprintf("  %s⚠️ version mismatch: health_report says '%s' but binary --version is '%s'%s", yellow, show(reported), cli, reset),
-			fmt.Sprintf("  %s→ trust --version / packages/current for debugging; health_report's binary_version check can lag on Windows%s", dim, reset))
+		lines = append(lines, fmt.Sprintf("  %s⚠ The health report says version %s, but the program says %s.%s", yellow, show(reported), cli, reset),
+			fmt.Sprintf("    %sTrust what the program says. On Windows the health report can lag behind.%s", dim, reset))
 	}
 	for _, c := range checksOf(r) {
-		status := show(or(c, "status", "?"))
+		status := show(or(c, "status", ""))
 		message := ""
 		if m := c["message"]; config.Truthy(m) {
 			message = show(m)
 		}
-		lines = append(lines, fmt.Sprintf("  %s %s%s%s: %s", cmp.Or(statusGlyph[status], "•"), tones[status], show(or(c, "name", "?")), reset, message))
+		name := show(or(c, "name", "check"))
+		switch mark, marked := statusMark[status]; {
+		case marked:
+			lines = append(lines, fmt.Sprintf("  %s %s%s%s: %s", mark, tones[status], name, reset, message))
+		case status == "skip":
+			lines = append(lines, fmt.Sprintf("  %sSkipped %s%s: %s", tones[status], name, reset, message))
+		default:
+			lines = append(lines, fmt.Sprintf("  %s: %s", name, message))
+		}
 		if h := c["hint"]; config.Truthy(h) {
-			lines = append(lines, fmt.Sprintf("      → %s%s%s", dim, show(h), reset))
+			lines = append(lines, fmt.Sprintf("    %s%s%s", dim, show(h), reset))
 		}
 		if data, ok := c["data"].(map[string]any); ok {
 			for _, k := range slices.Sorted(func(yield func(string) bool) {
@@ -532,11 +552,15 @@ func printReport(w io.Writer, r map[string]any, color bool, identity, environmen
 					}
 				}
 			}) {
-				value := "null"
-				if data[k] != nil {
-					value = show(data[k])
+				value := "None"
+				switch v := data[k].(type) {
+				case nil:
+				case bool:
+					value = map[bool]string{true: "Yes", false: "No"}[v]
+				default:
+					value = show(v)
 				}
-				lines = append(lines, fmt.Sprintf("      %s%s=%s%s", dim, k, value, reset))
+				lines = append(lines, fmt.Sprintf("    %s%s: %s%s", dim, k, value, reset))
 			}
 		}
 	}
@@ -554,7 +578,8 @@ func (d *Driver) Doctor(ctx context.Context, cfg *config.Config, out, errOut io.
 		return 0, err
 	}
 	if binary == "" {
-		fmt.Fprintf(out, "cua-driver: not installed (looked for 'cua-driver (PATH and canonical install paths)').\n  Run: icebath computer-use install\n")
+		fmt.Fprintln(out, "✗ cua-driver is not installed. It is not on your PATH, nor where it is usually installed.")
+		fmt.Fprintln(out, "  Install it with icebath computer-use install.")
 		return 2, nil
 	}
 	r, err := d.healthReport(ctx, cfg, binary, include, skip)
@@ -562,14 +587,15 @@ func (d *Driver) Doctor(ctx context.Context, cfg *config.Config, out, errOut io.
 		r, err = d.fallback(ctx, cfg, binary, denied.msg)
 	}
 	if spawn, ok := errors.AsType[*spawnError](err); ok {
-		fmt.Fprintf(errOut, "cua-driver could not be started from '%s': %v\n  The Icebath runtime cannot execute this binary; the tool may still work "+
-			"because the\n  shell resolves a different copy on PATH. Fix: install cua-driver outside the protected directory\n  (e.g. the upstream "+
-			"installer's default under your user profile) or point ICEBATH_CUA_DRIVER_CMD at\n  a copy the runtime can execute, then re-run `icebath "+
-			"computer-use doctor`.\n", binary, spawn)
+		fmt.Fprintf(errOut, "✗ cua-driver at %s cannot be started: %v.\n", binary, spawn)
+		fmt.Fprintln(errOut, "  The agent's computer use may still work if your shell finds another copy on your PATH.")
+		fmt.Fprintln(errOut, "  Install cua-driver outside the protected folder, such as with its own installer under your user folder, or point "+
+			cuconfig.DriverCommandEnv+" at a copy that can run.")
+		fmt.Fprintln(errOut, "  Then run icebath computer-use doctor again.")
 		return 2, nil
 	}
 	if exchange, ok := errors.AsType[*exchangeError](err); ok {
-		fmt.Fprintf(errOut, "cua-driver health_report failed: %v\n", exchange)
+		fmt.Fprintln(errOut, "✗ cua-driver did not give its health report. "+sentence(exchange.Error()))
 		return 2, nil
 	}
 	if err != nil {

@@ -608,7 +608,7 @@ func (s *Scope) pinnedError(name string) string {
 		return fmt.Sprintf("Skill '%s' is essential to Icebath (the agent's own operating manual referenced by the system prompt) and cannot be deleted. Patches and edits are still allowed.", name)
 	}
 	if record, err := s.Record(name); err == nil && record.Pinned {
-		return fmt.Sprintf("Skill '%s' is pinned and cannot be deleted by skill_manage. Ask the user to run `icebath curator unpin %s` if they want to delete it. Patches and edits are allowed on pinned skills; only deletion is blocked.", name, name)
+		return fmt.Sprintf("Skill '%s' is pinned and cannot be deleted by skill_manage. Ask the user to set \"pinned\" to false in the entry of '%s' in skills/.usage.json if they want to delete it. Patches and edits are allowed on pinned skills; only deletion is blocked.", name, name)
 	}
 	return ""
 }
@@ -1352,7 +1352,7 @@ func (s *Scope) expandHome(value string) string {
 	return fsx.ExpandHome(s.expandVars(value))
 }
 
-// Settings the user sets declared values by, one per value the profile's skills declare
+// Settings the user sets declared values by, one per value the profile's skills declare, each named for the skill that declares it
 func (s *Scope) ConfigSettings() []config.Setting {
 	var out []config.Setting
 	for _, v := range s.declaredConfig() {
@@ -1360,7 +1360,11 @@ func (s *Scope) ConfigSettings() []config.Setting {
 		if v.Default != nil {
 			fallback = v.Default
 		}
-		out = append(out, config.Setting{Key: configKey(v.Key), Title: v.Key, About: v.Prompt + " (skill " + v.Skill + ")", Default: fallback})
+		help := ""
+		if v.Description != v.Prompt {
+			help = v.Description
+		}
+		out = append(out, config.Setting{Key: configKey(v.Key), Title: v.Key, About: sentence(v.Prompt), Help: help, Skill: v.Skill, Default: fallback})
 	}
 	return out
 }

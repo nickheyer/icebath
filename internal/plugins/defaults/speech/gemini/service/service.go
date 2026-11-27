@@ -37,7 +37,7 @@ const rate = 24000
 func Register(registry *speech.Registry) {
 	ready := func(job *speech.Job) bool { return key(job) != "" }
 	registry.Register(speech.Services{Speakers: []speech.Voice{{
-		Name: config.Name, Title: "Google Gemini TTS", About: "30 prebuilt voices, controllable via prompts",
+		Name: config.Name, Title: "Google Gemini TTS", About: "30 voices you can direct, needs a Gemini API key",
 		Ready:      ready,
 		Limit:      func(*speech.Job) int { return config.DefaultLimit },
 		Synthesize: synthesize,

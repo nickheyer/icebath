@@ -19,6 +19,7 @@ func (specs) Specs() []provider.Spec {
 		Carriers:           []string{"reasoning_content", "reasoning", "reasoning_details"},
 		Native:             provider.Vendored,
 		DisplayName:        aigatewayconfig.Title,
+		Description:        "Many companies' models behind one Vercel API key",
 		BaseURL:            base,
 		BaseURLEnv:         aigatewayconfig.BaseURLEnv,
 		ModelsURL:          provider.ModelsURL(base),

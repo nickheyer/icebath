@@ -67,7 +67,7 @@ func (b *Built) Chunks(fn provider.StreamFunc, header http.Header, status int) *
 
 // Folds one chunk into the reply, true once the reply must stop
 func (c *Chunks) Feed(chunk map[string]any) (bool, error) {
-	if err := c.s.emit(provider.EventActivity, "receiving stream response"); err != nil {
+	if err := c.s.emit(provider.EventActivity, "receiving the reply"); err != nil {
 		return true, Unstopped(err)
 	}
 	stop, err := c.s.chunk(chunk)

@@ -11,6 +11,8 @@ message Command {
   repeated string aliases = 2;
   string usage = 3;
   string help = 4;
+  // Loads a skill or a bundle of skills, listed apart from icebath's own commands
+  bool skill = 5;
 }
 
 message ListRequest {}

@@ -58,7 +58,7 @@ func (r registrant) Made(making profile.Making) ([]string, error) {
 		if err := target.Set(agentconfig.Model, making.Model); err != nil {
 			return nil, err
 		}
-		return []string{fmt.Sprintf("Model set to %s (%s).", making.Model, making.Provider)}, nil
+		return []string{fmt.Sprintf("The model is set to %s on %s.", making.Model, making.Provider)}, nil
 	}
 	if making.Bare || making.Launch == "" {
 		return nil, nil
@@ -77,5 +77,5 @@ func (r registrant) Made(making profile.Making) ([]string, error) {
 	if err := target.Set(agentconfig.Model, model); err != nil {
 		return nil, err
 	}
-	return []string{fmt.Sprintf("Model inherited from '%s'.", making.Launch)}, nil
+	return []string{fmt.Sprintf("The model and provider are taken from the profile %s.", making.Launch)}, nil
 }

@@ -20,7 +20,7 @@ const (
 	fernetKeySize = 32
 )
 
-var errFernet = errors.New("invalid fernet token")
+var errFernet = errors.New("The vault file can't be opened with this key.")
 
 // Encrypter and decrypter over one key
 type fernet struct {
@@ -39,7 +39,7 @@ func fernetKey() []byte {
 func newFernet(key []byte) (*fernet, error) {
 	raw, err := base64.URLEncoding.DecodeString(string(key))
 	if err != nil || len(raw) != fernetKeySize {
-		return nil, errors.New("fernet key must be 32 bytes of padded url-safe base64")
+		return nil, errors.New("The vault key is damaged: it is not 32 bytes in URL-safe base64.")
 	}
 	block, err := aes.NewCipher(raw[16:])
 	if err != nil {

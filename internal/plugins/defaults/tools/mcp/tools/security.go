@@ -41,7 +41,7 @@ func validate(name string, entry map[string]any) []string {
 	text := strings.Join(flat, " ")
 	for _, artifact := range compromise {
 		if strings.Contains(text, artifact) {
-			return []string{fmt.Sprintf("MCP server '%s' contains a known indicator-of-compromise of the June 2026 MCP backdoor campaign ('%s')", name, artifact)}
+			return []string{fmt.Sprintf("The MCP server %s holds “%s”, a known sign of the MCP backdoor attacks of June 2026.", name, artifact)}
 		}
 	}
 	first := command
@@ -53,15 +53,17 @@ func validate(name string, entry map[string]any) []string {
 	}
 	var issues []string
 	if found(egress, script) {
-		issue := fmt.Sprintf("MCP server '%s' uses shell interpreter '%s' with network egress in args", name, command)
+		issue := fmt.Sprintf("The MCP server %s runs the shell %s with arguments that reach the network.", name, command)
 		if found(exfiltration, script) {
-			issue += " and exfiltration-shaped arguments"
+			issue = fmt.Sprintf("The MCP server %s runs the shell %s with arguments that reach the network and look like they send your data away.", name,
+				command)
 		}
 		issues = append(issues, issue)
 	}
 	if found(persistence, script) {
-		issues = append(issues, fmt.Sprintf("MCP server '%s' uses shell interpreter '%s' to write to an OS persistence surface (SSH keys / PAM / sudoers / cron / "+
-			"shell rc) — this is the backdoor shape of the June 2026 MCP campaign, not a real MCP server", name, command))
+		issues = append(issues, fmt.Sprintf("The MCP server %s runs the shell %s to write where programs start by themselves, such as SSH keys, PAM, "+
+			"sudoers, cron or the startup files of your shell. That is how the MCP backdoor attacks of June 2026 work, not what an MCP server does.", name,
+			command))
 	}
 	return issues
 }

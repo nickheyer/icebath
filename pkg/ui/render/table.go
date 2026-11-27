@@ -19,6 +19,8 @@ type Column struct {
 	Right bool
 	// Largest width the column grows to, unlimited when zero
 	Max int
+	// Holds sentences, which are never cut: a list shows the column only at a width that holds every cell of it whole
+	Whole bool
 }
 
 // Cell of the selected row being typed into in place, its text with the caret at a rune offset, shown selected until the first keystroke

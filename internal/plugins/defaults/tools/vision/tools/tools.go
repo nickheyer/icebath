@@ -86,6 +86,8 @@ func (r *registrant) Tools() []tools.Def {
 			Name:    "vision_analyze",
 			Toolset: "vision",
 			Title:   "Look",
+			About:   "Look at an image from a file or a web address",
+			Group:   "Vision",
 			Icon:    tools.IconRead,
 			Subject: "image_url",
 			Schema: tools.Schema("Load an image into the conversation so you can see it. Call it any time the user references an image — then answer from what you see.",
@@ -108,6 +110,8 @@ func (r *registrant) Tools() []tools.Def {
 			Name:    "video_analyze",
 			Toolset: "video",
 			Title:   "Watch",
+			About:   "Watch a video from a file or a web address",
+			Group:   "Vision",
 			Icon:    tools.IconRead,
 			Subject: "video_url",
 			Schema: tools.Schema("Analyze a video from a URL or local file path using a multimodal AI model. Sends the video to a video-capable model (e.g. Gemini) "+

@@ -18,8 +18,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/clip"
+	"github.com/nickheyer/icebath/pkg/ui/render"
 )
 
+// Characters /history shows of each message unless told otherwise
 const recap = 400
 
 type command struct {
@@ -30,23 +32,32 @@ type command struct {
 	run     func(c *chat, argument string) (tea.Cmd, bool)
 }
 
+// Usage lines of the commands whose mistakes the chat answers with them, the same words the slash list shows
+const (
+	rewindUsage     = "[n | fork n]"
+	copyUsage       = "[n]"
+	replayUsage     = "[n|last|list|load <path>]"
+	replayDiffUsage = "<baseline> <candidate>"
+	saveUsageLine   = "<json|md|html> [file] [redact]"
+)
+
 func locals() []command {
 	return []command{
-		{name: "new", aliases: []string{"clear", "reset"}, usage: "[title]", help: "Start a new session in this window", run: (*chat).fresh},
-		{name: "resume", usage: "[title|id]", help: "Open a past session here, by its title or id", run: (*chat).resume},
-		{name: "branch", aliases: []string{"fork"}, usage: "[--here] [title]", help: "Branch the current session; this window goes on in the branch", run: (*chat).branch},
-		{name: "save", usage: "<json|md|html> [filename] [redact]", help: "Export the current conversation (bare /save shows usage)", run: (*chat).saveTo},
-		{name: "rewind", usage: "[N | fork N]", help: "Go back to an earlier prompt to edit it, or fork a new session from before it", run: (*chat).rewind},
-		{name: "model", usage: "[model|reset] [--provider name] [--reasoning level] [--global|--session]", help: "Pick a model, or switch by name", run: (*chat).model},
-		{name: "reasoning", usage: "[level|reset|show|hide|full] [--global]", help: "Set the reasoning effort, or how reasoning is shown", run: (*chat).reasoning},
-		{name: "history", usage: "[chars]", help: "Show the session history, each message shortened", run: (*chat).history},
-		{name: "copy", usage: "[n]", help: "Copy the last reply, or the nth from last", run: (*chat).copy},
-		{name: "help", aliases: []string{"commands"}, usage: "[filter]", help: "List commands", run: (*chat).help},
-		{name: "quit", aliases: []string{"exit"}, usage: "[--delete]", help: "Quit; --delete also deletes this session", run: (*chat).quit},
-		{name: "agents", aliases: []string{"tasks"}, usage: "[pause|resume|status]",
-			help: "Open the spawn-tree dashboard (live audit + kill/pause controls); pause, resume and status go to the agent", run: (*chat).agents},
-		{name: "replay", usage: "[N|last|list|load <path>]", help: "Replay a completed spawn tree", run: (*chat).replayTree},
-		{name: "replay-diff", usage: "<baseline> <candidate>", help: "Diff two completed spawn trees (indexes from /replay)", run: (*chat).replayDiff},
+		{name: "new", aliases: []string{"clear", "reset"}, usage: "[title]", help: "Start a new session in this chat", run: (*chat).fresh},
+		{name: "resume", usage: "[title|id]", help: "Open a past session in this chat", run: (*chat).resume},
+		{name: "branch", aliases: []string{"fork"}, usage: "[--here] [title]", help: "Branch the session and go on in the branch", run: (*chat).branch},
+		{name: "save", usage: saveUsageLine, help: "Save the session to a file", run: (*chat).saveTo},
+		{name: "rewind", usage: rewindUsage, help: "Go back to an earlier message to change it", run: (*chat).rewind},
+		{name: "model", usage: "[model|reset] [--provider name] [--reasoning level] [--login name] [--global|--session] [--refresh]",
+			help: "Show or switch the model", run: (*chat).model},
+		{name: "reasoning", usage: "[level|reset|show|hide|full] [--global]", help: "Set the reasoning effort or how reasoning shows", run: (*chat).reasoning},
+		{name: "history", usage: "[characters]", help: "Show the messages of this session, shortened", run: (*chat).history},
+		{name: "copy", usage: copyUsage, help: "Copy the last reply, or the one n back", run: (*chat).copy},
+		{name: "help", aliases: []string{"commands"}, usage: "[skills|words]", help: "List the commands, or only the matching ones", run: (*chat).help},
+		{name: "quit", aliases: []string{"exit"}, usage: "[--delete]", help: "Quit icebath, and with --delete delete this session", run: (*chat).quit},
+		{name: "agents", aliases: []string{"tasks"}, usage: "[pause|resume|status]", help: "Show running subagents, or pause new ones", run: (*chat).agents},
+		{name: "replay", usage: replayUsage, help: "Replay a finished spawn tree", run: (*chat).replayTree},
+		{name: "replay-diff", usage: replayDiffUsage, help: "Compare two finished spawn trees", run: (*chat).replayDiff},
 	}
 }
 
@@ -95,8 +106,25 @@ func (c *chat) catalog() []*slashv1.Command {
 	for _, command := range c.commands {
 		add(command)
 	}
-	slices.SortFunc(catalog, func(a, b *slashv1.Command) int { return strings.Compare(a.GetName(), b.GetName()) })
+	// icebath's own commands first, then the ones that load a skill, each by name
+	slices.SortFunc(catalog, func(a, b *slashv1.Command) int {
+		if a.GetSkill() != b.GetSkill() {
+			if b.GetSkill() {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.GetName(), b.GetName())
+	})
 	return catalog
+}
+
+// Heading a command is listed under where commands and skills are listed together
+func heading(command *slashv1.Command) string {
+	if command.GetSkill() {
+		return "Skills"
+	}
+	return "Commands"
 }
 
 func (c *chat) command(text string) (*slashv1.Command, bool) {
@@ -124,10 +152,10 @@ func (c *chat) fresh(name string) (tea.Cmd, bool) {
 	c.left = left
 	c.named = name
 	if running {
-		c.say(strings.TrimSpace("/new "+name), "New session started · the previous one keeps running; /sessions lists it.")
+		c.say(strings.TrimSpace("/new "+name), "Started a new session. The one before keeps working, and /sessions lists it.")
 		return nil, true
 	}
-	c.say(strings.TrimSpace("/new "+name), "New session.")
+	c.say(strings.TrimSpace("/new "+name), "Started a new session.")
 	return nil, true
 }
 
@@ -139,11 +167,11 @@ func (c *chat) resume(name string) (tea.Cmd, bool) {
 		response, err := c.desk.sessions.Resolve(c.kit.Env.Ctx, &sessionsv1.ResolveRequest{Ref: name, Profile: c.on(), Tip: true})
 		return func() tea.Cmd {
 			if err != nil {
-				c.say("/resume "+name, "No session found matching '"+name+"'. /sessions lists them.")
+				c.say("/resume "+name, "No session matches “"+name+"”. /sessions lists them all.")
 				return nil
 			}
 			if response.GetSession().GetId() == c.id {
-				c.say("/resume "+name, "Already on session "+cmp.Or(response.GetSession().GetTitle(), name)+".")
+				c.say("/resume "+name, "This chat already shows "+cmp.Or(response.GetSession().GetTitle(), name)+".")
 				return nil
 			}
 			return c.switchTo(response.GetSession())
@@ -164,24 +192,30 @@ func (c *chat) reasoning(argument string) (tea.Cmd, bool) {
 	if words = slices.DeleteFunc(words, func(word string) bool { return word == "--global" }); len(words) != 1 {
 		return nil, false
 	}
-	thinking, told := "", ""
+	// Words of the Reasoning display setting and of its choices, as the settings screen names them
+	thinking, shown := "", ""
 	switch words[0] {
 	case "hide":
-		thinking, told = agentconfig.ThinkingHidden, "Reasoning hidden."
+		thinking, shown = agentconfig.ThinkingHidden, "Hidden"
 	case "full":
-		thinking, told = agentconfig.ThinkingOpen, "Reasoning expanded."
+		thinking, shown = agentconfig.ThinkingOpen, "Expanded"
 	case "show":
-		thinking, told = agentconfig.ThinkingFolded, "Reasoning collapsed. Click it to expand."
+		thinking, shown = agentconfig.ThinkingFolded, "Collapsed"
 		if c.thinking == agentconfig.ThinkingOpen {
-			thinking, told = agentconfig.ThinkingOpen, "Reasoning expanded."
+			thinking, shown = agentconfig.ThinkingOpen, "Expanded"
 		}
 	default:
 		return nil, false
 	}
+	echo := "/reasoning " + argument
 	if !global {
 		c.thinking = thinking
 		c.refold(":thinking")
-		c.say("/reasoning "+argument, told)
+		told := "Reasoning display is now " + shown + " in this chat."
+		if thinking == agentconfig.ThinkingFolded {
+			told += " Click a Reasoning line to open it."
+		}
+		c.say(echo, told)
 		return nil, true
 	}
 	value := strconv.Quote(thinking)
@@ -189,10 +223,10 @@ func (c *chat) reasoning(argument string) (tea.Cmd, bool) {
 		_, err := c.desk.settings.Set(c.kit.Env.Ctx, &configv1.SetRequest{Key: agentconfig.Thinking, Value: value})
 		return func() tea.Cmd {
 			if err != nil {
-				c.say("/reasoning "+argument, tui.Reason(err))
+				c.say(echo, "Reasoning display was not changed. "+tui.Reason(err))
 				return nil
 			}
-			c.say("/reasoning "+argument, told)
+			c.say(echo, "Reasoning display is now "+shown+" in your settings.")
 			return c.kit.Changed(agentconfig.Thinking, value)
 		}
 	}), true
@@ -211,7 +245,7 @@ func (c *chat) history(argument string) (tea.Cmd, bool) {
 		case sessionsv1.Role_ROLE_USER:
 			who = "You"
 		case sessionsv1.Role_ROLE_ASSISTANT:
-			who = "icebath"
+			who = "Agent"
 		default:
 			continue
 		}
@@ -219,23 +253,22 @@ func (c *chat) history(argument string) (tea.Cmd, bool) {
 		body := strings.TrimSpace(e.message.GetText())
 		switch calls := len(e.message.GetToolCalls()); {
 		case body != "":
-		case calls == 1:
-			body = "(1 tool call)"
-		case calls > 1:
-			body = fmt.Sprintf("(%d tool calls)", calls)
+		case calls > 0:
+			body = "*Used " + render.Count(calls, "tool") + ".*"
 		default:
-			body = "(empty)"
+			body = "*Nothing was said.*"
 		}
 		if utf8.RuneCountInString(body) > limit {
-			body = strings.TrimSpace(string([]rune(body)[:limit])) + "…"
+			body = strings.TrimSpace(string([]rune(body)[:limit])) + c.kit.Env.Theme.Glyphs.Ellipsis
 		}
-		lines = append(lines, fmt.Sprintf("**%s #%d**", who, turn), "", body, "")
+		lines = append(lines, fmt.Sprintf("**%s · %d**", who, turn), "", body, "")
 	}
 	if len(lines) == 0 {
-		c.say("/history", "No messages yet.")
+		c.say("/history", "This session has no messages yet.")
 		return nil, true
 	}
-	text, width := strings.Join(lines, "\n"), 0
+	head := fmt.Sprintf("*Each message is cut after %d characters. /history %d shows more of each.*", limit, max(limit*4, 2000))
+	text, width := strings.Join(append([]string{head, ""}, lines...), "\n"), 0
 	var wrapped []string
 	page := cards.NewPage(c.kit.Env, cards.PageSpec{
 		Title: "History",
@@ -252,39 +285,70 @@ func (c *chat) history(argument string) (tea.Cmd, bool) {
 
 func (c *chat) copy(number string) (tea.Cmd, bool) {
 	back := 1
+	echo := strings.TrimSpace("/copy " + number)
 	if number != "" {
 		var err error
 		if back, err = strconv.Atoi(number); err != nil || back < 1 {
-			c.say("/copy "+number, "Usage: /copy [n], where 1 is the last reply.")
+			c.say(echo, "Usage: /copy "+copyUsage+". 1 is the last reply, 2 the one before it.")
 			return nil, true
 		}
 	}
 	replies := c.log.replies()
-	if back > len(replies) {
-		c.say(strings.TrimSpace("/copy "+number), "No reply to copy.")
+	switch {
+	case len(replies) == 0:
+		c.say(echo, "There is no reply to copy yet.")
 		return nil, true
+	case back > len(replies):
+		c.say(echo, "This session has only "+render.Count(len(replies), "reply")+". Pick a number from 1 to "+strconv.Itoa(len(replies))+".")
+		return nil, true
+	case back == 1:
+		c.say(echo, "Copied the last reply.")
+	default:
+		c.say(echo, "Copied reply "+strconv.Itoa(back)+" from the end.")
 	}
-	c.say(strings.TrimSpace("/copy "+number), "Copied.")
 	return clip.Copy(replies[len(replies)-back]), true
 }
 
+// Lists every command with its usage and what it does, icebath's own in one table and the ones that load a skill in another, or those
+// whose words hold every word typed; skills alone for the word skills
 func (c *chat) help(filter string) (tea.Cmd, bool) {
-	var out strings.Builder
-	out.WriteString("| Command | Description |\n|---|---|\n")
-	found := false
+	only := strings.EqualFold(filter, "skills")
+	words := strings.Fields(strings.ToLower(filter))
+	if only {
+		words = nil
+	}
+	tables := map[bool]*strings.Builder{false: {}, true: {}}
 	for _, command := range c.catalog() {
 		line := strings.TrimSpace("/" + command.GetName() + " " + command.GetUsage())
-		if !strings.Contains(strings.ToLower(line+" "+command.GetHelp()), strings.ToLower(filter)) {
+		said := strings.ToLower(line + " " + strings.Join(command.GetAliases(), " ") + " " + command.GetHelp())
+		if only && !command.GetSkill() || slices.ContainsFunc(words, func(word string) bool { return !strings.Contains(said, word) }) {
 			continue
 		}
-		found = true
-		fmt.Fprintf(&out, "| `%s` | %s |\n", strings.ReplaceAll(line, "|", "\\|"), command.GetHelp())
+		fmt.Fprintf(tables[command.GetSkill()], "| `%s` | %s |\n", strings.ReplaceAll(line, "|", "\\|"), command.GetHelp())
 	}
-	if !found {
-		c.say("/help "+filter, "No commands match "+filter+".")
-		return nil, true
+	echo := strings.TrimSpace("/help " + filter)
+	var out strings.Builder
+	for _, skill := range []bool{false, true} {
+		if tables[skill].Len() == 0 {
+			continue
+		}
+		head := "| Command | What it does |"
+		if skill {
+			head = "| Skill | What it is for |"
+		}
+		if out.Len() > 0 {
+			out.WriteString("\n")
+		}
+		out.WriteString(head + "\n|---|---|\n" + tables[skill].String())
 	}
-	c.say(strings.TrimSpace("/help "+filter), out.String())
+	switch {
+	case out.Len() > 0:
+		c.say(echo, out.String())
+	case only:
+		c.say(echo, "No skills are installed. /skills installs one.")
+	default:
+		c.say(echo, "No command matches “"+filter+"”. /help lists them all.")
+	}
 	return nil, true
 }
 
@@ -293,12 +357,12 @@ func (c *chat) quit(argument string) (tea.Cmd, bool) {
 	if argument != "--delete" || id == "" {
 		return tea.Quit, true
 	}
-	return c.confirm("quit --delete", "The session and its messages are deleted for good, then icebath quits.", func() tea.Cmd {
+	return c.confirm("quit --delete", "This deletes the session and all its messages for good, then quits icebath.", func() tea.Cmd {
 		return tui.Async(func() func() tea.Cmd {
 			_, err := c.desk.sessions.Delete(c.kit.Env.Ctx, &sessionsv1.DeleteRequest{Id: id})
 			return func() tea.Cmd {
 				if err != nil {
-					c.say("/quit --delete", "The session was not deleted, so icebath stays open: "+tui.Reason(err))
+					c.say("/quit --delete", "The session was not deleted, so icebath stays open. "+tui.Reason(err))
 					return nil
 				}
 				return tea.Quit

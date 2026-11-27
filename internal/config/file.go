@@ -101,23 +101,23 @@ func parse(data []byte) (*viper.Viper, error) {
 // Document whose top is not a mapping of settings
 type shapeError struct{ kind string }
 
-func (e *shapeError) Error() string { return "top-level YAML value must be a mapping, got " + e.kind }
+func (e *shapeError) Error() string {
+	return "the file must hold named settings, and it holds " + e.kind
+}
 
-// Name of the kind of a YAML value, as the refusals of a file that holds one at its top name it
+// What a YAML value is, in the words the refusals of a file that holds one at its top say it in
 func kindOf(doc any) string {
 	switch doc.(type) {
 	case []any:
-		return "list"
+		return "a list"
 	case string:
-		return "str"
+		return "plain text"
 	case bool:
-		return "bool"
-	case int, int64, uint64:
-		return "int"
-	case float64:
-		return "float"
+		return "true or false"
+	case int, int64, uint64, float64:
+		return "a number"
 	}
-	return fmt.Sprintf("%T", doc)
+	return "something else"
 }
 
 // Viper of the file as it is now, read again first when its version changed
@@ -201,7 +201,7 @@ func (f *fileLayer) warn(err error, fallback string) {
 			message += " A copy of the broken file was saved to " + copied + "."
 		}
 	}
-	tell(fmt.Sprintf("⚠️  icebath config: %s\n    Details: %s", message, details(err)), message+" Details: "+details(err), "path", f.path)
+	tell(fmt.Sprintf("⚠ %s\n  The error: %s.", message, details(err)), message+" The error: "+details(err)+".", "path", f.path)
 }
 
 // Settings of the file as it is on disk now, under f.mu: none for a file that is not there, the refusal of one that does not read or parse
@@ -212,12 +212,12 @@ func (f *fileLayer) onDisk() (map[string]any, error) {
 	case errors.Is(err, fs.ErrNotExist):
 		return map[string]any{}, nil
 	case err != nil:
-		return nil, refuseOverwrite(f.path, "cannot be read", err, fixPerms)
+		return nil, refuseOverwrite(f.path, "can't be read", err, fixPerms)
 	}
 	on, err := parse(data)
 	if shape, ok := errors.AsType[*shapeError](err); ok {
 		f.warn(err, "refuse-write")
-		return nil, refuseOverwrite(f.path, "must start with settings names, but its top level is "+shape.kind, err, f.fixYAML())
+		return nil, refuseOverwrite(f.path, "must hold named settings, and it holds "+shape.kind, err, f.fixYAML())
 	}
 	if err != nil {
 		f.warn(err, "refuse-write")
@@ -301,33 +301,33 @@ func osError(err error) bool {
 	return errors.As(err, &pathErr) || errors.As(err, &linkErr) || errors.As(err, &sysErr) || errors.As(err, &errno)
 }
 
-const fixPerms = "Fix the file permissions or move it aside first."
+const fixPerms = "Fix the permissions of the file, or move the file aside."
 
 func readFix(err error) string {
 	if errors.Is(err, fs.ErrPermission) {
 		return fixPerms
 	}
-	return "Try again; run `icebath config check` if it keeps failing."
+	return "Try again, and run `icebath config check` if it keeps failing."
 }
 
 // What a person reads about a config file that does not read or parse: what icebath runs on meanwhile and how to fix it
 func parseFailure(path string, err error, fallback string) string {
 	meanwhile := map[string]string{
-		"last-known-good":        "Icebath is running on the settings it loaded before the edit until it is fixed, so recent changes are not applied.",
-		"last-known-good-backup": "Icebath is running on your last good settings until it is fixed, so recent changes are not applied.",
-		"refuse-write":           "Nothing was written, so the existing file is preserved.",
+		"last-known-good":        "Until it is fixed, icebath uses the settings it had before the edit, so recent changes have no effect.",
+		"last-known-good-backup": "Until it is fixed, icebath uses the last settings that worked, so recent changes have no effect.",
+		"refuse-write":           "Nothing was saved, so the file is as it was.",
 	}[fallback]
 	if meanwhile == "" {
-		meanwhile = "Icebath is running on default settings until it is fixed, so none of your saved settings are applied."
+		meanwhile = "Until it is fixed, icebath uses the default settings, so none of your saved settings have an effect."
 	}
 	if osError(err) {
-		return fmt.Sprintf("Your settings file (%s) could not be read. %s %s", path, meanwhile, readFix(err))
+		return fmt.Sprintf("Your settings file %s could not be read. %s %s", path, meanwhile, readFix(err))
 	}
 	at, fix := "", "the problem"
 	if where := location(err); where != "" {
 		at, fix = " at "+where, where
 	}
-	return fmt.Sprintf("Your settings file (%s) has a formatting error%s. %s Open it with `icebath config edit`, fix %s, then run `icebath config check`.",
+	return fmt.Sprintf("Your settings file %s has a formatting error%s. %s Open it with `icebath config edit`, fix %s, then run `icebath config check`.",
 		path, at, meanwhile, fix)
 }
 
@@ -339,7 +339,7 @@ func (e *RefusedError) Error() string { return e.Message }
 func refuseOverwrite(path, reason string, err error, fix string) error {
 	at := ""
 	if where := location(err); where != "" {
-		at = " (" + where + ")"
+		at = " at " + where
 	}
-	return &RefusedError{fmt.Sprintf("Your settings file (%s) %s%s, so this change was not saved. %s Details: %s", path, reason, at, fix, details(err))}
+	return &RefusedError{fmt.Sprintf("This change was not saved, because your settings file %s %s%s. %s The error: %s.", path, reason, at, fix, details(err))}
 }

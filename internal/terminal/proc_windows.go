@@ -131,7 +131,7 @@ func SignalGroup(pgid int, force bool) error {
 }
 
 // No process of the group or pid is left
-var ErrGone = errors.New("no such process")
+var ErrGone = errors.New("The process is no longer running.")
 
 func leadsGroup(int) bool { return false }
 

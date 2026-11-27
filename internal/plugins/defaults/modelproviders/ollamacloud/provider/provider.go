@@ -18,6 +18,7 @@ func (specs) Specs() []provider.Spec {
 		Carriers:           []string{"reasoning_content", "reasoning"},
 		Native:             provider.Unprefixed,
 		DisplayName:        ollamacloudconfig.Title,
+		Description:        "Open models on Ollama's servers, with an Ollama API key",
 		BaseURL:            ollamacloudconfig.BaseURL,
 		BaseURLEnv:         ollamacloudconfig.BaseURLEnv,
 		ModelsURL:          ollamacloudconfig.ModelsURL,

@@ -395,9 +395,14 @@ func (m *Model) placeField(fw int) {
 	}
 }
 
-// Box of the field while a palette types into it, three fifths of the bar centered on it
+// Box of the field while a palette types into it, centered on the bar: three fifths of it, more where the rows of the palette need
+// more to show whole and the bar has it
 func (m *Model) openField() (int, int) {
-	w := max(min(max(m.width*3/5, 44), m.width-2*m.gapOutX-2), 1)
+	want := max(m.width*3/5, 44)
+	if p := m.docked(); p != nil {
+		want = max(want, p.Wants()+2*m.padX)
+	}
+	w := max(min(want, m.width-2*m.gapOutX-2), 1)
 	return (m.width - w) / 2, w
 }
 
@@ -745,7 +750,7 @@ func spansWidth(ss []span) int {
 
 // Text at the right of the open field, the match count of a picker
 func (m *Model) inputTail(p *Palette, bg color.Color) []span {
-	if len(p.items) == 0 || p.Asking() {
+	if len(p.items) == 0 || p.Asking() || p.Tally() == "" {
 		return nil
 	}
 	return []span{{p.Tally(), uv.Style{Fg: m.theme.TextDim, Bg: bg}}}

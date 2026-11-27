@@ -35,7 +35,7 @@ func markerEnv(target, short, full string) (map[string]string, error) {
 			env["platform_machine"] = "ARM64"
 		}
 	default:
-		return nil, fmt.Errorf("unknown target %s", target)
+		return nil, fmt.Errorf("There is no platform %s.", target)
 	}
 	return env, nil
 }
@@ -48,10 +48,10 @@ func evalMarker(marker string, env map[string]string) (bool, error) {
 	p := &markerParser{tokens: tokenize(marker), env: env}
 	ok, err := p.or()
 	if err != nil {
-		return false, fmt.Errorf("invalid marker %q: %w", marker, err)
+		return false, fmt.Errorf("The environment marker %q is not valid: %w", marker, err)
 	}
 	if p.pos != len(p.tokens) {
-		return false, fmt.Errorf("invalid marker %q: unexpected %q", marker, p.tokens[p.pos])
+		return false, fmt.Errorf("The environment marker %q is not valid: %q is out of place.", marker, p.tokens[p.pos])
 	}
 	return ok, nil
 }
@@ -148,7 +148,7 @@ func (p *markerParser) expr() (bool, error) {
 			return false, err
 		}
 		if p.next() != ")" {
-			return false, fmt.Errorf("missing )")
+			return false, fmt.Errorf("a ) is missing.")
 		}
 		return ok, nil
 	}
@@ -156,7 +156,7 @@ func (p *markerParser) expr() (bool, error) {
 	op := p.next()
 	if op == "not" {
 		if p.next() != "in" {
-			return false, fmt.Errorf("expected in after not")
+			return false, fmt.Errorf("“not” must come before “in”.")
 		}
 		op = "not in"
 	}
@@ -180,7 +180,7 @@ func (p *markerParser) expr() (bool, error) {
 		return left == right, nil
 	case "==", "!=", "<", "<=", ">", ">=", "~=":
 	default:
-		return false, fmt.Errorf("unknown operator %q", op)
+		return false, fmt.Errorf("%q is not an operator.", op)
 	}
 	if !version || !versionLike(left) || !versionLike(right) {
 		switch op {
@@ -189,7 +189,7 @@ func (p *markerParser) expr() (bool, error) {
 		case "!=":
 			return left != right, nil
 		}
-		return false, fmt.Errorf("%s compares non-versions %q and %q", op, left, right)
+		return false, fmt.Errorf("%s compares %q and %q, which are not versions.", op, left, right)
 	}
 	if strings.HasSuffix(right, ".*") && (op == "==" || op == "!=") {
 		prefix := strings.TrimSuffix(right, ".*")
@@ -224,7 +224,7 @@ func (p *markerParser) value(token string) (string, string, error) {
 	if value, ok := p.env[token]; ok {
 		return value, token, nil
 	}
-	return "", "", fmt.Errorf("unknown marker variable %q", token)
+	return "", "", fmt.Errorf("%q is not a marker variable.", token)
 }
 
 func versionLike(s string) bool {

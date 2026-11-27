@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/internal/prompt"
 	"github.com/nickheyer/icebath/internal/tools"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -60,7 +61,8 @@ func read(ctx context.Context, env *prompt.Env, path string) (string, bool) {
 	case result := <-done:
 		return result.text, result.err == nil
 	case <-timer.C:
-		env.Notify(fmt.Sprintf("Context file %s took longer than %s to read, so it was left out.", path, wait))
+		env.Notify(fmt.Sprintf("⚠ The project file %s took longer than %s to read, so it was left out. Raise Project file wait in /settings "+
+			"under Agent › Prompt if it needs more time.", path, strs.Span(wait)))
 	case <-ctx.Done():
 	}
 	return "", false
@@ -85,8 +87,9 @@ func truncate(env *prompt.Env, content, name, path string) string {
 	if len(runes) <= most {
 		return content
 	}
-	env.Notify(fmt.Sprintf("Context file %s was cut: %d characters is over the limit of %d. Trim the file, raise the context file limit "+
-		"in /settings (Agent, Prompt), or use a model with a larger context.", name, len(runes), most))
+	env.Notify(fmt.Sprintf("⚠ The project file %s was cut, because its %s are more than the limit of %s. Trim the file, raise Project file "+
+		"limit in /settings under Agent › Prompt, or use a model with a bigger context window.", name, strs.Counted(float64(len(runes)), "characters"),
+		strs.Number(float64(most))))
 	head, tail := int(float64(most)*truncateHeadShare), int(float64(most)*truncateTailShare)
 	sections := ""
 	if omitted := omittedHeadings(runes, head, len(runes)-tail); len(omitted) > 0 {
@@ -126,7 +129,7 @@ func scan(env *prompt.Env, content, name string) string {
 		return content
 	}
 	joined := strings.Join(found, ", ")
-	env.Notify("Context file " + name + " was not loaded: it matched injection pattern(s) " + joined + ".")
+	env.Notify("⚠ The project file " + name + " was not loaded, because it holds text that looks like instructions slipped in by someone else.")
 	return fmt.Sprintf("[BLOCKED: %s contained potential prompt injection (%s). Content not loaded.]", name, joined)
 }
 

@@ -24,7 +24,7 @@ import (
 )
 
 // What the credentials of xAI answer when none resolve
-const noCredentials = "No xAI credentials found. Configure xAI OAuth in /providers or set XAI_API_KEY"
+const noCredentials = "xAI needs a sign-in or an API key. Sign in to xAI in /providers, or set XAI_API_KEY in your keys file."
 
 // Speeds xAI takes
 const (
@@ -40,7 +40,7 @@ func Register(registry *speech.Registry) {
 	speaks := func(job *speech.Job) bool { _, ok := job.XAI(true); return ok }
 	registry.Register(speech.Services{
 		Speakers: []speech.Voice{{
-			Name: config.Name, Title: "xAI TTS", About: "Grok voices — uses xAI Grok OAuth or XAI_API_KEY",
+			Name: config.Name, Title: "xAI TTS", About: "Grok's voices, needs an xAI API key or a Grok sign-in",
 			Ready:      speaks,
 			Limit:      func(*speech.Job) int { return config.DefaultLimit },
 			Synthesize: synthesize,
@@ -49,7 +49,7 @@ func Register(registry *speech.Registry) {
 			Setup:      setup,
 		}},
 		Recognizing: []speech.Recognizer{{
-			Name: config.Name, Title: "xAI", About: "Grok Voice Transcribe — uses xAI Grok OAuth or XAI_API_KEY", Cloud: true, Rank: 6,
+			Name: config.Name, Title: "xAI", About: "Grok's speech to text, needs an xAI API key or a Grok sign-in", Cloud: true, Rank: 6,
 			Label: "xAI Grok STT", Detected: "xAI Grok STT API", Warning: "STT provider 'xai' configured but no xAI credentials are available",
 			Missing: func(_ context.Context, job *speech.Job) string {
 				if _, _, ok := listener(job); !ok {
@@ -124,7 +124,7 @@ func tagged(ctx context.Context, job *speech.Job, text string) string {
 func synthesize(ctx context.Context, job *speech.Job, request speech.Request) (string, error) {
 	bearer, ok := job.XAI(true)
 	if !ok || bearer.Key == "" {
-		return "", speech.Misconfigured(noCredentials + ".")
+		return "", speech.Misconfigured(noCredentials)
 	}
 	text := request.Text
 	if job.Config.GetBool(config.AutoSpeechTags) {

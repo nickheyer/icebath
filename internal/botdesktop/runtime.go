@@ -21,8 +21,8 @@ import (
 	"github.com/nickheyer/icebath/internal/browser"
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/terminal"
-	"github.com/nickheyer/icebath/internal/terminal/sandbox"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Band of X display numbers screens of this machine take
@@ -304,7 +304,7 @@ func pickDisplay(cfg *config.Config) (int, error) {
 			return num, nil
 		}
 	}
-	return 0, errors.New("no free X display number in the Bot Desktop band")
+	return 0, errors.New("Every display number the agent desktop may use is taken. Stop another desktop or X server, then try again.")
 }
 
 // Variables of base with the running screen's DISPLAY, XAUTHORITY and bus merged in and WAYLAND_DISPLAY dropped, so a program started
@@ -603,15 +603,13 @@ func (d *Desktop) sandboxStatus(ctx context.Context, cfg *config.Config, where P
 		Display: published["DISPLAY"], Geometry: geometry(cfg), Available: -1, Limit: -1, Placement: Terminal + ":" + where.Backend,
 		Lease: d.Lease(cfg)}
 	if len(missing) > 0 {
-		advice := cmp.Or(imageAdvice(where.Backend), fmt.Sprintf("use %s as terminal.%s_image (the sandbox icebath builds, desktop stack included)",
-			sandbox.Image, where.Backend))
-		st.Blocker = fmt.Sprintf("The terminal backend's sandbox image lacks %s. %s%s, or set bot_desktop.placement: gateway.",
-			strings.Join(missing, ", "), strings.ToUpper(advice[:1]), advice[1:])
+		st.Blocker = fmt.Sprintf("The sandbox where the agent's commands run lacks %s. %s Or set Location in /settings under Agent desktop to "+
+			"This computer.", strings.Join(missing, ", "), d.imageAdvice(cfg, where.Backend))
 		if backend, ok := d.terminal.Named(cfg, where.Backend); ok && backend.Switch != nil {
 			if sw := backend.Switch(cfg); sw != nil {
 				st.Switch = sw
-				st.Blocker = fmt.Sprintf("Your sandbox container still runs %s, which has no desktop. Switch it to %s: files in /root and /workspace "+
-					"stay, packages installed inside the container are reinstalled on demand.", sw.Current, sw.Target)
+				st.Blocker = fmt.Sprintf("Your sandbox still runs %s, which has no desktop. Switch it to %s. The files in /root and /workspace "+
+					"stay, and packages installed inside it come back when they are needed.", sw.Current, sw.Target)
 			}
 		}
 	}
@@ -628,19 +626,19 @@ func (d *Desktop) Start(ctx context.Context, cfg *config.Config, wait time.Durat
 	case where.Where == Terminal:
 		return d.startInSandbox(ctx, cfg, wait)
 	case !Supported():
-		return Status{}, errors.New("Bot Desktop runs on Linux gateway hosts only")
+		return Status{}, errors.New("The agent desktop works only when icebath runs on Linux.")
 	}
 	if missing := Missing(); len(missing) > 0 {
-		need := "Bot Desktop needs " + strings.Join(missing, ", ") + " on the gateway host"
+		need := "The agent desktop needs " + strings.Join(missing, ", ") + " on this computer"
 		switch {
 		case Manager() == "":
-			return Status{}, errors.New(need + ", and no supported package manager (apt/dnf/pacman) is available to install them. Install TigerVNC " +
-				"(Xvnc) and the Xfce core components with this distro's own tooling.")
+			return Status{}, errors.New(need + ", and none of the package managers icebath knows, apt, dnf or pacman, is here to install them. " +
+				"Install TigerVNC, whose server is Xvnc, and the core of Xfce with the tools of your Linux distribution.")
 		case !Installable():
-			return Status{}, errors.New(need + ", and this host cannot install them: the process is unprivileged and there is no sudo. On the " +
-				"published Docker image the packages have to be baked in, so this needs a newer image rather than an install.")
+			return Status{}, errors.New(need + ", and icebath cannot install them, because it runs without root and there is no sudo. In the " +
+				"published Docker image the packages must be built in, so this needs a newer image rather than an install.")
 		}
-		return Status{}, errors.New(need + ". Install: " + InstallCommand())
+		return Status{}, errors.New(need + ". Install them with: " + InstallCommand())
 	}
 	dir := StateDir(cfg)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -667,7 +665,7 @@ func (d *Desktop) Start(ctx context.Context, cfg *config.Config, wait time.Durat
 		return Status{}, errors.New(reason)
 	}
 	if mem.Available >= 0 && mem.Available < tight(floor) {
-		slog.Warn(fmt.Sprintf("Bot Desktop starting with %d MB available; a browser with a few pages open can use most of that.", mem.Available))
+		slog.Warn(fmt.Sprintf("Agent desktop starting with %d MB available; a browser with a few pages open can use most of that.", mem.Available))
 	}
 	if _, ok := live(cfg); !ok {
 		reapOrphan(cfg, dir)
@@ -733,7 +731,7 @@ func (d *Desktop) spawn(ctx context.Context, cfg *config.Config, dir string, wai
 	})
 	if exe, profile, ok := d.dock(cfg); ok {
 		if err := seed(profile); err != nil {
-			return Status{}, fmt.Errorf("could not write the preferences that keep the dock browser from calling home into %s: %w", profile, err)
+			return Status{}, fmt.Errorf("The settings that keep the browser on the agent desktop from contacting its maker could not be written to %s: %w", profile, err)
 		}
 		env["ICEBATH_BD_BROWSER_EXEC"], env["ICEBATH_BD_BROWSER_EXEC_LINE"] = exe, execLine(exe, profile, browser.Bypass())
 	}
@@ -774,7 +772,7 @@ func (d *Desktop) spawn(ctx context.Context, cfg *config.Config, dir string, wai
 		select {
 		case <-exited:
 			data, _ := os.ReadFile(logPath)
-			return Status{}, &launchError{fmt.Sprintf("Bot Desktop launcher exited with %d:\n%s", cmd.ProcessState.ExitCode(), tail(data, 2000))}
+			return Status{}, &launchError{fmt.Sprintf("The agent desktop stopped as it started, with exit code %d:\n%s", cmd.ProcessState.ExitCode(), tail(data, 2000))}
 		default:
 		}
 		_, envErr := os.Stat(envFile)
@@ -790,7 +788,7 @@ func (d *Desktop) spawn(ctx context.Context, cfg *config.Config, dir string, wai
 	for _, name := range []string{"launcher.pid", "env", "rfb.sock"} {
 		os.Remove(filepath.Join(dir, name))
 	}
-	return Status{}, &launchError{fmt.Sprintf("Bot Desktop did not publish its display within %.0fs (see %s)", wait.Seconds(), logPath)}
+	return Status{}, &launchError{fmt.Sprintf("The agent desktop did not come up within %s. Its log is %s.", strs.Span(wait.Round(time.Second)), logPath)}
 }
 
 // Brings the screen up inside the terminal backend's sandbox and records what it published on this machine
@@ -823,7 +821,7 @@ func (d *Desktop) startInSandbox(ctx context.Context, cfg *config.Config, wait t
 				return err
 			}
 			if err := d.SeedSandboxProfile(env, profile); err != nil {
-				return fmt.Errorf("could not write the preferences that keep the sandbox browser from calling home into %s: %w", profile, err)
+				return fmt.Errorf("The settings that keep the browser in the sandbox from contacting its maker could not be written to %s: %w", profile, err)
 			}
 			line = execLine(exe, profile, true)
 		}
@@ -920,11 +918,11 @@ func (d *Desktop) SwitchImage(ctx context.Context, cfg *config.Config, approve b
 	where := d.Resolve(cfg)
 	backend, ok := d.terminal.Named(cfg, where.Backend)
 	if !ok || backend.Switch == nil || backend.Decide == nil {
-		return "", errors.New("no sandbox image switch is pending for this profile")
+		return "", errors.New("No new sandbox image is waiting for this profile.")
 	}
 	sw := backend.Switch(cfg)
 	if sw == nil {
-		return "", errors.New("no sandbox image switch is pending for this profile")
+		return "", errors.New("No new sandbox image is waiting for this profile.")
 	}
 	image, err := backend.Decide(cfg, sw, approve)
 	if err != nil {
@@ -956,7 +954,7 @@ func (d *Desktop) Command(ctx context.Context, cfg *config.Config, argv []string
 		if !start {
 			return nil, nil
 		}
-		return nil, errors.New("the screen inside the terminal backend's sandbox is gone; start it again")
+		return nil, errors.New("The agent desktop in the sandbox is gone. Start it again.")
 	}
 	merged := maps.Clone(published)
 	maps.Copy(merged, vars)
@@ -964,7 +962,7 @@ func (d *Desktop) Command(ctx context.Context, cfg *config.Config, argv []string
 	err = d.sandbox(ctx, cfg, start, func(env terminal.Environment) error {
 		if env == nil {
 			if start {
-				return errors.New("the terminal backend's sandbox is not running, so there is nowhere to run " + argv[0])
+				return errors.New("The sandbox where the agent's commands run is not running, so " + argv[0] + " has nowhere to run.")
 			}
 			return nil
 		}

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // What one run of git gave: its exit status and its output, invalid text replaced
@@ -36,7 +37,7 @@ type TimeoutError struct {
 }
 
 func (e *TimeoutError) Error() string {
-	return fmt.Sprintf("git %s timed out after %s", strings.Join(e.Args, " "), e.Timeout)
+	return fmt.Sprintf("`git %s` did not finish within %s.", strings.Join(e.Args, " "), strs.Span(e.Timeout))
 }
 
 // Runs git in the folder with the environment, the process's own when nil, input on its stdin, stopped with every process it started

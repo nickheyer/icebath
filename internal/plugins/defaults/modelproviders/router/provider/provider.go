@@ -16,7 +16,7 @@ func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               routerconfig.Name,
 		DisplayName:        routerconfig.Title,
-		Description:        "Sends each request to the cheapest model that meets your quality bar",
+		Description:        "Picks the cheapest model good enough for each request, with an API key",
 		SignupURL:          "https://app.router.com/keys",
 		BaseURL:            base,
 		BaseURLEnv:         routerconfig.BaseURLEnv,

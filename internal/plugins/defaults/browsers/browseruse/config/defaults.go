@@ -10,9 +10,11 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: browserconfig.Key,
 		Title:  "Browser Use",
-		About:  "Browser Use (https://browser-use.com) cloud browser backend",
+		About:  "Cloud browsers run by Browser Use",
+		Order:  10,
 		Settings: []config.Setting{
-			{Key: APIKey, Title: "Browser Use key", About: "Browser Use API key; set with no browser service chosen, pages open in Browser Use's cloud", Default: "",
+			{Key: APIKey, Title: "API key", About: "Your Browser Use API key.",
+				Help: "Get one at browser-use.com. With no browser service chosen, this key opens pages in Browser Use.", Default: "",
 				Env: []string{APIKeyEnv}, Secret: true},
 		},
 	}})

@@ -94,16 +94,17 @@ func (h *Packages) relock(ctx context.Context, cfg *config.Config, r Reporter) (
 	_, declared := h.index()
 	for _, name := range slices.Sorted(maps.Keys(declared)) {
 		entry := *declared[name]
-		r.Line(fmt.Sprintf("→ Resolving %s...", name))
+		r.Line(fmt.Sprintf("Working out the packages of %s…", name))
 		if err := run.lockExtra(name, &entry); err != nil {
-			return 0, fmt.Errorf("extra %s: %w", name, err)
+			return 0, fmt.Errorf("The packages of the extra %s could not be worked out: %w", name, err)
 		}
-		line := fmt.Sprintf("✓ %s: %d packages", name, len(entry.Packages))
+		line := fmt.Sprintf("✓ %s: %s", name, strs.Count(len(entry.Packages), "package"))
 		if len(entry.BuildDeps) > 0 {
-			line += fmt.Sprintf(", %d build requirements", len(entry.BuildDeps))
+			line += fmt.Sprintf(" and %s", strs.Count(len(entry.BuildDeps), "build requirement"))
 		}
+		line += "."
 		if len(entry.Unsupported) > 0 {
-			line += ", none for " + strings.Join(slices.Sorted(maps.Keys(entry.Unsupported)), " ")
+			line += " None for " + joined(slices.Sorted(maps.Keys(entry.Unsupported)), "or") + "."
 		}
 		r.Line(line)
 		doc.Extras[name] = &entry
@@ -115,13 +116,13 @@ func (h *Packages) relock(ctx context.Context, cfg *config.Config, r Reporter) (
 	}
 	encoded = append(encoded, '\n')
 	if current, err := os.ReadFile(path); err == nil && string(current) == string(encoded) {
-		r.Line("extras lock is current: " + path)
+		r.Line("✓ The lock of the extras in " + path + " is up to date, so nothing changed.")
 		return 0, nil
 	}
 	if err := fsx.Write(path, encoded, 0o600); err != nil {
 		return 0, err
 	}
-	r.Line("wrote " + path + "; extras provisioned from now on install its pins")
+	r.Line("✓ Wrote " + path + ". Extras installed from now on use its pins.")
 	return 0, nil
 }
 
@@ -188,7 +189,7 @@ func (r *relocking) resolve(name string, e *Extra) ([]Locked, map[string]string,
 		stderr := strings.Join(strings.Fields(out.stderr), " ")
 		m := failedSplit.FindStringSubmatch(stderr)
 		if m == nil {
-			return nil, nil, fmt.Errorf("uv lock failed: %s", strings.TrimSpace(out.stderr))
+			return nil, nil, fmt.Errorf("`uv lock` failed: %s", strings.TrimSpace(out.stderr))
 		}
 		kept := environments[:0]
 		dropped := false
@@ -208,7 +209,7 @@ func (r *relocking) resolve(name string, e *Extra) ([]Locked, map[string]string,
 			}
 		}
 		if !dropped || len(kept) == 0 {
-			return nil, nil, fmt.Errorf("uv lock failed: %s", strings.TrimSpace(out.stderr))
+			return nil, nil, fmt.Errorf("`uv lock` failed: %s", strings.TrimSpace(out.stderr))
 		}
 		environments = kept
 	}
@@ -217,7 +218,7 @@ func (r *relocking) resolve(name string, e *Extra) ([]Locked, map[string]string,
 		return nil, nil, err
 	}
 	if out.code != 0 {
-		return nil, nil, fmt.Errorf("uv export failed: %s", strings.TrimSpace(out.stderr))
+		return nil, nil, fmt.Errorf("`uv export` failed: %s", strings.TrimSpace(out.stderr))
 	}
 	text, err := os.ReadFile(filepath.Join(scratch, "pylock.toml"))
 	if err != nil {
@@ -334,7 +335,7 @@ func (r *relocking) lockBuildDeps(name string, built map[string]Locked) ([]Locke
 			probed[p.Name+"=="+p.Version] = true
 			reqs, err := r.sdistBuildRequires(*p.Sdist)
 			if err != nil {
-				return nil, nil, fmt.Errorf("build requirements of %s %s: %w", p.Name, p.Version, err)
+				return nil, nil, fmt.Errorf("The build requirements of %s %s could not be worked out: %w", p.Name, p.Version, err)
 			}
 			for _, req := range reqs {
 				requires[req] = true
@@ -428,7 +429,7 @@ func (r *relocking) sdistBuildRequires(f LockedFile) ([]string, error) {
 			return err
 		}
 		if out.code != 0 {
-			return fmt.Errorf("uv %s exited %d: %s", args[0], out.code, strings.TrimSpace(out.stderr))
+			return fmt.Errorf("`uv %s` ended with exit code %d: %s", args[0], out.code, strings.TrimSpace(out.stderr))
 		}
 		return nil
 	}
@@ -454,7 +455,7 @@ func (r *relocking) sdistBuildRequires(f LockedFile) ([]string, error) {
 	lines := strings.Split(strings.TrimSpace(out.stdout), "\n")
 	var dynamic []string
 	if out.code != 0 || json.Unmarshal([]byte(lines[len(lines)-1]), &dynamic) != nil {
-		return nil, fmt.Errorf("%s get_requires_for_build_wheel exited %d: %s", backend, out.code, strs.Tail(strings.TrimSpace(out.stdout+"\n"+out.stderr), 2000))
+		return nil, fmt.Errorf("The build backend %s ended with exit code %d when asked what it needs: %s", backend, out.code, strs.Tail(strings.TrimSpace(out.stdout+"\n"+out.stderr), 2000))
 	}
 	all := append(slices.Clone(requires), dynamic...)
 	r.requires[f.URL] = all
@@ -562,7 +563,7 @@ func readPylock(text []byte, short string) ([]Locked, error) {
 	}
 	file := func(a *artifact) (*LockedFile, error) {
 		if a.Hashes["sha256"] == "" {
-			return nil, fmt.Errorf("pylock artifact %s has no hashes", a.URL)
+			return nil, fmt.Errorf("The locked file %s has no hashes.", a.URL)
 		}
 		return &LockedFile{URL: a.URL, SHA256: a.Hashes["sha256"]}, nil
 	}

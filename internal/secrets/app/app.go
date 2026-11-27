@@ -4,19 +4,31 @@ package app
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect/v2"
 
 	"github.com/nickheyer/icebath/internal/app"
+	"github.com/nickheyer/icebath/internal/config"
+	configapp "github.com/nickheyer/icebath/internal/config/app"
 	secretsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/secrets/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/secrets/v1/secretsv1connect"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
+)
+
+// Section of the settings of the secret stores, opened from the last row
+const section = "secrets"
+
+// Heading of the rows of the stores, and of the row that opens their settings
+const (
+	storesGroup   = "Stores"
+	settingsGroup = "More"
 )
 
 // What a store shows on the screen and what can be done with it
@@ -29,20 +41,26 @@ type Store struct {
 	Adds []Action
 }
 
-// One row: a name, a status and where it comes from, the lines of its detail, what it can do when opened and how it is removed
+// One row: a name and its state, the heading it is listed under, the lines of its detail, what it can do when opened and how it is removed
 type Row struct {
-	Cells  [3]string
+	Name, State string
+	// Heading of the rows of its kind, the stores when empty
+	Group  string
 	Detail []string
 	Open   []Action
 	// Question asked before Remove runs, nil Remove for a row that can't be removed
 	Confirm string
 	Remove  func(s *Screen) tea.Cmd
+	// Words a search reads besides the name and the state
+	Words string
+	// Name of the store the row is the main row of, whose last fetch its detail tells; empty for any other row
+	Store string
 }
 
-// Something a row or the store can do: a label, a line saying what, and the run of it
+// Something a row or the store can do: its name, a phrase saying what it does, the word on its button, and the run of it
 type Action struct {
-	Label, Does string
-	Run         func(s *Screen) tea.Cmd
+	Label, Does, Verb string
+	Run               func(s *Screen) tea.Cmd
 }
 
 type Registrant interface {
@@ -86,8 +104,10 @@ func (s screens) Screens(conn *connect.Client) []tui.Screen {
 	service := secretsv1connect.NewSecretServiceClient(conn)
 	return []tui.Screen{{
 		ID:    "secrets",
+		Group: tui.GroupSecrets,
+		Order: 10,
 		Title: "Secret stores",
-		Short: "Bitwarden and 1Password as sources of keys",
+		Short: "Load API keys from a password manager or a command",
 		Slash: []string{"secrets"},
 		Open: func(kit *tui.Kit, _ string) tea.Cmd {
 			screen := &Screen{Kit: kit, service: service, stores: s.stores.Stores(conn)}
@@ -105,8 +125,18 @@ type Screen struct {
 	list    *cards.List
 	rows    []Row
 	failed  []string
-	loaded  bool
-	err     error
+	// Lists stacked over the first one, refreshed whenever the stores are read
+	views  []*cards.List
+	loaded bool
+}
+
+// The row that opens the settings of the secret stores, last on the screen
+func (s *Screen) settingsRow() Row {
+	return Row{Name: "Settings", State: "Store order, your own command and more", Group: settingsGroup,
+		Detail: []string{"Every setting of the secret stores, on the settings screen."},
+		Open: []Action{{Label: "Settings", Verb: "open", Run: func(s *Screen) tea.Cmd {
+			return tea.Batch(s.Kit.WM.DismissCard(s.Hub), s.Kit.Open(configapp.Settings, section))
+		}}}}
 }
 
 func (s *Screen) open() tea.Cmd {
@@ -117,14 +147,22 @@ func (s *Screen) open() tea.Cmd {
 		Key:     "secrets",
 		Context: cards.HubContext,
 		Primary: "hub.use",
-		Columns: []render.Column{{Title: "Name", Max: 36}, {Title: "Status", Max: 24}, {Title: "From", Flex: 1}},
-		Yield:   []int{2, 1},
+		Intro: func() []string {
+			return []string{"Stores that hand icebath your API keys and other variables as it starts, so they need not sit in your keys file."}
+		},
+		Columns: []render.Column{{}, {Flex: 1}},
 		Rows: func() [][]string {
 			out := make([][]string, len(s.rows))
 			for i, row := range s.rows {
-				out[i] = row.Cells[:]
+				out[i] = []string{row.Name, row.State}
 			}
 			return out
+		},
+		Group: func(i int) string {
+			if s.rows[i].Group == "" {
+				return storesGroup
+			}
+			return s.rows[i].Group
 		},
 		Detail: func(i int) []string {
 			if i < 0 || i >= len(s.rows) {
@@ -136,20 +174,34 @@ func (s *Screen) open() tea.Cmd {
 			if len(s.failed) == 0 {
 				return ""
 			}
-			return render.Warm(strings.Join(s.failed, " · "), t)
+			return render.Warm(strings.Join(s.failed, " "), t)
 		},
-		Empty: func() string { return tui.Waiting(s.loaded, s.err, "No secret stores are installed.") },
+		Empty: func() string {
+			if !s.loaded {
+				return "Reading the secret stores…"
+			}
+			return "No secret store is installed."
+		},
 		Hints: func(_ *cards.List, i int) []wm.Hint {
 			var out []wm.Hint
 			if i >= 0 && i < len(s.rows) {
-				if len(s.rows[i].Open) > 0 {
+				row := s.rows[i]
+				switch len(row.Open) {
+				case 0:
+				case 1:
+					out = append(out, wm.Hint{Action: "hub.use", Label: row.Open[0].Verb})
+				default:
 					out = append(out, wm.Hint{Action: "hub.use", Label: "open"})
 				}
-				if s.rows[i].Remove != nil {
+				if row.Remove != nil {
 					out = append(out, wm.Hint{Action: "hub.remove"})
 				}
 			}
-			if len(s.adds()) > 0 {
+			switch adds := s.adds(); len(adds) {
+			case 0:
+			case 1:
+				out = append(out, wm.Hint{Action: "hub.add", Label: adds[0].Verb})
+			default:
 				out = append(out, wm.Hint{Action: "hub.add"})
 			}
 			return out
@@ -165,7 +217,7 @@ func (s *Screen) open() tea.Cmd {
 				case 1:
 					return adds[0].Run(s)
 				default:
-					return s.Actions("Add", adds)
+					return s.Actions("Add", nil, adds)
 				}
 			},
 			"hub.remove": func(l *cards.List, i int) tea.Cmd {
@@ -179,6 +231,7 @@ func (s *Screen) open() tea.Cmd {
 		},
 		OnFocus: func(*cards.List) tea.Cmd { return s.Reload() },
 	})
+	s.list.ToggleDetail()
 	s.Hub = s.Kit.Hub("secrets", s.list)
 	return tea.Batch(s.Kit.WM.ShowOverlay(s.Hub), s.Reload())
 }
@@ -192,33 +245,58 @@ func (s *Screen) adds() []Action {
 	return out
 }
 
-// Reads every store again, a store that fails named over the list
+// Reads every store again, a store that fails named over the list. The main row of a store tells what its last fetch did, and the row
+// that opens the settings comes last
 func (s *Screen) Reload() tea.Cmd {
 	return tui.Async(func() func() tea.Cmd {
 		ctx := s.Kit.Env.Ctx
-		var rows []Row
+		var rows, plain []Row
 		var failed []string
 		covered := map[string]bool{}
 		for _, store := range s.stores {
 			covered[store.Source] = true
 			got, err := store.Rows(ctx)
 			if err != nil {
-				failed = append(failed, store.Source+": "+tui.Reason(err))
+				failed = append(failed, store.Source+" could not be read: "+strings.TrimSuffix(tui.Reason(err), ".")+".")
 				continue
 			}
 			rows = append(rows, got...)
 		}
 		sources, err := s.service.Sources(ctx, &secretsv1.SourcesRequest{})
-		if err == nil {
+		if err != nil {
+			failed = append(failed, "The other stores could not be read: "+strings.TrimSuffix(tui.Reason(err), ".")+".")
+		} else {
 			for _, source := range sources.GetSources() {
 				if !covered[source.GetName()] {
-					rows = append(rows, s.plain(source))
+					plain = append(plain, s.plain(source))
+					continue
+				}
+				for i := range rows {
+					if rows[i].Store == source.GetName() {
+						rows[i].Detail = append(rows[i].Detail, s.fetched(source)...)
+					}
 				}
 			}
 		}
+		// The stores first, each store's own rows after them under their own headings, then the settings
+		var ordered []Row
+		for _, row := range append(rows, plain...) {
+			if row.Group == "" {
+				ordered = append(ordered, row)
+			}
+		}
+		for _, row := range rows {
+			if row.Group != "" {
+				ordered = append(ordered, row)
+			}
+		}
+		ordered = append(ordered, s.settingsRow())
 		return func() tea.Cmd {
-			s.rows, s.failed, s.loaded, s.err = rows, failed, true, err
+			s.rows, s.failed, s.loaded = ordered, failed, true
 			s.list.Refresh()
+			for _, view := range s.views {
+				view.Refresh()
+			}
 			return nil
 		}
 	})
@@ -227,44 +305,89 @@ func (s *Screen) Reload() tea.Cmd {
 // On or off, in a word
 func State(on bool) string {
 	if on {
-		return "on"
+		return "On"
 	}
-	return "off"
+	return "Off"
+}
+
+// Length of time a number of seconds stands for, in words
+func Seconds(n int64) string {
+	return config.Span(time.Duration(n) * time.Second)
+}
+
+// Lines of what the last fetch of a store did: the variables it set, those it left as they were and why, and what went wrong
+func (s *Screen) fetched(source *secretsv1.Source) []string {
+	t := s.Kit.Env.Theme
+	var lines []string
+	if applied := source.GetApplied(); len(applied) > 0 {
+		lines = append(lines, "It set "+render.Count(len(applied), "variable")+": "+strings.Join(applied, ", ")+".")
+	}
+	if existing := source.GetExisting(); len(existing) > 0 {
+		lines = append(lines, render.Dim("Left as you set them: "+strings.Join(existing, ", ")+".", t))
+	}
+	if claimed := source.GetClaimed(); len(claimed) > 0 {
+		lines = append(lines, render.Dim("Set by a store before it, which wins: "+strings.Join(claimed, ", ")+". Store order in the settings changes that.", t))
+	}
+	if protected := source.GetProtected(); len(protected) > 0 {
+		lines = append(lines, render.Dim("Left alone because they hold the token of a store: "+strings.Join(protected, ", ")+".", t))
+	}
+	if invalid := source.GetInvalid(); len(invalid) > 0 {
+		lines = append(lines, render.Dim("Not set because they are not variable names: "+strings.Join(invalid, ", ")+".", t))
+	}
+	if failure := source.GetError(); failure != "" {
+		line := "Its last fetch failed: " + strings.TrimSuffix(failure, ".") + "."
+		if remedy := source.GetRemedy(); remedy != "" {
+			line += " " + strings.TrimSuffix(remedy, ".") + "."
+		}
+		lines = append(lines, render.Warm(line, t))
+	}
+	for _, warning := range source.GetWarnings() {
+		lines = append(lines, render.Warm(warning, t))
+	}
+	return lines
 }
 
 // Row of a store with no part of its own: whether it is on and what its last fetch did, turned on or off and fetched again from it
 func (s *Screen) plain(source *secretsv1.Source) Row {
-	detail := []string{source.GetLabel() + " · " + State(source.GetEnabled())}
-	if n := len(source.GetApplied()); n > 0 {
-		detail = append(detail, fmt.Sprintf("Set %s: %s", render.Count(n, "variable"), strings.Join(source.GetApplied(), ", ")))
+	t := s.Kit.Env.Theme
+	label, name, on := source.GetLabel(), source.GetName(), source.GetEnabled()
+	state := render.Dim(State(on), t)
+	switch {
+	case on && source.GetError() != "":
+		state = render.Warm("On, last fetch failed", t)
+	case on:
+		state = render.Good(State(on), t)
 	}
-	if len(source.GetExisting()) > 0 {
-		detail = append(detail, "Kept as they were set: "+strings.Join(source.GetExisting(), ", "))
+	detail := []string{label + " hands its variables to icebath as it starts, while it is on."}
+	detail = append(detail, s.fetched(source)...)
+	toggle := Action{Label: "Turn on", Does: "Load its variables each time icebath starts", Verb: "turn on", Run: func(s *Screen) tea.Cmd {
+		return s.Enable(name, label, true)
+	}}
+	if on {
+		toggle = Action{Label: "Turn off", Does: "Stop loading its variables", Verb: "turn off", Run: func(s *Screen) tea.Cmd { return s.Enable(name, label, false) }}
 	}
-	if source.GetError() != "" {
-		detail = append(detail, source.GetError())
-		if source.GetRemedy() != "" {
-			detail = append(detail, "→ "+source.GetRemedy())
+	again := Action{Label: "Fetch now", Does: "Ask every store that is on for its variables now", Verb: "fetch", Run: func(s *Screen) tea.Cmd { return s.Fetch() }}
+	return Row{Name: label, State: state, Detail: detail, Open: []Action{toggle, again}, Store: name}
+}
+
+// Turns a store on or off for the profile, saying so under the list
+func (s *Screen) Enable(name, label string, on bool) tea.Cmd {
+	return s.Change("Turning "+label+" "+strings.ToLower(State(on))+"…", func(ctx context.Context) (Outcome, error) {
+		_, err := s.service.Enable(ctx, &secretsv1.EnableRequest{Name: name, On: on})
+		return Outcome{Note: label + " is now " + State(on) + "."}, err
+	})
+}
+
+// Asks every store that is on for its variables now, saying how many were set
+func (s *Screen) Fetch() tea.Cmd {
+	return s.Change("Fetching from every store that is on…", func(ctx context.Context) (Outcome, error) {
+		response, err := s.service.Reload(ctx, &secretsv1.ReloadRequest{})
+		set := 0
+		for _, source := range response.GetSources() {
+			set += len(source.GetApplied())
 		}
-	}
-	detail = append(detail, source.GetWarnings()...)
-	name, on := source.GetName(), !source.GetEnabled()
-	toggle := Action{Label: "Turn on", Does: "Fetch its secrets as icebath starts", Run: func(s *Screen) tea.Cmd {
-		return s.Change("Saving…", func(ctx context.Context) (Outcome, error) {
-			_, err := s.service.Enable(ctx, &secretsv1.EnableRequest{Name: name, On: on})
-			return Outcome{Note: source.GetLabel() + " is " + State(on) + "."}, err
-		})
-	}}
-	if !on {
-		toggle.Label, toggle.Does = "Turn off", "Stop fetching its secrets"
-	}
-	again := Action{Label: "Fetch again", Does: "Ask every store for its secrets now", Run: func(s *Screen) tea.Cmd {
-		return s.Change("Fetching…", func(ctx context.Context) (Outcome, error) {
-			_, err := s.service.Reload(ctx, &secretsv1.ReloadRequest{})
-			return Outcome{Note: "Fetched again."}, err
-		})
-	}}
-	return Row{Cells: [3]string{source.GetLabel(), State(source.GetEnabled()), ""}, Detail: detail, Open: []Action{toggle, again}}
+		return Outcome{Note: "Fetched again. The stores set " + render.Count(set, "variable") + "."}, err
+	})
 }
 
 func (s *Screen) use(i int) tea.Cmd {
@@ -272,34 +395,77 @@ func (s *Screen) use(i int) tea.Cmd {
 		return nil
 	}
 	row := s.rows[i]
-	return s.Actions(row.Cells[0], row.Open)
-}
-
-// Opens the actions over the screen to pick one to run
-func (s *Screen) Actions(title string, actions []Action) tea.Cmd {
-	choices := make([]tui.Choice, len(actions))
-	for i, action := range actions {
-		choices[i] = tui.Choice{ID: action.Label, Title: action.Label, Detail: action.Does}
+	if len(row.Open) == 1 {
+		return row.Open[0].Run(s)
 	}
-	return s.Kit.Pick(s.Hub, title, "run", choices, "", func(choice tui.Choice) tea.Cmd {
-		for _, action := range actions {
-			if action.Label == choice.ID {
-				return action.Run(s)
+	return s.Actions(row.Name, func() []string {
+		for _, now := range s.rows {
+			if now.Name == row.Name && now.Group == row.Group {
+				return now.Detail
 			}
 		}
-		return nil
-	})
+		return row.Detail
+	}, row.Open)
 }
 
-// What a change did: a page of lines under its title, or a note when there are none
+// Opens the actions over the screen, each with what it does beside it or under the list, the detail of what they act on after it
+func (s *Screen) Actions(title string, detail func() []string, actions []Action) tea.Cmd {
+	t := s.Kit.Env.Theme
+	var list *cards.List
+	list = cards.NewList(s.Kit.Env, cards.ListSpec{
+		Title:   title,
+		Glyph:   t.Glyphs.Settings,
+		Key:     "secrets:actions:" + title,
+		Context: cards.HubContext,
+		Primary: "hub.use",
+		Columns: []render.Column{{}, {Flex: 1, Whole: true}},
+		Rows: func() [][]string {
+			rows := make([][]string, len(actions))
+			for i, action := range actions {
+				rows[i] = []string{action.Label, render.Dim(action.Does, t)}
+			}
+			return rows
+		},
+		Detail: func(i int) []string {
+			var lines []string
+			if i >= 0 && i < len(actions) && !list.Shows(1) && actions[i].Does != "" {
+				lines = append(lines, actions[i].Does)
+			}
+			if detail != nil {
+				if more := detail(); len(more) > 0 {
+					if len(lines) > 0 {
+						lines = append(lines, "")
+					}
+					lines = append(lines, more...)
+				}
+			}
+			return lines
+		},
+		Hints: func(_ *cards.List, i int) []wm.Hint {
+			if i < 0 || i >= len(actions) {
+				return nil
+			}
+			return []wm.Hint{{Action: "hub.use", Label: actions[i].Verb}}
+		},
+		Actions: map[string]func(*cards.List, int) tea.Cmd{
+			"hub.use": func(_ *cards.List, i int) tea.Cmd { return actions[i].Run(s) },
+		},
+	})
+	list.ToggleDetail()
+	s.views = append(s.views, list)
+	return s.Hub.Push(list)
+}
+
+// What a change did: a page of lines under its title, or a note when there are none, said as a warning when something stands in the way
 type Outcome struct {
 	Title string
 	Lines []string
 	Note  string
+	Warn  bool
 }
 
-// Runs a change, which may install a program and ask a store over the network, in the background, back on the list with a busy note;
-// then pages what it did or says its note, and reads the stores again
+// Runs a change, which may install a program and ask a store over the network, in the background, back on the list with a note saying
+// what it waits for; then pages what it did or says its note, and reads the stores again
 func (s *Screen) Change(busy string, work func(ctx context.Context) (Outcome, error)) tea.Cmd {
 	back := s.Hub.PopTo(s.list)
 	s.Hub.Busy(busy)
@@ -307,13 +473,16 @@ func (s *Screen) Change(busy string, work func(ctx context.Context) (Outcome, er
 		outcome, err := work(s.Kit.Env.Ctx)
 		return func() tea.Cmd {
 			if err != nil {
-				return tea.Batch(s.Hub.Fail(tui.Reason(err)), s.Reload())
+				return tea.Batch(s.Hub.Fail(strings.TrimSuffix(tui.Reason(err), ".")+"."), s.Reload())
 			}
 			s.Hub.Quiet()
-			if len(outcome.Lines) == 0 {
-				return tea.Batch(s.Hub.Done(outcome.Note), s.Reload())
+			switch {
+			case len(outcome.Lines) > 0:
+				return tea.Batch(s.Page(outcome.Title, outcome.Lines), s.Reload())
+			case outcome.Warn:
+				return tea.Batch(s.Hub.Fail(outcome.Note), s.Reload())
 			}
-			return tea.Batch(s.Page(outcome.Title, outcome.Lines), s.Reload())
+			return tea.Batch(s.Hub.Done(outcome.Note), s.Reload())
 		}
 	}))
 }
@@ -334,45 +503,50 @@ func (s *Screen) Page(title string, lines []string) tea.Cmd {
 	return s.Hub.Push(page)
 }
 
-// Opens a form over the screen, done handed its values once they check out
-func (s *Screen) Form(spec cards.FormSpec, done func(values map[string]string) tea.Cmd) tea.Cmd {
-	var form *cards.Form
-	spec.Done = func(_ *cards.Form, values map[string]string) tea.Cmd {
-		return tea.Batch(s.Hub.Close(form), done(values))
-	}
-	form = cards.NewForm(s.Kit.Env, spec)
-	return s.Hub.Push(form)
+// Opens a form over the screen, done handed the form and its values once they check out, to close it or say under a field what was wrong
+func (s *Screen) Form(spec cards.FormSpec, done func(form *cards.Form, values map[string]string) tea.Cmd) tea.Cmd {
+	spec.Done = func(form *cards.Form, values map[string]string) tea.Cmd { return done(form, values) }
+	return s.Hub.Push(cards.NewForm(s.Kit.Env, spec))
 }
 
-// Lines of what each secret a store hands over does: export, override, skip_set, skip_token or unresolved, exported or overrode once a
-// sync set it
-func (s *Screen) Preview(rows [][2]string, warnings []string) []string {
+// Lines of what each secret a store hands over does, with how many there are first: set from the store, replacing a value, left alone and
+// why, or not read; then what the store warned of
+func (s *Screen) Preview(store string, rows [][2]string, warnings []string) []string {
 	t := s.Kit.Env.Theme
 	var lines []string
+	set, kept := 0, 0
 	for _, row := range rows {
 		name, action := row[0], row[1]
 		switch action {
 		case "export":
-			lines = append(lines, render.Good(name+": set from the store", t))
+			set++
+			lines = append(lines, render.Good(name, t)+" is set from "+store+".")
 		case "override":
-			lines = append(lines, render.Good(name+": replaces the value set now", t))
+			set++
+			lines = append(lines, render.Good(name, t)+" is set from "+store+", over the value you set.")
 		case "exported":
-			lines = append(lines, render.Good(name+": set now", t))
+			set++
+			lines = append(lines, render.Good(name, t)+" is set now.")
 		case "overrode":
-			lines = append(lines, render.Good(name+": set now, replacing the value set", t))
+			set++
+			lines = append(lines, render.Good(name, t)+" is set now, over the value you set.")
 		case "skip_set":
-			lines = append(lines, render.Dim(name+": left alone, it is already set", t))
+			kept++
+			lines = append(lines, render.Dim(name+" is left alone because you set it already.", t))
 		case "skip_token":
-			lines = append(lines, render.Dim(name+": left alone, it is the token itself", t))
+			kept++
+			lines = append(lines, render.Dim(name+" is left alone because it holds the token of "+store+".", t))
 		default:
-			lines = append(lines, render.Bad(name+": could not be read", t))
+			lines = append(lines, render.Bad(name+" could not be read.", t))
 		}
 	}
-	if len(rows) == 0 {
-		lines = append(lines, "The store handed over nothing.")
+	summary := store + " handed over nothing."
+	if len(rows) > 0 {
+		summary = store + " hands over " + render.Count(len(rows), "secret") + ": " + strconv.Itoa(set) + " set, " + strconv.Itoa(kept) + " left alone."
 	}
+	lines = append([]string{summary, ""}, lines...)
 	for _, warning := range warnings {
-		lines = append(lines, render.Warm("⚠ "+warning, t))
+		lines = append(lines, render.Warm(warning, t))
 	}
 	return lines
 }

@@ -131,7 +131,7 @@ func (s *stream) frame(f *transport.Frame) (bool, bool, error) {
 			}
 		}
 	}
-	if err := s.emit(provider.EventActivity, "receiving stream response"); err != nil {
+	if err := s.emit(provider.EventActivity, "receiving the reply"); err != nil {
 		return true, true, err
 	}
 	stop, err := s.chunk(chunk)
@@ -523,7 +523,7 @@ func (s *stream) finish() (*provider.Response, error) {
 	}
 	calls, truncated := s.assembled()
 	if s.reason == "" && len(s.content) == 0 && len(s.reasoning) == 0 && len(s.refusal) == 0 && s.calls.Len() == 0 {
-		return nil, s.p.refused.Empty("Provider returned an empty stream with no finish_reason (possible upstream error or malformed SSE response).", nil)
+		return nil, s.p.refused.Empty("The provider sent back an empty reply that never ended, perhaps because of a failure on its side. Send your message again.", nil)
 	}
 	model := cmp.Or(s.model, s.p.request.Model)
 	if truncated && s.reason == "" {

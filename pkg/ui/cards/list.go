@@ -3,6 +3,7 @@ package cards
 import (
 	"slices"
 	"strings"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -48,6 +49,16 @@ type ListSpec struct {
 	Search string
 	// A list to pick from: typing filters it from the first key and enter runs Primary on the highlighted row
 	Pick bool
+	// Shows the filter field of a list to pick from at once, rather than once a key is typed or the rows outgrow the room
+	Bar bool
+	// Lines above the rows saying what the list is, such as what is being chosen, wrapped to the width
+	Intro func() []string
+	// Heading of the group row i belongs to, rows of one heading in a run sitting under it, empty for none. A filter drops the headings
+	Group func(i int) string
+	// Words the filter reads for row i besides its cells, such as a description the row does not show
+	Words func(i int) string
+	// Columns as they are now, for a list whose columns change with what it shows, such as while it is searched; Columns when nil
+	Layout func() []render.Column
 }
 
 // Row of a list that takes typing in place of the table keys while the cursor sits on it
@@ -75,6 +86,12 @@ type List struct {
 	keep     []int
 	inputCol int
 	pick     bool
+	// Whether the columns in view depend on the width: some yield, or some hold sentences shown whole or not at all
+	fitted bool
+	// Columns as they are now, nil for a list whose columns never change
+	layout func() []render.Column
+	// Rows of every column as they were last read, which a search reads the columns out of view from
+	full [][]string
 }
 
 // Window manager interfaces the list answers through the table it wraps
@@ -95,9 +112,28 @@ var _ interface {
 func NewList(env *Env, spec ListSpec) *List {
 	l := &List{lister: &lister{env: env, title: spec.Title, glyph: spec.Glyph, id: spec.Key, ctx: spec.Context, primary: spec.Primary, cols: spec.Columns, rows: spec.Rows, detail: spec.Detail, free: spec.Free, empty: spec.Empty, follow: spec.Follow},
 		all: spec.Columns, allRows: spec.Rows, yield: spec.Yield, pick: spec.Pick}
-	l.bar.pinned, l.search = spec.Pick, spec.Search
-	if len(spec.Yield) > 0 && spec.Rows != nil {
+	l.bar.pinned, l.search, l.always = spec.Pick, spec.Search, spec.Bar
+	l.intro, l.group, l.words = spec.Intro, spec.Group, spec.Words
+	l.layout = spec.Layout
+	l.fitted = len(spec.Yield) > 0 || spec.Layout != nil || slices.ContainsFunc(spec.Columns, func(c render.Column) bool { return c.Whole })
+	if l.fitted && spec.Rows != nil {
 		l.lister.rows = l.shownRows
+		// A search reads the cells of the columns out of view as well: what a row says does not change with the width
+		l.words = func(i int) string {
+			var said []string
+			// The rows as they were read for this search, every column of them
+			if i < len(l.full) {
+				for c, cell := range l.full[i] {
+					if !l.Shows(c) {
+						said = append(said, ansi.Strip(cell))
+					}
+				}
+			}
+			if spec.Words != nil {
+				said = append(said, spec.Words(i))
+			}
+			return strings.Join(said, " ")
+		}
 	}
 	l.actions = make(map[string]func(*lister, int) tea.Cmd, len(spec.Actions))
 	for id, fn := range spec.Actions {
@@ -189,7 +225,8 @@ func (l *List) Answers(id string) bool {
 	return has && (l.free[id] || l.index() >= 0)
 }
 
-// Puts the cursor on the shown row whose first cell is the query, else starts with it, else has a word starting with it
+// Puts the cursor on the shown row whose first cell of words is the query, else starts with it, else has a word starting with it. A
+// cell that holds only a mark, such as the one before the choice in use, is no cell of words
 func (l *List) selectBest(q string) {
 	best, rank := -1, 4
 	for at, i := range l.shown {
@@ -198,7 +235,7 @@ func (l *List) selectBest(q string) {
 		}
 		first := ""
 		for _, cell := range l.data[i] {
-			if c := strings.ToLower(strings.TrimSpace(ansi.Strip(cell))); c != "" {
+			if c := strings.ToLower(strings.TrimSpace(ansi.Strip(cell))); strings.ContainsFunc(c, unicode.IsLetter) || strings.ContainsFunc(c, unicode.IsDigit) {
 				first = c
 				break
 			}
@@ -227,10 +264,16 @@ func (l *List) Picks() bool { return l.pick }
 // Least width a flex column keeps before columns that yield give way
 const yieldFloor = 16
 
-// Paints the columns that fit the width, those that yield giving way first to last
+// Paints the columns that fit the width: a column of sentences only where every cell of it shows whole, then those that yield giving way
+// first to last
 func (l *List) View(w, h int) string {
-	if len(l.yield) == 0 {
+	if !l.fitted {
 		return l.lister.View(w, h)
+	}
+	if l.layout != nil {
+		if cols := l.layout(); !slices.Equal(cols, l.all) {
+			l.all, l.keep = cols, nil
+		}
 	}
 	keep := l.fit(w)
 	if !slices.Equal(keep, l.keep) {
@@ -247,7 +290,8 @@ func (l *List) View(w, h int) string {
 	return l.lister.View(w, h)
 }
 
-// Columns of the spec to show at width w: all of them while each keeps a readable width, else fewer by the order they yield
+// Columns of the spec to show at width w: all of them while each keeps a readable width, else fewer. A column of sentences goes first,
+// the last such column before the others, once the width cannot hold every cell of it whole; then the columns that yield, in their order
 func (l *List) fit(w int) []int {
 	rows := l.allRows()
 	natural := make([]int, len(l.all))
@@ -257,6 +301,9 @@ func (l *List) fit(w int) []int {
 			if i < len(r) {
 				natural[i] = max(natural[i], ansi.StringWidth(r[i]))
 			}
+		}
+		if c.Whole {
+			continue
 		}
 		if c.Max > 0 {
 			natural[i] = min(natural[i], c.Max)
@@ -276,6 +323,11 @@ func (l *List) fit(w int) []int {
 		}
 		return n + 3*(len(keep)-1) + 3
 	}
+	for i := len(l.all) - 1; i >= 0 && room() > w && len(keep) > 1; i-- {
+		if l.all[i].Whole {
+			keep = slices.DeleteFunc(keep, func(k int) bool { return k == i })
+		}
+	}
 	for _, c := range l.yield {
 		if room() <= w || len(keep) <= 1 {
 			break
@@ -285,9 +337,26 @@ func (l *List) fit(w int) []int {
 	return keep
 }
 
+// Reports whether the table cuts the cell of row i in column c of the spec, because the column is narrower than the cell. The detail of
+// a row then says the cell whole
+func (l *List) Cut(i, c int) bool {
+	if len(l.keep) > 0 {
+		if c = slices.Index(l.keep, c); c < 0 {
+			return false
+		}
+	}
+	return l.lister.cut(i, c)
+}
+
+// Reports whether column c of the spec was in view at the last paint, every column before the first paint
+func (l *List) Shows(c int) bool {
+	return len(l.keep) == 0 || slices.Contains(l.keep, c)
+}
+
 // Cells of the columns in view for every row of the spec
 func (l *List) shownRows() [][]string {
 	rows := l.allRows()
+	l.full = rows
 	if len(l.keep) == 0 || len(l.keep) == len(l.all) {
 		return rows
 	}
@@ -350,14 +419,15 @@ func (l *List) SetTyped(text string) {
 // Opens the detail pane of the selected row when closed and closes it when open
 func (l *List) ToggleDetail() tea.Cmd { return toggleDetail(l.lister, l.index()) }
 
-// Rows the list fills: every row under the head with room for the filter field and a question, and the detail pane under a rule
+// Rows the list fills: its opening lines, every row under the head and the headings between them, with room for the filter field and a
+// question, and the detail pane under a rule
 func (l *List) Rows(w int) int {
-	table := render.Head(l.cols) + len(l.data)
-	switch {
-	case len(l.data) == 0:
+	table := len(l.opening(w)) + render.Head(l.cols) + len(l.flow())
+	if len(l.data) == 0 {
 		return hubLeast
-	case l.detailShown():
-		return table + 1 + l.paneRows(w, 2*detailRows) + 3
+	}
+	if pane := l.paneRows(w, 2*detailRows); pane > 0 {
+		return table + 1 + pane + 3
 	}
 	return table + 3
 }

@@ -11,12 +11,14 @@ func Register(cfg *config.Config) {
 		Parent: transportconfig.Key,
 		Title:  "Anthropic messages API",
 		About:  "Requests to providers that use the Anthropic messages API",
+		Order:  20,
 		Settings: []config.Setting{
-			{Key: MaxTokens, Title: "Max output tokens", About: "Most tokens one reply may take when the request sets none; 0 for the model's own ceiling",
-				Default: 0},
-			{Key: Fallbacks, Title: "Server-side fallback", About: "Let the Anthropic API answer a refused request with its fallback model", Default: true},
-			{Key: BedrockBaseURL, Title: "Claude on Bedrock address", About: "Address Claude on Bedrock is reached at in place of the region's runtime " +
-				"endpoint, such as a VPC endpoint; empty for the region's", Default: "", Env: []string{BedrockBaseURLEnv}},
+			{Key: MaxTokens, Title: "Max output", About: "The most tokens one reply may take when the request sets no limit.", Default: 0,
+				Zero: "The model's limit", Counts: "tokens", Advanced: true},
+			{Key: Fallbacks, Title: "Use fallback model", About: "Let the Anthropic API answer a refused request with its own fallback model.",
+				Default: true, Advanced: true},
+			{Key: BedrockBaseURL, Title: "Claude on Bedrock address", About: "The address Claude on Bedrock is reached at, such as a VPC endpoint.",
+				Default: "", Zero: "The region's address", Env: []string{BedrockBaseURLEnv}, Advanced: true},
 		},
 	}})
 }

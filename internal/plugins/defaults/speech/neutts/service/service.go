@@ -99,7 +99,7 @@ const deadline = 120 * time.Second
 
 func Register(registry *speech.Registry) {
 	registry.Register(speech.Services{Speakers: []speech.Voice{{
-		Name: config.Name, Title: "NeuTTS", Label: "NeuTTS (local)", About: "Runs on this machine: a voice cloning model that speaks in the voice of a sample",
+		Name: config.Name, Title: "NeuTTS", Label: "NeuTTS (local)", About: "Speaks in the voice of a sample, on this computer",
 		Local:      true,
 		Ready:      func(job *speech.Job) bool { return job.Provisioned(config.Extra) },
 		Limit:      func(*speech.Job) int { return config.DefaultLimit },

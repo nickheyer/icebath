@@ -239,7 +239,7 @@ func (d *Desktop) look(ctx context.Context, cfg *config.Config) {
 // whose display or holder is not known
 func Note(running bool, display, holder string) string {
 	if !running {
-		return "Bot Screen: this profile's own headless desktop is no longer running. Do not refer to 'the bot screen' or route GUI launches at " +
+		return "Agent desktop: this profile's own headless desktop is no longer running. Do not refer to 'the agent desktop' or route GUI launches at " +
 			"it; GUI apps from the terminal open on the user's own display again."
 	}
 	held := ""
@@ -252,7 +252,7 @@ func Note(running bool, display, holder string) string {
 	if display == "" || held == "" {
 		return ""
 	}
-	return fmt.Sprintf("Bot Screen: this profile's own headless desktop is RUNNING on display %s (%s). 'screen N' / ':N' / 'the bot screen' / "+
+	return fmt.Sprintf("Agent desktop: this profile's own headless desktop is RUNNING on display %s (%s). 'screen N' / ':N' / 'the agent desktop' / "+
 		"'your screen' means THIS screen: GUI apps you launch from the terminal already open there (their DISPLAY is routed to it), and display "+
 		"introspection (xrandr/xdotool/wmctrl) targets it. It is NOT the user's own display.", display, held)
 }

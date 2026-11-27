@@ -34,8 +34,8 @@ var Allowed = []string{"PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
 
 // Kinds of an op failure by the words of its error, the first rule to match winning
 var rules = []secrets.Rule{
-	{Kind: secrets.Timeout, Words: []string{"timed out"}},
-	{Kind: secrets.BinaryMissing, Words: []string{"not found on path", "not an executable", "failed to invoke"}},
+	{Kind: secrets.Timeout, Words: []string{"timed out", "did not answer within"}},
+	{Kind: secrets.BinaryMissing, Words: []string{"is not installed", "not a program icebath can run", "can't start"}},
 	{Kind: secrets.AuthFailed, Words: []string{"unauthorized", "not signed in", "session expired", "authentication", "401", "403"}},
 	{Kind: secrets.EmptyValue, Words: []string{"empty value"}},
 	{Kind: secrets.Network, Words: []string{"network", "connection", "resolve host", "dns"}},
@@ -90,9 +90,11 @@ func Validate(references map[string]string) (map[string]string, []string) {
 		reference := strings.TrimSpace(references[name])
 		switch {
 		case !config.EnvName(name):
-			warnings = append(warnings, fmt.Sprintf("Skipping %q: not a valid env-var name", name))
+			warnings = append(warnings, fmt.Sprintf("%q can't be the name of a variable, so it was left out. A name is letters, digits and "+
+				"underscores, and does not start with a digit.", name))
 		case !strings.HasPrefix(reference, "op://"):
-			warnings = append(warnings, fmt.Sprintf("Skipping %q: %q is not an op:// secret reference", name, references[name]))
+			warnings = append(warnings, fmt.Sprintf("%s was left out because %q is not a 1Password reference. A reference starts with op://, "+
+				"such as op://Private/OpenAI/credential.", name, references[name]))
 		default:
 			valid[name] = reference
 		}
@@ -140,19 +142,20 @@ func read(ctx context.Context, op, reference, account, token string, env map[str
 		argv = append(argv, "--account", account)
 	}
 	argv = append(argv, "--", reference)
-	out, err := secrets.Run(ctx, argv, Child(env, token), runTimeout, "op", fmt.Sprintf("op read timed out after %.0fs for %q", runTimeout.Seconds(), reference), nil)
+	out, err := secrets.Run(ctx, argv, Child(env, token), runTimeout, "op", fmt.Sprintf("op did not answer within %s while reading %s.",
+		strs.Span(runTimeout), reference), nil)
 	if err != nil {
 		return "", err
 	}
 	if out.Code != 0 {
 		if text := strs.Head(Scrub(out.Stderr), 200); text != "" {
-			return "", fmt.Errorf("op read failed for %q: %s", reference, text)
+			return "", fmt.Errorf("1Password could not read %s: %s", reference, secrets.Sentence(text))
 		}
-		return "", fmt.Errorf("op read exited %d for %q", out.Code, reference)
+		return "", fmt.Errorf("op stopped with exit code %d while reading %s.", out.Code, reference)
 	}
 	value := strings.TrimRight(out.Stdout, "\r\n")
 	if strings.TrimSpace(value) == "" {
-		return "", fmt.Errorf("op read returned an empty value for %q", reference)
+		return "", fmt.Errorf("1Password gave an empty value for %s.", reference)
 	}
 	return value, nil
 }
@@ -205,8 +208,7 @@ func (s *Store) Pull(ctx context.Context, p Pull) (map[string]string, []string, 
 		op = Find(p.Pinned)
 	}
 	if op == "" {
-		return nil, warnings, errors.New("op CLI not found.  Install the 1Password CLI (" + onepasswordconfig.Docs +
-			") or set secrets.onepassword.binary_path to its absolute location.")
+		return nil, warnings, errors.New("op, the 1Password command line tool, is not installed. " + InstallHint)
 	}
 	got := map[string]string{}
 	failed := 0
@@ -244,13 +246,13 @@ func Whoami(ctx context.Context, op, account, token string, env map[string]strin
 	if token != "" {
 		child["OP_SERVICE_ACCOUNT_TOKEN"] = token
 	}
-	out, err := secrets.Run(ctx, argv, child, whoamiTimeout, "op", "op whoami timed out", nil)
+	out, err := secrets.Run(ctx, argv, child, whoamiTimeout, "op", "op did not say who it is signed in as within "+strs.Span(whoamiTimeout)+".", nil)
 	if err != nil || out.Code != 0 {
 		return "", false
 	}
 	who := strs.Head(strings.ReplaceAll(strings.TrimSpace(out.Stdout), "\n", " "), 120)
 	if who == "" {
-		return "authenticated", true
+		return "an unnamed account", true
 	}
 	return who, true
 }

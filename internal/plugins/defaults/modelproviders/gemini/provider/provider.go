@@ -20,6 +20,8 @@ func (specs) Specs() []provider.Spec {
 		ReplaysToolCallSignatures: true,
 		Native:                    provider.Unprefixed,
 		DisplayName:               geminiconfig.Title,
+		Rank:                      4,
+		Description:               "Gemini models, with a Google AI Studio API key",
 		BaseURL:                   base,
 		BaseURLEnv:                geminiconfig.BaseURLEnv,
 		ModelsURL:                 provider.ModelsURL(base),

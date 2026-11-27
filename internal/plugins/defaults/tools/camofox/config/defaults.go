@@ -10,25 +10,28 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: browserconfig.Key,
 		Title:  "Camofox",
-		About:  "A camofox-browser server (Camoufox, a Firefox fork with fingerprint spoofing) the camofox browser tools drive over its REST API",
+		About:  "A Camofox server, a Firefox that sites find hard to spot",
+		Order:  40,
 		Settings: []config.Setting{
-			{Key: URL, Title: "Camofox server", About: "Address of your camofox-browser server, such as " + DefaultURL + "; the camofox tools appear once it " +
-				"is set", Default: "", Env: []string{URLEnv}},
-			{Key: APIKey, Title: "Camofox key", About: "Bearer token of a Camofox server started with CAMOFOX_API_KEY; cookie import needs it", Default: "",
-				Env: []string{APIKeyEnv}, Secret: true},
-			{Key: UserID, Title: "Camofox user", About: "Camofox user every session of the profile runs as, such as one a person signed in; empty gives " +
-				"each session its own", Default: "", Env: []string{UserIDEnv}},
-			{Key: SessionKey, Title: "Camofox session key", About: "Tab group of the Camofox user the sessions use; empty names one per task", Default: "",
-				Env: []string{SessionKeyEnv}},
-			{Key: AdoptExistingTab, Title: "Adopt open tab", About: "Take over the tab the Camofox user already has open for the session key instead of " +
-				"opening a new one", Default: false, Env: []string{AdoptExistingTabEnv}},
-			{Key: ManagedPersistence, Title: "Keep Camofox profile", About: "Run every session of this profile as one stable Camofox user, so its logins " +
-				"and cookies last between sessions", Default: false},
-			{Key: RewriteLoopback, Title: "Rewrite local addresses", About: "Send localhost addresses to the Docker host alias, for a Camofox server in a " +
-				"container", Default: false, Env: []string{RewriteLoopbackEnv}},
-			{Key: LoopbackHostAlias, Title: "Docker host name", About: "Name a containerized Camofox server reaches this machine by", Default: "host.docker.internal",
-				Env: []string{LoopbackHostAliasEnv}},
-			{Key: CookiesDir, Title: "Cookie files folder", About: "Folder browser_import_cookies reads cookies.txt files from", Default: "~/.camofox/cookies"},
+			{Key: URL, Title: "Server address", About: "The address of your Camofox server.",
+				Help: "Such as " + DefaultURL + ". The Camofox tools appear once the address is set.", Default: "", Env: []string{URLEnv}},
+			{Key: APIKey, Title: "API key", About: "Your Camofox API key.",
+				Help: "The CAMOFOX_API_KEY that the server was started with. Importing cookies needs the key.", Default: "", Env: []string{APIKeyEnv},
+				Secret: true},
+			{Key: ManagedPersistence, Title: "Keep sign-ins", About: "Run every session of this profile as one Camofox user, so sign-ins and cookies last.",
+				Default: false},
+			{Key: UserID, Title: "User", About: "The Camofox user that every session of this profile runs as.",
+				Help: "Such as a user that a person signed in to sites with.", Default: "", Zero: "One per session", Env: []string{UserIDEnv}, Advanced: true},
+			{Key: SessionKey, Title: "Tab group", About: "The tab group of the Camofox user that sessions use.", Help: "Only used while User is set.",
+				Default: "", Zero: "One per task", Env: []string{SessionKeyEnv}, Advanced: true},
+			{Key: AdoptExistingTab, Title: "Take over open tab", About: "Use the tab that the Camofox user already has open instead of opening one.",
+				Default: false, Env: []string{AdoptExistingTabEnv}, Advanced: true},
+			{Key: RewriteLoopback, Title: "Rewrite local addresses", About: "Send localhost addresses to the Docker host, for a Camofox server in Docker.",
+				Default: false, Env: []string{RewriteLoopbackEnv}, Advanced: true},
+			{Key: LoopbackHostAlias, Title: "Docker host name", About: "The name that a Camofox server in Docker uses to reach this computer.",
+				Default: "host.docker.internal", Zero: "host.docker.internal", Env: []string{LoopbackHostAliasEnv}, Advanced: true},
+			{Key: CookiesDir, Title: "Cookie files folder", About: "The folder that cookies.txt files are imported from.", Default: "~/.camofox/cookies",
+				Zero: "~/.camofox/cookies", Advanced: true},
 		},
 	}})
 }

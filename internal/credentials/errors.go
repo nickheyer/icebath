@@ -40,7 +40,7 @@ func Failed(provider, code, message string, relogin bool, cause error) *AuthErro
 const Expired = "device_code_timeout"
 
 // Sign in the person stopped, or whose prompt closed
-var ErrCancelled = errors.New("Login cancelled.")
+var ErrCancelled = errors.New("The sign-in was cancelled.")
 
 // Whether the sign in ended because the person stopped it
 func Cancelled(err error) bool {
@@ -79,15 +79,21 @@ func FailureLines(err error, host, retry string) []string {
 	}
 	switch {
 	case Cancelled(err):
-		return []string{fmt.Sprintf("Sign-in was cancelled. Run `%s` when you want to try again.", retry)}
+		return []string{fmt.Sprintf("The sign-in was cancelled. Run `%s` when you want to try again.", retry)}
 	case Unreachable(err):
-		return []string{fmt.Sprintf("Could not sign in: Icebath could not reach %s. Check your internet connection or proxy, then run `%s` again.", host, retry),
-			"  Details: " + err.Error()}
+		return []string{fmt.Sprintf("icebath could not reach %s, so the sign-in stopped. Check your internet connection or proxy, then run `%s` again.",
+			host, retry), "  Details: " + err.Error()}
 	}
-	if failure, ok := errors.AsType[*AuthError](err); ok && failure.Code == Expired {
-		return []string{failure.Message + fmt.Sprintf(" Run `%s` to get a new code.", retry)}
+	failure, ok := errors.AsType[*AuthError](err)
+	switch {
+	case ok && failure.Code == Expired:
+		return []string{strings.TrimSpace(failure.Message) + fmt.Sprintf(" Run `%s` to get a new code.", retry)}
+	case ok:
+		return []string{"The sign-in failed. " + strings.TrimSpace(failure.Message),
+			fmt.Sprintf("Run `%s` to try again, or `icebath providers` to pick another provider.", retry)}
 	}
-	return []string{fmt.Sprintf("Could not sign in. Run `%s` to try again, or `icebath providers` to pick a different provider.", retry), "  Details: " + err.Error()}
+	return []string{fmt.Sprintf("The sign-in failed. Run `%s` to try again, or `icebath providers` to pick another provider.", retry),
+		"  Details: " + err.Error()}
 }
 
 // Command that signs the provider in again

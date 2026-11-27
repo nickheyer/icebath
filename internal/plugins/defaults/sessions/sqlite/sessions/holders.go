@@ -82,7 +82,7 @@ func icebath(pid int) bool {
 func commandLine(pid int) string {
 	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
 	if err != nil {
-		return "?"
+		return "an unknown command"
 	}
 	text := strings.TrimSpace(strings.ReplaceAll(string(data), "\x00", " "))
 	if len(text) > 80 {
@@ -184,17 +184,18 @@ func refusal(task, path string, holders []holder, force bool) string {
 	if len(holders) == 0 {
 		return ""
 	}
-	lines := []string{fmt.Sprintf("Refusing `icebath sessions %s`: another process is using %s.", task, path)}
+	lines := []string{fmt.Sprintf("icebath sessions %s did not run, because another process is using %s.", task, path)}
 	for _, h := range holders {
 		if h.pid <= 0 {
-			lines = append(lines, "  cannot prove the database is quiet (holder scan incomplete: "+strs.Head(h.target, 120)+")")
+			lines = append(lines, "  icebath can't tell whether the database is in use, because it could not check every process: "+
+				strings.TrimSuffix(strs.Head(h.target, 120), ".")+".")
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("  PID %d (%s): %s", h.pid, commandLine(h.pid), h.target))
+		lines = append(lines, fmt.Sprintf("  Process %d, %s, holds %s.", h.pid, commandLine(h.pid), h.target))
 	}
 	return strings.Join(append(lines,
-		"Rewriting the database under a live writer can leave every agent refusing turns. Nothing is lost.",
-		"Stop them first (quit the other icebath windows and servers), then re-run.",
-		"Override with --force if you accept the risk.",
-		"Recovery guide: `icebath sessions recover --help`"), "\n")
+		"Changing the database while another process writes to it can stop every agent from replying. Nothing was lost.",
+		"Stop them first by quitting the other icebath windows and servers, then run the command again.",
+		"To run it anyway at that risk, add --force.",
+		"For how to rescue a damaged database, run icebath sessions recover --help."), "\n")
 }

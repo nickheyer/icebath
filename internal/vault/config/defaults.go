@@ -6,13 +6,15 @@ func Register(cfg *config.Config) {
 	cfg.Register(config.Sections{{
 		Key:   Key,
 		Title: "Autofill vault",
-		About: "Logins, cards and addresses the agent may fill into web pages for you, kept encrypted in the profile or read from your password managers; the agent never sees a value",
+		About: "Logins and cards the agent may fill into web pages",
+		Group: config.GroupSecrets,
+		Order: 20,
 		Settings: []config.Setting{
-			{Key: KeyStorage, Title: "Vault key storage", About: "Where a new vault's encryption key is kept", Default: "file",
+			{Key: KeyStorage, Title: "Key storage", About: "Where the encryption key of a new vault is kept.", Default: "file",
 				Options: config.Options(
-					config.Option{Value: "file", Title: "File", About: "A key file in the profile folder, beside the encrypted vault"},
-					config.Option{Value: "keychain", Title: "OS keychain", About: "The system keychain"},
-				)},
+					config.Option{Value: "file", Title: "File", About: "A key file in the profile folder, beside the vault"},
+					config.Option{Value: "keychain", Title: "System keychain", About: "The keychain of this computer"},
+				), Advanced: true},
 		},
 	}})
 }

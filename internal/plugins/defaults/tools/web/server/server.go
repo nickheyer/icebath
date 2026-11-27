@@ -67,7 +67,19 @@ func (s *service) List(_ context.Context, request *webv1.ListRequest) (*webv1.Li
 			Settings:    backend.Settings,
 		}
 		for _, plan := range backend.Plans {
-			entry.Plans = append(entry.Plans, &webv1.Plan{Title: plan.Title, Badge: plan.Badge, Description: plan.About, Tier: plan.Tier, Key: plan.Key, Prompt: plan.Prompt, Link: plan.Link})
+			// What the plan asks for is told by the setting it fills: a secret is an API key, any other the address of a server; a plan
+			// that fills none and still asks is a sign-in
+			needs := webv1.Needs_NEEDS_NOTHING
+			switch _, setting, known := cfg.Setting(plan.Key); {
+			case known && setting.Secret:
+				needs = webv1.Needs_NEEDS_API_KEY
+			case plan.Key != "":
+				needs = webv1.Needs_NEEDS_ADDRESS
+			case plan.Prompt != "":
+				needs = webv1.Needs_NEEDS_SIGN_IN
+			}
+			entry.Plans = append(entry.Plans, &webv1.Plan{Title: plan.Title, Badge: plan.Badge, Description: plan.About, Tier: plan.Tier, Key: plan.Key,
+				Prompt: plan.Prompt, Link: plan.Link, Needs: needs})
 		}
 		response.Backends = append(response.Backends, entry)
 	}

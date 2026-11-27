@@ -56,7 +56,7 @@ func StopHint(phrases []string) string {
 	if len(phrases) == 0 {
 		return ""
 	}
-	return `Say "` + phrases[0] + `" to end the voice chat.`
+	return "Say “" + phrases[0] + "” to end voice mode."
 }
 
 // How alike a capture must be to what was spoken for it to count as the speaker's own sound

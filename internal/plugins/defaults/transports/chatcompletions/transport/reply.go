@@ -24,7 +24,7 @@ func shim(content string, calls int, usage map[string]any) bool {
 func (c *client) normalize(p *prepared, payload map[string]any, header http.Header) (*provider.Response, error) {
 	choices, _ := payload["choices"].([]any)
 	if len(choices) == 0 {
-		return nil, p.refused.Empty("Provider returned a completion with no choices", nil)
+		return nil, p.refused.Empty("The provider sent back a reply with nothing in it. Send your message again.", nil)
 	}
 	choice, _ := choices[0].(map[string]any)
 	message, _ := choice["message"].(map[string]any)
@@ -72,7 +72,8 @@ func (c *client) normalize(p *prepared, payload map[string]any, header http.Head
 	}
 	text := flatten(content)
 	if shim(text, len(calls), usage) {
-		return nil, p.refused.Empty("Provider returned a router timeout shim instead of a completion: "+routerShim, nil)
+		return nil, p.refused.Empty("A router in front of the provider gave up waiting and sent its own stand-in instead of a reply: "+routerShim+
+			". Send your message again.", nil)
 	}
 	plain, _ := message[reasoningField].(string)
 	if plain == "" {

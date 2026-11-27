@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 
 	"connectrpc.com/connect/v2"
@@ -19,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
 	worktreesv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/worktrees/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/worktrees/v1/worktreesv1connect"
+	"github.com/nickheyer/icebath/pkg/tui"
 )
 
 // Failure of a launch with the exit status it ends with, its lines already printed
@@ -64,7 +66,7 @@ func Register(registry *launch.Registry, trees *Trees) {
 }
 
 func (l *launcher) Flags() []launch.Flag {
-	return []launch.Flag{{Names: []string{"-w", "--worktree"}, Help: "Run the session in its own git worktree"}}
+	return []launch.Flag{{Names: []string{"-w", "--worktree"}, Help: "Run the session in a git worktree of its own"}}
 }
 
 // Whether the profile in use starts every launch in a tree of its own
@@ -92,16 +94,16 @@ func (l *launcher) Around(ctx context.Context, conn *connect.Client, given launc
 	}
 	if id := sessions.Resumed(ctx); id != "" && !want {
 		if recreated, err := service.Recreate(ctx, &worktreesv1.RecreateRequest{SessionId: id}); err == nil && recreated.GetPath() != "" {
-			fmt.Println("↪ recreated the session's worktree: " + recreated.GetPath())
+			fmt.Println("Made the worktree of this session again at " + recreated.GetPath() + ".")
 			if err := os.Chdir(recreated.GetPath()); err != nil {
-				fmt.Printf("⚠ Could not enter the session's worktree %s: %v\n", recreated.GetPath(), err)
+				fmt.Printf("⚠ Could not open the worktree of this session at %s: %v.\n", recreated.GetPath(), err)
 			}
 		}
 	}
 	if want {
 		created, err := service.Create(ctx, &worktreesv1.CreateRequest{Directory: start, Pid: int64(os.Getpid()), Launch: true})
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "✗ Failed to create the worktree: "+err.Error())
+			fmt.Fprintln(os.Stderr, "✗ Could not make the worktree. "+sentence(tui.Reason(err)))
 			return exit(1)
 		}
 		say(created.GetLines())
@@ -131,7 +133,7 @@ func (l *launcher) Around(ctx context.Context, conn *connect.Client, given launc
 		if settled, settleErr := service.Settle(ctx, &worktreesv1.SettleRequest{Tree: tree, Choice: choice, Launch: true, Pid: int64(os.Getpid())}); settleErr == nil {
 			say(settled.GetLines())
 		} else {
-			fmt.Fprintln(os.Stderr, "Could not settle the worktree "+tree.GetPath()+": "+settleErr.Error())
+			fmt.Fprintln(os.Stderr, "✗ Could not tidy up the worktree "+tree.GetPath()+". "+sentence(tui.Reason(settleErr)))
 		}
 	}
 	return err
@@ -151,9 +153,22 @@ func (l *launcher) settleMade(ctx context.Context, service worktreesv1connect.Wo
 		if settled, err := service.Settle(ctx, &worktreesv1.SettleRequest{Tree: tree, Choice: choice, Pid: int64(os.Getpid())}); err == nil {
 			say(settled.GetLines())
 		} else {
-			fmt.Fprintln(os.Stderr, "Could not settle the worktree "+tree.GetPath()+": "+err.Error())
+			fmt.Fprintln(os.Stderr, "✗ Could not tidy up the worktree "+tree.GetPath()+". "+sentence(tui.Reason(err)))
 		}
 	}
+}
+
+// Reason a server gave as a sentence: capital first letter, a period at the end
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	text = strings.ToUpper(text[:1]) + text[1:]
+	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
+		text += "."
+	}
+	return text
 }
 
 // Asks on the terminal what to do with a tree holding uncommitted changes or unpushed commits, kept with no terminal, for a clean tree, a
@@ -167,16 +182,16 @@ func ask(ctx context.Context, service worktreesv1connect.WorktreeServiceClient, 
 	if err != nil || state.GetState() == "" || state.GetInUse() {
 		return worktrees.ExitKeep
 	}
-	question := "This worktree has uncommitted changes: " + tree.GetPath()
+	question := "The worktree " + tree.GetPath() + " has changes that are not committed. What should happen to it?"
 	if state.GetState() == "unpushed" {
-		question = "This worktree has commits that are not pushed: " + tree.GetPath()
+		question = "The worktree " + tree.GetPath() + " has commits that are not pushed. What should happen to it?"
 	}
 	c.Blank()
 	c.Say(question)
-	c.Say("  1) Keep the worktree (default)")
-	c.Say("  2) Archive and remove it (restorable)")
-	c.Say("  3) Remove it and discard the changes")
-	answer, _ := c.Answer("Choose 1-3 [1]: ")
+	c.Say("  1  Keep the worktree as it is")
+	c.Say("  2  Archive it and remove it. icebath worktree restore brings it back.")
+	c.Say("  3  Remove it and throw away its changes")
+	answer, _ := c.Answer("Type a number from 1 to 3, or press enter to keep it: ")
 	switch answer {
 	case "2":
 		return worktrees.ExitArchive

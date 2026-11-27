@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/internal/speech/portaudio"
 	"github.com/nickheyer/icebath/pkg/fsx"
 	speechv1 "github.com/nickheyer/icebath/pkg/gen/icebath/speech/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -33,7 +34,7 @@ const (
 )
 
 // Another app or process holds the wake word microphone
-var ErrOwned = errors.New("Wake-word microphone is already owned.")
+var ErrOwned = errors.New("Another icebath window already listens for the wake word.")
 
 // Microphone a wake_word.input_device setting names: a whole number a device number, blank or a boolean the default
 func inputSelector(text string) any {
@@ -85,27 +86,25 @@ func describe(selector any, pa *portaudio.Audio) Device {
 
 // How to fix a microphone that delivers only silence
 func silentHint(d Device) string {
-	switch runtime.GOOS {
-	case "darwin":
-		return "Microphone delivers only silence. Grant the Icebath backend microphone access in System Settings > Privacy & Security > Microphone, " +
-			"then toggle the wake word."
-	}
-	fix := "Check the selected input device"
-	if runtime.GOOS == "windows" {
-		fix = "Set wake_word.input_device to a different PortAudio input device"
+	if runtime.GOOS == "darwin" {
+		return "Let your terminal or the icebath desktop app use the microphone in System Settings › Privacy & Security › Microphone, " +
+			"then run /wake off and /wake on."
 	}
 	label := strings.TrimSpace(d.Name)
 	if label == "" {
 		if d.Selector == nil {
-			label = "system default"
+			label = "the default microphone"
 		} else {
-			label = fmt.Sprint(d.Selector)
+			label = "the microphone " + fmt.Sprint(d.Selector)
 		}
 	}
 	if host := strings.TrimSpace(d.HostAPI); host != "" {
-		label += " (" + host + ")"
+		label += " through " + host
 	}
-	return fmt.Sprintf("Microphone delivers only silence from %s. %s, then toggle the wake word.", label, fix)
+	if runtime.GOOS == "windows" {
+		return "It listens on " + label + ". Pick another Microphone in /settings under Wake word, then run /wake off and /wake on."
+	}
+	return "It listens on " + label + ". Check that this microphone is the right one and not muted, then run /wake off and /wake on."
 }
 
 // One capture block at the microphone's rate as an exact engine frame, averaged down or interpolated up
@@ -203,12 +202,12 @@ func (d *detector) start() error {
 	case err := <-ready:
 		if err != nil {
 			d.halt()
-			return fmt.Errorf("Failed to open the wake-word microphone: %w", err)
+			return fmt.Errorf("The wake word microphone did not open: %s.", strings.TrimSuffix(err.Error(), "."))
 		}
 		return nil
 	case <-time.After(startTimeout):
 		d.halt()
-		return errors.New("Timed out while opening the wake-word microphone.")
+		return errors.New("The wake word microphone did not open within " + strs.Span(startTimeout) + ".")
 	}
 }
 
@@ -547,7 +546,7 @@ func (m *Mode) WakeCheck() WakeCheck {
 	check.TTS = settings.GetSpeaking().GetReady()
 	e, known := m.engine(w)
 	if !known {
-		check.Hint = fmt.Sprintf("Unknown wake_word provider: %q", w.GetProvider())
+		check.Hint = fmt.Sprintf("No listener is named %s. Pick another Listener in /settings under Wake word.", w.GetProvider())
 		return check
 	}
 	check.Engine = e.Name
@@ -561,10 +560,10 @@ func (m *Mode) WakeCheck() WakeCheck {
 	auto := w.GetProvider() == "" || w.GetProvider() == speechconfig.AutoWake
 	switch {
 	case !platform && auto && e.Open:
-		check.Hint = fmt.Sprintf("The %s wake engine that detects %q is not supported on this platform.", e.Name, w.GetPhrase())
+		check.Hint = fmt.Sprintf("%s, the listener that hears “%s”, has no build for this computer.", e.Title, w.GetPhrase())
 		for _, other := range m.speech.Engines() {
 			if other.Model != "" && supported(m.speech, other) {
-				check.Hint += " Set " + other.Model + " to an " + other.Title + " model file trained for your wake phrase."
+				check.Hint += " Give " + other.Title + " a model file trained for your phrase in /settings under Wake word › " + other.Title + "."
 				break
 			}
 		}
@@ -572,32 +571,36 @@ func (m *Mode) WakeCheck() WakeCheck {
 		var others []string
 		for _, other := range m.speech.Engines() {
 			if other.Name != e.Name && other.Model == "" && supported(m.speech, other) {
-				others = append(others, other.Name)
+				others = append(others, other.Title)
 			}
 		}
-		check.Hint = fmt.Sprintf("The %s wake engine is not supported on this platform.", e.Name)
+		check.Hint = e.Title + " has no build for this computer."
 		if len(others) > 0 {
-			check.Hint += " Set wake_word.provider to " + strings.Join(others, " or ") + "."
+			check.Hint += " Set Listener in /settings under Wake word to " + strings.Join(others, " or ") + "."
 		}
 	case !modelOK:
-		check.Hint = "Set " + e.Model + " to an " + e.Title + " model file trained for your wake phrase, or set wake_word.provider to auto so the open " +
-			fmt.Sprintf("vocabulary engine detects %q.", w.GetPhrase())
+		check.Hint = "Give " + e.Title + " a model file trained for your phrase in /settings under Wake word › " + e.Title +
+			fmt.Sprintf(", or set Listener there to Automatic so a listener that hears any phrase listens for “%s”.", w.GetPhrase())
 	case e.Key && strings.TrimSpace(w.GetAccessKey()) == "":
 		check.Key = false
-		check.Hint = "Set PORCUPINE_ACCESS_KEY (free key at https://console.picovoice.ai)."
+		check.Hint = e.Title + " needs a Picovoice access key. Get one free at https://console.picovoice.ai, then set PORCUPINE_ACCESS_KEY in your keys file."
 	case !check.Installed:
-		check.Hint = packages.InstallHint(e.Extra)
+		check.Hint = e.Title + " is not installed. Run " + packages.InstallHint(e.Extra) + " to install it."
 	case !check.Audio:
-		check.Hint = "Microphone capture needs the PortAudio library and a working audio device."
+		check.Hint = "Listening needs PortAudio, the sound library icebath records with, and a working microphone."
 	case !check.STT || !check.TTS:
 		var missing, screens []string
 		if !check.STT {
-			missing, screens = append(missing, "speech-to-text"), append(screens, "/recognition")
+			missing, screens = append(missing, "speech to text"), append(screens, "/recognition")
 		}
 		if !check.TTS {
-			missing, screens = append(missing, "text-to-speech"), append(screens, "/speech")
+			missing, screens = append(missing, "text to speech"), append(screens, "/speech")
 		}
-		check.Hint = fmt.Sprintf("Wake word needs %s. Set it up in %s.", strings.Join(missing, " and "), strings.Join(screens, " and "))
+		them := "it"
+		if len(missing) > 1 {
+			them = "them"
+		}
+		check.Hint = fmt.Sprintf("The wake word needs %s. Set %s up in %s.", strings.Join(missing, " and "), them, strings.Join(screens, " and "))
 	}
 	check.Available = platform && check.Key && modelOK && check.STT && check.TTS && check.Installed && check.Audio
 	return check
@@ -803,7 +806,7 @@ func (m *Mode) WakeStatus() WakeState {
 		state.Device = describe(inputSelector(w.GetInputDevice()), nil)
 	}
 	if state.Device.Error != "" && state.Hint == "" {
-		state.Hint = "Wake-word input device could not be resolved: " + state.Device.Error
+		state.Hint = "The wake word microphone could not be found: " + strings.TrimSuffix(state.Device.Error, ".") + "."
 	}
 	if state.Silent && state.Hint == "" {
 		state.Hint = silentHint(state.Device)

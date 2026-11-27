@@ -18,7 +18,7 @@ import (
 type orderError struct{ event string }
 
 func (e *orderError) Error() string {
-	return fmt.Sprintf("Unexpected event order, got %s before \"message_start\"", e.event)
+	return fmt.Sprintf("The reply came out of order: %s arrived before it began. Send your message again.", e.event)
 }
 
 // Deltas appended onto a text field of the open block, by their type
@@ -215,7 +215,7 @@ func (s *stream) frame(f *transport.Frame) (bool, bool, error) {
 	if s.first.IsZero() {
 		s.first = time.Now()
 	}
-	if err := s.emit(provider.EventActivity, "receiving stream response"); err != nil {
+	if err := s.emit(provider.EventActivity, "receiving the reply"); err != nil {
 		return true, true, err
 	}
 	stop, err := s.event(event, payload, f.Data)
@@ -297,9 +297,9 @@ func (s *stream) finish() (*provider.Response, error) {
 	}
 	if !s.sawStop {
 		if s.sawEvent {
-			return nil, s.p.refused.Empty("Anthropic Messages stream ended before message_stop (possible upstream stream drop).", nil)
+			return nil, s.p.refused.Empty("The reply stopped before it ended, perhaps because the connection dropped. Send your message again.", nil)
 		}
-		return nil, s.p.refused.Empty("Provider returned an empty stream with no events (possible upstream error or malformed event stream).", nil)
+		return nil, s.p.refused.Empty("The provider sent back an empty reply, perhaps because of a failure on its side. Send your message again.", nil)
 	}
 	message, err := s.acc.finalize(true)
 	if err != nil {
@@ -309,11 +309,11 @@ func (s *stream) finish() (*provider.Response, error) {
 	content, _ := message["content"].([]any)
 	if message["stop_reason"] == nil {
 		if len(content) == 0 {
-			return nil, s.p.refused.Empty("Provider returned an empty stream with no stop_reason (possible upstream error or malformed event stream).", nil)
+			return nil, s.p.refused.Empty("The provider sent back an empty reply that never ended, perhaps because of a failure on its side. Send your message again.", nil)
 		}
 		if hasKind(content, []string{"tool_use"}) {
-			return nil, s.p.refused.Empty("Stream ended with no stop_reason while a tool_use block was still incomplete; treating as a mid-tool-call "+
-				"stream drop.", nil)
+			return nil, s.p.refused.Empty("The reply stopped while the model was still writing a tool call, so the connection probably dropped. "+
+				"Send your message again.", nil)
 		}
 	}
 	return s.c.normalize(s.p, message, s.header, s.status)

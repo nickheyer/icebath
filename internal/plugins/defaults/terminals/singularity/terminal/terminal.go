@@ -53,7 +53,7 @@ func (r *registrant) Backends() []terminal.Backend {
 	return []terminal.Backend{{
 		Name:      name,
 		Title:     "Singularity/Apptainer",
-		About:     "HPC-friendly rootless container (Apptainer or Singularity).",
+		About:     "A rootless Apptainer container, as on shared clusters",
 		Where:     "a Singularity container (Linux)",
 		Remote:    true,
 		Container: true,
@@ -91,18 +91,22 @@ func check(cfg *config.Config) error {
 		if selected(cfg) {
 			slog.Error("Singularity backend selected but neither 'apptainer' nor 'singularity' is on PATH. Install Apptainer: " + installURL)
 		}
-		return fmt.Errorf("neither 'apptainer' nor 'singularity' is on PATH; install Apptainer: %s", installURL)
+		return fmt.Errorf("Neither apptainer nor singularity is on your PATH. Install Apptainer from %s.", installURL)
 	}
 	argv := []string{exe, "--version"}
 	captured, err := terminal.Capture(context.Background(), argv, 5*time.Second, nil)
-	if err == nil && captured.Code != 0 {
-		err = fmt.Errorf("exited with code %d", captured.Code)
+	why := ""
+	switch {
+	case errors.Is(err, terminal.ErrTimedOut):
+		why = "got no answer within 5 seconds"
+	case err != nil:
+		why = "could not run: " + strings.TrimRight(err.Error(), ".")
+	case captured.Code != 0:
+		why = fmt.Sprintf("ended with exit code %d", captured.Code)
 	}
-	if err != nil {
-		if errors.Is(err, terminal.ErrTimedOut) {
-			err = fmt.Errorf("Command '%s' timed out after 5 seconds", terminal.Join(argv))
-		}
-		text := fmt.Sprintf("Apptainer/Singularity is installed but `%s --version` failed (%s), so the install looks broken", filepath.Base(exe), err)
+	if why != "" {
+		text := fmt.Sprintf("Apptainer is installed, but `%s --version` %s, so the installation looks broken. Install Apptainer again from %s.",
+			filepath.Base(exe), why, installURL)
 		if selected(cfg) {
 			slog.Error(text)
 		}
@@ -115,39 +119,40 @@ func check(cfg *config.Config) error {
 func available(ctx context.Context) (string, error) {
 	exe := program()
 	if exe == "" {
-		return "", &terminal.MissingError{Reason: "Neither 'apptainer' nor 'singularity' was found in PATH. Install Apptainer (" + installURL + ") or " +
-			"Singularity and ensure the CLI is available."}
+		return "", &terminal.MissingError{Reason: "Neither apptainer nor singularity is on your PATH. Install Apptainer from " + installURL +
+			", or Singularity, so its program is on your PATH."}
 	}
 	captured, err := terminal.Capture(ctx, []string{exe, "version"}, 10*time.Second, nil)
 	switch {
 	case errors.Is(err, terminal.ErrTimedOut):
-		return "", fmt.Errorf("'%s version' timed out.", filepath.Base(exe))
+		return "", fmt.Errorf("`%s version` got no answer within 10 seconds.", filepath.Base(exe))
 	case errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist):
-		return "", fmt.Errorf("Singularity backend selected but '%s' could not be executed.", filepath.Base(exe))
+		return "", fmt.Errorf("The %s program could not be run.", filepath.Base(exe))
 	case err != nil:
-		return "", err
+		return "", fmt.Errorf("`%s version` could not run: %w", filepath.Base(exe), err)
 	case captured.Code != 0:
 		stderr := []rune(strings.TrimSpace(captured.Stderr))
-		return "", fmt.Errorf("'%s version' failed (exit code %d): %s", filepath.Base(exe), captured.Code, string(stderr[:min(len(stderr), 200)]))
+		return "", fmt.Errorf("`%s version` failed with exit code %d: %s", filepath.Base(exe), captured.Code, string(stderr[:min(len(stderr), 200)]))
 	}
 	return exe, nil
 }
 
 // The program found or where to install it, and the image instances start from
 func setup(cfg *config.Config) []string {
-	line := "Singularity/Apptainer not found in PATH! Install: " + installURL
+	line := "Neither apptainer nor singularity is on your PATH. Install Apptainer from " + installURL + "."
 	if exe := program(); exe != "" {
 		line = "Found " + filepath.Base(exe) + "."
 	}
-	return []string{line, "Image: " + configured(cfg) + " (change it with Apptainer image in /settings under Terminal → Singularity/Apptainer)."}
+	return []string{line, "Sandboxes start from the image " + configured(cfg) + ". Change it with Apptainer image in /settings under Terminal › " +
+		"Singularity/Apptainer."}
 }
 
 // The program found, or where to install it
 func doctor(*config.Config) []terminal.Check {
 	if exe := program(); exe != "" {
-		return []terminal.Check{{OK: true, Label: "Singularity/Apptainer", Detail: "(" + filepath.Base(exe) + " found)"}}
+		return []terminal.Check{{OK: true, Label: "Found " + filepath.Base(exe) + "."}}
 	}
-	return []terminal.Check{{Label: "Singularity/Apptainer", Detail: "(not found on PATH; install: " + installURL + ")"}}
+	return []terminal.Check{{Label: "Neither apptainer nor singularity is on your PATH.", Detail: "Install Apptainer from " + installURL + "."}}
 }
 
 // Finds the program and builds the .sif image instances start from
@@ -163,7 +168,7 @@ func (r *registrant) prepare(ctx context.Context, cfg *config.Config, say func(l
 	if err != nil {
 		return err
 	}
-	say("Sandbox image " + image + " ready")
+	say("The sandbox image " + image + " is ready.")
 	return nil
 }
 

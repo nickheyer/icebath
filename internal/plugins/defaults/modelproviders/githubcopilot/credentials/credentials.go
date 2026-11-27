@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/internal/provider"
 	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -105,18 +106,17 @@ func Supported(token string) (bool, string) {
 	token = strings.TrimSpace(token)
 	switch {
 	case token == "":
-		return false, "Empty token"
+		return false, "The token is empty."
 	case strings.HasPrefix(token, "ghp_"):
-		return false, "Classic Personal Access Tokens (ghp_*) are not supported by the Copilot API. Use one of:\n" +
-			"  → `icebath auth add copilot` to sign in with GitHub (device code)\n" +
-			"  → A fine-grained PAT (github_pat_*) with Copilot Requests permission"
+		return false, "Copilot does not take classic personal access tokens, which start with ghp_. Sign in with `icebath auth add copilot`, " +
+			"or use a fine-grained token, starting with github_pat_, that has the Copilot Requests permission."
 	}
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(token, prefix) {
 			return true, "OK"
 		}
 	}
-	return false, "Unsupported GitHub token format for the Copilot API. Supported token prefixes: " + strings.Join(prefixes, ", ") + "."
+	return false, "Copilot does not take this kind of GitHub token. Use one that starts with " + strings.Join(prefixes, ", ") + "."
 }
 
 // GitHub token of the account, else of the first variable holding one the Copilot API takes
@@ -312,7 +312,8 @@ func (s *source) exchange(ctx context.Context, githubToken, key string) (exchang
 	until := s.failures[key]
 	s.mu.Unlock()
 	if left := time.Until(until); left > 0 {
-		return exchanged{}, fmt.Errorf("Copilot token exchange recently failed; skipping re-attempt for another %ds", int(left.Seconds()))
+		return exchanged{}, fmt.Errorf("GitHub refused Copilot access a moment ago, so icebath waits %s before it asks again.",
+			strs.Span(max(left.Round(time.Second), time.Second)))
 	}
 	var last error
 	permanent := false
@@ -338,7 +339,7 @@ func (s *source) exchange(ctx context.Context, githubToken, key string) (exchang
 	s.mu.Lock()
 	s.failures[key] = time.Now().Add(memo)
 	s.mu.Unlock()
-	return exchanged{}, fmt.Errorf("Copilot token exchange failed after %d attempts: %w", attempts, last)
+	return exchanged{}, fmt.Errorf("GitHub did not grant Copilot access after %d tries: %w", attempts, last)
 }
 
 func once(ctx context.Context, githubToken string) (exchanged, int, error) {
@@ -350,7 +351,7 @@ func once(ctx context.Context, githubToken string) (exchanged, int, error) {
 		return exchanged{}, 0, err
 	}
 	if reply.Status < 200 || reply.Status >= 300 {
-		return exchanged{}, reply.Status, fmt.Errorf("HTTP %d", reply.Status)
+		return exchanged{}, reply.Status, fmt.Errorf("GitHub answered with HTTP status %d", reply.Status)
 	}
 	payload, err := reply.JSON()
 	if err != nil {
@@ -358,7 +359,7 @@ func once(ctx context.Context, githubToken string) (exchanged, int, error) {
 	}
 	token := exchanged{Token: credentials.Text(payload["token"])}
 	if token.Token == "" {
-		return exchanged{}, reply.Status, errors.New("Copilot token exchange returned empty token")
+		return exchanged{}, reply.Status, errors.New("GitHub granted Copilot access without sending a token")
 	}
 	if expires, ok := payload["expires_at"].(float64); ok && expires > 0 {
 		token.Expires = expires
@@ -388,7 +389,7 @@ func account(token string) string {
 }
 
 // GitHub device code sign-in for Copilot, the approved token checked against what the Copilot API takes
-var SignIn = credentials.SignIn{Spec: githubcopilotconfig.CopilotName, Title: "GitHub account (device code)", Type: credentials.OAuth, Run: signIn}
+var SignIn = credentials.SignIn{Spec: githubcopilotconfig.CopilotName, Title: "GitHub account with a device code", Type: credentials.OAuth, Run: signIn}
 
 func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 	client := credentials.Client(15 * time.Second)
@@ -399,11 +400,11 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 	}
 	device, err := reply.JSON()
 	if err != nil || reply.Status != 200 {
-		return credentials.Signed{}, fmt.Errorf("GitHub did not return a device code (HTTP %d).", reply.Status)
+		return credentials.Signed{}, fmt.Errorf("GitHub refused to hand out a sign-in code, with HTTP status %d. Try again later.", reply.Status)
 	}
 	code, user := credentials.Text(device["device_code"]), credentials.Text(device["user_code"])
 	if code == "" || user == "" {
-		return credentials.Signed{}, errors.New("GitHub did not return a device code.")
+		return credentials.Signed{}, errors.New("GitHub did not hand out a sign-in code. Try again later.")
 	}
 	interval, ok := config.Whole(device["interval"])
 	if !ok || interval < 1 {
@@ -418,7 +419,7 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 		link = "https://github.com/login/device"
 	}
 	p.Instructions(link, user)
-	p.Say("Waiting for approval...")
+	p.Pending("Waiting for you to approve the sign-in.")
 	payload, err := credentials.Poll{
 		Provider: githubcopilotconfig.CopilotName,
 		Post: func() (*credentials.Reply, error) {

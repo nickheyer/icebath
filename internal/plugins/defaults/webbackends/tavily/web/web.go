@@ -32,14 +32,14 @@ func (backends) Backends() []web.Backend {
 	return []web.Backend{{
 		Name:     name,
 		Title:    "Tavily",
-		About:    "Tavily web search + extract. Opt-in keyless via /web; set TAVILY_API_KEY for higher limits — https://app.tavily.com/home.",
+		About:    "Search and page reading built for agents, free with limits",
 		Settings: []string{tavilyconfig.APIKey, tavilyconfig.BaseURL},
 		Plans: []web.Plan{{
-			Title:  "Tavily",
+			Title:  "Free or paid",
 			Badge:  "free · key optional",
-			About:  "Search + extract. Opt-in keyless; set TAVILY_API_KEY for higher limits.",
+			About:  "Works without a key once chosen, and a key raises the limits",
 			Key:    tavilyconfig.APIKey,
-			Prompt: "Tavily API key (optional — keyless works when Tavily is selected)",
+			Prompt: "Tavily API key, or none to use Tavily without one",
 			Link:   keyLink,
 		}},
 		Search:  search,

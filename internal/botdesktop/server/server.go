@@ -105,7 +105,7 @@ func (s *service) Stop(ctx context.Context, request *botdesktopv1.StopRequest) (
 			return nil, err
 		}
 		if l.Holder == botdesktop.Human {
-			return nil, connect.NewError(connect.CodePermissionDenied, "a human holds this screen; pass force: true to stop it anyway")
+			return nil, connect.NewError(connect.CodePermissionDenied, "A person is using the agent desktop, so it was not stopped. Stop it with force to end what they are doing on it.")
 		}
 	}
 	stopped, err := s.desktop.Stop(ctx, cfg, nil)
@@ -162,7 +162,7 @@ func (s *service) Take(_ context.Context, request *botdesktopv1.TakeRequest) (*b
 		return nil, err
 	}
 	if request.GetViewer() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, "viewer_id required")
+		return nil, connect.NewError(connect.CodeInvalidArgument, "Taking the agent desktop needs the ID of the viewer who takes it.")
 	}
 	l, err := s.desktop.Take(cfg, request.GetViewer(), request.GetReason())
 	if err != nil {
@@ -179,7 +179,7 @@ func (s *service) Release(_ context.Context, request *botdesktopv1.ReleaseReques
 	h := botdesktop.Handback{}
 	if !request.GetForce() {
 		if request.GetViewer() == "" {
-			return nil, connect.NewError(connect.CodeInvalidArgument, "viewer_id required to hand the screen back (or pass force: true)")
+			return nil, connect.NewError(connect.CodeInvalidArgument, "Handing the agent desktop back needs the ID of the viewer who holds it, or force.")
 		}
 		h.Viewer = request.GetViewer()
 	}
@@ -188,7 +188,7 @@ func (s *service) Release(_ context.Context, request *botdesktopv1.ReleaseReques
 		return nil, err
 	}
 	if l.Holder == botdesktop.Human {
-		return nil, connect.NewError(connect.CodePermissionDenied, "another viewer holds this screen; pass force: true to hand it back anyway")
+		return nil, connect.NewError(connect.CodePermissionDenied, "Another viewer holds the agent desktop, so it was not handed back. Hand it back with force to take it from them.")
 	}
 	return lease(l), nil
 }
@@ -199,15 +199,15 @@ func (s *service) Install(ctx context.Context, request *botdesktopv1.InstallRequ
 		return err
 	}
 	if !botdesktop.Supported() {
-		return refusal(errors.New("Bot Desktop runs on Linux gateway hosts only"))
+		return refusal(errors.New("The agent desktop works only when icebath runs on Linux."))
 	}
 	if s.desktop.InSandbox(cfg) {
-		return refusal(errors.New("this profile's screen lives inside the terminal backend's sandbox; give that sandbox an image with the desktop " +
-			"stack (the image icebath builds has it) instead of installing on the gateway host"))
+		return refusal(errors.New("The agent desktop of this profile runs inside the sandbox where the agent's commands run, so there is nothing " +
+			"to install on this computer. Give that sandbox an image that has the desktop, such as the image icebath builds."))
 	}
 	command := botdesktop.InstallCommand()
 	if command == "" {
-		return refusal(errors.New("no supported package manager (apt-get, dnf, pacman) on this host"))
+		return refusal(errors.New("This computer has none of the package managers that can install the agent desktop: apt-get, dnf or pacman."))
 	}
 	if err := s.desktop.Claim(cfg); err != nil {
 		return refusal(err)
@@ -245,7 +245,7 @@ func (s *service) Install(ctx context.Context, request *botdesktopv1.InstallRequ
 	// The install outlives a client that goes away, which can no longer answer for it
 	code, err := s.desktop.Install(context.WithoutCancel(ctx), cfg, true, password, line)
 	if err != nil {
-		line("install failed: " + err.Error())
+		line("The install failed: " + err.Error())
 		code = 1
 	}
 	status, err := s.status(context.WithoutCancel(ctx), cfg)
@@ -261,7 +261,7 @@ func (s *service) Password(_ context.Context, request *botdesktopv1.PasswordRequ
 	answer := s.passwords[request.GetId()]
 	s.mu.Unlock()
 	if answer == nil {
-		return nil, connect.NewError(connect.CodeNotFound, "no install waits for that password")
+		return nil, connect.NewError(connect.CodeNotFound, "No install is waiting for a password.")
 	}
 	select {
 	case answer <- request.GetPassword():

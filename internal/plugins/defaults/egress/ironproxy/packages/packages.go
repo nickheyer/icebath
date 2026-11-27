@@ -59,7 +59,7 @@ func ironProxy(pin packages.Pin) packages.Package {
 		URLs: func(version, target string) ([]string, error) {
 			platform, arch, ok := strings.Cut(strings.TrimSuffix(target, "-musl"), "-")
 			if !ok || strings.Contains(arch, "-") {
-				return nil, fmt.Errorf("no download for target %s", target)
+				return nil, fmt.Errorf("There is no download of iron-proxy for %s.", target)
 			}
 			if arch == "x64" {
 				arch = "amd64"
@@ -95,13 +95,13 @@ func unpack(b *packages.Build, archive string) error {
 func stage(b *packages.Build) error {
 	bin := filepath.Join(b.Dir, "iron-proxy")
 	if info, err := os.Lstat(bin); err != nil || !info.Mode().IsRegular() {
-		return packages.Failure(IronProxy, "archive binary is not a regular file", "")
+		return packages.Failure(IronProxy, "The program in its archive is not a regular file.", "")
 	}
 	if err := os.Chmod(bin, 0o755); err != nil {
 		return err
 	}
 	if len(b.Archives) == 0 {
-		return fmt.Errorf("the lockfile pins no %s artifact for target %s", IronProxy, b.Target)
+		return fmt.Errorf("The lock file pins no archive of %s for %s.", IronProxy, b.Target)
 	}
 	archive := b.Archives[0]
 	data, err := os.ReadFile(filepath.Join(b.Dir, provenance, "checksums.txt"))
@@ -117,7 +117,7 @@ func stage(b *packages.Build) error {
 		}
 	}
 	if !found || expected != archive.SHA256 {
-		return packages.Failure(IronProxy, "release checksums do not cover the pinned archive", "")
+		return packages.Failure(IronProxy, "The checksums of the release do not cover the pinned archive.", "")
 	}
 	return verify(b.Ctx, filepath.Join(b.Dir, provenance))
 }
@@ -138,7 +138,7 @@ func verify(ctx context.Context, dir string) error {
 	args := []string{"--homedir", home, "--batch", "--no-tty"}
 	signature, key := filepath.Join(dir, "checksums.txt.asc"), filepath.Join(dir, "public-key.asc")
 	if !fsx.IsFile(signature) || !fsx.IsFile(key) {
-		return packages.Failure(IronProxy, "pinned signature assets missing", "")
+		return packages.Failure(IronProxy, "The pinned signature files are missing.", "")
 	}
 	code, err := gpgRun(ctx, gpg, append(args, "--import", key)...)
 	if err != nil {
@@ -152,7 +152,7 @@ func verify(ctx context.Context, dir string) error {
 		return err
 	}
 	if code != 0 {
-		return packages.Failure(IronProxy, "GPG signature verification failed", "")
+		return packages.Failure(IronProxy, "Its GPG signature did not check out.", "")
 	}
 	return nil
 }
@@ -164,7 +164,7 @@ func gpgRun(ctx context.Context, gpg string, args ...string) (int, error) {
 	cmd := exec.CommandContext(ctx, gpg, args...)
 	_, err := cmd.CombinedOutput()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return 0, fmt.Errorf("%s timed out after 60 seconds", strings.Join(cmd.Args, " "))
+		return 0, fmt.Errorf("`%s` did not finish within 60 seconds.", strings.Join(cmd.Args, " "))
 	}
 	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 		return exit.ExitCode(), nil

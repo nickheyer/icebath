@@ -31,6 +31,7 @@ func (s *service) List(context.Context, *slashv1.ListRequest) (*slashv1.ListResp
 			Aliases: command.Aliases,
 			Usage:   command.Usage,
 			Help:    command.Help,
+			Skill:   command.Skill,
 		})
 	}
 	return response, nil

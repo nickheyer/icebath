@@ -178,11 +178,11 @@ func (s *Speech) recognizerOptions() []config.Option {
 }
 
 func (s *Speech) engineOptions() []config.Option {
-	options := []config.Option{{Value: speechconfig.AutoWake, Title: "Auto", About: "The open vocabulary engine, or openWakeWord when a model file is set"}}
+	options := []config.Option{{Value: speechconfig.AutoWake, Title: "Automatic", About: "Sherpa, or openWakeWord once you give it a model file"}}
 	for _, engine := range s.Engines() {
 		options = append(options, config.Option{Value: engine.Name, Title: engine.Title, About: engine.About})
 		for _, alias := range engine.Aliases {
-			options = append(options, config.Option{Value: alias, Title: engine.Title, About: "Same as " + engine.Name})
+			options = append(options, config.Option{Value: alias, Title: engine.Title, About: "Another name for " + engine.Title})
 		}
 	}
 	return options

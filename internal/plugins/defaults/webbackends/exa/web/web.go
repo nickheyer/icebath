@@ -38,19 +38,19 @@ func (backends) Backends() []web.Backend {
 	return []web.Backend{{
 		Name:     name,
 		Title:    title,
-		About:    "Exa web search and content extraction. Requires EXA_API_KEY — sign up at https://exa.ai.",
+		About:    "Search by meaning and page reading, free with limits",
 		Settings: []string{exaconfig.APIKey},
 		Plans: []web.Plan{
 			{
-				Title: "Exa · Free (keyless)",
+				Title: "Free plan",
 				Badge: "free · no key",
-				About: "Semantic + neural web search with content extraction on Exa's anonymous free tier. Rate-limited under burst load.",
+				About: "No key needed, slower under heavy use",
 				Tier:  webconfig.Free,
 			},
 			{
-				Title:  "Exa · Paid (API key)",
+				Title:  "Paid plan",
 				Badge:  "paid",
-				About:  "Semantic + neural web search with content extraction via the Exa SDK. Unthrottled, guaranteed service.",
+				About:  "Your API key, with no slowdowns",
 				Tier:   webconfig.Paid,
 				Key:    exaconfig.APIKey,
 				Prompt: "Exa API key",

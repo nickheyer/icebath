@@ -126,7 +126,7 @@ func (s *store) RepairPrompts(ctx context.Context, request *sessionsv1.RepairPro
 			out.Empty = true
 			return out, nil
 		}
-		out.Findings = append(out.Findings, &sessionsv1.PromptFinding{Id: id, Reason: "targeted clear", PromptChars: int64(utf8.RuneCountInString(prompt))})
+		out.Findings = append(out.Findings, &sessionsv1.PromptFinding{Id: id, Reason: "You named this session", PromptChars: int64(utf8.RuneCountInString(prompt))})
 	} else {
 		rows, err := db.QueryContext(ctx, `SELECT s.id, p.prompt, COALESCE(s.tool_names, '') FROM sessions s JOIN system_prompts p ON p.hash = s.system_prompt_hash
 			ORDER BY s.started_at`)
@@ -145,7 +145,7 @@ func (s *store) RepairPrompts(ctx context.Context, request *sessionsv1.RepairPro
 			finding := &sessionsv1.PromptFinding{Id: id, PromptChars: int64(utf8.RuneCountInString(prompt))}
 			var tools []string
 			if pin == "" || json.Unmarshal([]byte(pin), &tools) != nil {
-				finding.Reason = "the tools[] pin is unavailable or unreadable"
+				finding.Reason = "The list of tools saved with it is missing or can't be read"
 				out.Unverifiable = append(out.Unverifiable, finding)
 				continue
 			}
@@ -156,7 +156,7 @@ func (s *store) RepairPrompts(ctx context.Context, request *sessionsv1.RepairPro
 				}
 			}
 			if len(missing) > 0 {
-				finding.Reason = "guidance missing while the tools[] pin carries its tools: " + strings.Join(missing, "; ")
+				finding.Reason = "It lacks the advice for tools it has: " + strings.Join(missing, ", ")
 				out.Findings = append(out.Findings, finding)
 			}
 		}

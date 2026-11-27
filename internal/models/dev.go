@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/internal/provider"
 	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Public registry of model details
@@ -164,7 +165,7 @@ func fetchDev(cfg *config.Config, s *state, conditional bool) (map[string]any, s
 	reply, err := send(ctx, "GET", target, headers, nil, 10*time.Second, true)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, "", fmt.Errorf("models.dev fetch exceeded %s", devDeadline)
+			return nil, "", fmt.Errorf("The model list from models.dev took longer than %s.", strs.Span(devDeadline))
 		}
 		return nil, "", err
 	}
@@ -172,14 +173,14 @@ func fetchDev(cfg *config.Config, s *state, conditional bool) (map[string]any, s
 		return nil, "", errNotModified
 	}
 	if reply.status >= 400 {
-		return nil, "", fmt.Errorf("models.dev returned HTTP %d", reply.status)
+		return nil, "", fmt.Errorf("models.dev answered with HTTP status %d.", reply.status)
 	}
 	data, ok := reply.object(), true
 	if len(data) == 0 {
 		ok = false
 	}
 	if !ok {
-		return nil, "", errors.New("models.dev returned an empty or invalid registry")
+		return nil, "", errors.New("models.dev sent a model list that is empty or can't be read.")
 	}
 	return data, reply.header.Get("ETag"), nil
 }
@@ -358,14 +359,14 @@ func (i Info) Abilities() string {
 	for _, flag := range []struct {
 		on    bool
 		label string
-	}{{i.Reasoning, "reasoning"}, {i.Tools, "tools"}, {i.Vision(), "vision"}, {slices.Contains(i.Input, "pdf"), "PDF"},
+	}{{i.Reasoning, "reasoning"}, {i.Tools, "tools"}, {i.Vision(), "images"}, {slices.Contains(i.Input, "pdf"), "PDFs"},
 		{slices.Contains(i.Input, "audio"), "audio"}, {i.StructuredOutput, "structured output"}, {i.OpenWeights, "open weights"}} {
 		if flag.on {
 			out = append(out, flag.label)
 		}
 	}
 	if len(out) == 0 {
-		return "basic"
+		return "text only"
 	}
 	return strings.Join(out, ", ")
 }

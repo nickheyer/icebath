@@ -18,7 +18,7 @@ func nativeKeyring() (keyring, error) {
 	return macKeyring{tool: "/usr/bin/security"}, nil
 }
 
-func (macKeyring) name() string { return "macOS Keyring" }
+func (macKeyring) name() string { return "macOS Keychain" }
 
 func (k macKeyring) run(stdin string, args ...string) (string, int, error) {
 	cmd := exec.Command(k.tool, args...)
@@ -54,7 +54,7 @@ func securityQuote(s string) string {
 func (k macKeyring) set(service, account, secret string) error {
 	line := fmt.Sprintf("add-generic-password -U -s %s -a %s -w %s\n", securityQuote(service), securityQuote(account), securityQuote(secret))
 	if _, _, err := k.run(line, "-i"); err != nil {
-		return &keyringError{"PasswordSetError", "Can't store password on keychain: " + err.Error()}
+		return &keyringError{"PasswordSetError", "The keychain did not keep the key: " + sentence(err.Error())}
 	}
 	return nil
 }
@@ -62,12 +62,10 @@ func (k macKeyring) set(service, account, secret string) error {
 func (k macKeyring) remove(service, account string) error {
 	_, code, err := k.run("", "delete-generic-password", "-s", service, "-a", account)
 	if code == macItemNotFound {
-		return &keyringError{"PasswordDeleteError", "Item not found"}
+		return &keyringError{"PasswordDeleteError", "The keychain has no such entry."}
 	}
 	if err != nil {
-		return &keyringError{"PasswordDeleteError", "Can't delete password in keychain: " + err.Error()}
+		return &keyringError{"PasswordDeleteError", "The keychain did not delete the entry: " + sentence(err.Error())}
 	}
 	return nil
 }
-
-func isBusError(error) bool { return false }

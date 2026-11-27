@@ -44,7 +44,7 @@ func Run(ctx context.Context, argv []string, env map[string]string, timeout time
 		return out, nil
 	}
 	if err != nil {
-		return Output{}, fmt.Errorf("failed to invoke %s: %v", label, err)
+		return Output{}, fmt.Errorf("icebath can't start %s: %v.", label, err)
 	}
 	return out, nil
 }

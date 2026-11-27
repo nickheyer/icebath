@@ -188,7 +188,7 @@ func SeedRemote(userDataDir string, owned bool, run Runner) error {
 		case 3:
 			existing = nil
 		default:
-			return fmt.Errorf("reading %s exited %d", path, code)
+			return fmt.Errorf("reading %s ended with exit code %d", path, code)
 		}
 		data, err := merge(existing, keys)
 		if err != nil {
@@ -197,7 +197,7 @@ func SeedRemote(userDataDir string, owned bool, run Runner) error {
 		if _, code, err := run([]string{"bash", "-c", writeScript, "icebath-write-pref", path}, data); err != nil {
 			return err
 		} else if code != 0 {
-			return fmt.Errorf("writing %s exited %d", path, code)
+			return fmt.Errorf("writing %s ended with exit code %d", path, code)
 		}
 	}
 	return nil

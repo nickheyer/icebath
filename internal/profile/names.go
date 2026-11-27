@@ -22,7 +22,7 @@ var subcommands = map[string]bool{"chat": true, "model": true, "gateway": true, 
 	"cron": true, "doctor": true, "dump": true, "config": true, "pairing": true, "skills": true, "tools": true, "mcp": true, "sessions": true,
 	"insights": true, "version": true, "update": true, "uninstall": true, "profile": true, "plugins": true, "acp": true}
 
-const rule = "Use lowercase letters, numbers, '-' or '_', starting with a letter or number, up to 64 characters"
+const rule = "A name is up to 64 lower case letters, digits, dashes and underscores, and starts with a letter or digit"
 
 // Characters a suggested name drops
 var unsuggested = regexp.MustCompile(`[^a-z0-9_-]+`)
@@ -46,18 +46,17 @@ func (e *ExistsError) Is(target error) bool { return target == fs.ErrExist }
 
 // Refusal of a command naming a profile that was never made
 func missing(name string) error {
-	return &NotFoundError{fmt.Sprintf("Profile '%s' does not exist. Create it with: icebath profile create %s", name, name)}
+	return &NotFoundError{fmt.Sprintf("There is no profile named %s. Create it with icebath profile create %s.", name, name)}
 }
 
 // Refusal of a delete, rename or export naming no profile, likely a typo
 func unknown(name string) error {
-	return &NotFoundError{fmt.Sprintf("No profile named '%s'. See your profiles with: icebath profile list", name)}
+	return &NotFoundError{fmt.Sprintf("There is no profile named %s. Run icebath profile list to see your profiles.", name)}
 }
 
 // Refusal to make a profile whose name is taken
 func taken(name string) error {
-	return &ExistsError{fmt.Sprintf("A profile named '%s' already exists. Switch to it with `icebath profile use %s`, see all profiles with `icebath "+
-		"profile list`, or choose a different name.", name, name)}
+	return &ExistsError{fmt.Sprintf("A profile named %s already exists. Pick another name, or run icebath profile use %s to switch to it.", name, name)}
 }
 
 // Whether the text has the shape of a profile name, reserved ones included
@@ -80,15 +79,14 @@ func Suggest(name string) string {
 // Refusal of a name that is no profile name, with a valid one to use instead
 func Invalid(name string) error {
 	s := Suggest(name)
-	return &ValueError{fmt.Sprintf("%s is not a valid profile name. %s (for example: %s). Then run `icebath profile create %s`.", strconv.Quote(name),
-		rule, s, s)}
+	return &ValueError{fmt.Sprintf("%s can't be the name of a profile. %s, such as %s.", strconv.Quote(name), rule, s)}
 }
 
 // Name a profile goes by: lower case, default matched in any case
 func Normalize(name string) (string, error) {
 	stripped := strings.TrimSpace(name)
 	if stripped == "" {
-		return "", &ValueError{"profile name cannot be empty"}
+		return "", &ValueError{"Give the profile a name."}
 	}
 	if strings.EqualFold(stripped, Default) {
 		return Default, nil
@@ -105,8 +103,8 @@ func Validate(name string) error {
 		return Invalid(name)
 	}
 	if reserved[name] {
-		return &ValueError{fmt.Sprintf("Profile name %s is reserved — it collides with either the icebath installation itself or a common "+
-			"system binary.  Pick a different name.", strconv.Quote(name))}
+		return &ValueError{fmt.Sprintf("%s can't be the name of a profile, because it is the name of icebath itself or of a common system "+
+			"program. Pick another name.", strconv.Quote(name))}
 	}
 	return nil
 }
@@ -126,9 +124,18 @@ func Canon(name string) (string, error) {
 // Error unless the name is safe as the file name of an alias in the folder of aliases
 func ValidAlias(name string) error {
 	if !id.MatchString(name) {
-		return &ValueError{fmt.Sprintf("Invalid alias name %s. %s.", strconv.Quote(name), rule)}
+		return &ValueError{fmt.Sprintf("%s can't be the name of an alias. %s.", strconv.Quote(name), rule)}
 	}
 	return nil
+}
+
+// Text that ends as a sentence: trimmed, with a period added when it ends in no mark of its own
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?") {
+		return text
+	}
+	return text + "."
 }
 
 // Display name of a profile followed by its name in parentheses, the name alone when they are the same or it has none

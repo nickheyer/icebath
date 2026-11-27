@@ -21,8 +21,8 @@ const deadline = 60 * time.Second
 func Register(registry *speech.Registry) {
 	client := &edgetts.Client{}
 	registry.Register(speech.Services{Speakers: []speech.Voice{{
-		Name: config.Name, Title: "Microsoft Edge TTS", About: "Good quality, no API key needed", Label: "Edge TTS",
-		Setup:  speech.Setup{Badge: "★ recommended · free"},
+		Name: config.Name, Title: "Microsoft Edge TTS", About: "Good free voices, no API key needed", Label: "Edge TTS",
+		Setup:  speech.Setup{Badge: "recommended · free"},
 		Limit:  func(*speech.Job) int { return config.DefaultLimit },
 		Format: "mp3", Opus: speech.TranscodedOpus,
 		Synthesize: func(ctx context.Context, job *speech.Job, request speech.Request) (string, error) {

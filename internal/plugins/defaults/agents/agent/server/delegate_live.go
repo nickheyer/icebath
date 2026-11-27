@@ -68,7 +68,7 @@ func newTranscript(cfg *config.Config, delegation string, index int, goal, conte
 	}
 	path := filepath.Join(dir, fmt.Sprintf("task-%d.log", index))
 	goalLine := oneLine(goal, liveKickoffMax)
-	header := "=== Icebath subagent live transcript ===\n" +
+	header := "=== icebath subagent live transcript ===\n" +
 		fmt.Sprintf("delegation: %s   task: %d\n", delegation, index) +
 		fmt.Sprintf("goal: %s\n", childText(cfg, goalLine, true)) +
 		fmt.Sprintf("started: %s\n", time.Now().Format(liveTimeFormat)) +

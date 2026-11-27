@@ -38,8 +38,8 @@ const (
 
 // Kinds of a bws failure by the words of its error, the first rule to match winning
 var rules = []secrets.Rule{
-	{Kind: secrets.Timeout, Words: []string{"timed out"}},
-	{Kind: secrets.BinaryMissing, Words: []string{"binary not available", "failed to invoke"}},
+	{Kind: secrets.Timeout, Words: []string{"timed out", "did not answer within"}},
+	{Kind: secrets.BinaryMissing, Words: []string{"bws is not installed", "can't start"}},
 	{Kind: secrets.AuthFailed, Words: []string{"unauthorized", "invalid token", "access token", "401", "403", "invalid_client", "invalid_grant", "400 bad request"}},
 	{Kind: secrets.Network, Words: []string{"network", "connection", "resolve", "download", "dns"}},
 }
@@ -108,10 +108,10 @@ func (p Pull) key() string {
 // Secrets of the project by name, with warnings; a cached pull while it is fresh, a stale one only after a transport failure
 func (b *Bws) Pull(ctx context.Context, cfg *config.Config, p Pull) (map[string]string, []string, error) {
 	if p.Token == "" {
-		return nil, nil, errors.New("Bitwarden access token is empty")
+		return nil, nil, errors.New("No Bitwarden access token is set. Run icebath secrets bitwarden token to add one.")
 	}
 	if p.Project == "" {
-		return nil, nil, errors.New("Bitwarden project_id is empty")
+		return nil, nil, errors.New("No Bitwarden project is chosen. Run icebath secrets bitwarden setup to pick one.")
 	}
 	key := p.key()
 	encrypted := func(age time.Duration) (secrets.Entry, bool) { return b.readEncrypted(p.Dir, key, p.Token, age) }
@@ -133,8 +133,8 @@ func (b *Bws) Pull(ctx context.Context, cfg *config.Config, p Pull) (map[string]
 		binary = b.Find(ctx, cfg, true)
 	}
 	if binary == "" {
-		return nil, nil, errors.New("bws binary not available — auto-install failed and `bws` is not on PATH.  Install manually from " +
-			"https://github.com/bitwarden/sdk-sm/releases or re-run `icebath secrets bitwarden setup`.")
+		return nil, nil, errors.New("bws is not installed, and icebath could not download it. Install bws from " +
+			"https://github.com/bitwarden/sdk-sm/releases, or run icebath secrets bitwarden setup again.")
 	}
 	got, warnings, err := b.list(ctx, binary, p)
 	if err != nil {
@@ -144,17 +144,18 @@ func (b *Bws) Pull(ctx context.Context, cfg *config.Config, p Pull) (map[string]
 			found, label := false, ""
 			if p.Encrypted {
 				stale, found = encrypted(p.MaxStale)
-				label = "stale ENCRYPTED disk cache"
+				label = "the encrypted offline copy"
 			} else if p.TTL > 0 {
 				var readErr error
 				if stale, found, readErr = b.cache.Read(p.Dir, key, time.Duration(1<<62)); readErr != nil {
 					return nil, nil, readErr
 				}
-				label = "stale disk cache"
+				label = "the copy saved on this computer"
 			}
 			if found {
 				b.cache.Remember(key, stale)
-				return stale.Secrets, []string{fmt.Sprintf("bws live fetch failed (%v); falling back to %s (%ds old)", err, label, int(max(0, time.Since(stale.Fetched).Seconds())))}, nil
+				return stale.Secrets, []string{fmt.Sprintf("Bitwarden could not be reached, so icebath used %s from %s ago. %s", label,
+					ago(time.Since(stale.Fetched)), secrets.Sentence(err.Error()))}, nil
 			}
 		}
 		return nil, nil, err
@@ -171,6 +172,16 @@ func (b *Bws) Pull(ctx context.Context, cfg *config.Config, p Pull) (map[string]
 		}
 	}
 	return got, warnings, nil
+}
+
+// Age said in its largest whole unit, rounded: 1 hour, 3 days
+func ago(age time.Duration) string {
+	for _, unit := range []time.Duration{24 * time.Hour, time.Hour, time.Minute} {
+		if age >= unit {
+			return strs.Span(age.Round(unit))
+		}
+	}
+	return strs.Span(max(age, 0).Round(time.Second))
 }
 
 // Numbered cause lines of a bws error dump
@@ -201,7 +212,7 @@ func summarize(raw string) string {
 // Asks bws for the secrets of the project, every one whose key is a variable name
 func (b *Bws) list(ctx context.Context, binary string, p Pull) (map[string]string, []string, error) {
 	out, err := secrets.Run(ctx, []string{binary, "secret", "list", p.Project, "--output", "json"}, child(p.Env, p.Token, p.Server), runTimeout, "bws",
-		fmt.Sprintf("bws timed out after %.0fs fetching secrets", runTimeout.Seconds()), nil)
+		fmt.Sprintf("bws did not answer within %s while loading the secrets.", strs.Span(runTimeout)), nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -210,19 +221,19 @@ func (b *Bws) list(ctx context.Context, binary string, p Pull) (map[string]strin
 		if text == "" {
 			text = out.Stdout
 		}
-		return nil, nil, fmt.Errorf("bws exited %d: %s", out.Code, strs.Head(summarize(text), 200))
+		return nil, nil, fmt.Errorf("bws stopped with exit code %d: %s", out.Code, secrets.Sentence(strs.Head(summarize(text), 200)))
 	}
 	raw := strings.TrimSpace(out.Stdout)
 	if raw == "" {
-		return map[string]string{}, []string{"bws returned no output (empty project?)"}, nil
+		return map[string]string{}, []string{"bws printed nothing, so the project may have no secrets."}, nil
 	}
 	var payload any
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return nil, nil, fmt.Errorf("bws returned non-JSON output: %v", err)
+		return nil, nil, fmt.Errorf("bws printed something icebath can't read: %v.", err)
 	}
 	items, ok := payload.([]any)
 	if !ok {
-		return nil, nil, fmt.Errorf("bws returned unexpected shape: %T", payload)
+		return nil, nil, errors.New("bws printed something other than a list of secrets.")
 	}
 	found := map[string]string{}
 	var warnings []string
@@ -239,7 +250,7 @@ func (b *Bws) list(ctx context.Context, binary string, p Pull) (map[string]strin
 		if config.EnvName(key) {
 			found[key] = value
 		} else {
-			warnings = append(warnings, fmt.Sprintf("Skipping secret %q: not a valid env-var name", key))
+			warnings = append(warnings, fmt.Sprintf("The secret %q was left out because its name can't be a variable name.", key))
 		}
 	}
 	return found, warnings, nil
@@ -279,9 +290,9 @@ func cause(text string) string {
 // Projects the token sees on the server, or why Bitwarden would not list them
 func (b *Bws) Projects(ctx context.Context, binary, token, server string, env map[string]string) ([]Project, *Refusal) {
 	out, err := secrets.Run(ctx, []string{binary, "project", "list", "--output", "json"}, child(env, token, server), projectsTimeout, "bws",
-		fmt.Sprintf("bws timed out after %.0fs listing projects", projectsTimeout.Seconds()), nil)
+		fmt.Sprintf("bws did not answer within %s while listing the projects.", strs.Span(projectsTimeout)), nil)
 	if err != nil {
-		return nil, &Refusal{Text: "Couldn't list projects: " + err.Error()}
+		return nil, &Refusal{Text: err.Error()}
 	}
 	if out.Code != 0 {
 		text := strings.TrimSpace(out.Stderr)
@@ -289,7 +300,7 @@ func (b *Bws) Projects(ctx context.Context, binary, token, server string, env ma
 			text = strings.TrimSpace(out.Stdout)
 		}
 		text = strs.Head(text, 300)
-		return nil, &Refusal{Text: "bws project list failed: " + text, Cause: cause(text)}
+		return nil, &Refusal{Text: "Bitwarden refused to list the projects: " + secrets.Sentence(text), Cause: cause(text)}
 	}
 	raw := strings.TrimSpace(out.Stdout)
 	if raw == "" {
@@ -301,7 +312,7 @@ func (b *Bws) Projects(ctx context.Context, binary, token, server string, env ma
 		if json.Unmarshal([]byte(raw), &other) == nil {
 			return []Project{}, nil
 		}
-		return nil, &Refusal{Text: "bws returned non-JSON: " + err.Error()}
+		return nil, &Refusal{Text: "bws printed a list of projects icebath can't read: " + secrets.Sentence(err.Error())}
 	}
 	projects := []Project{}
 	for _, item := range items {

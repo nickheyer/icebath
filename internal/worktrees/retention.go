@@ -3,6 +3,7 @@ package worktrees
 import (
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -263,7 +264,7 @@ func privateRefs(tree string) ([]string, error) {
 func listed(paths []string) string {
 	rest := ""
 	if extra := len(paths) - named; extra > 0 {
-		rest = fmt.Sprintf(" (+%d more)", extra)
+		rest = fmt.Sprintf(" and %s more", strs.Number(float64(extra)))
 	}
 	return strings.Join(paths[:min(len(paths), named)], ", ") + rest
 }
@@ -272,7 +273,7 @@ func listed(paths []string) string {
 // untracked files too large for its archive; nil when it is safe. Anything that can't be checked keeps the tree
 func Blocker(tree string, skipped []Skipped, gitlinks bool) *RemovalBlock {
 	unsure := func(err error) *RemovalBlock {
-		return &RemovalBlock{KeepUnarchivable, "could not verify the tree is safe to remove: " + err.Error()}
+		return &RemovalBlock{KeepUnarchivable, "icebath could not check that removing it is safe: " + strings.TrimRight(err.Error(), ".")}
 	}
 	why, err := SubmoduleWork(tree, gitlinks)
 	if err != nil {
@@ -286,24 +287,24 @@ func Blocker(tree string, skipped []Skipped, gitlinks bool) *RemovalBlock {
 		return unsure(err)
 	}
 	if len(s.embedded) > 0 {
-		return &RemovalBlock{KeepUnarchivable, fmt.Sprintf("embedded repository %s cannot be archived", s.embedded[0])}
+		return &RemovalBlock{KeepUnarchivable, fmt.Sprintf("it holds the repository %s, which cannot be archived", s.embedded[0])}
 	}
 	if s.truncated {
-		return &RemovalBlock{KeepUnarchivable, fmt.Sprintf("over %d ignored entries; cannot rule out an embedded repository", scanEntries)}
+		return &RemovalBlock{KeepUnarchivable, fmt.Sprintf("it has over %s ignored entries, so a repository inside it cannot be ruled out", strs.Number(scanEntries))}
 	}
 	refs, err := privateRefs(tree)
 	if err != nil {
 		return unsure(err)
 	}
 	if len(refs) > 0 {
-		return &RemovalBlock{KeepWorktreeRefs, fmt.Sprintf("per-worktree ref %s holds commits no branch has", listed(refs))}
+		return &RemovalBlock{KeepWorktreeRefs, fmt.Sprintf("its own ref %s holds commits that no branch has", listed(refs))}
 	}
 	if len(skipped) > 0 {
 		var paths []string
 		for _, s := range skipped {
 			paths = append(paths, s.Path)
 		}
-		return &RemovalBlock{KeepLargeUntracked, "untracked file(s) over the archive size cap: " + listed(paths)}
+		return &RemovalBlock{KeepLargeUntracked, "untracked files larger than an archive takes: " + listed(paths)}
 	}
 	return nil
 }

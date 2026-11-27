@@ -11,12 +11,17 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: terminalconfig.Key,
 		Title:  "Daytona",
-		About:  "Commands run in a persistent Daytona cloud sandbox, one per session",
+		About:  "A Daytona cloud sandbox for each session",
+		Order:  50,
 		Settings: []config.Setting{
-			{Key: Image, Title: "Daytona image", About: "Image Daytona sandboxes start from; the default builds icebath's own sandbox image on Daytona", Default: sandbox.Image, Env: []string{"TERMINAL_DAYTONA_IMAGE"}},
-			{Key: APIKey, Title: "Daytona API key", About: "API key of your Daytona account, from https://daytona.io", Default: "", Env: []string{"DAYTONA_API_KEY"}, Secret: true},
-			{Key: APIURL, Title: "Daytona API address", About: "Address of the Daytona API; empty uses Daytona's own", Default: "", Env: []string{"DAYTONA_API_URL"}},
-			{Key: Target, Title: "Daytona target", About: "Region Daytona sandboxes are made in; empty uses your account's default", Default: "", Env: []string{"DAYTONA_TARGET"}},
+			{Key: APIKey, Title: "API key", About: "Your Daytona API key.", Help: "Get one at daytona.io.", Default: "", Env: []string{"DAYTONA_API_KEY"},
+				Secret: true},
+			{Key: Target, Title: "Region", About: "The region where Daytona sandboxes are made.", Default: "", Zero: "Your account's default",
+				Env: []string{"DAYTONA_TARGET"}},
+			{Key: Image, Title: "Image", About: "The image that Daytona sandboxes start from.",
+				Help: "Left at the default, icebath builds its own sandbox image on Daytona.", Default: sandbox.Image, Env: []string{"TERMINAL_DAYTONA_IMAGE"}},
+			{Key: APIURL, Title: "Base URL", About: "The address of the Daytona API.", Default: "", Zero: "The standard address", Env: []string{"DAYTONA_API_URL"},
+				Advanced: true},
 		},
 	}})
 }

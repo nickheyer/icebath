@@ -40,12 +40,3 @@ func (j *Job) XAI(preferKey bool) (web.XAI, bool) {
 func (j *Job) RenewXAI(ctx context.Context) error {
 	return web.RenewXAI(ctx, j.Speech.providers, j.Speech.credentials, j.Config)
 }
-
-// Message of a service chosen in a section whose credentials don't resolve, naming where the choice is changed
-func SelectionError(section, chosen, failure string) string {
-	where := "/settings → Speech"
-	if section == "stt" {
-		where = "/settings → Speech recognition"
-	}
-	return section + " is configured to use " + chosen + ", but " + failure + ". Pick another one in " + where + "."
-}

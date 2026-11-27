@@ -9,9 +9,9 @@ import (
 )
 
 // What an xAI sign-in that has no API access is told
-const entitlementHint = "xAI rejected this OAuth account. NOTE: X Premium+ does NOT include xAI API access — only standalone SuperGrok " +
-	"subscribers can use this provider. Other possible causes: no Grok subscription, your tier doesn't include this model, or your quota is " +
-	"exhausted. Check https://grok.com/?_s=usage to see which, or run `/model` to switch providers."
+const entitlementHint = "xAI refused this Grok account. X Premium+ alone does not give use outside the Grok app, so only a SuperGrok plan " +
+	"works here.\nThe plan may also not include this model, or its usage may be used up. See https://grok.com/?_s=usage, or switch providers " +
+	"with /model."
 
 // Why a Grok sign-in was refused when xAI says it has no subscription that covers the request
 func rejectionHint(status int, _, message string) []string {

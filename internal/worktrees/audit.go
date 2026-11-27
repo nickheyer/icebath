@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/git"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Branches never deleted, in any mode
@@ -33,7 +35,7 @@ var kanbanTree = regexp.MustCompile(`^t_[0-9a-f]+$`)
 const cherryAhead = 50
 
 // Errors of a git run refused because the repository's filter drivers could not be found with certainty
-const FilterDiscoveryFailed = "git filter discovery failed"
+const FilterDiscoveryFailed = "The git filters of the repository could not be found for certain."
 
 // Verdicts whose trees a reclaim removes
 var reapVerdicts = map[string]bool{"reap": true, "reap-archive": true, "reap-keep-branch": true}
@@ -75,7 +77,7 @@ func gcGit(dir string, timeout time.Duration, args ...string) (*git.Result, erro
 	}
 	result, err := run(dir, env, timeout, args...)
 	if _, ok := errors.AsType[*git.TimeoutError](err); ok {
-		return &git.Result{Code: 124, Stderr: fmt.Sprintf("timeout after %ds", int(timeout.Seconds()))}, nil
+		return &git.Result{Code: 124, Stderr: "git took longer than " + strs.Span(timeout) + "."}, nil
 	}
 	return result, err
 }
@@ -136,35 +138,35 @@ func archiveUntracked(cfg *config.Config, tree string, paths []string) string {
 // Verdict, reason and untracked paths of one tree under .worktrees
 func (w *Worktrees) classifyTree(repo, entry string, cache *verdicts, heads map[string]string) (string, string, []string) {
 	if kanbanTree.MatchString(filepath.Base(entry)) {
-		return "keep", "kanban task tree (owned by kanban gc)", nil
+		return "keep", "a kanban task tree, which the kanban cleanup removes", nil
 	}
 	if w.lockState(repo, entry, 5*time.Second) == "live" {
 		return "keep", "in use by a running icebath session", nil
 	}
 	tracked, others := dirtySplit(entry)
 	if tracked {
-		return "keep", "uncommitted tracked changes (real work)", nil
+		return "keep", "uncommitted changes to tracked files", nil
 	}
-	note := fmt.Sprintf("%d untracked file(s) will be archived", len(others))
+	note := strs.Count(len(others), "untracked file") + " to archive first"
 	if Unpushed(entry, 5*time.Second) && !allMerged(entry, 30*time.Second, cherryAhead, cache) {
 		if !pushedExact(entry, heads, 10*time.Second) {
-			return "keep", "unpushed commits not found upstream", nil
+			return "keep", "commits not found upstream", nil
 		}
 		if blocked := Blocked(entry); blocked != nil {
 			return "keep", blocked.Reason, nil
 		}
 		if len(others) > 0 {
-			return "reap-keep-branch", "pushed to origin (open-PR lane); branch kept; " + note, others
+			return "reap-keep-branch", "pushed to origin for a pull request, branch kept, " + note, others
 		}
-		return "reap-keep-branch", "pushed to origin (open-PR lane); branch kept", nil
+		return "reap-keep-branch", "pushed to origin for a pull request, branch kept", nil
 	}
 	if blocked := Blocked(entry); blocked != nil {
 		return "keep", blocked.Reason, nil
 	}
 	if len(others) > 0 {
-		return "reap-archive", "merged/pushed; " + note, others
+		return "reap-archive", "merged or pushed, " + note, others
 	}
-	return "reap", "clean and fully merged/pushed", nil
+	return "reap", "clean, and fully merged or pushed", nil
 }
 
 // Path with its links resolved, absolute, as it is when that fails
@@ -241,7 +243,7 @@ func PruneMissing(repo string, dryRun bool) ([]string, error) {
 	var actions []string
 	if dryRun {
 		for _, tree := range stale {
-			actions = append(actions, "would prune stale registration "+tree.Path)
+			actions = append(actions, "Would forget the missing worktree "+tree.Path+".")
 		}
 		return actions, nil
 	}
@@ -250,10 +252,10 @@ func PruneMissing(repo string, dryRun bool) ([]string, error) {
 		return nil, err
 	}
 	if result.Code != 0 {
-		return []string{"failed to prune stale registrations: " + strings.TrimSpace(result.Stderr)}, nil
+		return []string{"The missing worktrees could not be forgotten. git said: " + strings.TrimSpace(result.Stderr)}, nil
 	}
 	for _, tree := range stale {
-		actions = append(actions, "pruned stale registration "+tree.Path)
+		actions = append(actions, "Forgot the missing worktree "+tree.Path+".")
 	}
 	return actions, nil
 }
@@ -287,7 +289,7 @@ func (w *Worktrees) Audit(cfg *config.Config, repo string, sizes bool, olderThan
 		}
 		verdict, reason, others := w.classifyTree(repo, path, cache, heads)
 		if olderThanDays != nil && reapVerdicts[verdict] && age < *olderThanDays {
-			verdict, reason, others = "keep", fmt.Sprintf("reapable but only %.1fd old (--older-than %s)", age,
+			verdict, reason, others = "keep", fmt.Sprintf("could go, but is only %s old, younger than --older-than %s", strs.Counted(math.Round(age*10)/10, "days"),
 				strconv.FormatFloat(*olderThanDays, 'f', -1, 64)), nil
 		}
 		var mb *int
@@ -312,35 +314,35 @@ func (w *Worktrees) Reclaim(cfg *config.Config, repo string, dryRun bool, record
 			continue
 		}
 		if dryRun {
-			actions = append(actions, fmt.Sprintf("would remove %s (%s)", record.Name, record.Reason))
+			actions = append(actions, fmt.Sprintf("Would remove %s: %s.", record.Name, record.Reason))
 			continue
 		}
 		if len(record.Untracked) > 0 {
 			archive := archiveUntracked(cfg, record.Path, record.Untracked)
 			if archive == "" {
-				actions = append(actions, fmt.Sprintf("kept %s (archive of untracked files failed)", record.Name))
+				actions = append(actions, fmt.Sprintf("Kept %s, because its untracked files could not be archived.", record.Name))
 				continue
 			}
-			actions = append(actions, fmt.Sprintf("archived %d untracked file(s) → %s", len(record.Untracked), archive))
+			actions = append(actions, fmt.Sprintf("Archived %s of %s to %s.", strs.Count(len(record.Untracked), "untracked file"), record.Name, archive))
 		}
 		w.Hooks().Release(record.Path)
 		gcGit(repo, 10*time.Second, "worktree", "unlock", record.Path)
 		removed, err := gcGit(repo, 30*time.Second, "worktree", "remove", record.Path, "--force")
 		switch {
 		case err != nil:
-			actions = append(actions, fmt.Sprintf("failed to remove %s: %s", record.Name, err))
+			actions = append(actions, fmt.Sprintf("%s could not be removed: %s", record.Name, err))
 			continue
 		case removed.Code != 0:
-			actions = append(actions, fmt.Sprintf("failed to remove %s: %s", record.Name, strings.TrimSpace(removed.Stderr)))
+			actions = append(actions, fmt.Sprintf("%s could not be removed. git said: %s", record.Name, strings.TrimSpace(removed.Stderr)))
 			continue
 		case record.Verdict == "reap-keep-branch":
-			actions = append(actions, fmt.Sprintf("removed %s (branch %s kept — pushed open-PR lane)", record.Name, record.Branch))
+			actions = append(actions, fmt.Sprintf("Removed %s and kept its branch %s, which is pushed for a pull request.", record.Name, record.Branch))
 			continue
 		}
 		if record.Branch != "" && !protected[record.Branch] {
 			gcGit(repo, 10*time.Second, "branch", "-D", record.Branch)
 		}
-		actions = append(actions, "removed "+record.Name)
+		actions = append(actions, "Removed "+record.Name+".")
 	}
 	if !dryRun {
 		gcGit(repo, 15*time.Second, "worktree", "prune")
@@ -400,14 +402,14 @@ func Branches(repo string) ([]BranchRecord, error) {
 		case count == 0:
 			return BranchRecord{branch, "delete", "no commits beyond " + upstream}, nil
 		case count > cherryAhead:
-			return BranchRecord{branch, "keep", fmt.Sprintf("%d commits ahead (stale-base lane)", count)}, nil
+			return BranchRecord{branch, "keep", strs.Count(count, "commit") + " ahead, on an old base"}, nil
 		}
 		cherry, err := gcGit(repo, 30*time.Second, "cherry", upstream, branch)
 		if err != nil {
 			return BranchRecord{}, err
 		}
 		if cherry.Code != 0 {
-			return BranchRecord{branch, "keep", "could not verify (git cherry failed)"}, nil
+			return BranchRecord{branch, "keep", "could not be checked, because git cherry failed"}, nil
 		}
 		lines := git.Lines(cherry.Stdout)
 		unique := 0
@@ -417,9 +419,9 @@ func Branches(repo string) ([]BranchRecord, error) {
 			}
 		}
 		if len(lines) > 0 && !slices.ContainsFunc(lines, func(line string) bool { return !strings.HasPrefix(line, "-") }) {
-			return BranchRecord{branch, "delete", "all commits patch-equivalent upstream"}, nil
+			return BranchRecord{branch, "delete", "every commit has the same change upstream"}, nil
 		}
-		return BranchRecord{branch, "keep", fmt.Sprintf("%d unique commit(s) not upstream", unique)}, nil
+		return BranchRecord{branch, "keep", strs.Count(unique, "commit") + " not upstream"}, nil
 	}
 	records := make([]BranchRecord, len(branches))
 	errs := make([]error, len(branches))
@@ -447,7 +449,7 @@ func ReclaimBranches(repo string, dryRun bool, records []BranchRecord) ([]string
 			continue
 		}
 		if dryRun {
-			actions = append(actions, fmt.Sprintf("would delete branch %s (%s)", record.Name, record.Reason))
+			actions = append(actions, fmt.Sprintf("Would delete the branch %s: %s.", record.Name, record.Reason))
 			continue
 		}
 		result, err := gcGit(repo, 10*time.Second, "branch", "-D", record.Name)
@@ -455,9 +457,9 @@ func ReclaimBranches(repo string, dryRun bool, records []BranchRecord) ([]string
 			return nil, err
 		}
 		if result.Code == 0 {
-			actions = append(actions, "deleted branch "+record.Name)
+			actions = append(actions, "Deleted the branch "+record.Name+".")
 		} else {
-			actions = append(actions, fmt.Sprintf("failed to delete %s: %s", record.Name, strings.TrimSpace(result.Stderr)))
+			actions = append(actions, fmt.Sprintf("The branch %s could not be deleted. git said: %s", record.Name, strings.TrimSpace(result.Stderr)))
 		}
 	}
 	return actions, nil

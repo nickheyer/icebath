@@ -51,7 +51,9 @@ func (r *registrant) Tools() []tools.Def {
 		{
 			Name:    "skills_list",
 			Toolset: toolset,
-			Title:   "Skills",
+			Title:   "List skills",
+			About:   "List the skills the agent can load",
+			Group:   "Skills",
 			Icon:    tools.IconFind,
 			Subject: "category",
 			Schema: tools.Schema("List available skills (name + description). Use skill_view(name) to load full content.", []string{}, map[string]any{
@@ -64,7 +66,9 @@ func (r *registrant) Tools() []tools.Def {
 		{
 			Name:    "skill_view",
 			Toolset: toolset,
-			Title:   "Skill",
+			Title:   "Read skill",
+			About:   "Load the instructions of a skill and its files",
+			Group:   "Skills",
 			Icon:    tools.IconRead,
 			Subject: "name",
 			Schema: tools.Schema("Load a skill's SKILL.md, or one of its linked references, templates or scripts. The first call returns SKILL.md plus a 'linked_files' dict; call again with file_path to read one.", []string{"name"}, map[string]any{
@@ -78,7 +82,9 @@ func (r *registrant) Tools() []tools.Def {
 		{
 			Name:    "skill_manage",
 			Toolset: toolset,
-			Title:   "Skill change",
+			Title:   "Change skill",
+			About:   "Create, change or delete a skill",
+			Group:   "Skills",
 			Icon:    tools.IconEdit,
 			Risks:   []string{skills.RiskWrite},
 			Schema:  manageSchema(),

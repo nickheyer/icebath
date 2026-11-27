@@ -15,25 +15,31 @@ import (
 	"github.com/nickheyer/icebath/pkg/tui"
 )
 
-// What /save says when run bare or with a format it doesn't know
-const saveUsage = `/save — export the current session to a file
-Usage: /save <format> [filename] [redact]
+// Folder a session saved with no file named goes to, under the folder of icebath's own files
+var savedFolder = filepath.Join("sessions", "saved")
 
-Formats:
-  json    full session snapshot (canonical export shape)
-  md      readable Markdown transcript
-  html    standalone single-file HTML page (shareable, no dependencies)
-
-Options:
-  filename   optional output name/path (default: auto-named;
-             saved under the sessions/saved folder of icebath's settings)
-  redact     scrub API keys, tokens, and credentials before writing
-
-Examples:
-  /save json
-  /save html
-  /save md notes.md
-  /save html session.html redact`
+// What /save says when run bare or with a format it doesn't know: what it does, how it is typed, the formats, where the file goes and examples
+func saveUsage() string {
+	folder := "the saved sessions folder"
+	if path, err := export.Folder(savedFolder); err == nil {
+		folder = tilde(path)
+	}
+	return "/save writes this session to a file.\n" +
+		"Usage: /save " + saveUsageLine + "\n\n" +
+		"Formats\n" +
+		"  md       the messages as readable Markdown\n" +
+		"  json     every message with all its details, for other programs\n" +
+		"  html     one page to open in a browser, with nothing else needed\n\n" +
+		"Options\n" +
+		"  file     where to write it. A name alone goes in the folder of the session.\n" +
+		"           With no file, icebath names it and puts it in " + folder + ".\n" +
+		"  redact   hide API keys and other secrets in the file\n\n" +
+		"Examples\n" +
+		"  /save md\n" +
+		"  /save html\n" +
+		"  /save md notes.md\n" +
+		"  /save html session.html redact"
+}
 
 // Format a name given for one stands for, empty for none
 func saveFormat(name string) string {
@@ -58,7 +64,7 @@ func (d *desk) save(ctx context.Context, id, format, file string, redact bool) (
 	}
 	transcripts := response.GetTranscripts()
 	if len(transcripts) == 0 || len(transcripts[0].GetMessages()) == 0 {
-		return "", errors.New("No stored messages found for this session (" + id + ").")
+		return "", errors.New("This session has no stored messages yet.")
 	}
 	if redact {
 		transcripts = export.Redact(transcripts)
@@ -91,7 +97,7 @@ func (d *desk) save(ctx context.Context, id, format, file string, redact bool) (
 func savePath(session *sessionsv1.Session, format, file string) (string, error) {
 	file = strings.TrimSpace(file)
 	if file == "" {
-		folder, err := export.Folder(filepath.Join("sessions", "saved"))
+		folder, err := export.Folder(savedFolder)
 		if err != nil {
 			return "", err
 		}
@@ -117,7 +123,7 @@ func savePath(session *sessionsv1.Session, format, file string) (string, error) 
 	return filepath.Join(base, file), nil
 }
 
-// /save <json|md|html> [filename] [redact]
+// /save <json|md|html> [file] [redact]
 func (c *chat) saveTo(argument string) (tea.Cmd, bool) {
 	echo := strings.TrimSpace("/save " + argument)
 	words := strings.Fields(argument)
@@ -129,21 +135,21 @@ func (c *chat) saveTo(argument string) (tea.Cmd, bool) {
 		}
 	}
 	if len(words) == 0 {
-		c.say(echo, "```\n"+saveUsage+"\n```")
+		c.say(echo, "```\n"+saveUsage()+"\n```")
 		return nil, true
 	}
 	format := saveFormat(words[0])
 	if format == "" {
-		c.say(echo, "Unknown format '"+words[0]+"' — expected one of: json, md, html\n\n```\n"+saveUsage+"\n```")
+		c.say(echo, "There is no format “"+words[0]+"”. Use md, json or html.\n\n```\n"+saveUsage()+"\n```")
 		return nil, true
 	}
 	id := c.id
 	if id == "" {
-		c.say(echo, "No active session — nothing to save.")
+		c.say(echo, "This chat has no session yet, so there is nothing to save.")
 		return nil, true
 	}
 	if !c.log.conversed() {
-		c.say(echo, "No conversation yet.")
+		c.say(echo, "This session has no messages yet, so there is nothing to save.")
 		return nil, true
 	}
 	file := strings.Join(words[1:], " ")
@@ -151,10 +157,10 @@ func (c *chat) saveTo(argument string) (tea.Cmd, bool) {
 		path, err := c.desk.save(c.kit.Env.Ctx, id, format, file, redact)
 		return func() tea.Cmd {
 			if err != nil {
-				c.say(echo, "Failed to save: "+err.Error())
+				c.say(echo, "The session was not saved. "+err.Error())
 				return nil
 			}
-			c.say(echo, "Conversation saved to: `"+path+"`")
+			c.say(echo, "Saved the session to `"+path+"`.")
 			return nil
 		}
 	}), true
@@ -173,23 +179,23 @@ func (c *chat) branch(argument string) (tea.Cmd, bool) {
 	title := strings.Join(kept, " ")
 	id := c.id
 	if id == "" {
-		c.say(echo, "No active session.")
+		c.say(echo, "This chat has no session yet, so there is nothing to branch.")
 		return nil, true
 	}
 	if !c.log.conversed() {
-		c.say(echo, "No conversation to branch — send a message first.")
+		c.say(echo, "This session has no messages yet. Send one first, then branch it.")
 		return nil, true
 	}
 	return tui.Async(func() func() tea.Cmd {
 		response, err := c.desk.sessions.Branch(c.kit.Env.Ctx, &sessionsv1.BranchRequest{Id: id, Title: title})
 		return func() tea.Cmd {
 			if err != nil {
-				c.say(echo, "Failed to create branch: "+tui.Reason(err))
+				c.say(echo, "The branch was not made. "+tui.Reason(err))
 				return nil
 			}
 			child := response.GetSession()
 			cmd := c.switchTo(child)
-			c.say(echo, "Branched → "+cmp.Or(child.GetTitle(), title, child.GetId())+". The original stays in /sessions.")
+			c.say(echo, "This chat now shows the branch "+label(child.GetId(), cmp.Or(child.GetTitle(), title))+". The session it came from stays in /sessions.")
 			return cmd
 		}
 	}), true

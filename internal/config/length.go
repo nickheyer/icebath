@@ -46,7 +46,7 @@ func (s Setting) DefaultValue() any {
 	case s.Null != "":
 		return nil
 	}
-	return s.kept(length)
+	return s.Kept(length)
 }
 
 // Number of a value decoded from YAML or JSON, false for anything else
@@ -92,24 +92,11 @@ func Length(value any, unit time.Duration) (time.Duration, bool) {
 }
 
 // Number of the setting's unit a length of time comes to, whole when it divides evenly
-func (s Setting) kept(length time.Duration) any {
+func (s Setting) Kept(length time.Duration) any {
 	if length%s.unit() == 0 {
 		return int(length / s.unit())
 	}
 	return float64(length) / float64(s.unit())
-}
-
-// Length of time as the number the setting keeps with its unit
-func (s Setting) said(length time.Duration) string {
-	return WithUnit(s.kept(length), s.UnitName())
-}
-
-// Number of a length of time with the name of its unit, a unit of words in the singular for exactly one
-func WithUnit(number any, unit string) string {
-	if n, ok := numeric(number); ok && n == 1 && len(unit) > 3 && strings.HasSuffix(unit, "s") {
-		unit = strings.TrimSuffix(unit, "s")
-	}
-	return fmt.Sprintf("%v %s", number, unit)
 }
 
 // Length of time a value written for the setting comes to, kept as a number of its unit, and empty text nothing for a setting whose unset
@@ -120,7 +107,7 @@ func (s Setting) checkLength(value any) (any, error) {
 	}
 	length, ok := Length(value, s.unit())
 	if !ok {
-		return nil, fmt.Errorf("%s takes a length of time such as 30s or 5m", s.Title)
+		return nil, fmt.Errorf("%s takes a length of time such as 30s or 5m.", s.Title)
 	}
 	n, number := numeric(value)
 	if text, ok := value.(string); ok {
@@ -128,15 +115,19 @@ func (s Setting) checkLength(value any) (any, error) {
 		n, number = parsed, err == nil
 	}
 	if number && math.Abs(n*float64(s.unit())) >= math.MaxInt64 {
-		return nil, fmt.Errorf("%s is too long, the most it takes is %d days", s.Title, int(time.Duration(math.MaxInt64)/(24*time.Hour)))
+		return nil, fmt.Errorf("%s is too long. The most it takes is %d days.", s.Title, int(time.Duration(math.MaxInt64)/(24*time.Hour)))
 	}
 	if s.Min != nil && length < *s.Min {
-		return nil, fmt.Errorf("%s must be at least %s", s.Title, s.said(*s.Min))
+		return nil, fmt.Errorf("%s must be at least %s.", s.Title, Span(*s.Min))
 	}
 	if s.Max != nil && length > *s.Max {
-		return nil, fmt.Errorf("%s must be at most %s", s.Title, s.said(*s.Max))
+		return nil, fmt.Errorf("%s must be at most %s.", s.Title, Span(*s.Max))
 	}
-	return s.kept(length), nil
+	// No length of time is under 0, but the value Zero speaks of where that is one
+	if length < 0 && !s.Negative() && !(s.Zero != "" && s.IsZero(s.Kept(length))) {
+		return nil, fmt.Errorf("%s can't be less than 0.", s.Title)
+	}
+	return s.Kept(length), nil
 }
 
 // Length of time a stored value or a variable gives the setting, as a number of its unit and brought within its bounds; false when it spells
@@ -155,5 +146,5 @@ func (s Setting) readLength(value any) (any, bool) {
 	if s.Max != nil {
 		length = min(length, *s.Max)
 	}
-	return s.kept(length), true
+	return s.Kept(length), true
 }

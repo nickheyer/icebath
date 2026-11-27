@@ -16,6 +16,7 @@ import (
 	sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // How long a "later" answer holds the low disk question off
@@ -68,18 +69,8 @@ func low(free, total int64) bool {
 }
 
 // Size as advice shows it
-func Size(n int64) string {
-	if n >= 1<<30 {
-		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
-	}
-	return fmt.Sprintf("%.0f MB", float64(n)/(1<<20))
-}
-
-func sessionCount(n int) string {
-	if n == 1 {
-		return "1 session"
-	}
-	return fmt.Sprintf("%d sessions", n)
+func size(n int64) string {
+	return strs.Size(float64(n))
 }
 
 // Where automatic pruning stands: on or off, and whether the person chose that or it is the default
@@ -105,9 +96,10 @@ func DiskLine(ctx context.Context, store Store) string {
 	if !ok {
 		return ""
 	}
-	line := fmt.Sprintf(" %s %s; %s free of %s", filepath.Base(stats.GetPath()), Size(stats.GetBytes()), Size(free), Size(total))
+	line := fmt.Sprintf(" The file %s takes %s, and its disk has %s free of %s", filepath.Base(stats.GetPath()), size(stats.GetBytes()), size(free),
+		size(total))
 	if low(free, total) {
-		line += " (low)"
+		line += ", which is low"
 	}
 	return line + "."
 }
@@ -127,15 +119,18 @@ func Advice(ctx context.Context, store Store, cfg *config.Config, prefix string)
 	if days < 0 {
 		days = 90
 	}
+	keep := strs.Span(time.Duration(days) * 24 * time.Hour)
 	lines := []string{
-		fmt.Sprintf("Low disk space: %s free of %s. Your session history (%s) uses %s.", Size(free), Size(total), filepath.Base(stats.GetPath()), Size(stats.GetBytes())),
-		fmt.Sprintf("Auto-prune is off. Turning it on deletes ended sessions inactive for more than %d days, once a day (pinned and open sessions are kept).", days),
+		fmt.Sprintf("The disk is low on space, with %s free of %s. Your saved sessions in %s take %s.", size(free), size(total),
+			filepath.Base(stats.GetPath()), size(stats.GetBytes())),
+		fmt.Sprintf("Delete old sessions in /settings under Sessions is off. Turned on, it deletes once a day the ended sessions unused for more "+
+			"than %s, and keeps pinned and open ones.", keep),
 	}
 	cutoff := timestamppb.New(time.Now().Add(-time.Duration(days) * 24 * time.Hour))
 	matches, err := store.Prune(ctx, &sessionsv1.PruneRequest{Filter: &sessionsv1.Filter{ActiveBefore: cutoff}, DryRun: true})
 	switch {
 	case err != nil:
-		lines = append(lines, "Could not read the session database to estimate how much pruning would free.")
+		lines = append(lines, "icebath could not read your saved sessions to tell how much deleting old ones would free.")
 	default:
 		var prunable int64
 		for _, s := range matches.GetSessions() {
@@ -148,22 +143,22 @@ func Advice(ctx context.Context, store Store, cfg *config.Config, prefix string)
 		count := len(matches.GetSessions())
 		switch {
 		case stats.GetSessions() == 0:
-			lines = append(lines, "Pruning will not help right now: there is no session history to delete. Something else is filling this disk.")
+			lines = append(lines, "Deleting old sessions would not help now, because there are none to delete. Something else is filling this disk.")
 		case count == 0:
-			lines = append(lines, fmt.Sprintf("Pruning will not help right now: none of your %s is older than %d days. Something else is filling this disk.",
-				sessionCount(int(stats.GetSessions())), days))
+			lines = append(lines, fmt.Sprintf("Deleting old sessions would not help now, because none of your %s is older than %s. Something else "+
+				"is filling this disk.", strs.Count(int(stats.GetSessions()), "session"), keep))
 		case reclaim < 1<<30 && low(free+reclaim, total):
-			lines = append(lines, fmt.Sprintf("Pruning would remove only about %s of history (%s), which will not fix this disk on its own.", Size(reclaim),
-				sessionCount(count)))
+			lines = append(lines, fmt.Sprintf("Deleting old sessions would free only about %s, from %s, which will not fix this disk on its own.",
+				size(reclaim), strs.Count(count, "session")))
 		default:
-			lines = append(lines, fmt.Sprintf("Pruning would remove about %s of history (%d of %s).", Size(reclaim), count, sessionCount(int(stats.GetSessions()))))
+			lines = append(lines, fmt.Sprintf("Deleting old sessions would free about %s, from %s of your %s.", size(reclaim), strs.Number(float64(count)),
+				strs.Count(int(stats.GetSessions()), "session")))
 		}
 		if count > 0 {
-			lines = append(lines, "Deleted history frees space inside the database; to give it back to the disk, run `icebath sessions optimize` with other "+
-				"Icebath windows closed.")
+			lines = append(lines, "The space freed stays in the database file until you close the other icebath windows and run icebath sessions optimize.")
 		}
 	}
-	lines = append(lines, fmt.Sprintf("%sautoprune on to enable, %sautoprune off to keep everything (never asked again), %sautoprune later to be reminded in a week.",
-		prefix, prefix, prefix))
+	lines = append(lines, fmt.Sprintf("Type %sautoprune on to turn it on, %sautoprune off to keep everything and never be asked again, or "+
+		"%sautoprune later to be asked again in a week.", prefix, prefix, prefix))
 	return lines, true
 }

@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/internal/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // One write into this process's environment for the profile in use, with what the variable held before it
@@ -336,7 +337,7 @@ func (h *Secrets) clean(name, value string) string {
 		stripped++
 		label := fmt.Sprintf("U+%04X", r)
 		if unicode.IsPrint(r) {
-			label += fmt.Sprintf(" (%q)", string(r))
+			label += " “" + string(r) + "”"
 		}
 		if len(odd) < 3 && !slices.Contains(odd, label) {
 			odd = append(odd, label)
@@ -347,15 +348,11 @@ func (h *Secrets) clean(name, value string) string {
 	h.warned[name] = true
 	h.mu.Unlock()
 	if !warned {
-		plural := "s"
-		if stripped == 1 {
-			plural = ""
-		}
-		h.notice(fmt.Sprintf("  Warning: %s contained %d non-ASCII character%s (%s) — stripped so the key can be sent as an HTTP header.", name, stripped,
-			plural, cmp.Or(strings.Join(odd, ", "), "non-printable")),
-			"  This usually means the key was copy-pasted from a PDF, rich-text editor, or web page that substituted lookalike\n"+
-				"  Unicode glyphs for ASCII letters. If authentication fails (e.g. \"API key not valid\"), re-copy the key from the\n"+
-				"  provider's dashboard, then set it again in /providers (or edit the profile's .env in a plain-text editor).")
+		h.notice(fmt.Sprintf("  ⚠ %s held %s that a request can't carry: %s. icebath took them out of the key.", name,
+			strs.Count(stripped, "character"), cmp.Or(strings.Join(odd, ", "), "characters that can't be printed")),
+			"  This usually happens when a key is copied from a PDF, a word processor or a web page that swaps letters for ones that look\n"+
+				"  the same. If the provider refuses the key, copy it again from the provider's website and set it again in /providers,\n"+
+				"  or edit the keys file in a plain text editor.")
 	}
 	return kept.String()
 }
@@ -380,27 +377,24 @@ func (h *Secrets) say(cfg *config.Config, report Report) bool {
 	var lines []string
 	for _, source := range report.Sources {
 		if n := len(source.Applied); n > 0 {
-			plural := "s"
-			if n == 1 {
-				plural = ""
-			}
-			lines = append(lines, fmt.Sprintf("  %s: applied %d secret%s", source.Label, n, plural))
+			lines = append(lines, fmt.Sprintf("  ✓ %s set %s.", source.Label, strs.Count(n, "variable")))
 		}
 		if source.Result.Error != "" {
-			lines = append(lines, fmt.Sprintf("  %s: %s", source.Label, source.Result.Error))
+			lines = append(lines, fmt.Sprintf("  ⚠ %s: %s", source.Label, Sentence(source.Result.Error)))
 			if found, ok := h.Source(source.Name); ok {
 				if hint := h.Remedy(cfg, found.Spec(), source.Result.Kind); hint != "" {
-					lines = append(lines, fmt.Sprintf("  %s: → %s", source.Label, hint))
+					lines = append(lines, "    "+Sentence(hint))
 				}
 			}
 		}
 		for _, warning := range source.Result.Warnings {
-			lines = append(lines, fmt.Sprintf("  %s: %s", source.Label, warning))
+			lines = append(lines, fmt.Sprintf("  ⚠ %s: %s", source.Label, Sentence(warning)))
 		}
 	}
 	for _, conflict := range report.Conflicts {
-		lines = append(lines, "  Secret sources: "+conflict)
+		lines = append(lines, "  ⚠ "+conflict)
 	}
+
 	h.mu.Lock()
 	out := h.out
 	active := h.active

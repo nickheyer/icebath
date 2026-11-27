@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 var (
@@ -28,7 +30,8 @@ const (
 	clientMaxChars = 256 * 1024
 )
 
-var ErrClient = errors.New("The client's environment must be at most 256 variable names with string values, 256 KiB in all; it was not applied.")
+var ErrClient = errors.New("Your shell has more variables than a session keeps, which is at most " + strs.Count(clientMaxNames, "variable") + " and " +
+	strs.Counted(clientMaxChars, "characters") + " in all. None of them were kept.")
 
 // Rules a session keeps a client's variables by: every behaviour variable, those naming something of a machine only of a client on this
 // one, and of a client on this machine its toolchain and the extra names given

@@ -82,7 +82,7 @@ func table(text string) (map[string]any, error) {
 	}
 	var m map[string]any
 	if err := json.Unmarshal([]byte(text), &m); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, "The settings are not a JSON object: "+err.Error())
+		return nil, connect.NewError(connect.CodeInvalidArgument, "The settings of the server cannot be read: "+err.Error()+".")
 	}
 	return m, nil
 }
@@ -248,7 +248,7 @@ func (s *service) Probe(ctx context.Context, request *mcpv1.ProbeRequest) (*mcpv
 	}
 	if settings == nil {
 		if settings = s.manager.Stored(cfg, request.GetName()); settings == nil {
-			return nil, connect.NewError(connect.CodeNotFound, "Server '"+request.GetName()+"' not found in config.")
+			return nil, connect.NewError(connect.CodeNotFound, "No MCP server is called “"+request.GetName()+"”. Run icebath mcp list to see yours.")
 		}
 	}
 	timeout := time.Duration(request.GetConnectTimeout() * float64(time.Second))
@@ -328,7 +328,7 @@ func (s *service) InstallConfig(_ context.Context, request *mcpv1.InstallConfigR
 	}
 	entry, ok := s.manager.Entry(cfg, request.GetEntry())
 	if !ok {
-		return nil, connect.NewError(connect.CodeNotFound, "'"+request.GetEntry()+"' is not in the catalog. Run `icebath mcp catalog` to see available entries.")
+		return nil, connect.NewError(connect.CodeNotFound, "“"+request.GetEntry()+"” is not in the catalog. Run icebath mcp catalog to see what it holds.")
 	}
 	return &mcpv1.InstallConfigResponse{Settings: encode(s.manager.InstallConfig(cfg, entry, request.GetInstallDir(), request.GetValues()))}, nil
 }
@@ -340,7 +340,7 @@ func (s *service) GitInstall(ctx context.Context, request *mcpv1.GitInstallReque
 	}
 	entry, ok := s.manager.Entry(cfg, request.GetEntry())
 	if !ok {
-		return nil, connect.NewError(connect.CodeNotFound, "'"+request.GetEntry()+"' is not in the catalog.")
+		return nil, connect.NewError(connect.CodeNotFound, "“"+request.GetEntry()+"” is not in the catalog.")
 	}
 	var out bytes.Buffer
 	dir, err := s.manager.GitInstall(ctx, cfg, entry, &out)
@@ -382,7 +382,7 @@ func (s *service) Login(ctx context.Context, request *mcpv1.LoginRequest, stream
 	select {
 	case <-signin.Done:
 	case <-ctx.Done():
-		signin.Login.Fail(errors.New("canceled"))
+		signin.Login.Fail(errors.New("The sign-in was canceled."))
 		<-signin.Done
 	}
 	event := &mcpv1.LoginEvent{Id: signin.ID, Done: true, Tools: int32(signin.Tools), NoToken: signin.NoToken}
@@ -395,7 +395,7 @@ func (s *service) Login(ctx context.Context, request *mcpv1.LoginRequest, stream
 func (s *service) Callback(_ context.Context, request *mcpv1.CallbackRequest) (*mcpv1.CallbackResponse, error) {
 	signin, ok := s.manager.Signin(request.GetId())
 	if !ok {
-		return nil, connect.NewError(connect.CodeNotFound, "That sign in is no longer running.")
+		return nil, connect.NewError(connect.CodeNotFound, "That sign-in is no longer running.")
 	}
 	if err := signin.Login.Deliver(request.GetPasted()); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
@@ -405,7 +405,7 @@ func (s *service) Callback(_ context.Context, request *mcpv1.CallbackRequest) (*
 
 func (s *service) CancelLogin(_ context.Context, request *mcpv1.CancelLoginRequest) (*mcpv1.CancelLoginResponse, error) {
 	if signin, ok := s.manager.Signin(request.GetId()); ok {
-		signin.Login.Fail(errors.New("Stopped waiting, the sign in is cancelled."))
+		signin.Login.Fail(errors.New("You stopped waiting, so the sign-in was canceled."))
 	}
 	return &mcpv1.CancelLoginResponse{}, nil
 }

@@ -34,6 +34,45 @@ var (
 		{"state", "address-level1"}, {"postal_code", "postal-code"}, {"country", "country-name"}}
 )
 
+// Name of a field as people read it
+func FieldName(key string) string {
+	switch key {
+	case "identifier_type":
+		return "kind of sign-in"
+	case "identifier":
+		return "email, phone number or username"
+	case "otp_secret":
+		return "authenticator key"
+	case "card_number":
+		return "card number"
+	case "cardholder_name":
+		return "name on the card"
+	case "exp_month":
+		return "expiry month"
+	case "exp_year":
+		return "expiry year"
+	case "cvc":
+		return "security code"
+	case "billing_postal_code":
+		return "billing postal code"
+	case "address_line1":
+		return "first address line"
+	case "address_line2":
+		return "second address line"
+	case "postal_code":
+		return "postal code"
+	}
+	return strings.ReplaceAll(key, "_", " ")
+}
+
+// Words joined as a list is said: a, b and c
+func joined(words []string) string {
+	if len(words) < 2 {
+		return strings.Join(words, "")
+	}
+	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
+}
+
 // Fields an item of a kind can't go without
 var required = map[string][]string{"payment": {"card_number", "exp_month", "exp_year", "cvc"}, "address": {"address_line1", "city", "postal_code", "country"}}
 
@@ -147,16 +186,16 @@ func (s *Store) key() ([]byte, error) {
 		var unavailable *KeychainUnavailable
 		switch {
 		case errors.As(err, &unavailable):
-			why = "the OS keychain is not reachable here: " + unavailable.Msg
+			why = "icebath can't reach the keychain of this computer here. " + sentence(unavailable.Msg)
 		case err != nil:
 			return nil, err
 		case len(key) > 0:
 			return key, nil
 		default:
-			why = fmt.Sprintf("the keychain entry %q / %q is gone", ref.service(), ref.Account)
+			why = fmt.Sprintf("The keychain entry %q for %q is gone.", ref.service(), ref.Account)
 		}
 	} else {
-		why = filepath.Base(s.keyPath()) + " is missing"
+		why = "The file " + filepath.Base(s.keyPath()) + " is missing."
 	}
 	if s.sealed() {
 		return nil, &Error{s.missingKey(why)}
@@ -165,15 +204,28 @@ func (s *Store) key() ([]byte, error) {
 }
 
 func (s *Store) missingKey(why string) string {
-	return fmt.Sprintf("The vault key could not be found (%s). vault.json.enc in %s was left untouched. ", why, s.dir) +
-		"If this profile came from another machine, run `icebath vault key migrate --to file` there and copy its vault.key next to " +
-		"vault.json.enc; if the keychain entry was deleted, restore it from a keychain backup. `icebath vault key` shows where the key is " +
-		"expected. To start over instead, delete vault.json.enc (its saved items are lost)."
+	return fmt.Sprintf("icebath can't find the key of the vault. %s The vault file vault.json.enc in %s is untouched.\n", why, s.dir) +
+		"If this profile came from another computer, run icebath vault key migrate --to file there and copy its vault.key next to " +
+		"vault.json.enc. If the keychain entry was deleted, bring it back from a backup of the keychain. icebath vault key shows where the " +
+		"key should be. To start over, delete vault.json.enc, and the items saved in it are lost."
 }
 
 func (s *Store) conflictingKey() string {
-	return s.keyPath() + " does not decrypt vault.json.enc, so the key was not moved and nothing was deleted. If the vault's key is in the " +
-		"OS keychain, move this vault.key aside and run `icebath vault key` again."
+	return s.keyPath() + " does not open vault.json.enc, so the key was not moved and nothing was deleted. If the key of the vault is in the " +
+		"keychain, move this vault.key somewhere else and run icebath vault key again."
+}
+
+// Text of a keychain failure as the end of a sentence
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	text = strings.ToUpper(text[:1]) + text[1:]
+	if !strings.HasSuffix(text, ".") && !strings.HasSuffix(text, "!") && !strings.HasSuffix(text, "?") {
+		text += "."
+	}
+	return text
 }
 
 // New key in the keychain when the settings ask for it and it is reachable, else in the 0600 key file
@@ -278,7 +330,7 @@ func (s *Store) Location() (Location, error) {
 // Moves the key between its file and the OS keychain, the copy proved to open the vault before the original goes
 func (s *Store) Migrate(target string) error {
 	if target != "file" && target != "keychain" {
-		return &Error{"key storage must be 'file' or 'keychain'"}
+		return &Error{"The vault key can be kept in the keychain or in a file, not in “" + target + "”."}
 	}
 	return s.locked(func() error {
 		if target == "keychain" {
@@ -302,21 +354,21 @@ func (s *Store) toKeychain() error {
 			}
 			var unavailable *KeychainUnavailable
 			if errors.As(err, &unavailable) {
-				return &Error{"cannot read the vault key from the OS keychain: " + unavailable.Msg}
+				return &Error{"icebath can't read the vault key from the keychain of this computer. " + sentence(unavailable.Msg)}
 			}
 			if err != nil {
 				return err
 			}
 			if !s.opens(key) {
-				return &Error{s.missingKey(fmt.Sprintf("the keychain entry %q does not open the vault", existing.Account))}
+				return &Error{s.missingKey(fmt.Sprintf("The keychain entry %q does not open the vault.", existing.Account))}
 			}
 			return nil
 		}
 		if s.sealed() {
-			return &Error{s.missingKey(filepath.Base(s.keyPath()) + " is missing")}
+			return &Error{s.missingKey("The file " + filepath.Base(s.keyPath()) + " is missing.")}
 		}
 		if _, err := osKeyring(); err != nil {
-			return &Error{"cannot use the OS keychain: " + err.Error()}
+			return &Error{"icebath can't use the keychain of this computer. " + sentence(err.Error())}
 		}
 		return nil
 	}
@@ -335,18 +387,18 @@ func (s *Store) toKeychain() error {
 	if err == nil {
 		var back []byte
 		if back, err = loadKey(ref); err == nil && !s.opens(back) {
-			err = &KeychainUnavailable{Msg: "the key read back from the keychain does not decrypt the vault"}
+			err = &KeychainUnavailable{Msg: "The key read back from the keychain does not open the vault."}
 		}
 	}
 	if err != nil {
 		if fresh {
 			deleteKey(ref)
 		}
-		return &Error{fmt.Sprintf("could not move the vault key to the OS keychain (%s); it stays in %s", err, s.keyPath())}
+		return &Error{fmt.Sprintf("The vault key could not be moved to the keychain, so it stays in %s. %s", s.keyPath(), sentence(err.Error()))}
 	}
 	if fresh {
 		if err := saveNewRef(s.refPath(), ref); err != nil {
-			return &Error{fmt.Sprintf("could not save %s (%s); the key stays in %s", filepath.Base(s.refPath()), err, s.keyPath())}
+			return &Error{fmt.Sprintf("%s could not be saved, so the key stays in %s. %s", filepath.Base(s.refPath()), s.keyPath(), sentence(err.Error()))}
 		}
 	}
 	return removeFile(s.keyPath())
@@ -372,23 +424,23 @@ func (s *Store) toFile() error {
 	}
 	if ref == nil {
 		if s.sealed() {
-			return &Error{s.missingKey(filepath.Base(s.keyPath()) + " is missing")}
+			return &Error{s.missingKey("The file " + filepath.Base(s.keyPath()) + " is missing.")}
 		}
 		return nil
 	}
 	key, err := loadKey(ref)
 	if err != nil {
-		return &Error{"cannot read the vault key from the OS keychain: " + err.Error()}
+		return &Error{"icebath can't read the vault key from the keychain of this computer. " + sentence(err.Error())}
 	}
 	if len(key) == 0 || !s.opens(key) {
-		return &Error{s.missingKey(fmt.Sprintf("the keychain entry %q does not hold this vault's key", ref.Account))}
+		return &Error{s.missingKey(fmt.Sprintf("The keychain entry %q does not hold the key of this vault.", ref.Account))}
 	}
 	if err := fsx.Write(s.keyPath(), key, 0o600); err != nil {
 		return err
 	}
 	if back, err := readKey(s.keyPath()); err != nil || !bytes.Equal(back, key) {
 		removeFile(s.keyPath())
-		return &Error{fmt.Sprintf("could not write %s; the key stays in the OS keychain", s.keyPath())}
+		return &Error{fmt.Sprintf("%s could not be written, so the key stays in the keychain.", s.keyPath())}
 	}
 	return s.release(ref)
 }
@@ -424,13 +476,13 @@ func (s *Store) read() ([]record, error) {
 	}
 	data, err := f.decrypt(blob)
 	if err != nil {
-		return nil, &Error{"vault file could not be decrypted (key mismatch or corruption)"}
+		return nil, &Error{"The vault file can't be opened. Its key does not fit it, or the file is damaged."}
 	}
 	var doc struct {
 		Items []record `json:"items"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, &Error{"vault file is corrupted (invalid JSON)"}
+		return nil, &Error{"The vault file is damaged, and icebath can't read the items in it."}
 	}
 	return doc.Items, nil
 }
@@ -454,16 +506,16 @@ func (s *Store) write(records []record) error {
 // the fields of its kind
 func (s *Store) Add(kind, label, origin string, secret map[string]string) (Item, error) {
 	if !slices.Contains(Kinds, kind) {
-		return Item{}, &Error{fmt.Sprintf("unknown vault kind %q (expected one of %s)", kind, strings.Join(Kinds, ", "))}
+		return Item{}, &Error{fmt.Sprintf("The vault keeps logins, payment cards and addresses, not “%s”.", kind)}
 	}
 	if label = strings.TrimSpace(label); label == "" {
-		return Item{}, &Error{"label is required"}
+		return Item{}, &Error{"Give the item a name."}
 	}
 	rec := record{ID: "vault_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12], Kind: kind, Label: label,
 		Created: time.Now().UTC().Format("2006-01-02T15:04:05.000000+00:00")}
 	if kind == "login" {
 		if origin == "" {
-			return Item{}, &Error{"origin is required for login items"}
+			return Item{}, &Error{"A login needs the address of the site it is for, such as https://github.com."}
 		}
 		normal, err := NormalizeOrigin(origin)
 		if err != nil {
@@ -471,11 +523,11 @@ func (s *Store) Add(kind, label, origin string, secret map[string]string) (Item,
 		}
 		idType := secret["identifier_type"]
 		if !slices.Contains(IdentifierTypes, idType) {
-			return Item{}, &Error{"identifier_type must be one of " + strings.Join(IdentifierTypes, ", ")}
+			return Item{}, &Error{"A login signs in with an email, a phone number or a username, not “" + idType + "”."}
 		}
 		identifier, password := strings.TrimSpace(secret["identifier"]), secret["password"]
 		if identifier == "" || password == "" {
-			return Item{}, &Error{"login items require identifier and password"}
+			return Item{}, &Error{"A login needs what you sign in with and a password."}
 		}
 		seed, err := NormalizeOTP(secret["otp_secret"])
 		if err != nil {
@@ -504,7 +556,11 @@ func (s *Store) Add(kind, label, origin string, secret map[string]string) (Item,
 			}
 		}
 		if len(missing) > 0 {
-			return Item{}, &Error{fmt.Sprintf("%s items require %s", kind, strings.Join(missing, ", "))}
+			names := make([]string, len(missing))
+			for i, key := range missing {
+				names[i] = FieldName(key)
+			}
+			return Item{}, &Error{fmt.Sprintf("Fill in the %s.", joined(names))}
 		}
 		if origin != "" {
 			normal, err := NormalizeOrigin(origin)
@@ -595,7 +651,7 @@ func (s *Store) Secret(id string) (map[string]string, error) {
 		return nil, err
 	}
 	if found == nil {
-		return nil, &Error{fmt.Sprintf("no vault item with id %q", id)}
+		return nil, &Error{fmt.Sprintf("The vault has no item with the handle %q. Run icebath vault list to see the handles.", id)}
 	}
 	return found, nil
 }

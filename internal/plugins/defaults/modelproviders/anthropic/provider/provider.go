@@ -19,6 +19,8 @@ func (specs) Specs() []provider.Spec {
 		Name:               anthropicconfig.Name,
 		Native:             native,
 		DisplayName:        anthropicconfig.Title,
+		Rank:               3,
+		Description:        "Claude models, with an API key or your Claude subscription",
 		BaseURL:            base,
 		BaseURLEnv:         anthropicconfig.BaseURLEnv,
 		ModelsURL:          provider.ModelsURL(base),
@@ -40,14 +42,17 @@ func (specs) Specs() []provider.Spec {
 		Billing:            []provider.Billing{{Label: "Anthropic", URL: "https://console.anthropic.com/settings/billing", Plan: "https://claude.ai/settings/usage"}},
 		AccountUsage:       accountUsage,
 		Settings: []config.Setting{
-			{Key: anthropicconfig.AdoptExternalLogins, Title: "Use Claude Code login", About: "Use Claude Code's login if one is on this machine", Default: true},
+			{Key: anthropicconfig.AdoptExternalLogins, Title: "Use Claude Code sign-in", About: "Use the Claude Code sign-in on this computer when there is one.",
+				Default: true},
 		},
 		Account: []config.Setting{
 			providerconfig.APIKey(),
-			{Key: anthropicconfig.Token, Title: "Sign-in token", About: "Claude sign-in token", Default: "", Secret: true, Internal: true},
-			{Key: anthropicconfig.OAuthToken, Title: "Setup token", About: "Token from claude setup-token", Default: "", Secret: true, Internal: true},
-			{Key: anthropicconfig.RefreshToken, Title: "Refresh token", About: "Renews the sign-in token before it expires", Default: "", Secret: true, Internal: true},
-			{Key: anthropicconfig.TokenExpires, Title: "Sign-in expiry", About: "When the sign-in token expires, in Unix milliseconds", Default: 0, Internal: true},
+			{Key: anthropicconfig.Token, Title: "Sign-in token", About: "Your Claude sign-in token.", Default: "", Secret: true, Internal: true},
+			{Key: anthropicconfig.OAuthToken, Title: "Setup token", About: "Your token from claude setup-token.", Default: "", Secret: true, Internal: true},
+			{Key: anthropicconfig.RefreshToken, Title: "Refresh token", About: "Your token that renews the sign-in before it expires.", Default: "", Secret: true,
+				Internal: true},
+			{Key: anthropicconfig.TokenExpires, Title: "Sign-in expiry", About: "When the sign-in token expires.", Help: "A time in Unix milliseconds.", Default: 0,
+				Internal: true},
 		},
 	}}
 }

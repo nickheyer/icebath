@@ -46,6 +46,8 @@ func (r registrant) Tools() []tools.Def {
 		Name:    "x_search",
 		Toolset: "x_search",
 		Title:   "X search",
+		About:   "Search posts on X, the site once called Twitter",
+		Group:   "Web",
 		Icon:    tools.IconSearch,
 		Subject: "query",
 		Schema: tools.Schema(description, []string{"query"}, map[string]any{

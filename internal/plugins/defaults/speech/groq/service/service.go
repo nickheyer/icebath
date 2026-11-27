@@ -19,11 +19,11 @@ var unserved = strs.Set("whisper-1", "gpt-4o-mini-transcribe", "gpt-4o-transcrib
 
 func Register(registry *speech.Registry) {
 	registry.Register(speech.Services{Recognizing: []speech.Recognizer{{
-		Name: config.Name, Title: "Groq", About: "whisper-large-v3-turbo, whisper-large-v3 — very fast", Cloud: true, Rank: 3, Whisper: true,
+		Name: config.Name, Title: "Groq", About: "Very fast with a free tier, needs a Groq API key", Cloud: true, Rank: 3, Whisper: true,
 		Detected: "Groq Whisper API", Warning: "STT provider 'groq' configured but " + config.KeyEnv + " not set",
 		Missing: func(_ context.Context, job *speech.Job) string {
 			if key(job) == "" {
-				return config.KeyEnv + " not set"
+				return "Groq needs an API key. Set " + config.KeyEnv + " in your keys file."
 			}
 			return ""
 		},

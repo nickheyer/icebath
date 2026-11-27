@@ -35,16 +35,17 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 	if credentials.Remote() {
 		params.Set("key_label", "icebath-agent")
 		link := authorize + "?" + params.Encode()
-		p.Say("Remote session detected — using OpenRouter's headless flow.\nOpen this URL in a browser on any machine, authorize, then paste the code shown:\n  %s\n", link)
+		p.Say("Your browser is on another computer, so OpenRouter shows a code instead of coming back here.")
+		p.Say("Open this address in a browser on any computer, allow icebath, then paste the code it shows: %s\n", link)
 		if p.Show != nil {
 			p.Show(link, "")
 		}
-		typed, ok := p.Ask("Authorization code: ", true)
+		typed, ok := p.Ask("Code: ", true)
 		if !ok {
 			return credentials.Signed{}, credentials.ErrCancelled
 		}
 		if code = strings.TrimSpace(typed); code == "" {
-			return credentials.Signed{}, failed("No authorization code entered.", "openrouter_auth_no_code", false)
+			return credentials.Signed{}, failed("No code was entered, so the sign-in stopped.", "openrouter_auth_no_code", false)
 		}
 	} else {
 		callback, err := credentials.Listen("127.0.0.1", 0, "/callback/"+strs.Token(16), "OpenRouter", "openrouter_callback_bind_failed")
@@ -54,42 +55,44 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 		defer callback.Close()
 		params.Set("callback_url", callback.Redirect)
 		link := authorize + "?" + params.Encode()
-		p.Say("Open this URL to authorize Icebath with OpenRouter:\n  %s\n\nDocs: %s", link, docs)
+		p.Say("Open this address in your browser to allow icebath in OpenRouter: %s\n", link)
+		p.Say("How this works: %s", docs)
 		if p.Show != nil {
 			p.Show(link, "")
 		}
-		p.OpenBrowser(link, "Browser opened for OpenRouter authorization.", "Could not open the browser automatically; use the URL above.")
-		p.Say("Waiting for the OpenRouter callback...")
+		p.OpenBrowser(link, "The address is open in your browser.", "Your browser could not be opened, so open the address yourself.")
+		p.Pending("Waiting for your browser to come back from OpenRouter.")
 		if code, err = callback.Wait(p.Ctx, p.Wait(300*time.Second), "", openrouterconfig.Name); err != nil {
 			return credentials.Signed{}, err
 		}
 	}
-	p.Say("Exchanging the authorization code for an OpenRouter API key...")
+	p.Say("Getting your API key from OpenRouter.")
 	reply, err := credentials.PostJSON(p.Ctx, credentials.Client(20*time.Second), keys, map[string]string{"code": code, "code_verifier": verifier,
 		"code_challenge_method": "S256"}, nil)
 	if err != nil {
-		failure := failed(fmt.Sprintf("OpenRouter code exchange failed: %s", err), "openrouter_token_exchange_failed", false)
+		failure := failed(fmt.Sprintf("icebath could not reach OpenRouter to finish the sign-in: %s.", err), "openrouter_token_exchange_failed", false)
 		failure.Err = err
 		return credentials.Signed{}, failure
 	}
 	switch {
 	case reply.Status == 403:
-		return credentials.Signed{}, failed("OpenRouter rejected the authorization code (invalid, already used, or older than 10 minutes). Run the login again.",
+		return credentials.Signed{}, failed("OpenRouter refused the code, because it is wrong, used already or more than 10 minutes old. Start the sign-in again.",
 			"openrouter_token_exchange_denied", true)
 	case reply.Status >= 400:
 		suffix := ""
 		if detail := reply.Text(errorLimit); detail != "" {
-			suffix = " Response: " + detail
+			suffix = " OpenRouter said: " + strings.TrimSuffix(detail, ".") + "."
 		}
-		return credentials.Signed{}, failed(fmt.Sprintf("OpenRouter code exchange failed (HTTP %d).%s", reply.Status, suffix), "openrouter_token_exchange_failed", false)
+		return credentials.Signed{}, failed(fmt.Sprintf("OpenRouter refused to finish the sign-in, with HTTP status %d.%s", reply.Status, suffix),
+			"openrouter_token_exchange_failed", false)
 	}
 	payload, err := reply.JSON()
 	if err != nil {
-		return credentials.Signed{}, failed("OpenRouter code exchange returned a non-JSON body.", "openrouter_token_exchange_invalid", false)
+		return credentials.Signed{}, failed("OpenRouter's answer to the sign-in can't be read. Start the sign-in again.", "openrouter_token_exchange_invalid", false)
 	}
 	key := credentials.Text(payload["key"])
 	if key == "" {
-		return credentials.Signed{}, failed("OpenRouter code exchange response did not include a 'key'.", "openrouter_token_exchange_invalid", false)
+		return credentials.Signed{}, failed("OpenRouter finished the sign-in without sending an API key. Start the sign-in again.", "openrouter_token_exchange_invalid", false)
 	}
 	return credentials.Signed{Fields: map[string]any{providerconfig.APIKeyField: key}}, nil
 }

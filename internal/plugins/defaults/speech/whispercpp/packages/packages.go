@@ -18,7 +18,7 @@ func Register(registry *packages.Registry) {
 	gaps := map[string]string{}
 	for _, target := range packages.Targets {
 		if target != "win32-arm64" {
-			gaps[target] = "uses the existing faster-whisper provider"
+			gaps[target] = "faster-whisper turns speech into text here, so whisper.cpp is not needed."
 		}
 	}
 	registry.Register(packages.Declared{Tools: []packages.Package{{
@@ -27,7 +27,7 @@ func Register(registry *packages.Registry) {
 		Probe:  []string{"--help"},
 		URLs: func(version, target string) ([]string, error) {
 			if target != "win32-arm64" {
-				return nil, fmt.Errorf("no download for target %s", target)
+				return nil, fmt.Errorf("whisper.cpp has no download for %s", target)
 			}
 			return []string{"https://github.com/ggml-org/whisper.cpp/releases/download/" + version + "/whisper-bin-win-cpu-arm64.zip"}, nil
 		},

@@ -88,6 +88,8 @@ func (r *registrant) Tools() []tools.Def {
 		Name:    "computer_use",
 		Toolset: "computer_use",
 		Title:   "Computer",
+		About:   "See a screen and use its mouse and keyboard",
+		Group:   "Computer use",
 		Subject: "action",
 		Risks:   risks(),
 		Schema:  schema,

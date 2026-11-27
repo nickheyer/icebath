@@ -219,15 +219,18 @@ func (a *Agent) Personality(id, name string) (string, error) {
 	settings := a.settings(r)
 	if name = strings.TrimSpace(name); name == "" {
 		current := strings.ToLower(strings.TrimSpace(settings.GetString(agentconfig.Personality)))
-		lines := []string{"**Available Personalities**", "", "- `none` — (no personality overlay)"}
+		lines := []string{"**Personalities**", "", "- `none` — the agent's own tone"}
+		if current == "" {
+			lines[2] += " · In use"
+		}
 		for _, personality := range agentprompt.Personalities(settings) {
 			mark := ""
 			if personality.Name == current {
-				mark = " ✓"
+				mark = " · In use"
 			}
-			lines = append(lines, "- `"+personality.Name+mark+"` — "+personality.Describe(50))
+			lines = append(lines, "- `"+personality.Name+"` — "+personality.Describe(50)+mark)
 		}
-		return strings.Join(append(lines, "", "Usage: `/personality <name>`"), "\n"), nil
+		return strings.Join(append(lines, "", "Usage: /personality [name|none]"), "\n"), nil
 	}
 	personality, ok := agentprompt.Find(settings, name)
 	if !ok {
@@ -235,17 +238,17 @@ func (a *Agent) Personality(id, name string) (string, error) {
 		for _, known := range agentprompt.Personalities(settings) {
 			names = append(names, "`"+known.Name+"`")
 		}
-		return "", errors.New("Unknown personality: `" + strings.ToLower(name) + "`\n\nAvailable: `none`, " + strings.Join(names, ", "))
+		return "", errors.New("There is no personality named `" + strings.ToLower(name) + "`. You can choose `none`, " + strings.Join(names, ", ") + ".")
 	}
 	var stored any
 	if personality.Name != "" {
 		stored = personality.Name
 	}
 	if err := settings.Set(agentconfig.Personality, stored); err != nil {
-		return "", fmt.Errorf("Failed to save personality change: %w", err)
+		return "", err
 	}
 	if personality.Name == "" {
-		return "Personality cleared — using base agent behavior.\n_(takes effect on next message)_", nil
+		return "The agent replies in its own tone, with no personality, from your next message on.", nil
 	}
-	return "Personality set to **" + personality.Name + "**\n_(takes effect on next message)_", nil
+	return "The agent replies as **" + personality.Name + "** from your next message on.", nil
 }

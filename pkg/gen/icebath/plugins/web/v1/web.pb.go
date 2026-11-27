@@ -21,6 +21,65 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// What a plan asks a person for
+type Needs int32
+
+const (
+	Needs_NEEDS_UNSPECIFIED Needs = 0
+	// Nothing: it answers as it is
+	Needs_NEEDS_NOTHING Needs = 1
+	Needs_NEEDS_API_KEY Needs = 2
+	// The address of a server of the person's own
+	Needs_NEEDS_ADDRESS Needs = 3
+	// A sign-in at a provider
+	Needs_NEEDS_SIGN_IN Needs = 4
+)
+
+// Enum value maps for Needs.
+var (
+	Needs_name = map[int32]string{
+		0: "NEEDS_UNSPECIFIED",
+		1: "NEEDS_NOTHING",
+		2: "NEEDS_API_KEY",
+		3: "NEEDS_ADDRESS",
+		4: "NEEDS_SIGN_IN",
+	}
+	Needs_value = map[string]int32{
+		"NEEDS_UNSPECIFIED": 0,
+		"NEEDS_NOTHING":     1,
+		"NEEDS_API_KEY":     2,
+		"NEEDS_ADDRESS":     3,
+		"NEEDS_SIGN_IN":     4,
+	}
+)
+
+func (x Needs) Enum() *Needs {
+	p := new(Needs)
+	*p = x
+	return p
+}
+
+func (x Needs) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Needs) Descriptor() protoreflect.EnumDescriptor {
+	return file_icebath_plugins_web_v1_web_proto_enumTypes[0].Descriptor()
+}
+
+func (Needs) Type() protoreflect.EnumType {
+	return &file_icebath_plugins_web_v1_web_proto_enumTypes[0]
+}
+
+func (x Needs) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Needs.Descriptor instead.
+func (Needs) EnumDescriptor() ([]byte, []int) {
+	return file_icebath_plugins_web_v1_web_proto_rawDescGZIP(), []int{0}
+}
+
 // One way of using a backend
 type Plan struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -33,8 +92,10 @@ type Plan struct {
 	// Setting of the key it asks for, empty when it asks for none
 	Key string `protobuf:"bytes,5,opt,name=key,proto3" json:"key,omitempty"`
 	// What to ask for the key, and where to get one
-	Prompt        string `protobuf:"bytes,6,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	Link          string `protobuf:"bytes,7,opt,name=link,proto3" json:"link,omitempty"`
+	Prompt string `protobuf:"bytes,6,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	Link   string `protobuf:"bytes,7,opt,name=link,proto3" json:"link,omitempty"`
+	// What a person gives before the plan works
+	Needs         Needs `protobuf:"varint,8,opt,name=needs,proto3,enum=icebath.plugins.web.v1.Needs" json:"needs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -116,6 +177,13 @@ func (x *Plan) GetLink() string {
 		return x.Link
 	}
 	return ""
+}
+
+func (x *Plan) GetNeeds() Needs {
+	if x != nil {
+		return x.Needs
+	}
+	return Needs_NEEDS_UNSPECIFIED
 }
 
 type Backend struct {
@@ -420,7 +488,7 @@ var File_icebath_plugins_web_v1_web_proto protoreflect.FileDescriptor
 
 const file_icebath_plugins_web_v1_web_proto_rawDesc = "" +
 	"\n" +
-	" icebath/plugins/web/v1/web.proto\x12\x16icebath.plugins.web.v1\"\xa6\x01\n" +
+	" icebath/plugins/web/v1/web.proto\x12\x16icebath.plugins.web.v1\"\xdb\x01\n" +
 	"\x04Plan\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x14\n" +
 	"\x05badge\x18\x02 \x01(\tR\x05badge\x12 \n" +
@@ -428,7 +496,8 @@ const file_icebath_plugins_web_v1_web_proto_rawDesc = "" +
 	"\x04tier\x18\x04 \x01(\tR\x04tier\x12\x10\n" +
 	"\x03key\x18\x05 \x01(\tR\x03key\x12\x16\n" +
 	"\x06prompt\x18\x06 \x01(\tR\x06prompt\x12\x12\n" +
-	"\x04link\x18\a \x01(\tR\x04link\"\x85\x03\n" +
+	"\x04link\x18\a \x01(\tR\x04link\x123\n" +
+	"\x05needs\x18\b \x01(\x0e2\x1d.icebath.plugins.web.v1.NeedsR\x05needs\"\x85\x03\n" +
 	"\aBackend\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -458,7 +527,13 @@ const file_icebath_plugins_web_v1_web_proto_rawDesc = "" +
 	"\n" +
 	"TiersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012_\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*j\n" +
+	"\x05Needs\x12\x15\n" +
+	"\x11NEEDS_UNSPECIFIED\x10\x00\x12\x11\n" +
+	"\rNEEDS_NOTHING\x10\x01\x12\x11\n" +
+	"\rNEEDS_API_KEY\x10\x02\x12\x11\n" +
+	"\rNEEDS_ADDRESS\x10\x03\x12\x11\n" +
+	"\rNEEDS_SIGN_IN\x10\x042_\n" +
 	"\n" +
 	"WebService\x12Q\n" +
 	"\x04List\x12#.icebath.plugins.web.v1.ListRequest\x1a$.icebath.plugins.web.v1.ListResponseB\xe4\x01\n" +
@@ -476,25 +551,28 @@ func file_icebath_plugins_web_v1_web_proto_rawDescGZIP() []byte {
 	return file_icebath_plugins_web_v1_web_proto_rawDescData
 }
 
+var file_icebath_plugins_web_v1_web_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_icebath_plugins_web_v1_web_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_icebath_plugins_web_v1_web_proto_goTypes = []any{
-	(*Plan)(nil),         // 0: icebath.plugins.web.v1.Plan
-	(*Backend)(nil),      // 1: icebath.plugins.web.v1.Backend
-	(*ListRequest)(nil),  // 2: icebath.plugins.web.v1.ListRequest
-	(*ListResponse)(nil), // 3: icebath.plugins.web.v1.ListResponse
-	nil,                  // 4: icebath.plugins.web.v1.ListResponse.TiersEntry
+	(Needs)(0),           // 0: icebath.plugins.web.v1.Needs
+	(*Plan)(nil),         // 1: icebath.plugins.web.v1.Plan
+	(*Backend)(nil),      // 2: icebath.plugins.web.v1.Backend
+	(*ListRequest)(nil),  // 3: icebath.plugins.web.v1.ListRequest
+	(*ListResponse)(nil), // 4: icebath.plugins.web.v1.ListResponse
+	nil,                  // 5: icebath.plugins.web.v1.ListResponse.TiersEntry
 }
 var file_icebath_plugins_web_v1_web_proto_depIdxs = []int32{
-	0, // 0: icebath.plugins.web.v1.Backend.plans:type_name -> icebath.plugins.web.v1.Plan
-	1, // 1: icebath.plugins.web.v1.ListResponse.backends:type_name -> icebath.plugins.web.v1.Backend
-	4, // 2: icebath.plugins.web.v1.ListResponse.tiers:type_name -> icebath.plugins.web.v1.ListResponse.TiersEntry
-	2, // 3: icebath.plugins.web.v1.WebService.List:input_type -> icebath.plugins.web.v1.ListRequest
-	3, // 4: icebath.plugins.web.v1.WebService.List:output_type -> icebath.plugins.web.v1.ListResponse
-	4, // [4:5] is the sub-list for method output_type
-	3, // [3:4] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 0: icebath.plugins.web.v1.Plan.needs:type_name -> icebath.plugins.web.v1.Needs
+	1, // 1: icebath.plugins.web.v1.Backend.plans:type_name -> icebath.plugins.web.v1.Plan
+	2, // 2: icebath.plugins.web.v1.ListResponse.backends:type_name -> icebath.plugins.web.v1.Backend
+	5, // 3: icebath.plugins.web.v1.ListResponse.tiers:type_name -> icebath.plugins.web.v1.ListResponse.TiersEntry
+	3, // 4: icebath.plugins.web.v1.WebService.List:input_type -> icebath.plugins.web.v1.ListRequest
+	4, // 5: icebath.plugins.web.v1.WebService.List:output_type -> icebath.plugins.web.v1.ListResponse
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_icebath_plugins_web_v1_web_proto_init() }
@@ -507,13 +585,14 @@ func file_icebath_plugins_web_v1_web_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_plugins_web_v1_web_proto_rawDesc), len(file_icebath_plugins_web_v1_web_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_icebath_plugins_web_v1_web_proto_goTypes,
 		DependencyIndexes: file_icebath_plugins_web_v1_web_proto_depIdxs,
+		EnumInfos:         file_icebath_plugins_web_v1_web_proto_enumTypes,
 		MessageInfos:      file_icebath_plugins_web_v1_web_proto_msgTypes,
 	}.Build()
 	File_icebath_plugins_web_v1_web_proto = out.File

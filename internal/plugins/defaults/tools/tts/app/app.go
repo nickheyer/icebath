@@ -3,7 +3,6 @@ package app
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -36,13 +35,13 @@ func line(call toolsapp.Call) string {
 	}
 	if args.Find != nil {
 		if query, _ := args.Find["query"].(string); query != "" {
-			return "find voices: " + query
+			return "finding voices for “" + query + "”"
 		}
-		return "find voices"
+		return "finding voices"
 	}
 	text := strings.Join(strings.Fields(args.Text), " ")
 	if args.Voice != "" {
-		text += " (voice " + args.Voice + ")"
+		text += " · voice " + args.Voice
 	}
 	return text
 }
@@ -69,20 +68,23 @@ func result(call toolsapp.Call, width int, look theme.Theme) *toolsapp.Shown {
 		return nil
 	}
 	if r.Voices != nil || r.Count > 0 {
-		shown := &toolsapp.Shown{Head: render.Dim(fmt.Sprintf("%d voices", r.Count), look)}
+		shown := &toolsapp.Shown{Head: render.Dim(render.Count(r.Count, "voice")+" found", look)}
 		for _, v := range r.Voices {
 			shown.Rows = append(shown.Rows, ansi.Truncate(v.Name+"  "+render.Dim(v.ID, look), width, "…"))
 		}
 		return shown
 	}
-	about := []string{r.Provider}
+	about := []string{"Spoken"}
+	if r.Provider != "" {
+		about[0] += " by " + r.Provider
+	}
 	if r.Chunks > 1 {
-		about = append(about, fmt.Sprintf("%d pieces", r.Chunks))
+		about = append(about, render.Count(r.Chunks, "piece"))
 	}
 	if r.Bubble {
-		about = append(about, "voice bubble")
+		about = append(about, "voice message")
 	}
-	shown := &toolsapp.Shown{Head: render.Dim("spoken by "+strings.Join(about, " · "), look), Open: true}
+	shown := &toolsapp.Shown{Head: render.Dim(strings.Join(about, " · "), look), Open: true}
 	for _, file := range r.Files {
 		shown.Rows = append(shown.Rows, ansi.Truncate(file, width, "…"))
 	}

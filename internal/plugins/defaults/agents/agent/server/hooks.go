@@ -23,7 +23,7 @@ import (
 )
 
 // Text a user message is stored as once a pre_llm_call hook refused it
-const withheldPrompt = "[Message withheld: a pre_llm_call policy hook blocked it.]"
+const withheldPrompt = "[Message held back: one of your pre_llm_call hooks blocked it.]"
 
 // Why a turn ends when a pre_llm_call hook refused its message
 const blockedExit = "blocked_by_plugin_pre_llm_call"

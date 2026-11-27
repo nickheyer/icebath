@@ -62,11 +62,17 @@ func (r registrant) Proxy(cfg *config.Config) terminal.Proxy {
 // Status of the profile's proxy as plain lines, the tokens masked unless asked to show them: what /egress shows
 func (e *Egress) Text(ctx context.Context, cfg *config.Config, showTokens bool) string {
 	status := e.Status(ctx, cfg)
-	yes := func(on bool) string {
+	on := func(on bool) string {
 		if on {
-			return "yes"
+			return "On"
 		}
-		return "no"
+		return "Off"
+	}
+	yes := func(yes bool) string {
+		if yes {
+			return "Yes"
+		}
+		return "No"
 	}
 	or := func(value, missing string) string {
 		if value == "" {
@@ -74,45 +80,49 @@ func (e *Egress) Text(ctx context.Context, cfg *config.Config, showTokens bool) 
 		}
 		return value
 	}
-	process := "(stopped)"
+	process := "Not running"
 	if status.PID != 0 {
-		process = fmt.Sprintf("pid %d", status.PID)
+		process = fmt.Sprintf("Running as process %d", status.PID)
+	}
+	source := "Environment"
+	if cfg.GetString(ironconfig.Source) == ironconfig.FromBitwarden {
+		source = "Bitwarden"
 	}
 	enabled := cfg.GetBool(ironconfig.Enabled)
-	lines := []string{"Egress proxy status", "",
-		"Enabled: " + yes(enabled),
-		"Binary: " + or(status.Binary, "(missing)"),
-		"Binary version: " + or(status.Version, "(unknown)"),
-		"Config: " + or(status.Config, "(not generated)"),
-		"CA cert: " + or(status.Authority, "(not generated)"),
-		fmt.Sprintf("Tunnel port: %d", status.Port),
+	lines := []string{"Sandbox proxy", "",
+		"Hide your keys: " + on(enabled),
+		"Program: " + or(status.Binary, "Not installed"),
+		"Version: " + or(strings.TrimPrefix(status.Version, "v"), "Not known"),
+		"Settings file: " + or(status.Config, "Not written yet"),
+		"CA certificate: " + or(status.Authority, "Not made yet"),
+		fmt.Sprintf("Port: %d", status.Port),
 		"Process: " + process,
 		"Listening: " + yes(status.Listening),
-		"Credential src: " + cfg.GetString(ironconfig.Source),
-		"Docker enforce: " + yes(cfg.GetBool(ironconfig.Enforce)),
-		"Scope: Docker backend only in this release",
+		"Key source: " + source,
+		"Required for Docker: " + on(cfg.GetBool(ironconfig.Enforce)),
+		"Covers: Docker sandboxes only, in this release",
 	}
 	if mappings := e.Mappings(cfg); len(mappings) > 0 {
-		lines = append(lines, "", "Token mappings:")
+		lines = append(lines, "", "Stand-in tokens:")
 		for _, m := range mappings {
 			token := m.Token
 			if !showTokens {
 				token = redact.Ends(m.Token)
 			}
-			lines = append(lines, fmt.Sprintf("  - %s: %s (%s)", m.Env, token, strings.Join(m.Hosts, ", ")))
+			lines = append(lines, fmt.Sprintf("  - %s: %s, for %s", m.Env, token, strings.Join(m.Hosts, ", ")))
 		}
 	}
 	if uncovered := Uncovered(cfg, nil); len(uncovered) > 0 {
-		lines = append(lines, "", "Uncovered providers (real credentials still visible inside the sandbox):")
+		lines = append(lines, "", "Providers the proxy does not cover. Their real keys are still visible inside the sandbox:")
 		for _, name := range uncovered {
 			lines = append(lines, "  - "+name)
 		}
 	}
 	switch {
 	case enabled && !status.Configured():
-		lines = append(lines, "", "Next: run `icebath egress setup` to mint tokens and write proxy.yaml.")
+		lines = append(lines, "", "Next, run `icebath egress setup` to make the tokens and write proxy.yaml.")
 	case enabled && !(status.PID != 0 && status.Listening):
-		lines = append(lines, "", "Next: run `icebath egress start` before launching Docker sandboxes.")
+		lines = append(lines, "", "Next, run `icebath egress start` before you start Docker sandboxes.")
 	}
 	return strings.Join(lines, "\n")
 }

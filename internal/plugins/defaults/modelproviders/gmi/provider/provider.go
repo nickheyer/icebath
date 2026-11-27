@@ -16,7 +16,7 @@ func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               gmiconfig.Name,
 		DisplayName:        gmiconfig.Title,
-		Description:        "Multi-model API with provider/model IDs",
+		Description:        "Many companies' models hosted by GMI Cloud, with an API key",
 		SignupURL:          "https://www.gmicloud.ai/",
 		BaseURL:            base,
 		BaseURLEnv:         gmiconfig.BaseURLEnv,

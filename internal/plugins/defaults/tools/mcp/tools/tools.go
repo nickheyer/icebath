@@ -82,6 +82,8 @@ func (m *Manager) manageDef() tools.Def {
 		Name:    Manage,
 		Toolset: "connections",
 		Title:   "Connect",
+		About:   "Add MCP servers, turn them on and sign in to them",
+		Group:   "MCP servers",
 		Icon:    tools.IconServer,
 		Schema: map[string]any{
 			"description": "Connect the user to MCP servers: a server from the bundled catalog or one already in the user's MCP server settings, each with " +

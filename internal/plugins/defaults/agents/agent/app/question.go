@@ -18,11 +18,11 @@ import (
 const questionContext = "agent.question"
 
 var questionKeys = []keys.Action{
-	{ID: "agent.question.toggle", Context: questionContext, Label: "tick", Doc: "tick or untick the choice", Default: []string{"space"}},
-	{ID: "agent.question.next", Context: questionContext, Label: "next question", Doc: "go to the next question", Default: []string{"tab"}},
-	{ID: "agent.question.prev", Context: questionContext, Label: "previous question", Doc: "go to the question before", Default: []string{"shift+tab"}},
-	{ID: "agent.question.skip", Context: questionContext, Label: "skip", Doc: "skip this question", Default: []string{"s"}},
-	{ID: "agent.question.type", Context: questionContext, Label: "type answer", Doc: "type your own answer in the prompt", Default: []string{"o"}},
+	{ID: "agent.question.toggle", Context: questionContext, Label: "tick", Doc: "Tick or untick the choice", Default: []string{"space"}},
+	{ID: "agent.question.next", Context: questionContext, Label: "next question", Doc: "Go to the next question", Default: []string{"tab"}},
+	{ID: "agent.question.prev", Context: questionContext, Label: "previous question", Doc: "Go to the question before", Default: []string{"shift+tab"}},
+	{ID: "agent.question.skip", Context: questionContext, Label: "skip", Doc: "Skip this question", Default: []string{"s"}},
+	{ID: "agent.question.type", Context: questionContext, Label: "type answer", Doc: "Type your own answer in the message box", Default: []string{"o"}},
 }
 
 // Questions the agent waits on, asked in the chat in place of the prompt: one question open at a time among the others, its choices picked
@@ -81,22 +81,27 @@ func (q *inquiry) Answers(action string) bool {
 	return true
 }
 
+// Buttons of the questions: what enter does on the row under the cursor, ticking a choice of a question that takes several, the next
+// question, skipping this one and dismissing them all
 func (q *inquiry) Hints() []wm.Hint {
-	lock := "lock answer"
+	answer := "answer"
 	if q.open() == 1 {
-		lock = "confirm and continue"
+		answer = "answer and send"
 	}
-	hints := []wm.Hint{{Action: "palette.pick", Label: lock}}
+	if !q.question().GetSecret() && q.row == len(q.question().GetChoices()) {
+		answer = "type answer"
+	}
+	hints := []wm.Hint{{Action: "palette.pick", Label: answer}}
 	if q.question().GetSecret() {
-		return append(hints, wm.Hint{Label: "empty to skip"}, wm.Hint{Action: "palette.close", Label: "dismiss"})
+		return append(hints, wm.Hint{Label: "empty skips"}, wm.Hint{Action: "palette.close", Label: "dismiss all"})
 	}
-	if q.question().GetMultiSelect() {
+	if q.question().GetMultiSelect() && q.row < len(q.question().GetChoices()) {
 		hints = append(hints, wm.Hint{Action: "agent.question.toggle"})
 	}
 	if len(q.set.GetQuestions()) > 1 {
 		hints = append(hints, wm.Hint{Action: "agent.question.next"})
 	}
-	return append(hints, wm.Hint{Action: "agent.question.skip"}, wm.Hint{Action: "palette.close", Label: "dismiss"})
+	return append(hints, wm.Hint{Action: "agent.question.skip"}, wm.Hint{Action: "palette.close", Label: "dismiss all"})
 }
 
 // Questions still without an answer
@@ -253,7 +258,7 @@ func (q *inquiry) lines(w int) []string {
 			}
 		}
 		if answered {
-			text, good := "(skipped)", false
+			text, good := "Skipped", false
 			if values := answer.GetValues(); len(values) > 0 {
 				text, good = strings.Join(values, ", "), true
 				if question.GetSecret() {
@@ -273,12 +278,12 @@ func (q *inquiry) lines(w int) []string {
 		}
 		if question.GetSecret() {
 			q.cursor = len(lines)
-			lines = append(lines, "   "+g.Forward+" "+render.Warm("Secret › ", look)+strings.Repeat("•", len(q.secret))+"▏")
+			lines = append(lines, "   "+g.Forward+" "+render.Warm("Your answer, kept hidden › ", look)+strings.Repeat("•", len(q.secret))+"▏")
 			continue
 		}
 		label := "Type your answer ›"
 		if len(question.GetChoices()) > 0 {
-			label = "Other (type your answer) ›"
+			label = "Something else: type your answer ›"
 		}
 		for r, choice := range append(slices.Clone(question.GetChoices()), label) {
 			box := ""
@@ -375,7 +380,7 @@ func (c *chat) respond(set, question string, values []string) tea.Cmd {
 		_, err := c.desk.agents.Answer(c.kit.Env.Ctx, &agentv1.AnswerRequest{SessionId: id, Id: set, QuestionId: question, Answer: &agentv1.Answer{Values: values}})
 		return func() tea.Cmd {
 			if err != nil {
-				c.log.note("**Couldn't answer:** " + tui.Reason(err))
+				c.log.note("**Your answer was not sent.** " + tui.Reason(err))
 			}
 			return nil
 		}
@@ -389,7 +394,7 @@ func (c *chat) dismiss(set string) tea.Cmd {
 		_, err := c.desk.agents.Dismiss(c.kit.Env.Ctx, &agentv1.DismissRequest{SessionId: id, Id: set})
 		return func() tea.Cmd {
 			if err != nil {
-				c.log.note("**Couldn't dismiss the questions:** " + tui.Reason(err))
+				c.log.note("**The questions are still open.** " + tui.Reason(err))
 			}
 			return nil
 		}

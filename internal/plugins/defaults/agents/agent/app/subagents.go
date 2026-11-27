@@ -208,13 +208,13 @@ func spawnLabel(agents []*agentProgress) string {
 	var top []string
 	for _, a := range agents {
 		if len(top) < 2 && (a.GetParentId() == "" || !known[a.GetParentId()]) {
-			top = append(top, cmp.Or(a.GetGoal(), "subagent"))
+			top = append(top, cmp.Or(oneLine(a.GetGoal()), "Subagent"))
 		}
 	}
 	if len(top) > 0 {
 		return strings.Join(top, " · ")
 	}
-	return fmt.Sprintf("%d subagents", len(agents))
+	return render.Count(len(agents), "subagent")
 }
 
 func pushTail(list []string, text string, keep int) []string {
@@ -254,6 +254,27 @@ func keptStatus(status string) string {
 }
 
 func inFlight(status string) bool { return status == "running" || status == "queued" }
+
+// Status of a subagent in words
+func statusWord(status string) string {
+	switch status {
+	case "running":
+		return "working"
+	case "queued":
+		return "waiting to start"
+	case "completed":
+		return "done"
+	case "failed", "error":
+		return "failed"
+	case "timeout":
+		return "ran out of time"
+	case "interrupted":
+		return "stopped"
+	case "":
+		return "unknown"
+	}
+	return status
+}
 
 // One subagent with the subagents it started and the counts of its subtree
 type spawnNode struct {
@@ -416,8 +437,9 @@ func elapsed(a *agentv1.Subagent, now time.Time) (float64, bool) {
 	return 0, false
 }
 
-// Read-out of the fan-out for the status line: the pause, the depth and the widest level against their caps with those running beyond it,
-// marked once a cap is reached; empty with no subagent and no pause
+// Read-out of the subagents for the status line: whether new ones are held back, how deep they go against the most allowed, and how many
+// work at once at the widest level against the most allowed with any working beyond it, led by "at the limit" once a cap is reached; empty
+// with no subagent and nothing held back
 func spawnHUD(agents []*agentv1.Subagent, limits *agentv1.SubagentsResponse) string {
 	paused := limits.GetPaused()
 	tree := spawnTree(agents)
@@ -432,31 +454,31 @@ func spawnHUD(agents []*agentv1.Subagent, limits *agentv1.SubagentsResponse) str
 	}
 	var pieces []string
 	if paused {
-		pieces = append(pieces, "paused")
+		pieces = append(pieces, "new subagents held back")
 	}
 	full := false
 	if totals.descendants > 0 {
-		label := "d" + strconv.Itoa(depth)
+		label := "subagents " + strconv.Itoa(depth) + " deep"
 		if maxDepth > 0 {
-			label += "/" + strconv.Itoa(maxDepth)
+			label = "subagents " + strconv.Itoa(depth) + " of " + strconv.Itoa(maxDepth) + " deep"
 			full = depth >= maxDepth
 		}
 		pieces = append(pieces, label)
 		if totals.active > 0 {
-			label = "⚡" + strconv.Itoa(widest)
+			label = strconv.Itoa(widest) + " at once"
 			if maxWidth > 0 {
-				label += "/" + strconv.Itoa(maxWidth)
+				label = strconv.Itoa(widest) + " of " + strconv.Itoa(maxWidth) + " at once"
 				full = full || widest >= maxWidth
 			}
 			if extra := totals.active - widest; extra > 0 {
-				label += "+" + strconv.Itoa(extra)
+				label += ", " + strconv.Itoa(extra) + " more working"
 			}
 			pieces = append(pieces, label)
 		}
 	}
-	text := strings.Join(pieces, " ")
+	text := strings.Join(pieces, ", ")
 	if full {
-		text = "⚠ " + text
+		text = "at the limit: " + text
 	}
 	return text
 }
@@ -480,20 +502,20 @@ func (c *chat) delegationLimits() tea.Cmd {
 	})
 }
 
-// Totals as one line: depth, agents, tools, time, tokens and how many run
+// Totals as one line: how deep, how many subagents, tool calls, time, tokens and how many work now
 func spawnSummary(totals spawnAggregate) string {
-	pieces := []string{"d" + strconv.Itoa(max(0, totals.depth)), render.Count(totals.descendants, "agent")}
+	pieces := []string{render.Count(totals.descendants, "subagent"), render.Count(max(0, totals.depth), "level") + " deep"}
 	if totals.tools > 0 {
-		pieces = append(pieces, render.Count(totals.tools, "tool"))
+		pieces = append(pieces, render.Count(totals.tools, "tool call"))
 	}
 	if totals.duration > 0 {
 		pieces = append(pieces, spawnDuration(totals.duration))
 	}
 	if tokens := totals.input + totals.output; tokens > 0 {
-		pieces = append(pieces, spawnTokens(tokens)+" tok")
+		pieces = append(pieces, spawnTokens(tokens)+" tokens")
 	}
 	if totals.active > 0 {
-		pieces = append(pieces, "⚡"+strconv.Itoa(totals.active))
+		pieces = append(pieces, strconv.Itoa(totals.active)+" working")
 	}
 	return strings.Join(pieces, " · ")
 }
@@ -532,7 +554,7 @@ func (c *chat) spawnRows(w int) []row {
 	}
 	tree := spawnTree(agents)
 	totals := spawnTotals(tree)
-	head := render.Heading(fmt.Sprintf("Spawn tree (%d)", totals.descendants), t) + render.Dim("  "+spawnSummary(totals), t)
+	head := render.Heading("Subagents", t) + render.Dim("  "+spawnSummary(totals), t)
 	if spark := sparkline(widths(tree)); spark != "" {
 		head += render.Dim("  "+spark, t)
 	}
@@ -541,17 +563,17 @@ func (c *chat) spawnRows(w int) []row {
 	if open {
 		mark = t.Glyphs.Down
 	}
-	rows := []row{{}, {text: ansi.Truncate(render.Dim(mark, t)+" "+head+render.Dim("  /agents to open", t), w, t.Glyphs.Ellipsis), fold: "spawn"}}
+	rows := []row{{}, {text: ansi.Truncate(render.Dim(mark, t)+" "+head+render.Dim("  /agents opens them", t), w, t.Glyphs.Ellipsis), fold: "spawn"}}
 	if !open {
 		return rows
 	}
 	now := time.Now()
 	for _, node := range flatten(tree) {
 		a := node.agent
-		line := strings.Repeat("  ", int(a.GetDepth())+1) + statusGlyph(a.GetStatus(), t) + " " + cmp.Or(a.GetGoal(), "subagent")
-		meta := []string{a.GetStatus()}
+		line := strings.Repeat("  ", int(a.GetDepth())+1) + statusGlyph(a.GetStatus(), t) + " " + cmp.Or(oneLine(a.GetGoal()), "Subagent")
+		meta := []string{statusWord(a.GetStatus())}
 		if a.GetToolCount() > 0 {
-			meta = append(meta, render.Count(int(a.GetToolCount()), "tool"))
+			meta = append(meta, render.Count(int(a.GetToolCount()), "tool call"))
 		}
 		if seconds, ok := elapsed(a, now); ok {
 			meta = append(meta, spawnDuration(seconds))
@@ -598,24 +620,25 @@ func (c *chat) agentDock(w, limit int) []string {
 	}
 	cols := max(w-2, 8)
 	if c.folded {
-		line := fmt.Sprintf("▸ %s working", render.Count(len(working), "agent"))
+		line := fmt.Sprintf("%s %s working", t.Glyphs.Bullet, render.Count(len(working), "subagent"))
 		if detail := c.spawn.latest(working[0].GetId()); detail != "" {
 			line += " · " + detail
 		}
 		return []string{"  " + ansi.Truncate(render.Cool(line, t), cols, t.Glyphs.Ellipsis)}
 	}
 	shown := working[:min(len(working), max(1, limit))]
-	head := fmt.Sprintf("▾ %s working", render.Count(len(working), "agent"))
+	head := fmt.Sprintf("%s %s working", t.Glyphs.Down, render.Count(len(working), "subagent"))
 	if hidden := len(working) - len(shown); hidden > 0 {
-		head += fmt.Sprintf(" · %d more", hidden)
+		head += fmt.Sprintf(", %d not shown", hidden)
 	}
-	out := []string{"  " + ansi.Truncate(render.Cool(head+" · /agents", t), cols, t.Glyphs.Ellipsis)}
+	fold := c.kit.Env.Keys.Display("agent.dock")
+	out := []string{"  " + ansi.Truncate(render.Cool(head+" · /agents opens them · "+fold+" folds this", t), cols, t.Glyphs.Ellipsis)}
 	for _, a := range shown {
 		took := ""
 		if seconds, ok := elapsed(a, now); ok {
 			took = " " + render.Dim(spawnDuration(seconds), t)
 		}
-		out = append(out, "  "+ansi.Truncate(statusGlyph(a.GetStatus(), t)+" "+cmp.Or(a.GetGoal(), "agent")+took, cols, t.Glyphs.Ellipsis),
+		out = append(out, "  "+ansi.Truncate(statusGlyph(a.GetStatus(), t)+" "+cmp.Or(oneLine(a.GetGoal()), "Subagent")+took, cols, t.Glyphs.Ellipsis),
 			"  "+ansi.Truncate(render.Dim("  ↳ "+c.spawn.latest(a.GetId()), t), cols, t.Glyphs.Ellipsis))
 	}
 	return out

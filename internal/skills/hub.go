@@ -117,10 +117,10 @@ func (s *Scope) SetTrusted(path string, trusted bool) (Trust, error) {
 			path = filepath.Join(s.Cwd, path)
 		}
 		if root = resolve(path); !fsx.IsDir(root) {
-			return Trust{Root: root}, errors.New("Not a directory: " + root)
+			return Trust{Root: root}, errors.New(root + " is not a folder.")
 		}
 	} else if root = s.projectRoot(); root == "" {
-		return Trust{}, errors.New("Not inside a git checkout. Run from a project directory or pass the project root path explicitly.")
+		return Trust{}, errors.New("This folder is not inside a git repository. Run the command inside a project, or give the folder of the project.")
 	}
 	entries := list(s.Config.Get(skillsconfig.TrustedProjectDirs))
 	kept := slices.DeleteFunc(slices.Clone(entries), func(entry string) bool { return s.path(entry) == root })

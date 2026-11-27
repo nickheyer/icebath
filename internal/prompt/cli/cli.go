@@ -1,11 +1,11 @@
 package cli
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"connectrpc.com/connect/v2"
@@ -38,9 +38,12 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	var platform string
 	var sizeJSON bool
 	size := &cobra.Command{
-		Use:   "prompt-size",
-		Short: "Show a byte breakdown of the system prompt and tool schemas",
-		Args:  cobra.NoArgs,
+		Use:     "prompt-size",
+		GroupID: cli.GroupSessions,
+		Short:   "Show how big the agent's system prompt and tools are",
+		Long: "Shows, part by part, how many bytes the system prompt and the tool descriptions take for a session started in this folder. " +
+			"Use prompt-size to see what fills the model's context window before you send anything.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 			directory, err := os.Getwd()
@@ -54,49 +57,54 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 					return err
 				}
 			}
-			_, err = fmt.Fprintln(out, "Could not compute prompt-size breakdown: "+tui.Reason(err))
+			_, err = fmt.Fprintln(out, "✗ The size of the system prompt could not be worked out. "+tui.Reason(err))
 			return err
 		},
 	}
-	size.Flags().StringVar(&platform, "platform", "tui", "surface whose prompt to measure, such as tui, cli or cron")
-	size.Flags().BoolVar(&sizeJSON, "json", false, "print the breakdown as JSON")
+	size.Flags().StringVar(&platform, "platform", "tui", "Where the session runs: tui for this app, cli, cron and so on")
+	size.Flags().BoolVar(&sizeJSON, "json", false, "Print the breakdown as JSON")
 	return []*cobra.Command{size}
 }
 
-// Byte count right aligned in eight columns with thousands separators
-func grouped(n int64) string {
-	return fmt.Sprintf("%8s", strs.Thousands(n))
+// Parts of the prompt by how often they change, in words
+var tierWords = map[string]string{
+	prompt.Stable.String():  "Always the same: identity and advice",
+	prompt.Project.String(): "Per project: project files and folder",
+	prompt.Kept.String():    "Kept for the session: memory and skills",
+	prompt.Turn.String():    "Per message: profile, time and setup",
 }
 
-func kilobytes(n int64) string {
-	return strconv.FormatFloat(float64(n)/1024, 'f', 1, 64) + " KB"
+// Size in words, right aligned in ten columns
+func sized10(n int64) string {
+	return fmt.Sprintf("%10s", strs.Size(float64(n)))
 }
 
 func breakdown(size *promptv1.SizeResponse) string {
-	model := size.GetModel()
-	if model == "" {
-		model = "unset"
+	model := cmp.Or(size.GetModel(), "no model set")
+	where := size.GetPlatform()
+	if where == "tui" {
+		where = "this app"
 	}
 	lines := []string{
-		"Prompt-size breakdown (platform=" + size.GetPlatform() + ", model=" + model + ")", "",
-		"  System prompt total : " + grouped(size.GetBytes()) + " B  (" + kilobytes(size.GetBytes()) + ", " + strs.Thousands(size.GetChars()) + " chars)",
+		"System prompt of a session in this folder, shown in " + where + ", with " + model, "",
+		"  Whole prompt   " + sized10(size.GetBytes()) + ", " + strs.Counted(float64(size.GetChars()), "characters"),
 	}
 	if sections := size.GetSections(); len(sections) > 0 {
-		lines = append(lines, "", "  Sections:")
+		lines = append(lines, "", "  Parts")
 		for _, section := range sections {
-			lines = append(lines, "    "+fmt.Sprintf("%-34s", section.GetName()+" ("+section.GetTier()+")")+": "+grouped(section.GetBytes())+" B  ("+kilobytes(section.GetBytes())+")")
+			lines = append(lines, "    "+fmt.Sprintf("%-40s", section.GetName())+sized10(section.GetBytes()))
 		}
 	}
-	lines = append(lines, "", "  Prompt tiers:")
+	lines = append(lines, "", "  By how often they change")
 	for _, tier := range size.GetTiers() {
-		lines = append(lines, "    "+fmt.Sprintf("%-34s", tiers[tier.GetName()])+": "+grouped(tier.GetBytes())+" B  ("+kilobytes(tier.GetBytes())+")")
+		lines = append(lines, "    "+fmt.Sprintf("%-40s", cmp.Or(tierWords[tier.GetName()], tier.GetName()))+sized10(tier.GetBytes()))
 	}
-	lines = append(lines, "", "  Tool schemas         : "+grouped(size.GetToolBytes())+" B  ("+kilobytes(size.GetToolBytes())+", "+strconv.FormatInt(size.GetTools(), 10)+" tools)")
+	lines = append(lines, "", "  Tool descriptions "+sized10(size.GetToolBytes())+", "+strs.Count(int(size.GetTools()), "tool"))
 	if toolsets := size.GetToolsets(); len(toolsets) > 0 {
-		lines = append(lines, "", "  Toolsets by size (tool-schema JSON, largest first):",
-			"    "+fmt.Sprintf("%-22s", "toolset")+" "+fmt.Sprintf("%5s", "tools")+"  "+fmt.Sprintf("%10s", "schema"))
+		lines = append(lines, "", "  Groups of tools, largest first")
 		for _, toolset := range toolsets {
-			lines = append(lines, "    "+fmt.Sprintf("%-22s", toolset.GetName())+" "+fmt.Sprintf("%5d", toolset.GetTools())+"  "+grouped(toolset.GetBytes())+" B  ("+kilobytes(toolset.GetBytes())+")")
+			lines = append(lines, "    "+fmt.Sprintf("%-28s", toolset.GetName())+fmt.Sprintf("%10s", strs.Count(int(toolset.GetTools()), "tool"))+"  "+
+				sized10(toolset.GetBytes()))
 		}
 	}
 	return strings.Join(lines, "\n")

@@ -474,7 +474,7 @@ func (m *Manager) close(op *Operation) {
 	op.mu.Unlock()
 	for _, w := range works {
 		if w.signin != nil && settled == SettleInterrupt {
-			w.signin.Login.Fail(errors.New("canceled"))
+			w.signin.Login.Fail(errors.New("The sign-in was canceled."))
 		}
 	}
 }
@@ -494,7 +494,7 @@ func (m *Manager) prepare(ctx context.Context, op *Operation) {
 		case "install":
 			entry, ok := m.Entry(op.cfg, t.Name)
 			if !ok {
-				m.fail(op, t.Name, fmt.Sprintf("no catalog entry '%s'", t.Name))
+				m.fail(op, t.Name, fmt.Sprintf("“%s” is not in the catalog.", t.Name))
 				continue
 			}
 			op.update(t.Name, func(t *Target) { t.Instructions, t.Required = entry.PostInstall, m.Missing(op.cfg, entry) })
@@ -514,7 +514,9 @@ func (m *Manager) prepare(ctx context.Context, op *Operation) {
 
 // Moves a target to failed whatever it was doing, a second failure refreshing its text
 func (m *Manager) fail(op *Operation, name, detail string) {
-	op.move(name, TargetFailed, func(t *Target) { t.Detail, t.ConnectURL, t.Signin = cmp.Or(mcp.Redact(detail), "error"), "", "" })
+	op.move(name, TargetFailed, func(t *Target) {
+		t.Detail, t.ConnectURL, t.Signin = cmp.Or(mcp.Redact(detail), "It failed without saying why."), "", ""
+	})
 }
 
 // Starts the sign in of a target, for an install with the settings it installs as, saved with its values once the sign in succeeded
@@ -546,13 +548,13 @@ func (m *Manager) startSignin(ctx context.Context, op *Operation, name string, i
 		case <-signin.Done:
 			m.finishSignin(op, name, signin)
 		default:
-			m.fail(op, name, fmt.Sprintf("the authorization link did not appear within %s", prepareWait))
+			m.fail(op, name, fmt.Sprintf("The sign-in link did not appear within %s.", strs.Span(prepareWait)))
 		}
 		return
 	}
 	detail := ""
 	if code != "" {
-		detail = "enter code " + code
+		detail = "Enter the code " + code + "."
 	}
 	op.move(name, TargetInitiated, func(t *Target) { t.ConnectURL, t.Signin, t.Detail = link, signin.ID, detail })
 }
@@ -644,7 +646,7 @@ func (m *Manager) connected(ctx context.Context, op *Operation, name, discovery 
 func (m *Manager) Respond(id string, answers []Answer, settle bool) error {
 	op, ok := m.ops.get(id)
 	if !ok {
-		return fmt.Errorf("connection operation %s is no longer open", id)
+		return errors.New("This connection card is no longer open.")
 	}
 	for _, a := range answers {
 		t := op.Snapshot().target(strings.ToLower(strings.TrimSpace(a.Name)))
@@ -675,7 +677,7 @@ func (m *Manager) Respond(id string, answers []Answer, settle bool) error {
 }
 
 // A target the person skipped
-var ErrSkippedTarget = errors.New("skipped")
+var ErrSkippedTarget = errors.New("You skipped this server.")
 
 // One target's part of the card's answer
 type Answer struct {
@@ -706,7 +708,7 @@ func (m *Manager) approve(op *Operation, t *Target, values map[string]string) {
 	case "install":
 		entry, ok := m.Entry(op.cfg, t.Name)
 		if !ok {
-			m.fail(op, t.Name, fmt.Sprintf("no catalog entry '%s'", t.Name))
+			m.fail(op, t.Name, fmt.Sprintf("“%s” is not in the catalog.", t.Name))
 			return
 		}
 		op.mu.Lock()
@@ -732,7 +734,9 @@ func (m *Manager) approve(op *Operation, t *Target, values map[string]string) {
 			for i, spec := range missing {
 				names[i] = spec.Name
 			}
-			op.update(t.Name, func(t *Target) { t.Required, t.Detail = missing, "waiting for "+strings.Join(names, ", ") })
+			op.update(t.Name, func(t *Target) {
+				t.Required, t.Detail = missing, "Waiting for you to give "+strings.Join(names, ", ")+"."
+			})
 			return
 		}
 		if !op.move(t.Name, TargetInitiated, func(t *Target) { t.Required, t.Detail = nil, "" }) {
@@ -747,7 +751,7 @@ func (m *Manager) approve(op *Operation, t *Target, values map[string]string) {
 func (m *Manager) install(ctx context.Context, op *Operation, entry mcp.Entry, values map[string]string) {
 	for k := range values {
 		if !slices.ContainsFunc(entry.Auth.Env, func(spec mcp.EnvSpec) bool { return spec.Name == k }) {
-			m.failInstall(op, entry.Name, fmt.Sprintf("'%s' does not declare the environment variable %s", entry.Name, k))
+			m.failInstall(op, entry.Name, fmt.Sprintf("The catalog entry %s does not ask for %s, so it was not installed.", entry.Name, k))
 			return
 		}
 	}
@@ -760,7 +764,7 @@ func (m *Manager) install(ctx context.Context, op *Operation, entry mcp.Entry, v
 	settings := m.InstallConfig(op.cfg, entry, dir, values)
 	commit := func() error {
 		if issues, err := m.Save(op.cfg, entry.Name, settings); err != nil || len(issues) > 0 {
-			return cmp.Or(err, fmt.Errorf("'%s' was rejected: suspicious command/args configuration", entry.Name))
+			return cmp.Or(err, fmt.Errorf("The settings of %s look like an attack, so it was not installed.", entry.Name))
 		}
 		for _, spec := range entry.Auth.Env {
 			if v := values[spec.Name]; v != "" && spec.Secret {
@@ -806,7 +810,7 @@ func (m *Manager) detached(ctx context.Context, op *Operation) string {
 		case "install":
 			entry, ok := m.Entry(op.cfg, t.Name)
 			if !ok {
-				m.fail(op, t.Name, fmt.Sprintf("no catalog entry '%s'", t.Name))
+				m.fail(op, t.Name, fmt.Sprintf("“%s” is not in the catalog.", t.Name))
 				continue
 			}
 			var missing []string
@@ -816,7 +820,8 @@ func (m *Manager) detached(ctx context.Context, op *Operation) string {
 				}
 			}
 			if len(missing) > 0 {
-				m.fail(op, t.Name, fmt.Sprintf("set %s in the environment or the profile's MCP values (tools.mcp.env), then install again", strings.Join(missing, ", ")))
+				m.fail(op, t.Name, fmt.Sprintf("Set %s in your environment or in /settings under Tools › MCP servers › Values, then install it again.",
+					strings.Join(missing, ", ")))
 				continue
 			}
 			op.move(t.Name, TargetInitiated, nil)
@@ -915,10 +920,10 @@ func (m *Manager) Wake(id string) {
 func (m *Manager) Retry(id string, names []string) error {
 	op, ok := m.ops.get(id)
 	if !ok {
-		return fmt.Errorf("connection operation %s is no longer open", id)
+		return errors.New("This connection card is no longer open.")
 	}
 	if op.settled() {
-		return errors.New("this operation has settled; its result is frozen")
+		return errors.New("This connection card is finished and can no longer change.")
 	}
 	for _, name := range names {
 		if t := op.Snapshot().target(name); t != nil {

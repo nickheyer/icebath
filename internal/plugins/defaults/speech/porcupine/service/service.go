@@ -28,7 +28,7 @@ import (
 
 func Register(registry *speech.Registry) {
 	registry.Register(speech.Services{Waking: []speech.Engine{{
-		Name: config.Name, Title: "Porcupine", About: "Picovoice's engine for its built in keywords such as jarvis, or a keyword file; needs a free access key",
+		Name: config.Name, Title: "Porcupine", About: "Hears a few fixed keywords, needs a free Picovoice access key",
 		Rank: 3, Key: true, Extra: config.Extra,
 		Supported: func(sp *speech.Speech) bool {
 			reason, known := sp.Packages().ExtraUnsupported(config.Extra)
@@ -99,7 +99,7 @@ func host() (string, string, error) {
 	default:
 		system := map[string]string{"freebsd": "FreeBSD", "openbsd": "OpenBSD", "netbsd": "NetBSD", "dragonfly": "DragonFly", "solaris": "SunOS",
 			"illumos": "SunOS", "aix": "AIX"}[runtime.GOOS]
-		return "", "", fmt.Errorf("Unsupported system %q.", cmp.Or(system, strings.ToUpper(runtime.GOOS[:1])+runtime.GOOS[1:]))
+		return "", "", fmt.Errorf("Porcupine has no build for %s.", cmp.Or(system, strings.ToUpper(runtime.GOOS[:1])+runtime.GOOS[1:]))
 	}
 	machine := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
 	if machine == "" {
@@ -114,11 +114,11 @@ func host() (string, string, error) {
 			suffix = "-" + machine
 		}
 	default:
-		return "", "", fmt.Errorf("Unsupported CPU architecture %q", machine)
+		return "", "", fmt.Errorf("Porcupine has no build for %s processors.", machine)
 	}
 	raw, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {
-		return "", "", fmt.Errorf("Failed to identify the CPU: %w", err)
+		return "", "", fmt.Errorf("The processor of this computer could not be told: %w", err)
 	}
 	info := strings.ToValidUTF8(string(raw), "�")
 	part, found := "", false
@@ -130,7 +130,7 @@ func host() (string, string, error) {
 		}
 	}
 	if !found {
-		return "", "", errors.New("Failed to identify the CPU: the CPU description has no CPU part line\nCPU info: " + info)
+		return "", "", errors.New("The processor of this computer could not be told, because /proc/cpuinfo has no CPU part line.")
 	}
 	if core, ok := piCores[part]; ok {
 		return "Linux", core + suffix, nil
@@ -140,11 +140,11 @@ func host() (string, string, error) {
 			"the armv6-based (Raspberry Pi Zero) library. This is not tested nor optimal.", part))
 		return "Linux", "arm11", nil
 	}
-	return "", "", fmt.Errorf("Unsupported CPU %q.", part)
+	return "", "", fmt.Errorf("Porcupine has no build for the processor with CPU part %s.", part)
 }
 
 func unsupported(system, machine string) error {
-	return fmt.Errorf("Unsupported platform (%q, %q).", system, machine)
+	return fmt.Errorf("Porcupine has no build for %s on %s.", system, machine)
 }
 
 // Library of the host under the package
@@ -180,7 +180,7 @@ func keywords(dir, system, machine string) (map[string]string, error) {
 	folder := filepath.Join(dir, "resources", "keyword_files", subdir)
 	entries, err := os.ReadDir(folder)
 	if err != nil {
-		return nil, fmt.Errorf("Couldn't read the keyword files directory: %w", err)
+		return nil, fmt.Errorf("The keyword folder of Porcupine can't be read: %w", err)
 	}
 	out := map[string]string{}
 	for _, entry := range entries {
@@ -206,7 +206,7 @@ func file(keyword string) bool {
 // Refusal of a file the engine needs that is not there, named as it was given
 func need(path, shown, what string) error {
 	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("Couldn't find %s at %q.", what, shown)
+		return fmt.Errorf("There is no %s at %s.", what, shown)
 	}
 	return nil
 }
@@ -215,11 +215,11 @@ func need(path, shown, what string) error {
 // looser the higher it is
 func open(ctx context.Context, wake *speech.Wake) (speech.Hotword, error) {
 	if _, ok := wake.Speech.Packages().ExtraPython(config.Extra); !ok {
-		return nil, errors.New("the " + config.Extra + " wake engine is not provisioned. Run `" + packages.InstallHint(config.Extra) + "`")
+		return nil, errors.New("Porcupine is not installed. Run " + packages.InstallHint(config.Extra) + " to install it.")
 	}
 	dir, ok := wake.Speech.Packages().ExtraModule(config.Extra, "pvporcupine")
 	if !ok {
-		return nil, errors.New("the Python package pvporcupine is not installed in the wake word environment")
+		return nil, errors.New("The Python package pvporcupine is missing from the install of Porcupine. Run " + packages.InstallHint(config.Extra) + " again.")
 	}
 	system, machine, err := host()
 	if err != nil {
@@ -230,7 +230,7 @@ func open(ctx context.Context, wake *speech.Wake) (speech.Hotword, error) {
 		return nil, err
 	}
 	if wake.AccessKey == "" {
-		return nil, errors.New("Porcupine wake word requires PORCUPINE_ACCESS_KEY (get a free key at https://console.picovoice.ai).")
+		return nil, errors.New("Porcupine needs a Picovoice access key. Get one free at https://console.picovoice.ai, then set PORCUPINE_ACCESS_KEY in your keys file.")
 	}
 	keyword := wake.Setting(config.Keyword)
 	if keyword == "" {
@@ -240,7 +240,7 @@ func open(ctx context.Context, wake *speech.Wake) (speech.Hotword, error) {
 	if !file(keyword) {
 		if path, ok = builtin[keyword]; !ok {
 			names := slices.Sorted(maps.Keys(builtin))
-			return nil, fmt.Errorf("Keyword %q is not available by default. Available default keywords are: %s", keyword, strings.Join(names, ", "))
+			return nil, fmt.Errorf("Porcupine has no keyword %s. Set Keyword in /settings under Wake word › Porcupine to one of these, or to a keyword file: %s.", keyword, strings.Join(names, ", "))
 		}
 		shown = path
 	}
@@ -249,7 +249,7 @@ func open(ctx context.Context, wake *speech.Wake) (speech.Hotword, error) {
 		return nil, err
 	}
 	model := filepath.Join(dir, "lib", "common", "porcupine_params.pv")
-	for _, missing := range []error{need(lib, lib, "Porcupine's dynamic library"), need(model, model, "model file"), need(path, shown, "keyword file")} {
+	for _, missing := range []error{need(lib, lib, "library of Porcupine"), need(model, model, "model file"), need(path, shown, "keyword file")} {
 		if missing != nil {
 			return nil, missing
 		}

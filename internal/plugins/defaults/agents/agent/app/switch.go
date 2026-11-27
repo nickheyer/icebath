@@ -115,7 +115,7 @@ func (c *chat) switchTo(session *sessionsv1.Session) tea.Cmd {
 	c.reset()
 	c.id, c.title, c.profile = session.GetId(), session.GetTitle(), cmp.Or(session.GetProfile(), c.profile)
 	if running {
-		c.log.note("Switched sessions. The previous one keeps running; /sessions lists it.")
+		c.log.note("Switched sessions. The one before keeps working, and /sessions lists it.")
 	}
 	cmds := []tea.Cmd{c.watch()}
 	if c.title == "" {
@@ -180,9 +180,9 @@ func (d *desk) heard(live []*agentv1.LiveSession) bool {
 		}
 		switch {
 		case phase == phaseWaiting:
-			d.announce(fmt.Sprintf("Background session %q waits for your answer · %s switches to it", name, d.sessionsKey()))
+			d.announce(fmt.Sprintf("The session “%s” in the background is waiting for your answer. %s lists your sessions.", name, d.sessionsKey()))
 		case before == phaseBusy && phase == phaseIdle:
-			d.announce(fmt.Sprintf("Background session %q finished its turn · %s switches to it", name, d.sessionsKey()))
+			d.announce(fmt.Sprintf("The session “%s” in the background finished its reply. %s lists your sessions.", name, d.sessionsKey()))
 		}
 	}
 	for id := range d.phases {
@@ -219,9 +219,9 @@ func (d *desk) dial(status *wm.Status) {
 	if d.unseen == 0 {
 		return
 	}
-	text := fmt.Sprintf("%d more sessions", d.unseen)
+	text := fmt.Sprintf("%d sessions in the background", d.unseen)
 	if d.unseen == 1 {
-		text = "1 more session"
+		text = "1 session in the background"
 	}
 	status.Dials = append(status.Dials, wm.Segment{Text: text, Action: "open." + sessionsScreen})
 }

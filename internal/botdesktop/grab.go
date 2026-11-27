@@ -320,7 +320,7 @@ func setupScreen(setup []byte, screen int) (root uint32, width, height int, ok b
 
 // Whole root window of an X display, authorized by the cookie its Xauthority file holds
 func grabX11(display, xauth string) (*image.NRGBA, error) {
-	failed := func(code int) error { return fmt.Errorf("X connection failed: error %d", code) }
+	failed := func(code int) error { return fmt.Errorf("The connection to the X display failed with error %d.", code) }
 	d, ok := parseDisplay(display)
 	if !ok {
 		return nil, failed(xConnParse)
@@ -359,7 +359,7 @@ func grabX11(display, xauth string) (*image.NRGBA, error) {
 	}
 	rootWindow, width, height, ok := setupScreen(setup, d.screen)
 	if !ok || rootWindow == 0 {
-		return nil, errors.New("X screen not found")
+		return nil, errors.New("The X display has no screen.")
 	}
 	get := make([]byte, 20)
 	get[0], get[1] = 73, 2
@@ -377,7 +377,7 @@ func grabX11(display, xauth string) (*image.NRGBA, error) {
 			return nil, failed(xConnError)
 		}
 		if reply[0] == 0 {
-			return nil, fmt.Errorf("X get_image failed: error %d (%d, %d, %d)", reply[1], reply[10], le.Uint16(reply[8:]), le.Uint32(reply[4:]))
+			return nil, fmt.Errorf("The X display could not give an image. It answered error %d, with the details %d, %d and %d.", reply[1], reply[10], le.Uint16(reply[8:]), le.Uint32(reply[4:]))
 		}
 		if reply[0] == 1 {
 			break
@@ -393,10 +393,10 @@ func grabX11(display, xauth string) (*image.NRGBA, error) {
 		return nil, failed(xConnError)
 	}
 	if reply[1] != 24 {
-		return nil, fmt.Errorf("unsupported bit depth: %d", reply[1])
+		return nil, fmt.Errorf("The X display uses a color depth of %d bits, which icebath cannot read.", reply[1])
 	}
 	if len(data) < width*4*height {
-		return nil, errors.New("not enough image data")
+		return nil, errors.New("The X display sent less image data than expected.")
 	}
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
 	for i := range width * height {

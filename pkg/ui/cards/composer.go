@@ -2,10 +2,12 @@ package cards
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -48,6 +50,7 @@ type completion struct {
 	items   []string
 	descs   []string
 	texts   []string
+	groups  []string
 	idx     int
 	replace int
 	// Whether the highlight was moved, the only case besides a command name in which enter takes the suggestion instead of sending
@@ -61,6 +64,9 @@ type Offer struct {
 	Text    string
 	Display string
 	Meta    string
+	// Heading the candidate is listed under, the candidates of one heading coming together; headings show once the list holds more than
+	// one
+	Group string
 }
 
 // Pasted text or an attached file a label in the prompt stands for, kept with the prompt in the history and the drafts
@@ -544,6 +550,7 @@ func (c *Composer) Offer(value string, offers []Offer, replace int) {
 		comp.items = append(comp.items, label)
 		comp.descs = append(comp.descs, o.Meta)
 		comp.texts = append(comp.texts, o.Text)
+		comp.groups = append(comp.groups, o.Group)
 		comp.info = comp.info && o.Text == ""
 	}
 	if prev != nil && prev.replace == replace && prev.idx < len(prev.items) {
@@ -578,6 +585,7 @@ func (c *Composer) follow() {
 		kept.items = append(kept.items, comp.items[i])
 		kept.descs = append(kept.descs, comp.descs[i])
 		kept.texts = append(kept.texts, text)
+		kept.groups = append(kept.groups, comp.groups[i])
 	}
 	if len(kept.items) == 0 {
 		c.comp = nil
@@ -1096,7 +1104,7 @@ var imageTypes = map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".
 func (c *Composer) attach(path string) tea.Cmd {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return wm.Notify("Not a file path", wm.Warn)
+		return wm.Notify("That is not a file path.", wm.Warn)
 	}
 	if strings.HasPrefix(path, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -1108,14 +1116,19 @@ func (c *Composer) attach(path string) tea.Cmd {
 	}
 	media, ok := imageTypes[strings.ToLower(filepath.Ext(path))]
 	if !ok {
-		return wm.Notify("Only PNG, JPEG, GIF and WebP images can be attached", wm.Warn)
+		return wm.Notify("Only PNG, JPEG, GIF and WebP images can be attached.", wm.Warn)
 	}
 	data, err := os.ReadFile(path)
-	if err != nil {
-		return wm.Notify(err.Error(), wm.Error)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return wm.Notify("There is no file at "+path+".", wm.Error)
+	case errors.Is(err, fs.ErrPermission):
+		return wm.Notify("You are not allowed to read "+path+".", wm.Error)
+	case err != nil:
+		return wm.Notify("The file "+path+" could not be read.", wm.Error)
 	}
 	c.attachments = append(c.attachments, attachment{Path: path, Media: media, Data: data})
-	return wm.Notify("Attached "+filepath.Base(path)+" ("+render.Bytes(int64(len(data)))+")", wm.Success)
+	return wm.Notify("Attached "+filepath.Base(path)+", "+render.Bytes(int64(len(data)))+".", wm.Success)
 }
 
 // Attaches the image at the path, as the attach command does
@@ -1264,33 +1277,91 @@ func (c *Composer) Popup(w int) []string {
 		return nil
 	}
 	t := c.theme
-	limit := min(len(comp.items), popupRows)
-	from := 0
-	if comp.idx >= limit {
-		from = comp.idx - limit + 1
-	}
 	base := lipgloss.NewStyle().Foreground(t.Text).Background(t.Surface)
 	dim := lipgloss.NewStyle().Foreground(t.TextDim).Background(t.Surface)
 	lit := lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Bold(true)
-	var rows []string
-	// The names take the width of the longest one in view, up to half the popup
-	names := 0
-	for i := from; i < from+limit && i < len(comp.items); i++ {
-		names = max(names, ansi.StringWidth(ansi.Strip(comp.items[i])))
+	// The names take the width of the longest of them all, so their column stays where it is as the rows scroll. A description is whole or
+	// gone: when one of them does not fit beside its name, every row leaves its own out and the one of the highlighted row is said under
+	// the rows
+	names, whole := 0, true
+	for _, item := range comp.items {
+		names = max(names, ansi.StringWidth(ansi.Strip(item)))
 	}
-	names = min(names, max(w/2, 14))
-	for i := from; i < from+limit && i < len(comp.items); i++ {
-		name, desc := " "+ansi.Strip(comp.items[i]), ""
-		if i < len(comp.descs) && comp.descs[i] != "" {
-			name, desc = " "+render.Fit(ansi.Strip(comp.items[i]), names, t)+"  ", ansi.Strip(comp.descs[i])
+	said := func(i int) string {
+		if i < len(comp.descs) {
+			return ansi.Strip(comp.descs[i])
 		}
-		line := render.Fit(name+desc, w, t)
-		if i == comp.idx && !comp.info {
-			rows = append(rows, lit.Render(line))
+		return ""
+	}
+	for i := range comp.items {
+		if desc := said(i); desc != "" && 1+names+2+ansi.StringWidth(desc) > w {
+			whole = false
+		}
+	}
+	// Lines of the popup: the candidates, with a heading over each run of one group once there is more than one group
+	type line struct {
+		item int
+		head string
+	}
+	headed := slices.ContainsFunc(comp.groups, func(group string) bool { return group != comp.groups[0] })
+	var lines []line
+	at := 0
+	for i := range comp.items {
+		if headed && (i == 0 || comp.groups[i] != comp.groups[i-1]) {
+			lines = append(lines, line{item: -1, head: comp.groups[i]})
+		}
+		if i == comp.idx {
+			at = len(lines)
+		}
+		lines = append(lines, line{item: i})
+	}
+	// The window keeps the highlighted row in view, and the heading over it while it leads its group
+	from := 0
+	if at >= popupRows {
+		from = at - popupRows + 1
+	}
+	if at > 0 && lines[at-1].head != "" && at-1 < from {
+		from = at - 1
+	}
+	var rows []string
+	for _, l := range lines[from:min(from+popupRows, len(lines))] {
+		if l.item < 0 {
+			rows = append(rows, dim.Bold(true).Render(render.Fit(" "+lang.Upper(l.head), w, t)))
 			continue
 		}
-		cut := min(ansi.StringWidth(name), ansi.StringWidth(line))
-		rows = append(rows, base.Render(ansi.Truncate(line, cut, ""))+dim.Render(ansi.TruncateLeft(line, cut, "")))
+		name, desc := " "+ansi.Strip(comp.items[l.item]), ""
+		if text := said(l.item); text != "" && whole {
+			name, desc = " "+render.Fit(ansi.Strip(comp.items[l.item]), names, t)+"  ", text
+		}
+		row := render.Fit(name+desc, w, t)
+		if l.item == comp.idx && !comp.info {
+			rows = append(rows, lit.Render(row))
+			continue
+		}
+		cut := min(ansi.StringWidth(name), ansi.StringWidth(row))
+		rows = append(rows, base.Render(ansi.Truncate(row, cut, ""))+dim.Render(ansi.TruncateLeft(row, cut, "")))
+	}
+	if whole {
+		return rows
+	}
+	// As many lines as the longest description wraps to, so the popup keeps its height as the highlight moves
+	wrapped := func(text string) []string { return strings.Split(ansi.Wordwrap(text, max(w-2, 1), ""), "\n") }
+	under := 0
+	for i := range comp.items {
+		if desc := said(i); desc != "" {
+			under = max(under, len(wrapped(desc)))
+		}
+	}
+	var now []string
+	if desc := said(comp.idx); desc != "" && !comp.info {
+		now = wrapped(desc)
+	}
+	for i := range under {
+		text := ""
+		if i < len(now) {
+			text = now[i]
+		}
+		rows = append(rows, dim.Render(render.Fit(" "+text, w, t)))
 	}
 	return rows
 }
@@ -1330,15 +1401,13 @@ func (c *Composer) Status() string {
 		for _, a := range c.attachments {
 			size += len(a.Data)
 		}
-		parts = append(parts, itoa(n)+" attached "+render.Bytes(int64(size)))
+		parts = append(parts, render.Count(n, "image")+" attached, "+render.Bytes(int64(size)))
 	}
 	if c.recalling() {
 		parts = append(parts, lang.T(txt.KitComposerHistoryAt, c.cursor+1, len(c.ring)))
 	}
 	return strings.Join(parts, " "+c.theme.Glyphs.Sep+" ")
 }
-
-func itoa(n int) string { return strconv.Itoa(n) }
 
 // Reports whether a backslash sits right before the cursor
 func (c *Composer) escaped() bool {

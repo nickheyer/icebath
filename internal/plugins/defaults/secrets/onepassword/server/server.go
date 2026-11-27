@@ -122,7 +122,7 @@ func (s *service) Token(ctx context.Context, request *onepasswordv1.TokenRequest
 	}
 	token := strings.TrimSpace(request.GetToken())
 	if token == "" {
-		return nil, refuse("1Password needs a service account token")
+		return nil, refuse("1Password needs a service account token. Make one at https://my.1password.com under Developer › Service accounts.")
 	}
 	tokenEnv := s.store.TokenEnv(cfg)
 	response := &onepasswordv1.TokenResponse{TokenEnv: tokenEnv, EnvPath: cfg.EnvPath(), Disabled: !cfg.GetBool(onepasswordconfig.Enabled)}
@@ -189,7 +189,7 @@ func (s *service) Sync(ctx context.Context, request *onepasswordv1.SyncRequest) 
 		return nil, err
 	}
 	if !cfg.GetBool(onepasswordconfig.Enabled) {
-		return nil, refuse("1Password integration is disabled.  Run `icebath secrets onepassword setup` first.")
+		return nil, refuse("1Password is off. Run icebath secrets onepassword setup to turn it on.")
 	}
 	references := onepasswordsecrets.References(cfg)
 	if len(references) == 0 {
@@ -213,7 +213,7 @@ func (s *service) Sync(ctx context.Context, request *onepasswordv1.SyncRequest) 
 		exported := map[string]string{}
 		if len(wanted) > 0 {
 			if onepasswordsecrets.Find(pinned(cfg)) == "" {
-				return nil, refuse(onepasswordsecrets.Missing(pinned(cfg)))
+				return nil, refuse(onepasswordsecrets.Missing(pinned(cfg)) + " " + onepasswordsecrets.InstallHint)
 			}
 			pull.References = wanted
 			got, more, err := s.store.Pull(ctx, pull)

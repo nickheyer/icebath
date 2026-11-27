@@ -2,6 +2,7 @@ package wm
 
 import (
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/nickheyer/icebath/pkg/ui/anim"
@@ -138,13 +139,21 @@ type toast struct {
 
 type toastTickMsg struct{}
 
+// Default life of a toast with the text: the least one, and a twentieth of a second more for every character past the sixtieth, to twelve
+// seconds at most
+func toastLife(text string) time.Duration {
+	extra := max(utf8.RuneCountInString(text)-60, 0)
+	return min(DefaultToastTTL+time.Duration(extra)*50*time.Millisecond, 12*time.Second)
+}
+
 // Shows a toast for ttl, the default life when ttl is zero
 func (m *Model) Toast(text string, level Level, ttl time.Duration) tea.Cmd {
 	if text == "" {
 		return nil
 	}
-	if ttl <= 0 {
-		ttl = DefaultToastTTL
+	// The default life is long enough to read the toast in: a longer sentence stays longer
+	if ttl <= 0 || ttl == DefaultToastTTL {
+		ttl = toastLife(text)
 	}
 	if m.onToast != nil {
 		m.onToast(text, level)

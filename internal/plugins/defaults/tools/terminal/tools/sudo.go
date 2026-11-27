@@ -47,8 +47,8 @@ func askSudo(ctx context.Context, env *tools.Env, command string) string {
 	reply, err := env.Clarify(ctx, []tools.Question{{
 		ID:     "sudo",
 		Secret: true,
-		Text: "Sudo password required. The command `" + command + "` needs sudo. Enter the password, or submit an empty answer to skip (the " +
-			"command fails gracefully). It is kept for this session only; set it in /settings under Terminal to be asked no more.",
+		Text: "The command `" + command + "` needs your sudo password. Enter it for this session only, or leave it empty and the command fails. " +
+			"To stop being asked, set Sudo password in /settings under Terminal.",
 	}})
 	if err != nil || reply.Outcome != tools.Submitted || len(reply.Answers["sudo"]) == 0 {
 		return ""

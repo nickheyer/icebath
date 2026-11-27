@@ -44,7 +44,7 @@ for line in sys.stdin:
 func Register(registry *speech.Registry) {
 	k := &kitten{}
 	registry.Register(speech.Services{Speakers: []speech.Voice{{
-		Name: config.Name, Title: "KittenTTS", Label: "KittenTTS (local, ~25MB)", About: "Lightweight local ONNX TTS (~25MB), no API key",
+		Name: config.Name, Title: "KittenTTS", Label: "KittenTTS (local, ~25MB)", About: "A small voice model on this computer, no API key needed",
 		Local:      true,
 		Ready:      func(job *speech.Job) bool { return job.Provisioned(config.Extra) },
 		Limit:      func(*speech.Job) int { return config.DefaultLimit },
@@ -58,7 +58,7 @@ func Register(registry *speech.Registry) {
 			return nil
 		},
 		Resident: true,
-		Setup:    speech.Setup{Extra: config.Extra, Badge: "local · free"},
+		Setup:    speech.Setup{Extra: config.Extra, Badge: "free"},
 	}}})
 }
 

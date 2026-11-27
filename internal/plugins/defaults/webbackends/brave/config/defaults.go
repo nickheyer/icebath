@@ -10,9 +10,11 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: webconfig.Key,
 		Title:  "Brave Search",
-		About:  "Brave's Data for Search API on its free tier: 2,000 searches a month, search only",
+		About:  "Web search on Brave's free plan, 2,000 searches a month",
+		Order:  40,
 		Settings: []config.Setting{
-			{Key: APIKey, Title: "Brave Search key", About: "Subscription token of the Brave Search API, free at https://brave.com/search/api/", Default: "", Env: []string{"BRAVE_SEARCH_API_KEY"}, Secret: true},
+			{Key: APIKey, Title: "API key", About: "Your Brave Search API key.", Help: "Free at brave.com/search/api.", Default: "",
+				Env: []string{"BRAVE_SEARCH_API_KEY"}, Secret: true},
 		},
 	}})
 }

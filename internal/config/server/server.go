@@ -1,10 +1,8 @@
 package server
 
 import (
-	"cmp"
 	"context"
 	"errors"
-	"slices"
 	"strings"
 
 	"connectrpc.com/connect/v2"
@@ -18,7 +16,7 @@ import (
 )
 
 // Value a secret shows once it is set, the secret itself never leaving the server
-const masked = "••••••••"
+const masked = config.Hidden
 
 var kinds = map[config.Kind]configv1.Kind{
 	config.Text:   configv1.Kind_KIND_TEXT,
@@ -29,6 +27,12 @@ var kinds = map[config.Kind]configv1.Kind{
 	config.Table:  configv1.Kind_KIND_TABLE,
 	// A length of time, its value the number of its unit
 	config.Duration: configv1.Kind_KIND_DURATION,
+}
+
+var applies = map[config.Apply]configv1.Apply{
+	config.NextMessage: configv1.Apply_APPLY_NEXT_MESSAGE,
+	config.NewSessions: configv1.Apply_APPLY_NEW_SESSIONS,
+	config.Restart:     configv1.Apply_APPLY_RESTART,
 }
 
 var sources = map[config.Source]configv1.Source{
@@ -64,19 +68,20 @@ func (s *service) Mount(services *connect.Server) {
 	configv1connect.RegisterConfigServiceHandler(services, s)
 }
 
-// Every section, those of a parent by title, and the settings of each in the order they were registered
+// Every section in the order the settings screen lists them, the settings of each in the order they were registered, and the groups the
+// sections at the top are listed under
 func (s *service) List(_ context.Context, request *configv1.ListRequest) (*configv1.ListResponse, error) {
 	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
-	sections := cfg.Sections()
-	slices.SortStableFunc(sections, func(a, b config.Section) int {
-		return cmp.Or(strings.Compare(a.Parent, b.Parent), strings.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title)))
-	})
 	response := &configv1.ListResponse{Profile: cfg.Profile()}
-	for _, section := range sections {
-		response.Sections = append(response.Sections, &configv1.Section{Key: section.Key, Parent: section.Parent, Title: section.Title, Description: section.About, Global: cfg.Global(section.Key)})
+	for _, group := range config.Groups() {
+		response.Groups = append(response.Groups, &configv1.Group{Id: string(group.ID), Title: group.Title})
+	}
+	for _, section := range config.Listed(cfg.Sections()) {
+		response.Sections = append(response.Sections, &configv1.Section{Key: section.Key, Parent: section.Parent, Title: section.Title,
+			Description: section.About, Global: cfg.Global(section.Key), Group: string(section.Group)})
 		for _, setting := range section.Settings {
 			message, err := describe(cfg, section, setting, !request.GetBare())
 			if err != nil {
@@ -95,7 +100,7 @@ func (s *service) Get(_ context.Context, request *configv1.GetRequest) (*configv
 	}
 	section, setting, ok := cfg.Setting(request.GetKey())
 	if !ok {
-		return nil, connect.NewError(connect.CodeNotFound, "No setting named "+request.GetKey())
+		return nil, connect.NewError(connect.CodeNotFound, "There is no setting named "+request.GetKey()+".")
 	}
 	message, err := describe(cfg, section, setting, true)
 	if err != nil {
@@ -114,7 +119,7 @@ func (s *service) Set(_ context.Context, request *configv1.SetRequest) (*configv
 	_, setting, known := cfg.Setting(request.GetKey())
 	if !known {
 		if _, _, under := cfg.Under(request.GetKey()); !under {
-			return nil, connect.NewError(connect.CodeNotFound, "No setting named "+request.GetKey())
+			return nil, connect.NewError(connect.CodeNotFound, "There is no setting named "+request.GetKey()+".")
 		}
 		setting.Key = strings.ToLower(request.GetKey())
 	}
@@ -147,34 +152,16 @@ func refusal(err error) error {
 // Setting as the profile of the values has it, with the values it may take when options says so
 func describe(values *config.Config, section config.Section, setting config.Setting, options bool) (*configv1.Setting, error) {
 	source, variable := values.Source(setting)
-	message := &configv1.Setting{
-		Key:         setting.Key,
-		Section:     section.Key,
-		Title:       setting.Title,
-		Description: setting.About,
-		Kind:        kinds[setting.Kind()],
-		Secret:      setting.Secret,
-		Internal:    setting.Internal,
-		Source:      sources[source],
-		Variable:    variable,
-		Env:         setting.Env,
+	message, err := shape(setting, options)
+	if err != nil {
+		return nil, err
 	}
+	message.Section, message.Source, message.Variable = section.Key, sources[source], variable
 	if locked := values.Lock(setting.Key); locked != nil {
 		message.Locked = locked.Reason()
 	}
-	if options && setting.Options != nil {
-		for _, option := range setting.Options() {
-			message.Options = append(message.Options, &configv1.Option{Value: option.Value, Title: option.Title, Description: option.About})
-		}
-	}
-	if setting.Kind() == config.Duration {
-		message.Unit, message.Unset = setting.UnitName(), setting.Null
-	}
-	var err error
-	if message.DefaultValue, err = encode(setting.DefaultValue()); err != nil {
-		return nil, err
-	}
 	value := values.Get(setting.Key)
+	message.Shown = setting.Say(value)
 	if setting.Secret {
 		if text, _ := value.(string); text != "" {
 			message.Value = masked
@@ -183,6 +170,80 @@ func describe(values *config.Config, section config.Section, setting config.Sett
 	}
 	if message.Value, err = encode(value); err != nil {
 		return nil, err
+	}
+	return message, nil
+}
+
+// What a setting is, whatever value a profile holds for it: its words, its kind, its default, what its zero value means, its bounds and
+// the fields of its entries
+func shape(setting config.Setting, options bool) (*configv1.Setting, error) {
+	message := &configv1.Setting{
+		Key:         setting.Key,
+		Title:       setting.Title,
+		Description: setting.About,
+		Help:        setting.Help,
+		Kind:        kinds[setting.Kind()],
+		Secret:      setting.Secret,
+		Internal:    setting.Internal,
+		Advanced:    setting.Advanced,
+		Apply:       applies[setting.Apply],
+		Slash:       setting.Slash,
+		Env:         setting.Env,
+		Zero:        setting.Zero,
+		Counts:      setting.Counts,
+		Skill:       setting.Skill,
+		Need:        setting.Need,
+		Starts:      setting.Starts,
+		Bounds:      setting.Bounds(),
+	}
+	if options && setting.Options != nil {
+		for _, option := range setting.Options() {
+			message.Options = append(message.Options, &configv1.Option{Value: option.Value, Title: option.Title, Description: option.About})
+		}
+	}
+	var err error
+	if setting.Zero != "" {
+		if message.ZeroValue, err = encode(setting.Zeroed()); err != nil {
+			return nil, err
+		}
+	}
+	switch setting.Kind() {
+	case config.Duration:
+		message.Unit, message.Unset = setting.UnitName(), setting.Null
+		if setting.Min != nil {
+			message.Least, _ = encode(setting.Kept(*setting.Min))
+		}
+		if setting.Max != nil {
+			message.Most, _ = encode(setting.Kept(*setting.Max))
+		}
+	case config.Number:
+		if setting.Least != nil {
+			message.Least, _ = encode(*setting.Least)
+		}
+		if setting.Most != nil {
+			message.Most, _ = encode(*setting.Most)
+		}
+	}
+	if message.DefaultValue, err = encode(setting.DefaultValue()); err != nil {
+		return nil, err
+	}
+	if !setting.Secret {
+		message.DefaultShown = setting.Say(setting.DefaultValue())
+	}
+	if entry := setting.Entry; entry != nil {
+		message.Entry = &configv1.Entry{Noun: entry.Noun, Name: entry.Name, Capitals: entry.Capitals}
+		if entry.Names != nil {
+			for _, name := range entry.Names() {
+				message.Entry.Names = append(message.Entry.Names, &configv1.Option{Value: name.Value, Title: name.Title, Description: name.About})
+			}
+		}
+		for _, field := range entry.Fields {
+			described, err := shape(field, options)
+			if err != nil {
+				return nil, err
+			}
+			message.Entry.Fields = append(message.Entry.Fields, described)
+		}
 	}
 	return message, nil
 }

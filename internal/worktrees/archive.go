@@ -31,8 +31,8 @@ const archiveSubject = "icebath worktree archive: "
 
 // Who an archive's commits are by
 var archiveIdentity = map[string]string{
-	"GIT_AUTHOR_NAME": "Icebath worktree archive", "GIT_AUTHOR_EMAIL": "icebath-archive@localhost",
-	"GIT_COMMITTER_NAME": "Icebath worktree archive", "GIT_COMMITTER_EMAIL": "icebath-archive@localhost",
+	"GIT_AUTHOR_NAME": "icebath worktree archive", "GIT_AUTHOR_EMAIL": "icebath-archive@localhost",
+	"GIT_COMMITTER_NAME": "icebath worktree archive", "GIT_COMMITTER_EMAIL": "icebath-archive@localhost",
 }
 
 // Settings that keep the bytes an archive takes and gives back exactly as they are on disk
@@ -80,7 +80,7 @@ type Archive struct {
 func archiveEnv(dir, index string) (map[string]string, error) {
 	env := repoEnv(dir)
 	if env == nil {
-		return nil, &ArchiveError{"git filter discovery failed"}
+		return nil, &ArchiveError{FilterDiscoveryFailed}
 	}
 	for key, value := range archiveIdentity {
 		env[key] = value
@@ -126,7 +126,7 @@ func archiveOK(dir string, env map[string]string, timeout time.Duration, input [
 		return "", err
 	}
 	if result.Code != 0 {
-		return "", &ArchiveError{fmt.Sprintf("git %s failed: %s", args[0], tail(result.Stderr))}
+		return "", &ArchiveError{fmt.Sprintf("`git %s` failed: %s", args[0], tail(result.Stderr))}
 	}
 	return result.Stdout, nil
 }
@@ -144,7 +144,7 @@ func rawAttrs(dir string, env map[string]string, empty string, args ...string) (
 		}
 	}
 	if result.Code != 0 {
-		return "", &ArchiveError{fmt.Sprintf("git %s failed: %s", args[0], tail(result.Stderr))}
+		return "", &ArchiveError{fmt.Sprintf("`git %s` failed: %s", args[0], tail(result.Stderr))}
 	}
 	return result.Stdout, nil
 }
@@ -243,11 +243,11 @@ func writeRaw(dest string, env map[string]string) error {
 	for _, entry := range entries {
 		end := bytes.IndexByte(out[pos:], '\n')
 		if end < 0 {
-			return errors.New("a git archive blob has no header")
+			return errors.New("A part of the git archive has no header.")
 		}
 		header := strings.Fields(string(out[pos : pos+end]))
 		if len(header) < 3 {
-			return errors.New("a git archive header has fewer than three fields")
+			return errors.New("A header of the git archive has fewer than three fields.")
 		}
 		size, err := strconv.Atoi(header[2])
 		if err != nil {
@@ -305,7 +305,7 @@ func untracked(tree string, env map[string]string) ([]string, error) {
 }
 
 // Start of every reason a submodule keeps a tree
-const SubmoduleReason = "submodule "
+const SubmoduleReason = "the submodule "
 
 // Why a submodule keeps the tree: a repository of submodules that removing the tree deletes, or a submodule whose work only its commit
 // reference holds, any gitlink at all when gitlinks is set; empty when none does
@@ -321,7 +321,7 @@ func SubmoduleWork(tree string, gitlinks bool) (string, error) {
 	}
 	modules := filepath.Join(strings.TrimSpace(gitDir), "modules")
 	if entries, err := os.ReadDir(modules); err == nil && len(entries) > 0 {
-		return fmt.Sprintf("%srepository in %s would be deleted with the tree", SubmoduleReason, modules), nil
+		return fmt.Sprintf("%srepositories in %s would be deleted with it", SubmoduleReason, modules), nil
 	}
 	staged, err := archiveOK(tree, env, 0, nil, "ls-files", "--stage", "-z")
 	if err != nil {
@@ -333,7 +333,7 @@ func SubmoduleWork(tree string, gitlinks bool) (string, error) {
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(tree, path, ".git")); gitlinks || err == nil {
-			return fmt.Sprintf("%s%s cannot be archived (gitlink only)", SubmoduleReason, path), nil
+			return fmt.Sprintf("%s%s cannot be archived, because only its commit is recorded", SubmoduleReason, path), nil
 		}
 	}
 	return "", nil
@@ -405,7 +405,7 @@ func createRef(repo, name, sha string, env map[string]string) (string, error) {
 			return ref, nil
 		}
 	}
-	return "", &ArchiveError{"could not create an archive ref for " + name}
+	return "", &ArchiveError{"No archive ref could be made for " + name + "."}
 }
 
 // Archives everything of the tree, tracked, staged and untracked, through a temporary index, never touching its own index or files:
@@ -443,7 +443,7 @@ func Snapshot(repo, tree, reason string, maxMB float64) (*Archive, error) {
 	}
 	for _, path := range paths {
 		if strings.HasSuffix(path, "/") {
-			return nil, &ArchiveError{fmt.Sprintf("untracked embedded repository %s cannot be archived", strings.TrimRight(path, "/"))}
+			return nil, &ArchiveError{fmt.Sprintf("The untracked repository %s inside the worktree cannot be archived.", strings.TrimRight(path, "/"))}
 		}
 	}
 	skipped := oversized(tree, paths, maxMB)
@@ -658,7 +658,7 @@ type Restored struct {
 func (w *Worktrees) Restore(ctx context.Context, repo, name, target string) (*Restored, error) {
 	archive := Find(repo, name)
 	if archive == nil {
-		return nil, &ArchiveError{"no archive named " + name}
+		return nil, &ArchiveError{"There is no worktree archive named " + name + ". Run `icebath worktree list` to see the archives."}
 	}
 	head := cmp.Or(archive.Meta.Head, archive.Sha+"^1")
 	indexCommit := cmp.Or(archive.Meta.IndexCommit, archive.Sha+"^2")
@@ -670,7 +670,7 @@ func (w *Worktrees) Restore(ctx context.Context, repo, name, target string) (*Re
 	if info, err := os.Stat(dest); err == nil {
 		entries, _ := os.ReadDir(dest)
 		if !info.IsDir() || len(entries) > 0 {
-			return nil, &ArchiveError{dest + " already exists; pass a different path"}
+			return nil, &ArchiveError{dest + " already exists. Give another folder with --path."}
 		}
 	}
 	env, err := archiveEnv(repo, "")

@@ -13,6 +13,7 @@ import (
 
 	sqliteconfig "github.com/nickheyer/icebath/internal/plugins/defaults/sessions/sqlite/config"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Prefixes of the state_meta markers of a backfill of the word and the trigram index: the highest id it indexes itself and how far it got
@@ -325,5 +326,10 @@ func merged(hits, more []*sessionsv1.Hit, limit int) []*sessionsv1.Hit {
 
 // Line telling how far a backfill got
 func filled(label string, indexed, total int64) string {
-	return fmt.Sprintf("  Rebuilding %s: %d%% (%d of %d)", label, min(100, indexed*100/max(total, 1)), indexed, total)
+	name := "the search index"
+	if strings.Contains(label, "trigram") {
+		name = "the search index for East Asian text"
+	}
+	return fmt.Sprintf("  Rebuilding %s: %d%% done, %s of %s messages.", name, min(100, indexed*100/max(total, 1)), strs.Number(float64(indexed)),
+		strs.Number(float64(total)))
 }

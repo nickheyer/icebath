@@ -45,7 +45,7 @@ type Backend struct {
 	// Readies the backend ahead of its first command, such as building its image, saying how it goes line by line
 	Prepare func(ctx context.Context, cfg *config.Config, say func(line string)) error
 	// Its environments keep processes running between commands and reach them through a command of this machine, so they can host the
-	// Bot Desktop
+	// Agent desktop
 	Streams bool
 	// Image change the profile's sandboxes wait on: those still running an older default image; nil when none waits
 	Switch func(cfg *config.Config) *Switch

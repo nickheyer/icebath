@@ -168,7 +168,24 @@ func unsafe(action string, args map[string]any) string {
 	return ""
 }
 
-const foregroundSuffix = " [FOREGROUND — briefly raises the window / changes focus]"
+const foregroundSuffix = ". This briefly brings its window to the front"
+
+// Action of the desktop in words, as an instruction with a capital first letter
+var actionWords = map[string]string{"click": "Click", "double_click": "Double-click", "right_click": "Right-click", "middle_click": "Middle-click",
+	"drag": "Drag", "scroll": "Scroll", "type": "Type", "key": "Press keys", "set_value": "Set the value of a field", "focus_app": "Switch to an app",
+	"bring_to_front": "Bring a window to the front"}
+
+// Words of an action, one not known said with its underscores as spaces
+func said(action string) string {
+	if words, ok := actionWords[action]; ok {
+		return words
+	}
+	text := strings.ReplaceAll(action, "_", " ")
+	if text == "" {
+		return text
+	}
+	return strings.ToUpper(text[:1]) + text[1:]
+}
 
 // One line of what the action does, as the approval prompt shows it
 func summarize(action string, args map[string]any) string {
@@ -180,41 +197,40 @@ func summarize(action string, args map[string]any) string {
 	case "click", "double_click", "right_click", "middle_click":
 		where := ""
 		if el, ok := args["element"]; ok && el != nil {
-			where = " element #" + strings.Trim(show(el), "'")
+			where = " the element numbered " + strings.Trim(show(el), "'")
 		} else if coord := args["coordinate"]; config.Truthy(coord) {
 			where = " at " + show(coord)
 		}
-		return action + where + fg
+		return said(action) + where + fg
 	case "drag":
-		return "drag " + endpoint(args, "from") + " → " + endpoint(args, "to") + fg
+		return "Drag from " + endpoint(args, "from") + " to " + endpoint(args, "to") + fg
 	case "scroll":
-		return "scroll " + strings.Trim(show(arg(args, "direction", "?")), "'") + " x" + strings.Trim(show(arg(args, "amount", 3.0)), "'") + fg
+		return "Scroll " + strings.Trim(show(arg(args, "direction", "down")), "'") + " by " + strings.Trim(show(arg(args, "amount", 3.0)), "'") + fg
 	case "type":
 		typed, more := []rune(text(args, "text", "")), ""
 		if len(typed) > 60 {
-			typed, more = typed[:60], "..."
+			typed, more = typed[:60], "…"
 		}
-		return "type '" + string(typed) + "'" + more + fg
+		return "Type “" + string(typed) + more + "”" + fg
 	case "key":
-		return "key " + show(arg(args, "keys", "")) + fg
+		return "Press " + show(arg(args, "keys", "")) + fg
 	case "focus_app":
-		raise := ""
 		if config.Truthy(args["raise_window"]) {
-			raise = " (raise)"
+			return "Switch to " + show(arg(args, "app", "")) + " and bring its window to the front"
 		}
-		return "focus " + show(arg(args, "app", "")) + raise
+		return "Switch to " + show(arg(args, "app", ""))
 	}
-	return action + fg
+	return said(action) + fg
 }
 
-// Drag end of a prompt: the element when one is set, else the point, ? with neither
+// Drag end of a prompt: the element when one is set, else the point, an unknown place with neither
 func endpoint(args map[string]any, side string) string {
 	end := args[side+"_element"]
 	if !config.Truthy(end) {
 		end = args[side+"_coordinate"]
 	}
 	if end == nil {
-		return "?"
+		return "an unknown place"
 	}
 	return strings.Trim(show(end), "'")
 }
@@ -228,8 +244,8 @@ func approve(ctx context.Context, env *tools.Env, scope string, args map[string]
 	if args["delivery_mode"] == "foreground" {
 		mode = "foreground"
 	}
-	err := env.Gate(ctx, tools.Gate{Key: "cua:" + scope + ":" + mode, Description: "Allow computer_use to perform `" + scope + "`?",
-		Target: "computer_use: " + summarize(scope, args), Subject: "computer_use `" + scope + "` requires approval", Noun: "desktop actions",
+	err := env.Gate(ctx, tools.Gate{Key: "cua:" + scope + ":" + mode, Description: "Let the agent " + strings.ToLower(said(scope)[:1]) + said(scope)[1:] +
+		" on the screen?", Target: summarize(scope, args), Subject: "computer_use `" + scope + "` requires approval", Noun: "desktop actions",
 		Advice:     "Find an alternative approach that avoids driving the desktop.",
 		Unanswered: "BLOCKED: computer_use `" + scope + "` requires approval but no interactive user or gateway is present to approve it."})
 	if err == nil {

@@ -193,7 +193,7 @@ func (m *Manager) Which(cfg *config.Config, id string) (string, error) {
 	if _, ok := recipes[id]; ok {
 		return m.existing(s.cfg, binOf(id))
 	}
-	return "", fmt.Errorf("%s: unknown language server (icebath lsp list names them)", id)
+	return "", fmt.Errorf("No language server is called “%s”. Run icebath lsp list to see their names.", id)
 }
 
 // Installs a server a person asked for, its lines handed to out and errs; the exit status
@@ -202,7 +202,7 @@ func (m *Manager) Install(ctx context.Context, cfg *config.Config, id string, ou
 	srv := s.byID(id)
 	key := recipeKey(id)
 	if _, ok := recipes[key]; srv == nil && !ok {
-		errs(id + ": unknown language server (icebath lsp list names them)")
+		errs("✗ No language server is called “" + id + "”. Run icebath lsp list to see their names.")
 		return 2
 	}
 	if srv != nil {
@@ -212,28 +212,28 @@ func (m *Manager) Install(ctx context.Context, cfg *config.Config, id string, ou
 			return 1
 		}
 		if state == installed {
-			out(id + " already installed\n")
+			out("✓ " + id + " is already installed.\n")
 			return 0
 		}
 		if srv.custom {
-			errs(id + ": a server the settings declare runs the command they give; install " + srv.program + " yourself.")
+			errs("✗ " + id + " is a server you declared in the settings, which runs the command you gave. Install " + srv.program + " yourself.")
 			return 1
 		}
 	}
-	out(fmt.Sprintf("installing %s (pkg=%s) ...\n", id, key))
+	out("Installing " + id + "…\n")
 	path, err := m.install(withSay(ctx, errs), s.cfg, key, "auto", true)
 	if err != nil {
 		errs(err.Error())
 		return 1
 	}
 	if path != "" {
-		out("installed: " + path + "\n")
+		out("✓ Installed " + id + " at " + path + ".\n")
 		return 0
 	}
 	if r, ok := recipes[key]; ok && r.strategy == manualInstall {
-		errs(id + ": this server requires a manual install. See documentation.")
+		errs("✗ " + id + " is not one that icebath can install. Install it yourself.")
 	} else {
-		errs(id + ": install failed (see logs).")
+		errs("✗ Could not install " + id + ". The lines above or the log of icebath say why.")
 	}
 	return 1
 }
@@ -249,22 +249,22 @@ func (m *Manager) InstallAll(ctx context.Context, cfg *config.Config, manual boo
 			return 1
 		}
 		if state == installed {
-			out(fmt.Sprintf("  %-24s already installed\n", srv.id))
+			out("✓ " + srv.id + " is already installed.\n")
 			continue
 		}
 		key := recipeKey(srv.id)
-		out(fmt.Sprintf("  installing %s (pkg=%s) ... ", srv.id, key))
+		out("Installing " + srv.id + "…\n")
 		path, err := m.install(withSay(ctx, errs), s.cfg, key, "auto", true)
 		if err != nil {
-			out("FAILED\n")
+			out("✗ Could not install " + srv.id + ".\n")
 			errs(err.Error())
 			code = 1
 			continue
 		}
 		if path != "" {
-			out("ok (" + path + ")\n")
+			out("✓ Installed " + srv.id + " at " + path + ".\n")
 		} else {
-			out("FAILED\n")
+			out("✗ Could not install " + srv.id + ". The lines above or the log of icebath say why.\n")
 			code = 1
 		}
 	}

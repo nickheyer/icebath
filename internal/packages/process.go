@@ -35,7 +35,7 @@ type result struct {
 }
 
 // A child stopped at its deadline
-var errTimedOut = errors.New("timed out")
+var errTimedOut = errors.New("The program did not finish in time.")
 
 // Runs a child to its end with no input, killing it at its deadline or when the context ends
 func run(ctx context.Context, c command) (result, error) {

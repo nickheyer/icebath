@@ -34,7 +34,7 @@ func ripgrep(pin packages.Pin) packages.Package {
 			}
 			triple, ok := packages.RustTriple[target]
 			if !ok {
-				return nil, fmt.Errorf("no download for target %s", target)
+				return nil, fmt.Errorf("ripgrep has no download for %s", target)
 			}
 			triple = strings.ReplaceAll(triple, "-unknown-linux-gnu", "-unknown-linux-musl")
 			ext := "tar.gz"
@@ -55,11 +55,11 @@ func ripgrep(pin packages.Pin) packages.Package {
 			}
 			python, err := b.Entry(packages.Python)
 			if err != nil {
-				return packages.Failure(Ripgrep, "ARM64 rg.exe needs vcruntime140.dll from python, which is not installed", "")
+				return packages.Failure(Ripgrep, "On Windows on Arm it needs vcruntime140.dll from Python, and Python is not installed.", "")
 			}
 			runtime := filepath.Join(python, "vcruntime140.dll")
 			if !fsx.IsFile(runtime) {
-				return packages.Failure(Ripgrep, "python's entry has no vcruntime140.dll", "")
+				return packages.Failure(Ripgrep, "The installed Python has no vcruntime140.dll.", "")
 			}
 			return fsx.Copy(runtime, filepath.Join(b.Dir, "vcruntime140.dll"))
 		},

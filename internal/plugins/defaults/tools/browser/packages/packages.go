@@ -35,9 +35,9 @@ func Register(registry *packages.Registry) {
 
 // Version is the Playwright revision, a plus, and the Chrome for Testing version
 func chromium(pin packages.Pin) packages.Package {
-	gaps := map[string]string{packages.Bionic: "no Chromium build for Android/Termux"}
+	gaps := map[string]string{packages.Bionic: "Chromium has no build for Android"}
 	for target := range packages.Musl {
-		gaps[target] = "Playwright/Chrome-for-Testing publishes no musl build"
+		gaps[target] = "Chromium has no build for Linux systems built on musl, such as Alpine"
 	}
 	return packages.Package{
 		Name: browser.Chromium, Optional: true, Default: true, OffPath: true, Gaps: gaps, Pin: pin,
@@ -57,7 +57,7 @@ func chromium(pin packages.Pin) packages.Package {
 			if platform, ok := mirror[target]; ok {
 				return []string{fmt.Sprintf("%s/dbazure/download/playwright/builds/chromium/%s/chromium-%s.zip", cdn, revision, platform)}, nil
 			}
-			return nil, fmt.Errorf("no download for target %s", target)
+			return nil, fmt.Errorf("Chromium has no download for %s", target)
 		},
 		Locate: executable,
 		Stage: func(b *packages.Build) error {
@@ -65,10 +65,10 @@ func chromium(pin packages.Pin) packages.Package {
 		},
 		Verify: func(entry, target string, standard func() string) string {
 			if !fsx.IsFile(filepath.Join(entry, complete)) {
-				return fmt.Sprintf("%s missing under %s", complete, entry)
+				return fmt.Sprintf("%s is missing from %s", complete, entry)
 			}
 			if executable(entry, target) == "" {
-				return "Chromium executable missing under " + entry
+				return "the Chromium program is missing from " + entry
 			}
 			return standard()
 		},

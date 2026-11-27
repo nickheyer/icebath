@@ -42,19 +42,19 @@ func (backends) Backends() []web.Backend {
 	return []web.Backend{{
 		Name:     name,
 		Title:    title,
-		About:    "Keenable web search + page fetch (independent web index for AI apps). Works keyless on Keenable's free tier as part of the default rotation; set KEENABLE_API_KEY for higher limits — https://keenable.ai.",
+		About:    "Fast search and page reading from Keenable's own index",
 		Settings: []string{keenableconfig.APIKey},
 		Plans: []web.Plan{
 			{
-				Title: "Keenable · Free (keyless)",
+				Title: "Free plan",
 				Badge: "free · no key",
-				About: "Independent web index for AI apps — fast search + page fetch on Keenable's anonymous free tier.",
+				About: "No key needed, one of the free services icebath uses",
 				Tier:  webconfig.Free,
 			},
 			{
-				Title:  "Keenable · Paid (API key)",
+				Title:  "Paid plan",
 				Badge:  "paid",
-				About:  "Independent web index for AI apps. Keyed access with higher limits and guaranteed service.",
+				About:  "Your API key, with higher limits",
 				Tier:   webconfig.Paid,
 				Key:    keenableconfig.APIKey,
 				Prompt: "Keenable API key",

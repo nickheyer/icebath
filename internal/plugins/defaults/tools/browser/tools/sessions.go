@@ -126,7 +126,7 @@ func (r *registrant) sharesScreen(ctx context.Context, cfg *config.Config, s *se
 	return r.desktop.HumanHolds(cfg)
 }
 
-const takenOver = "A human took over the bot's screen while this browser command ran; its result was discarded. Tell the user what you need; " +
+const takenOver = "A human took over the agent desktop while this browser command ran; its result was discarded. Tell the user what you need; " +
 	"retry once they hand back."
 
 // Runs work under the Bot Desktop's lease when the session shares its screen: refused while a person holds it, voided when one took it
@@ -149,7 +149,7 @@ func (r *registrant) fenced(ctx context.Context, cfg *config.Config, s *session,
 
 // The fence's refusal as JSON, its code before the error once a takeover voided the result
 func refusalJSON(refusal map[string]any) string {
-	if msg, _ := refusal["error"].(string); strings.HasPrefix(msg, "A human took over the bot's screen while this browser command ran") {
+	if msg, _ := refusal["error"].(string); strings.HasPrefix(msg, "A human took over the agent desktop while this browser command ran") {
 		return orderedJSON(refusal, "success", "code", "error")
 	}
 	return orderedJSON(refusal, "success", "error", "code")

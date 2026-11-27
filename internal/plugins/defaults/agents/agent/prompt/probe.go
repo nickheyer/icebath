@@ -63,7 +63,7 @@ func (p *probe) line(ctx context.Context, env *prompt.Env) string {
 		p.late = true
 		p.mu.Unlock()
 		if first {
-			env.Notify("The Python toolchain check did not finish in time, so this prompt goes without it.")
+			env.Notify("The check of your Python setup did not finish in time, so the agent starts without it.")
 		}
 	case <-ctx.Done():
 	}

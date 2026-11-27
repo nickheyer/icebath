@@ -10,7 +10,7 @@ import (
 // Whether this build can load the native library
 const loadSupported = false
 
-var errNoLoader = errors.New("no msalruntime loader exists for " + runtime.GOOS + "/" + runtime.GOARCH)
+var errNoLoader = errors.New("The msalruntime library can't be loaded on " + runtime.GOOS + "/" + runtime.GOARCH + ".")
 
 func openLibrary(string) (uintptr, error) { return 0, errNoLoader }
 

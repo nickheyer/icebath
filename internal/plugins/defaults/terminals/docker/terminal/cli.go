@@ -25,9 +25,9 @@ func runtimeName(program string) string {
 // How to bring the runtime back up
 func startHint(program string) string {
 	if runtimeName(program) == "Podman" {
-		return "run `podman machine start` and retry"
+		return "Run `podman machine start`, then try again."
 	}
-	return "start Docker and retry"
+	return "Start Docker, then try again."
 }
 
 // Output of a docker query, nil with a debug line when it could not run, or exited non-zero when nonzero names that failure

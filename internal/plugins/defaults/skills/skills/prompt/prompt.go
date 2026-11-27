@@ -39,7 +39,7 @@ func (s sections) Sections(ctx context.Context, env *prompt.Env) ([]prompt.Secti
 			text, names, missing := s.skills.Turn(env).AutoLoaded(ctx)
 			loaded = names
 			if len(missing) > 0 {
-				env.Notify("skills.auto_load: skill(s) not found or disabled, skipped: " + strings.Join(missing, ", "))
+				env.Notify("These skills of Always loaded in /settings under Skills are missing or off, so they were left out: " + strings.Join(missing, ", ") + ".")
 			}
 			return text
 		})
@@ -54,9 +54,9 @@ func (s sections) Sections(ctx context.Context, env *prompt.Env) ([]prompt.Secti
 			text, names, missing := s.skills.Turn(env).Preload(ctx, env.Skills, already)
 			switch {
 			case len(missing) > 0 && len(names) == 0:
-				env.Notify(skills.Missing(missing))
+				env.Notify("No skill was loaded, because " + skills.Missing(missing) + ".")
 			case len(missing) > 0:
-				env.Notify("Skipping " + skills.Missing(missing) + ". Continuing with: " + strings.Join(names, ", ") + ". List available skills with `icebath skills list`.")
+				env.Notify("Some skills were left out, because " + skills.Missing(missing) + ". Loaded: " + strings.Join(names, ", ") + ". Run icebath skills list to see your skills.")
 			}
 			return text
 		})

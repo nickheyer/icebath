@@ -103,10 +103,11 @@ func (a *Agent) upgradeTitle(ctx context.Context, r *run, store sessions.Store, 
 		slog.Warn("Title generation failed", "session", r.sessionID(), "error", err)
 		detail := strings.Join(strings.Fields(err.Error()), " ")
 		if runes := []rune(detail); len(runes) > failureChars {
-			detail = string(runes[:failureChars-3]) + "..."
+			detail = string(runes[:failureChars-1]) + "…"
 		}
 		r.mu.Lock()
-		a.notify(r, "⚠ Auxiliary title generation failed: "+cmp.Or(detail, "no details given"))
+		a.notify(r, "⚠ The helper model could not name this session: "+strings.TrimSuffix(cmp.Or(detail, "no reason given"), ".")+
+			". Check Session titles in /settings under Helper models.")
 		r.mu.Unlock()
 	}
 	if title == "" {

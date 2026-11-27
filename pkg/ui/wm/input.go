@@ -735,6 +735,7 @@ func (m *Model) placeOverlay() {
 // Hangs the palette matches below the open field as a sheet as wide as its caps, a prompt keeping none
 func (m *Model) placeSheet(e *entry, p *Palette) {
 	fx, fw := m.openField()
+	p.Measure(fw - 2*m.padX)
 	rows := min(p.Rows(), max(m.stageHeight()-2-2*m.padY, 0), sheetRows)
 	if rows <= 0 {
 		e.box = Box{X: fx, Y: 0}

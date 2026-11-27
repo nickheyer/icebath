@@ -18,7 +18,7 @@ func (specs) Specs() []provider.Spec {
 		Shape:              shape,
 		Carriers:           []string{"reasoning_content"},
 		DisplayName:        fireworksconfig.Title,
-		Description:        "OpenAI-compatible model API",
+		Description:        "Open models hosted by Fireworks AI, with an API key paid by use",
 		SignupURL:          "https://app.fireworks.ai/settings/users/api-keys",
 		BaseURL:            base,
 		ModelsURL:          provider.ModelsURL(base),

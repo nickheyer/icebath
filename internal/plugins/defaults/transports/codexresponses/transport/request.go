@@ -70,7 +70,7 @@ func (c *client) prepare(ctx context.Context, request *provider.Request) (*prepa
 		hosted, _ = c.r.providers.Spec(claimed)
 	}
 	if provider.ModeForURL(c.route.BaseURL) == provider.ModeChatCompletions {
-		return nil, fmt.Errorf("%s requests require Chat Completions; refusing to call /responses.", cmp.Or(spec.Label(), c.route.Provider))
+		return nil, fmt.Errorf("%s takes only chat completions requests, so icebath did not send a responses request. Set its request format to chat completions in /providers.", cmp.Or(spec.Label(), c.route.Provider))
 	}
 	settings := cfg.View(providerconfig.Key).View(c.route.Provider)
 	base := strings.ToLower(c.route.BaseURL)

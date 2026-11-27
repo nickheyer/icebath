@@ -21,9 +21,9 @@ import (
 func Register(registry *speech.Registry) {
 	p := &piper{}
 	registry.Register(speech.Services{Speakers: []speech.Voice{{
-		Name: config.Name, Title: "Piper", Label: "Piper (local)", About: "Local neural TTS, 44 languages (voices ~20-90MB, downloaded on first use)",
+		Name: config.Name, Title: "Piper", Label: "Piper (local)", About: "Voices in 44 languages on this computer, no API key needed",
 		Local:      true,
-		Setup:      speech.Setup{Badge: "local · free"},
+		Setup:      speech.Setup{Badge: "free"},
 		Ready:      func(*speech.Job) bool { return sherpa.Supported() },
 		Limit:      func(*speech.Job) int { return config.DefaultLimit },
 		Synthesize: p.synthesize,

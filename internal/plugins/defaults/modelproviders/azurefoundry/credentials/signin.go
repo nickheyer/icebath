@@ -3,13 +3,13 @@ package credentials
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/nickheyer/icebath/internal/credentials"
 	azurefoundryconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/azurefoundry/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Sign-in of an Azure Foundry account with Microsoft Entra ID: a service principal the account keeps, or the Azure sign-ins this machine
@@ -25,7 +25,7 @@ func signInEntra(p *credentials.Prompter) (credentials.Signed, error) {
 		return strings.TrimSpace(typed), nil
 	}
 	fields := map[string]any{azurefoundryconfig.AuthMode: azurefoundryconfig.EntraID}
-	tenant, err := ask("Tenant ID of a service principal (empty for the Azure sign-ins of this machine: az login, managed identity, AZURE_ variables): ", false)
+	tenant, err := ask("Tenant ID of a service principal, or empty to use this computer's Azure sign-in, such as az login: ", false)
 	if err != nil {
 		return credentials.Signed{}, err
 	}
@@ -41,14 +41,14 @@ func signInEntra(p *credentials.Prompter) (credentials.Signed, error) {
 			return credentials.Signed{}, errors.New("A service principal needs its client ID.")
 		}
 		fields[azurefoundryconfig.TenantID], fields[azurefoundryconfig.ClientID] = tenant, client
-		secret, err := ask("Client secret (empty to use a certificate): ", true)
+		secret, err := ask("Client secret, or empty to use a certificate: ", true)
 		if err != nil {
 			return credentials.Signed{}, err
 		}
 		if secret != "" {
 			fields[azurefoundryconfig.ClientSecret] = secret
 		} else {
-			path, err := ask("Certificate path (PEM or PFX): ", false)
+			path, err := ask("Certificate file, PEM or PFX: ", false)
 			if err != nil {
 				return credentials.Signed{}, err
 			}
@@ -64,7 +64,7 @@ func signInEntra(p *credentials.Prompter) (credentials.Signed, error) {
 				path = absolute
 			}
 			fields[azurefoundryconfig.CertificatePath] = path
-			password, err := ask("Certificate password (empty for none): ", true)
+			password, err := ask("Certificate password, or empty for none: ", true)
 			if err != nil {
 				return credentials.Signed{}, err
 			}
@@ -98,19 +98,19 @@ func signInEntra(p *credentials.Prompter) (credentials.Signed, error) {
 		ctx = context.Background()
 	}
 	p.Say("")
-	p.Say("◐ Probing Microsoft Entra ID credential chain (up to %.0fs)...", probeWait.Seconds())
+	p.Say("Checking that Microsoft Entra ID gives a token, for up to %s.", strs.Span(probeWait))
 	t, late, err := probe(ctx, m, probeWait)
 	if late || err != nil {
 		if credentials.Cancelled(err) {
 			return credentials.Signed{}, credentials.ErrCancelled
 		}
-		text, hint := fmt.Sprintf("Token probe timed out after %.0fs", probeWait.Seconds()), probeHint
+		text, hint := "Microsoft Entra ID gave no token within "+strs.Span(probeWait)+".", probeHint
 		if !late {
 			text, hint = err.Error(), entraHint
 		}
 		p.Say("⚠ %s", text)
-		p.Say("  Hint: %s", hint)
-		answer, err := ask("Save Entra config anyway and validate later? [Y/n]: ", false)
+		p.Say("  %s", hint)
+		answer, err := ask("Save these Entra ID settings anyway and check them later? [Y/n]: ", false)
 		if err != nil {
 			return credentials.Signed{}, err
 		}
@@ -118,16 +118,16 @@ func signInEntra(p *credentials.Prompter) (credentials.Signed, error) {
 		case "", "y", "yes":
 			return credentials.Signed{Fields: fields}, nil
 		}
-		p.Say("Cancelled.")
+		p.Say("Nothing was saved.")
 		return credentials.Signed{}, credentials.ErrCancelled
 	}
-	via := "default chain"
+	via := "the usual Azure sign-ins"
 	if found := sources(e); len(found) > 0 {
 		via = strings.Join(found, ", ")
 	}
 	if m.own {
-		via = m.answered()
+		via = SignedInBy(m.answered())
 	}
-	p.Say("✓ Entra ID token acquired (%s, scope=%s)", via, m.scope)
+	p.Say("✓ Microsoft Entra ID gave a token through %s, for %s.", via, m.scope)
 	return credentials.Signed{Fields: fields, Identity: identity(t.value)}, nil
 }

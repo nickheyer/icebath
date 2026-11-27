@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/pkg/strs"
@@ -110,7 +112,7 @@ func (b *Build) Entry(name string) (string, error) {
 		return "", err
 	}
 	if loc == nil {
-		return "", fmt.Errorf("%s is not installed", name)
+		return "", fmt.Errorf("%s is not installed. Run `icebath pm install %s` first.", name, name)
 	}
 	return loc.entry(name), nil
 }
@@ -267,14 +269,49 @@ type InstallError struct {
 }
 
 func (e *InstallError) Error() string {
-	return fmt.Sprintf("%s: %s — %s", e.Package, e.Cause, e.Remedy)
+	text := e.Package + ": " + sentence(e.Cause, e.Package)
+	if remedy := strings.TrimSpace(e.Remedy); remedy != "" && !strings.EqualFold(remedy, "none") {
+		text += " " + sentence(remedy, e.Package)
+	}
+	return text
+}
+
+// Items joined the way a sentence lists them, the last after the word given
+func joined(items []string, word string) string {
+	if len(items) < 2 {
+		return strings.Join(items, "")
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " " + word + " " + items[len(items)-1]
+}
+
+// Words that stay in lower case at the start of a sentence: names of programs and of icebath
+var lowerNames = map[string]bool{"icebath": true, "uv": true, "uvx": true, "npm": true, "npx": true, "node": true, "git": true, "pip": true}
+
+// Text as a sentence: its first letter capital unless it starts with a name that keeps its case, such as the package's, and a period at
+// the end unless it ends in a mark of its own
+func sentence(text, name string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	word, _, _ := strings.Cut(text, " ")
+	plain := word != name && !lowerNames[strings.TrimRight(word, ",:;'s")] && strings.IndexFunc(word, func(r rune) bool {
+		return !unicode.IsLetter(r) && r != '\'' && r != ',' && r != ':'
+	}) < 0
+	if first, size := utf8.DecodeRuneInString(text); plain && unicode.IsLower(first) {
+		text = string(unicode.ToUpper(first)) + text[size:]
+	}
+	if !strings.ContainsAny(text[len(text)-1:], ".!?:") && !strings.Contains(text, "\n") {
+		text += "."
+	}
+	return text
 }
 
 func (e *InstallError) Unwrap() error { return e.Err }
 
 // Install failure with the usual remedy when none is given
 func Failure(name, cause, remedy string) *InstallError {
-	return &InstallError{Package: name, Cause: cause, Remedy: cmp.Or(remedy, "retry, or run `icebath pm doctor`")}
+	return &InstallError{Package: name, Cause: cause, Remedy: cmp.Or(remedy, "Try again, or run `icebath pm doctor` to see what is wrong.")}
 }
 
 // Packages installed before it on the target
@@ -302,7 +339,7 @@ func (p *Package) entryName(version, target string) string {
 // Addresses of the archives of a version for a target, refusing a package pinned by hand
 func (p *Package) urls(version, target string) ([]string, error) {
 	if p.URLs == nil {
-		return nil, Failure(p.Name, "package has no download url", "")
+		return nil, Failure(p.Name, "It has no download address.", "")
 	}
 	return p.URLs(version, target)
 }
@@ -356,10 +393,10 @@ func presence(bin, entry, target string, emulated []string) string {
 		if err != nil {
 			rel = bin
 		}
-		return fmt.Sprintf("%s missing under %s; %s", filepath.ToSlash(rel), entry, listing(entry, 12))
+		return fmt.Sprintf("%s is missing from %s, which holds %s", filepath.ToSlash(rel), entry, listing(entry, 12))
 	}
 	if match, known := archMatches(bin, target); known && !match && !slices.Contains(emulated, target) {
-		return fmt.Sprintf("%s is not a %s binary", filepath.Base(bin), target)
+		return fmt.Sprintf("%s is not a program for %s", filepath.Base(bin), target)
 	}
 	return ""
 }
@@ -379,7 +416,7 @@ func (h *Packages) standardVerify(p *Package, entry, target string) string {
 		main := filepath.Join(entry, filepath.FromSlash(p.Deb.prefix()), filepath.FromSlash(p.Deb.Main))
 		if _, err := os.Lstat(main); err != nil {
 			rel, _ := filepath.Rel(entry, main)
-			return fmt.Sprintf("%s missing under %s", rel, entry)
+			return fmt.Sprintf("%s is missing from %s", rel, entry)
 		}
 		return ""
 	}
@@ -388,7 +425,7 @@ func (h *Packages) standardVerify(p *Package, entry, target string) string {
 		if len(p.Binary) == 0 && p.Locate == nil {
 			return ""
 		}
-		return "no binary for this target"
+		return "it has no program for " + target
 	}
 	if reason := presence(bin, entry, target, p.Emulated); reason != "" {
 		return reason
@@ -414,14 +451,14 @@ func (h *Packages) standardVerify(p *Package, entry, target string) string {
 	result, err := run(context.Background(), command{argv: append([]string{bin}, args...), dir: dir, env: env, timeout: 60 * time.Second})
 	switch {
 	case err == errTimedOut:
-		return described + " timed out after 60s"
+		return "`" + described + "` did not finish within 60 seconds"
 	case err != nil:
-		return fmt.Sprintf("could not exec %s: %s", described, err)
+		return fmt.Sprintf("`%s` could not run: %s", described, err)
 	case result.code != 0:
 		tail := strs.Tail(strings.TrimSpace(strings.ToValidUTF8(result.stdout+result.stderr, "�")), 300)
-		reason := fmt.Sprintf("%s --version exited %d", bin, result.code)
+		reason := fmt.Sprintf("`%s` ended with exit code %d", described, result.code)
 		if tail != "" {
-			reason += ": " + tail
+			reason += " and said: " + tail
 		}
 		return reason
 	}
@@ -432,16 +469,19 @@ func (h *Packages) standardVerify(p *Package, entry, target string) string {
 func listing(entry string, limit int) string {
 	items, err := os.ReadDir(entry)
 	if err != nil {
-		return "store entry does not exist"
+		return "nothing, because it does not exist"
 	}
 	names := make([]string, 0, len(items))
 	for _, item := range items {
 		names = append(names, item.Name())
 	}
 	slices.Sort(names)
+	if len(names) == 0 {
+		return "nothing"
+	}
 	shown := strings.Join(names[:min(limit, len(names))], ", ")
 	if len(names) > limit {
-		shown += fmt.Sprintf(", … (%d entries)", len(names))
+		shown += " and " + strs.Count(len(names)-limit, "more entry")
 	}
 	return shown
 }

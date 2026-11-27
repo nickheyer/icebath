@@ -16,6 +16,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1/agentv1connect"
 )
 
+// Notices of a reply's end the agent's server sends and the command line reads: a reply stopped, and the mark before why a reply failed,
+// which no other notice of a reply starts with
+const (
+	Stopped = "The reply was stopped."
+	Failed  = "✗ "
+)
+
 // What the launch of the app asked of the sessions its windows start or resume: the flags given, by their first spelling; and the sessions
 // the launch sent messages to, which end as their hooks know it once the launch does
 type Asked struct {
@@ -66,12 +73,11 @@ func Register(registry *launch.Registry) *Asked {
 
 func (flags) Flags() []launch.Flag {
 	return []launch.Flag{
-		{Names: []string{"--pass-session-id"}, Help: "Include the session ID in the agent's system prompt"},
-		{Names: []string{"--ignore-user-config"}, Help: "Ignore the profile's config.yaml and fall back to built-in defaults (credentials in .env are still loaded)"},
-		{Names: []string{"--ignore-rules"}, Help: "Skip auto-injection of AGENTS.md, SOUL.md, .cursorrules, memory, and preloaded skills"},
-		{Names: []string{"--safe-mode"}, Help: "Troubleshooting mode: disable ALL customizations — user config, AGENTS.md/memory injection, and MCP servers " +
-			"(implies --ignore-user-config and --ignore-rules)"},
-		{Names: []string{"-s", "--skills"}, Value: "names", Help: "Preload one or more skills for the session (repeat flag or comma-separate)"},
+		{Names: []string{"--pass-session-id"}, Help: "Put the session id in the agent's system prompt"},
+		{Names: []string{"--ignore-user-config"}, Help: "Use the default settings instead of the settings file, keys file still read"},
+		{Names: []string{"--ignore-rules"}, Help: "Leave out rule files such as AGENTS.md, memory and preloaded skills"},
+		{Names: []string{"--safe-mode"}, Help: "Leave out every customization, to find out whether your setup causes a problem"},
+		{Names: []string{"-s", "--skills"}, Value: "names", Help: "Skills to load at the start, repeatable or separated by commas"},
 	}
 }
 

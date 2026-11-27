@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -14,7 +15,7 @@ import (
 // OpenRouter key; the provider of the profile signed in first, in the order the kinds are registered, unless a key of another kind is set
 // in the environment, which wins with a warning; the first kind of the registry order with a key in the environment; a provider of the
 // profile whose credential is found anywhere; a kind taken last whose credential is found outside icebath, such as AWS's. Only kinds a wire serves are taken, and none on this machine, which a person
-// picks with /model
+// connects in /providers
 func (r *Registry) Auto(cfg *config.Config, providers *provider.Registry, wires map[provider.APIMode]provider.Factory) (provider.Instance, error) {
 	instances := providers.Instances(cfg)
 	served := func(instance provider.Instance) bool {
@@ -83,8 +84,9 @@ func (r *Registry) Auto(cfg *config.Config, providers *provider.Registry, wires 
 			return instance, nil
 		}
 	}
-	return provider.Instance{}, fmt.Errorf("Icebath is not connected to any AI provider yet. Add one with /providers or `icebath auth add <provider>`, " +
-		"or pick a local model with /model. (Advanced: put an API key such as OPENROUTER_API_KEY in the profile's .env.)")
+	return provider.Instance{}, errors.New("icebath is not connected to any AI provider yet. Add one with /providers or " +
+		"`icebath auth add <provider>`, including a model that runs on this computer.\nYou can also put an API key such as OPENROUTER_API_KEY " +
+		"in your keys file, which /settings opens under Settings files.")
 }
 
 // Whether the provider has a credential it can use now

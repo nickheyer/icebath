@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/sessions"
 	sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
 	"github.com/nickheyer/icebath/internal/slash"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type commands struct {
@@ -24,7 +26,7 @@ func Register(registry *slash.Slash, cfg *config.Config, s *sessions.Sessions) {
 func (c commands) Commands() []slash.Command {
 	return []slash.Command{
 		{Name: "autoprune", Usage: "[on|off|later|status]", Help: "Turn automatic pruning of old sessions on or off", Run: c.autoprune},
-		{Name: "discard", Usage: "[admission]", Help: "Acknowledge turns lost when icebath stopped mid-turn, so the session runs again", Run: c.discard},
+		{Name: "discard", Usage: "[id...]", Help: "Unblock a session that icebath stopped mid-reply", Run: c.discard},
 	}
 }
 
@@ -33,38 +35,42 @@ func (c commands) autoprune(ctx context.Context, call *slash.Call) (string, erro
 	if err != nil {
 		return "", err
 	}
+	const unsaved = "Delete old sessions could not be saved. Check that the disk has space and that you may write the settings file."
 	set := func(on bool, done string) (string, error) {
 		if err := c.config.Set(sessionsconfig.AutoPrune, on); err != nil {
 			slog.Warn("Could not save sessions.auto_prune", "error", err)
-			return "Could not save sessions.auto_prune; check disk space and config.yaml permissions.", nil
+			return unsaved, nil
 		}
 		sessions.Unsnooze(c.config)
 		if c.config.GetBool(sessionsconfig.AutoPrune) != on {
-			return "Could not save sessions.auto_prune; check disk space and config.yaml permissions.", nil
+			return unsaved, nil
 		}
 		return done, nil
 	}
 	switch strings.ToLower(strings.TrimSpace(call.Argument)) {
 	case "on", "enable", "yes":
-		return set(true, "Auto-prune is on: ended sessions inactive past the keep time are deleted once a day.")
+		return set(true, "Delete old sessions is now On. Once a day, icebath deletes the ended sessions unused for longer than Delete after in "+
+			"/settings under Sessions.")
 	case "off", "disable", "no":
-		return set(false, "Auto-prune is off and you will not be asked again. `icebath sessions prune` still works any time.")
+		return set(false, "Delete old sessions is now Off, and icebath will not ask again. You can still run icebath sessions prune at any time.")
 	case "later", "snooze":
 		if err := sessions.Snooze(c.config); err != nil {
 			return "", err
 		}
-		return "OK, I'll ask again in a week if the disk is still low.", nil
+		return "icebath asks again in a week if the disk is still low.", nil
 	}
 	on, source := sessions.AutoPruneState(c.config)
-	state := "off"
+	state := "Off"
 	if on {
-		state = "on"
+		state = "On"
 	}
+	from := map[string]string{"default": "as it is by default", "your setting": "as you set it", "your environment": "as your environment sets it"}[source]
 	days := c.config.GetInt(sessionsconfig.RetentionDays)
 	if days < 0 {
 		days = 90
 	}
-	return fmt.Sprintf("Auto-prune is %s (%s), retention %d days.%s Usage: /autoprune on | off | later", state, source, days, sessions.DiskLine(ctx, store)), nil
+	return fmt.Sprintf("Delete old sessions is %s, %s, for sessions unused for %s.%s\nUsage: /autoprune [on|off|later|status]", state, from,
+		strs.Span(time.Duration(days)*24*time.Hour), sessions.DiskLine(ctx, store)), nil
 }
 
 func (c commands) discard(ctx context.Context, call *slash.Call) (string, error) {
@@ -81,7 +87,7 @@ func (c commands) discard(ctx context.Context, call *slash.Call) (string, error)
 		return "", err
 	}
 	if len(discarded) == 0 {
-		return "Nothing to discard: this session has no turn lost when icebath stopped.", nil
+		return "This session has no message that icebath lost when it stopped, so there is nothing to discard.", nil
 	}
-	return fmt.Sprintf("Discarded %s. The session runs again; the lost message was not sent again.", strings.Join(discarded, ", ")), nil
+	return fmt.Sprintf("Discarded %s. The session works again, and the lost message was not sent again.", strings.Join(discarded, ", ")), nil
 }

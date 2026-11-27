@@ -45,7 +45,7 @@ func (s *service) Test(_ context.Context, request *approvalsv1.TestRequest) (*ap
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 		}
 	} else if !found {
-		return nil, connect.NewError(connect.CodeInvalidArgument, "No terminal backend named "+request.GetBackend()+".")
+		return nil, connect.NewError(connect.CodeInvalidArgument, "icebath has no place to run commands named “"+request.GetBackend()+"”. Name one such as local or docker with --env-type.")
 	}
 	e := s.approvals.Evaluate(cfg, "", request.GetCommand(), backend.Name, backend.Isolated)
 	return &approvalsv1.TestResponse{Command: e.Command, Backend: e.Backend, Verdict: e.Verdict, ExitCode: int32(e.Code), Rule: e.Rule,

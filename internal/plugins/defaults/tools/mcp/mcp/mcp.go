@@ -61,7 +61,7 @@ func (catalog) Catalog(cfg *config.Config) []mcp.Entry {
 		path := filepath.Join(label, child.Name(), "manifest.yaml")
 		entry, err := manifest(root, rel, path)
 		if err != nil {
-			future := strings.Contains(err.Error(), "manifest_version") && strings.Contains(err.Error(), "unsupported")
+			future := strings.Contains(err.Error(), "manifest_version") && strings.Contains(err.Error(), "but this icebath reads version")
 			entries = append(entries, mcp.Entry{Name: child.Name(), Manifest: path, Problem: err.Error(), Future: future})
 			continue
 		}
@@ -74,25 +74,25 @@ func (catalog) Catalog(cfg *config.Config) []mcp.Entry {
 func manifest(root fs.FS, rel, path string) (mcp.Entry, error) {
 	data, err := fs.ReadFile(root, rel)
 	if err != nil {
-		return mcp.Entry{}, fmt.Errorf("failed to read %s: %w", path, err)
+		return mcp.Entry{}, fmt.Errorf("Could not read the catalog file %s: %w", path, err)
 	}
 	var doc map[string]any
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return mcp.Entry{}, fmt.Errorf("failed to read %s: %w", path, err)
+		return mcp.Entry{}, fmt.Errorf("Could not read the catalog file %s: %w", path, err)
 	}
 	if doc == nil {
-		return mcp.Entry{}, fmt.Errorf("%s: manifest must be a mapping", path)
+		return mcp.Entry{}, fmt.Errorf("The catalog file %s must hold a table.", path)
 	}
 	if version, ok := doc["manifest_version"].(int); !ok || version != manifestVersion {
-		return mcp.Entry{}, fmt.Errorf("%s: manifest_version %v unsupported (this icebath understands version %d)", path, doc["manifest_version"], manifestVersion)
+		return mcp.Entry{}, fmt.Errorf("The catalog file %s has manifest_version %v, but this icebath reads version %d.", path, doc["manifest_version"], manifestVersion)
 	}
 	name, _ := doc["name"].(string)
 	if !namePattern.MatchString(name) {
-		return mcp.Entry{}, fmt.Errorf("%s: invalid or missing 'name'", path)
+		return mcp.Entry{}, fmt.Errorf("The catalog file %s has no usable name.", path)
 	}
 	description := strings.TrimSpace(text(doc["description"]))
 	if description == "" {
-		return mcp.Entry{}, fmt.Errorf("%s: 'description' required", path)
+		return mcp.Entry{}, fmt.Errorf("The catalog file %s needs a description.", path)
 	}
 	entry := mcp.Entry{Name: name, Description: description, Source: strings.TrimSpace(text(doc["source"])), PostInstall: text(doc["post_install"]), Manifest: path}
 	if entry.Launch, err = launch(path, doc["transport"]); err != nil {
@@ -107,7 +107,7 @@ func manifest(root fs.FS, rel, path string) (mcp.Entry, error) {
 	if slug, present := doc["connector_slug"]; present && slug != nil {
 		text, ok := slug.(string)
 		if !ok || !slugPattern.MatchString(text) {
-			return mcp.Entry{}, fmt.Errorf("%s: connector_slug must be a hosted connector slug", path)
+			return mcp.Entry{}, fmt.Errorf("connector_slug in the catalog file %s must name a hosted connector.", path)
 		}
 		entry.ConnectorSlug = text
 	}
@@ -130,7 +130,7 @@ func mapping(path, key string, raw any, empty map[string]any) (map[string]any, e
 	}
 	m, ok := raw.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("%s: '%s' must be a mapping", path, key)
+		return nil, fmt.Errorf("%s in the catalog file %s must be a table.", key, path)
 	}
 	return m, nil
 }
@@ -141,7 +141,7 @@ func list(path, field string, raw any) ([]any, error) {
 	}
 	l, ok := raw.([]any)
 	if !ok {
-		return nil, fmt.Errorf("%s: %s must be a list", path, field)
+		return nil, fmt.Errorf("%s in the catalog file %s must be a list.", field, path)
 	}
 	return l, nil
 }
@@ -153,7 +153,7 @@ func launch(path string, raw any) (mcp.Launch, error) {
 	}
 	kind, _ := t["type"].(string)
 	if kind != "stdio" && kind != "http" {
-		return mcp.Launch{}, fmt.Errorf("%s: transport.type must be 'stdio' or 'http'", path)
+		return mcp.Launch{}, fmt.Errorf("transport.type in the catalog file %s must be stdio or http.", path)
 	}
 	args, err := list(path, "transport.args", t["args"])
 	if err != nil {
@@ -170,15 +170,15 @@ func launch(path string, raw any) (mcp.Launch, error) {
 	for k, v := range env {
 		value, ok := v.(string)
 		if !ok {
-			return mcp.Launch{}, fmt.Errorf("%s: transport.env must be a mapping of string to string", path)
+			return mcp.Launch{}, fmt.Errorf("transport.env in the catalog file %s must be a table of names and text values.", path)
 		}
 		l.Env[k] = value
 	}
 	if kind == "stdio" && l.Command == "" {
-		return mcp.Launch{}, fmt.Errorf("%s: stdio transport requires 'command'", path)
+		return mcp.Launch{}, fmt.Errorf("The catalog file %s runs a server on this computer, so it needs a command.", path)
 	}
 	if kind == "http" && l.URL == "" {
-		return mcp.Launch{}, fmt.Errorf("%s: http transport requires 'url'", path)
+		return mcp.Launch{}, fmt.Errorf("The catalog file %s reaches a server over HTTP, so it needs a url.", path)
 	}
 	return l, nil
 }
@@ -193,7 +193,7 @@ func auth(path string, raw any, name string, http bool) (mcp.Auth, error) {
 		kind = "none"
 	}
 	if kind != "api_key" && kind != "oauth" && kind != "none" {
-		return mcp.Auth{}, fmt.Errorf("%s: auth.type must be 'api_key'|'oauth'|'none'", path)
+		return mcp.Auth{}, fmt.Errorf("auth.type in the catalog file %s must be api_key, oauth or none.", path)
 	}
 	envs, err := list(path, "auth.env", a["env"])
 	if err != nil {
@@ -204,11 +204,11 @@ func auth(path string, raw any, name string, http bool) (mcp.Auth, error) {
 	for _, raw := range envs {
 		e, ok := raw.(map[string]any)
 		if !ok {
-			return mcp.Auth{}, fmt.Errorf("env entry must be a mapping, got %T", raw)
+			return mcp.Auth{}, fmt.Errorf("Each entry of auth.env must be a table, not %T.", raw)
 		}
 		envName, _ := e["name"].(string)
 		if !envPattern.MatchString(envName) {
-			return mcp.Auth{}, fmt.Errorf("invalid env var name: %q", envName)
+			return mcp.Auth{}, fmt.Errorf("“%s” cannot name a variable.", envName)
 		}
 		spec := mcp.EnvSpec{Name: envName, Prompt: envName, Required: true, Secret: true}
 		if prompt := text(e["prompt"]); prompt != "" {
@@ -225,14 +225,14 @@ func auth(path string, raw any, name string, http bool) (mcp.Auth, error) {
 		declared[envName] = true
 	}
 	if http && kind == "api_key" && !declared[mcp.KeyEnv(name)] {
-		return mcp.Auth{}, fmt.Errorf("%s: http + api_key auth requires auth.env to declare '%s' (the key the Authorization header references)", path, mcp.KeyEnv(name))
+		return mcp.Auth{}, fmt.Errorf("The catalog file %s signs in to an HTTP server with an API key, so auth.env must declare %s, which the Authorization header uses.", path, mcp.KeyEnv(name))
 	}
 	oauth, err := mapping(path, "auth.oauth", a["oauth"], map[string]any{})
 	if err != nil {
 		return mcp.Auth{}, err
 	}
 	if len(oauth) > 0 && kind != "oauth" {
-		return mcp.Auth{}, fmt.Errorf("%s: auth.oauth is only valid with auth.type 'oauth'", path)
+		return mcp.Auth{}, fmt.Errorf("auth.oauth in the catalog file %s works only when auth.type is oauth.", path)
 	}
 	var unknown, undeclared []string
 	for k, v := range oauth {
@@ -248,16 +248,16 @@ func auth(path string, raw any, name string, http bool) (mcp.Auth, error) {
 			}
 		case int:
 		default:
-			return mcp.Auth{}, fmt.Errorf("%s: auth.oauth allows string/int values for %s only", path, strings.Join(oauthKeys, ", "))
+			return mcp.Auth{}, fmt.Errorf("auth.oauth in the catalog file %s takes text or whole numbers for %s only.", path, strings.Join(oauthKeys, ", "))
 		}
 	}
 	if len(unknown) > 0 {
 		slices.Sort(unknown)
-		return mcp.Auth{}, fmt.Errorf("%s: auth.oauth allows string/int values for %s only (unknown: %s)", path, strings.Join(oauthKeys, ", "), strings.Join(unknown, ", "))
+		return mcp.Auth{}, fmt.Errorf("auth.oauth in the catalog file %s takes text or whole numbers for %s only, not %s.", path, strings.Join(oauthKeys, ", "), strings.Join(unknown, ", "))
 	}
 	if len(undeclared) > 0 {
 		slices.Sort(undeclared)
-		return mcp.Auth{}, fmt.Errorf("%s: auth.oauth references env vars not declared in auth.env: %s", path, strings.Join(undeclared, ", "))
+		return mcp.Auth{}, fmt.Errorf("auth.oauth in the catalog file %s uses variables that auth.env does not declare: %s.", path, strings.Join(undeclared, ", "))
 	}
 	out.OAuth = oauth
 	scopes, err := list(path, "auth.scopes", a["scopes"])
@@ -287,7 +287,7 @@ func toolDefaults(path string, raw any) (mcp.ToolDefaults, error) {
 		for _, item := range items {
 			name, ok := item.(string)
 			if !ok {
-				return nil, fmt.Errorf("%s: tools.%s must be a list of strings", path, key)
+				return nil, fmt.Errorf("tools.%s in the catalog file %s must be a list of tool names.", key, path)
 			}
 			out = append(out, name)
 		}
@@ -301,7 +301,7 @@ func toolDefaults(path string, raw any) (mcp.ToolDefaults, error) {
 		return d, err
 	}
 	if d.Enabled != nil && d.Excluded != nil {
-		return d, fmt.Errorf("%s: tools.default_enabled and tools.default_excluded are mutually exclusive", path)
+		return d, fmt.Errorf("The catalog file %s may set tools.default_enabled or tools.default_excluded, not both.", path)
 	}
 	return d, nil
 }
@@ -315,11 +315,11 @@ func install(path string, raw any) (*mcp.GitInstall, error) {
 		return nil, err
 	}
 	if kind, _ := m["type"].(string); kind != "git" {
-		return nil, fmt.Errorf("%s: install.type must be 'git' (got %v)", path, m["type"])
+		return nil, fmt.Errorf("install.type in the catalog file %s must be git, not %v.", path, m["type"])
 	}
 	g := &mcp.GitInstall{URL: text(m["url"]), Ref: text(m["ref"])}
 	if g.URL == "" || g.Ref == "" {
-		return nil, fmt.Errorf("%s: install.url and install.ref are required", path)
+		return nil, fmt.Errorf("The catalog file %s needs both install.url and install.ref.", path)
 	}
 	steps, err := list(path, "install.bootstrap", m["bootstrap"])
 	if err != nil {

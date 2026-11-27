@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // One place in a skill's Python that loads code or reaches attributes by a name computed at run time, for a person to look at
@@ -479,25 +481,25 @@ func deepScan(path string) []deepFinding {
 
 // The deep scan as the user reads it, grouped by file
 func deepReport(findings []deepFinding, name string) string {
-	header := "AST deep scan"
+	header := "Deep scan of the Python code"
 	if name != "" {
-		header += ": " + name
+		header += " of " + name
 	}
 	if len(findings) == 0 {
-		return header + "\n  No dynamic import/access patterns detected."
+		return header + "\n  It found no code that loads modules or reads names in hidden ways."
 	}
 	sorted := slices.Clone(findings)
 	slices.SortFunc(sorted, func(a, b deepFinding) int {
 		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line), cmp.Compare(a.PatternID, b.PatternID), cmp.Compare(a.Description, b.Description))
 	})
-	lines := []string{header, fmt.Sprintf("  %d finding(s):", len(findings))}
+	lines := []string{header, "  It found " + strs.Count(len(findings), "thing") + ":"}
 	current := "\x00"
 	for _, f := range sorted {
 		if f.File != current {
 			current = f.File
 			lines = append(lines, "  "+f.File)
 		}
-		lines = append(lines, fmt.Sprintf("    L%d  %s  — %s", f.Line, f.PatternID, f.Description))
+		lines = append(lines, fmt.Sprintf("    Line %s, %s: %s", strs.Number(float64(f.Line)), f.PatternID, f.Description))
 	}
-	return strings.Join(append(lines, "", "  Note: diagnostic hints for human review, not security verdicts."), "\n")
+	return strings.Join(append(lines, "", "  These are hints for you to check, not verdicts on safety."), "\n")
 }

@@ -165,7 +165,7 @@ func (h *Packages) walk(names []string, target string) ([]*Package, error) {
 	var visit func(name string, chain []string) error
 	visit = func(name string, chain []string) error {
 		if slices.Contains(chain, name) {
-			return fmt.Errorf("dependency cycle: %s", strings.Join(append(slices.Clone(chain), name), " -> "))
+			return fmt.Errorf("These programs depend on each other in a circle: %s.", strings.Join(append(slices.Clone(chain), name), " → "))
 		}
 		if seen[name] {
 			return nil

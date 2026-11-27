@@ -60,6 +60,11 @@ type Def struct {
 	Toolset string
 	// Name shown in the app, the tool name when empty
 	Title string
+	// What the tool lets the agent do, a phrase for a person with no period, at most 70 characters: "Read a file of the project".
+	// The description in Schema is written for the model and is not shown in its place
+	About string
+	// Heading the app lists the tools of the toolset under, such as Files; one tool of a toolset saying it is enough
+	Group string
 	// Glyph the app marks the tool with, one of the Icon names, a generic one when empty
 	Icon string
 	// Argument whose value the app shows next to the title, such as "path"; the first text argument when empty
@@ -97,6 +102,22 @@ type Def struct {
 
 // Name shown in the app
 func (d Def) Label() string { return cmp.Or(d.Title, d.Name) }
+
+// Heading of each toolset by its name: the one a tool of it gives, else its name in words
+func Groups(defs []Def) map[string]string {
+	groups := map[string]string{}
+	for _, def := range defs {
+		if def.Group != "" && groups[def.Toolset] == "" {
+			groups[def.Toolset] = def.Group
+		}
+	}
+	for _, def := range defs {
+		if groups[def.Toolset] == "" {
+			groups[def.Toolset] = sentence(strings.NewReplacer("_", " ", "-", " ").Replace(def.Toolset))
+		}
+	}
+	return groups
+}
 
 // Schema the model of the session sees
 func (d Def) For(env *Env) map[string]any {
@@ -449,11 +470,20 @@ func (r *Registry) Risks() []config.Option {
 	for _, def := range r.Tools() {
 		for _, risk := range def.Risks {
 			if !slices.ContainsFunc(options, func(option config.Option) bool { return option.Value == risk }) {
-				options = append(options, config.Option{Value: risk, Title: risk, About: def.Label()})
+				options = append(options, config.Option{Value: risk, Title: sentence(risk), About: "Asked by the " + def.Label() + " tool"})
 			}
 		}
 	}
 	return options
+}
+
+// Text with a capital first letter, as a title of a choice starts
+func sentence(text string) string {
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return text
+	}
+	return strings.ToUpper(string(runes[:1])) + string(runes[1:])
 }
 
 func (r *Registry) Definitions(env *Env) []map[string]any {
@@ -568,7 +598,7 @@ func New(cfg *config.Config, hk *hooks.Hooks) *Tools {
 	toolsconfig.Register(cfg, func() []config.Option {
 		var options []config.Option
 		for _, def := range t.Tools() {
-			options = append(options, config.Option{Value: def.Name, Title: def.Label(), About: def.Name})
+			options = append(options, config.Option{Value: def.Name, Title: def.Label(), About: def.About})
 		}
 		return options
 	})

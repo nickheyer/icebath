@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // One snapshot of a project
@@ -77,7 +78,7 @@ func (s *Store) Resolve(dir, reference string) (string, error) {
 	}
 	entries := s.List(dir)
 	if number < 1 || number > len(entries) {
-		return "", fmt.Errorf("Invalid checkpoint number. Use 1-%d.", len(entries))
+		return "", fmt.Errorf("There is no checkpoint with that number. Use a number from 1 to %s.", strs.Number(float64(len(entries))))
 	}
 	return entries[number-1].Hash, nil
 }
@@ -86,11 +87,11 @@ func (s *Store) Resolve(dir, reference string) (string, error) {
 func checkHash(sha string) error {
 	switch {
 	case strings.TrimSpace(sha) == "":
-		return errors.New("Empty commit hash")
+		return errors.New("No checkpoint was named.")
 	case strings.HasPrefix(sha, "-"):
-		return fmt.Errorf("Invalid commit hash (must not start with '-'): %q", sha)
+		return fmt.Errorf("%q is not a checkpoint, because a checkpoint ID cannot start with -.", sha)
 	case !commitHash.MatchString(sha):
-		return fmt.Errorf("Invalid commit hash (expected 4-64 hex characters): %q", sha)
+		return fmt.Errorf("%q is not a checkpoint. Name one by its number, or by 4 to 64 hexadecimal characters of its ID.", sha)
 	}
 	return nil
 }
@@ -99,12 +100,12 @@ func checkHash(sha string) error {
 func checkFile(file, wd string) error {
 	switch {
 	case strings.TrimSpace(file) == "":
-		return errors.New("Empty file path")
+		return errors.New("No file was named.")
 	case filepath.IsAbs(file):
-		return fmt.Errorf("File path must be relative, got absolute path: %q", file)
+		return fmt.Errorf("%q is an absolute path. Name the file from the project folder instead.", file)
 	}
 	if rel, err := filepath.Rel(wd, resolve(wd+string(filepath.Separator)+file)); err != nil || !filepath.IsLocal(rel) {
-		return fmt.Errorf("File path escapes the working directory via traversal: %q", file)
+		return fmt.Errorf("%q leads outside the project folder.", file)
 	}
 	return nil
 }
@@ -131,10 +132,10 @@ func (s *Store) Diff(dir, sha string) (*Diff, error) {
 	}
 	wd := normalize(dir)
 	if !s.made() {
-		return nil, errors.New("No checkpoints exist for this directory")
+		return nil, errors.New("This folder has no checkpoints yet.")
 	}
 	if ok, _, _ := s.git(wd, step{}, "cat-file", "-t", sha); !ok {
-		return nil, fmt.Errorf("Checkpoint '%s' not found", sha)
+		return nil, fmt.Errorf("There is no checkpoint %s.", sha)
 	}
 	project := hash(wd)
 	index := s.index(project)
@@ -143,7 +144,7 @@ func (s *Store) Diff(dir, sha string) (*Diff, error) {
 	okPatch, patch, _ := s.git(wd, step{index: index}, "diff", sha, "--cached", "--no-color")
 	s.git(wd, step{index: index, allowed: []int{128}}, "read-tree", ref(project))
 	if !okStat && !okPatch {
-		return nil, errors.New("Could not generate diff")
+		return nil, errors.New("The changes could not be worked out.")
 	}
 	diff := &Diff{}
 	if okStat {
@@ -207,14 +208,14 @@ func (s *Store) Restore(dir, sha, file string, safe bool) (*Restored, error) {
 		}
 	}
 	if !s.made() {
-		return nil, errors.New("No checkpoints exist for this directory")
+		return nil, errors.New("This folder has no checkpoints yet.")
 	}
 	if ok, _, _ := s.git(wd, step{}, "cat-file", "-t", sha); !ok {
-		return nil, fmt.Errorf("Checkpoint '%s' not found", sha)
+		return nil, fmt.Errorf("There is no checkpoint %s.", sha)
 	}
 	ok, tree, errs := s.git(wd, step{}, "ls-tree", "-r", "-z", sha)
 	if !ok {
-		return nil, errors.New("Could not inspect checkpoint: " + errs)
+		return nil, errors.New("The checkpoint could not be read: " + errs)
 	}
 	var selected []string
 	narrowed := false
@@ -224,7 +225,7 @@ func (s *Store) Restore(dir, sha, file string, safe bool) (*Restored, error) {
 			return nil, err
 		}
 		if len(blocked) > 0 {
-			return nil, fmt.Errorf("Checkpoint contains nested git repositories that were not captured (%s); rollback was not performed",
+			return nil, fmt.Errorf("Nothing was brought back, because the checkpoint does not hold the nested git repositories %s.",
 				strings.Join(blocked, ", "))
 		}
 		selected, narrowed = picked, picked != nil
@@ -244,7 +245,7 @@ func (s *Store) Restore(dir, sha, file string, safe bool) (*Restored, error) {
 			}
 		}
 	}
-	if _, err := s.take(wd, "pre-rollback snapshot (restoring to "+short(sha)+")", false); err != nil {
+	if _, err := s.take(wd, "before going back to "+short(sha), false); err != nil {
 		return nil, err
 	}
 	index := s.index(hash(wd))
@@ -283,7 +284,7 @@ func (s *Store) Restore(dir, sha, file string, safe bool) (*Restored, error) {
 		ok, _, errs = s.git(wd, slow, "checkout", sha, "--", cmp.Or(file, "."))
 	}
 	if !ok {
-		return nil, errors.New("Restore failed: " + errs)
+		return nil, errors.New("The files could not be brought back: " + errs)
 	}
 	restored.Reason = "unknown"
 	if ok, reason, _ := s.git(wd, step{}, "log", "--format=%s", "-1", sha); ok {
@@ -309,7 +310,7 @@ func (s *Store) plan(wd, sha string) (restore, kept []string, known bool, err er
 	ok, names, errs := s.git(wd, step{index: index}, "diff", "--name-only", "-z", sha, "--cached")
 	s.git(wd, step{index: index, allowed: []int{128}}, "read-tree", ref(project))
 	if !ok {
-		return nil, nil, false, errors.New("Could not compute changed files: " + errs)
+		return nil, nil, false, errors.New("The changed files could not be worked out: " + errs)
 	}
 	ledger := s.ledger(hash(s.Project(wd)))
 	if len(ledger) == 0 {
@@ -350,9 +351,9 @@ func gitlinks(listing string) []string {
 func uncaptured(nested []string) string {
 	more := ""
 	if len(nested) > 3 {
-		more = fmt.Sprintf(" (+%d)", len(nested)-3)
+		more = " and " + strs.Number(float64(len(nested)-3)) + " more"
 	}
-	return " [nested git repos not captured: " + strings.Join(nested[:min(3, len(nested))], ", ") + more + "]"
+	return ", without the nested git repositories " + strings.Join(nested[:min(3, len(nested))], ", ") + more
 }
 
 // Parts of a relative path, empty and . parts left out
@@ -406,7 +407,7 @@ func (s *Store) selection(wd, sha, file string, nested []string) (blocked, selec
 		ok, listed, errs = s.git(wd, inspect, "ls-files", "--stage", "--error-unmatch", "-z", "--", file)
 	}
 	if !ok {
-		return nil, nil, errors.New("Could not inspect restore selection: " + errs)
+		return nil, nil, errors.New("The files to bring back could not be read: " + errs)
 	}
 	selected = []string{}
 	for _, record := range strings.Split(listed, "\x00") {
@@ -420,7 +421,7 @@ func (s *Store) selection(wd, sha, file string, nested []string) (blocked, selec
 		selected = append(selected, path)
 	}
 	if len(selected) == 0 && len(blocked) == 0 {
-		return nil, nil, errors.New("Restore selection matched no files in checkpoint: " + file)
+		return nil, nil, errors.New("The checkpoint has no file " + file + ".")
 	}
 	return blocked, selected, nil
 }

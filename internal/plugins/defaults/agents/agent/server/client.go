@@ -29,8 +29,8 @@ const oneshotSource = "oneshot"
 const lingerRounds = 8
 
 // Told the session when its client's toolchain and host paths can't apply, the client being on another machine
-const remoteClientNote = "⚠ This session uses the server's own PATH, toolchain and prefill file: your shell's environment was not applied because " +
-	"this client is not on the server's machine."
+const remoteClientNote = "⚠ This session uses the PATH, programs and example messages file of the computer icebath runs on, not those of " +
+	"your shell. Your shell's are used only when you connect from that computer."
 
 // Shell of the session's client as it was stored, nil when it has none
 func storedClient(session *sessionsv1.Session) *tools.Client {
@@ -122,7 +122,7 @@ func projectPlugins(client *tools.Client, directory string) string {
 	if entries, err := os.ReadDir(folder); err != nil || len(entries) == 0 {
 		return ""
 	}
-	return "⚠ Project plugins in " + folder + " are not loaded: the server that runs icebath sessions does not load ./.icebath/plugins, so " +
+	return "⚠ The plugins in " + folder + " are not loaded, because icebath never loads plugins from a project folder. " +
 		"ICEBATH_ENABLE_PROJECT_PLUGINS has no effect here."
 }
 

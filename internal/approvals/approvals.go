@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/internal/auxiliary"
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/hooks"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Channel that shows approval prompts to the user in place of the chat, such as an app on their phone
@@ -138,7 +139,7 @@ func (a *Approvals) Serve() {
 type tasks struct{}
 
 func (tasks) Tasks() []auxiliary.Task {
-	return []auxiliary.Task{{Name: approvalsconfig.Task, Title: "Smart approvals", About: "Model that checks flagged commands when approvals are smart",
+	return []auxiliary.Task{{Name: approvalsconfig.Task, Title: "Smart approvals", About: "The model that checks commands for smart approvals", Order: 50,
 		Timeout: 30, Critical: true}}
 }
 
@@ -342,16 +343,5 @@ var maxWaitSeconds = func() int {
 
 // Wait spelled in the largest unit it is a whole number of
 func window(d time.Duration) string {
-	seconds := max(int(d/time.Second), 0)
-	count, unit := seconds, "second"
-	switch {
-	case seconds != 0 && seconds%3600 == 0:
-		count, unit = seconds/3600, "hour"
-	case seconds != 0 && seconds%60 == 0:
-		count, unit = seconds/60, "minute"
-	}
-	if count != 1 {
-		unit += "s"
-	}
-	return strconv.Itoa(count) + " " + unit
+	return strs.Span(max(d, 0).Truncate(time.Second))
 }

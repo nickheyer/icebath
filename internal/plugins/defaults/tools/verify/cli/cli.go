@@ -22,6 +22,7 @@ import (
 	verifytools "github.com/nickheyer/icebath/internal/plugins/defaults/tools/verify/tools"
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/internal/tools"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Ends the command with the exit code, after its output was written
@@ -51,11 +52,14 @@ type options struct {
 func (c commands) Commands(*connect.Client) []*cobra.Command {
 	var o options
 	cmd := &cobra.Command{
-		Use:   "verify [path]",
-		Short: "Detect a project's run recipe and smoke-test it",
-		Long: "Detect how the current project is built, tested, and started (or load the saved manifest at .icebath/environment.json), then run a " +
-			"verification pass: bootstrap -> build -> test -> start in background -> poll readiness -> teardown.",
-		Args: cobra.MaximumNArgs(1),
+		Use:     "verify [path]",
+		GroupID: cli.GroupAbilities,
+		Short:   "Find out how to build and run a project, then try it",
+		Long: "Works out how the project in the folder is set up, built, tested and started, or reads the recipe saved in " +
+			".icebath/environment.json. Then verify runs the bootstrap, build and test steps, starts the app in the background, waits " +
+			"until it answers and stops it again. Use verify to check that a project works before or after the agent changes the project.",
+		Example: "  icebath verify\n  icebath verify ./api --phase build --phase test\n  icebath verify --detect-only --save",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := "."
 			if len(args) > 0 {
@@ -63,22 +67,21 @@ func (c commands) Commands(*connect.Client) []*cobra.Command {
 			}
 			for _, phase := range o.phases {
 				if !slices.Contains(append(slices.Clone(recipes.Phases), "start"), phase) {
-					return fmt.Errorf("invalid choice for --phase: %q (choose from bootstrap, build, test, start)", phase)
+					return fmt.Errorf("“%s” is not a step. Choose bootstrap, build, test or start.", phase)
 				}
 			}
 			return c.run(cmd, path, o)
 		},
 	}
 	flags := cmd.Flags()
-	flags.BoolVar(&o.detectOnly, "detect-only", false, "Only detect and print the recipe as JSON; run nothing")
+	flags.BoolVar(&o.detectOnly, "detect-only", false, "Only print the recipe as JSON, without running anything")
 	flags.BoolVar(&o.save, "save", false, "Save the recipe as .icebath/environment.json in the project")
-	flags.BoolVar(&o.skipStart, "skip-start", false, "Run command phases but skip starting the app / readiness poll")
-	flags.StringArrayVar(&o.phases, "phase", nil, "Run only the given phase(s); repeatable (bootstrap, build, test, start)")
-	flags.IntVar(&o.port, "port", 0, "Override the port used for the readiness poll")
-	flags.Float64Var(&o.timeout, "timeout", recipes.PhaseTimeout, fmt.Sprintf("Per-phase timeout in seconds (default: %.0f)", recipes.PhaseTimeout))
-	flags.Float64Var(&o.readyTimeout, "ready-timeout", recipes.ReadyTimeout, fmt.Sprintf("Readiness poll timeout in seconds (default: %.0f)",
-		recipes.ReadyTimeout))
-	flags.BoolVar(&o.json, "json", false, "Emit a machine-readable JSON result")
+	flags.BoolVar(&o.skipStart, "skip-start", false, "Run the steps, but do not start the app or wait for it to answer")
+	flags.StringArrayVar(&o.phases, "phase", nil, "Step to run: bootstrap, build, test or start, repeatable")
+	flags.IntVar(&o.port, "port", 0, "Port to check for an answer, instead of the one found")
+	flags.Float64Var(&o.timeout, "timeout", recipes.PhaseTimeout, "Time limit in seconds for each step")
+	flags.Float64Var(&o.readyTimeout, "ready-timeout", recipes.ReadyTimeout, "Time limit in seconds for the app to start answering")
+	flags.BoolVar(&o.json, "json", false, "Print the result as JSON")
 	return []*cobra.Command{cmd}
 }
 
@@ -91,19 +94,19 @@ func (c commands) run(cmd *cobra.Command, path string, o options) error {
 		}
 	}
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
-		fmt.Fprintf(errs, "error: not a directory: %s\n", root)
+		fmt.Fprintf(errs, "✗ %s is not a folder.\n", root)
 		return exit(2)
 	}
 	recipe, source, err := recipes.LoadOrDetect(root)
 	if err != nil {
-		fmt.Fprintln(errs, "error: "+err.Error())
+		fmt.Fprintln(errs, "✗ Could not read the recipe of the project. "+sentence(err.Error()))
 		return exit(1)
 	}
 	if recipe == nil {
 		if o.json {
 			emit(out, map[string]any{"ok": false, "error": "no-recipe", "root": root}, false)
 		} else {
-			fmt.Fprintf(errs, "No recognizable project found at %s.\nCreate %s to define a recipe manually.\n", root, recipes.ManifestPath(root))
+			fmt.Fprintf(errs, "✗ %s holds no project that icebath recognizes.\n  Write a recipe of your own in %s.\n", root, recipes.ManifestPath(root))
 		}
 		return exit(1)
 	}
@@ -116,11 +119,11 @@ func (c commands) run(cmd *cobra.Command, path string, o options) error {
 	if o.save {
 		saved, err := recipes.SaveManifest(root, recipe)
 		if err != nil {
-			fmt.Fprintln(errs, "error: "+err.Error())
+			fmt.Fprintln(errs, "✗ Could not save the recipe. "+sentence(err.Error()))
 			return exit(1)
 		}
 		if !o.json {
-			fmt.Fprintf(out, "Saved manifest: %s\n", saved)
+			fmt.Fprintf(out, "✓ Saved the recipe to %s.\n", saved)
 		}
 	}
 	if o.detectOnly {
@@ -136,7 +139,7 @@ func (c commands) run(cmd *cobra.Command, path string, o options) error {
 	run.Supervisor, run.Config = c.terminal.Supervisor, c.config
 	result, err := recipes.Run(cmd.Context(), root, recipe, run)
 	if err != nil {
-		fmt.Fprintln(errs, "error: "+err.Error())
+		fmt.Fprintln(errs, "✗ Could not run the recipe. "+sentence(err.Error()))
 		return exit(1)
 	}
 	c.record(cmd, root, recipe, result, len(o.phases) > 0 || o.skipStart)
@@ -218,45 +221,85 @@ func emit(w io.Writer, value any, pretty bool) {
 	encoder.Encode(value)
 }
 
+// Text as a sentence: capital first letter, a period at the end
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	text = strings.ToUpper(text[:1]) + text[1:]
+	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
+		text += "."
+	}
+	return text
+}
+
+// Length of a step in seconds as words, to a tenth of a second
+func took(seconds float64) string {
+	return strs.Span(time.Duration(seconds * float64(time.Second)).Round(100 * time.Millisecond))
+}
+
 // The table of phases, the readiness line, the verdict and the end of the output of what failed
 func report(w io.Writer, recipe *recipes.Recipe, source string, result *recipes.Result) {
-	fmt.Fprintf(w, "Recipe: %s (%s) — source: %s\n\n", recipe.Name, recipe.Kind, source)
-	width := 0
-	for _, p := range result.Phases {
-		width = max(width, utf8.RuneCountInString(p.Phase))
+	from := "worked out from the files of the project"
+	if source == "manifest" {
+		from = "read from .icebath/environment.json"
 	}
-	if len(result.Phases) == 0 {
-		fmt.Fprintln(w, "  (no phases executed)")
-	}
+	fmt.Fprintf(w, "Recipe %s for a %s project, %s.\n\n", recipe.Name, recipe.Kind, from)
+	var rows [][4]string
 	for _, p := range result.Phases {
-		status := "FAIL"
+		status := "Failed"
 		switch {
 		case p.OK():
-			status = "PASS"
+			status = "Passed"
 		case p.TimedOut:
-			status = "TIMEOUT"
+			status = "Timed out"
 		}
-		fmt.Fprintf(w, "  %-*s  %-7s  %6.1fs  %s\n", width, p.Phase, status, p.Duration, p.Command)
+		rows = append(rows, [4]string{p.Phase, status, took(p.Duration), p.Command})
 	}
 	if r := result.Readiness; r != nil {
-		status := "FAIL"
+		status := "Failed"
 		if r.Ready {
-			status = "PASS"
+			status = "Passed"
 		}
-		fmt.Fprintf(w, "  %-*s  %-7s  %6.1fs  %s\n\n", max(5, width), "start", status, r.Duration, start(recipe))
-		fmt.Fprintf(w, "Readiness: %s -> %s\n", r.URL, readiness(r))
+		rows = append(rows, [4]string{"start", status, took(r.Duration), cmp.Or(recipe.Start, "None")})
 	}
-	verdict := "FAILED"
+	if len(rows) == 0 {
+		fmt.Fprintln(w, "  No step ran.")
+	}
+	widths := [3]int{}
+	for _, row := range rows {
+		for i := range widths {
+			widths[i] = max(widths[i], utf8.RuneCountInString(row[i]))
+		}
+	}
+	pad := func(text string, width int) string {
+		return text + strings.Repeat(" ", width-utf8.RuneCountInString(text))
+	}
+	for _, row := range rows {
+		fmt.Fprintf(w, "  %s  %s  %s  %s\n", pad(row[0], widths[0]), pad(row[1], widths[1]), pad(row[2], widths[2]), row[3])
+	}
+	if r := result.Readiness; r != nil {
+		switch {
+		case r.Ready:
+			fmt.Fprintf(w, "\nThe app answered at %s with HTTP status %d.\n", r.URL, *r.Status)
+		case r.Error != "":
+			fmt.Fprintf(w, "\nThe app did not answer at %s: %s.\n", r.URL, strings.TrimSuffix(r.Error, "."))
+		default:
+			fmt.Fprintf(w, "\nThe app did not answer at %s in time.\n", r.URL)
+		}
+	}
 	if result.OK() {
-		verdict = "OK"
+		fmt.Fprintln(w, "\n✓ Every step passed.")
+	} else {
+		fmt.Fprintln(w, "\n✗ Not every step passed.")
 	}
-	fmt.Fprintf(w, "\nResult: %s\n", verdict)
 	for _, p := range result.Phases {
 		if !p.OK() {
-			fmt.Fprintf(w, "\n--- output tail: %s (%s) ---\n%s\n", p.Phase, p.Command, strings.TrimRightFunc(p.Tail, unicode.IsSpace))
+			fmt.Fprintf(w, "\nLast lines of %s, %s:\n%s\n", p.Phase, p.Command, strings.TrimRightFunc(p.Tail, unicode.IsSpace))
 		}
 	}
 	if r := result.Readiness; r != nil && !r.Ready && r.Tail != "" {
-		fmt.Fprintf(w, "\n--- output tail: start ---\n%s\n", strings.TrimRightFunc(r.Tail, unicode.IsSpace))
+		fmt.Fprintf(w, "\nLast lines of start:\n%s\n", strings.TrimRightFunc(r.Tail, unicode.IsSpace))
 	}
 }

@@ -22,7 +22,7 @@ import (
 const recordRefusal = "skills/.usage.json holds the user's skill locks, so the agent cannot change it while any skill is locked."
 
 // Refusal of the agent unlocking a skill itself
-const unlockRefusal = "Only the user can unlock a skill. Ask them to run `icebath curator unlock <skill>` themselves."
+const unlockRefusal = "Only the user can unlock a skill. Ask them to unlock it themselves."
 
 var (
 	writesEveryOperand = strs.Set("rm", "rmdir", "unlink", "truncate", "shred", "touch", "chmod", "chown", "chgrp", "chattr", "setfacl", "mkdir", "mv",

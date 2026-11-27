@@ -45,15 +45,15 @@ type model struct {
 }
 
 var models = []model{
-	{id: "krea-3", title: "Krea 3", speed: "~5s (1K) / ~40s (2K, high thinking)",
-		strengths: "Generates and edits existing images from instructions; keeps products, characters, logos and text consistent.",
-		price:     "$0.03 (1K) / $0.06 (2K), +$0.02 (1K) or $0.07 (2K) per reference image, +$0.02 high thinking", path: "/generate/image/krea/krea-3", edit: true},
-	{id: "krea-2-medium", title: "Krea 2 Medium", speed: "~15-25s", strengths: "Illustration, anime, painting, expressive styles. Faster + cheaper.",
-		price: "$0.030 (text) / $0.035 (style refs) / $0.040 (moodboards)", path: "/generate/image/krea/krea-2/medium"},
-	{id: "krea-2-large", title: "Krea 2 Large", speed: "~25-60s", strengths: "Photorealism, raw textured looks (motion blur, grain), expressive styles.",
-		price: "$0.060 (text) / $0.065 (style refs) / $0.070 (moodboards)", path: "/generate/image/krea/krea-2/large"},
-	{id: "krea-2-medium-turbo", title: "Krea 2 Medium Turbo", speed: "~8-15s", strengths: "Fastest Krea 2 — medium quality at lower latency / cost.",
-		price: "$0.015 (text) / $0.0175 (style refs)", path: "/generate/image/krea/krea-2/medium-turbo"},
+	{id: "krea-3", title: "Krea 3", speed: "About 5 seconds at 1K, 40 seconds at 2K with high thinking",
+		strengths: "Makes images and edits existing ones from instructions, keeping products, characters, logos and text consistent",
+		price:     "$0.03 at 1K or $0.06 at 2K, $0.02 or $0.07 more for each reference image, $0.02 more with high thinking", path: "/generate/image/krea/krea-3", edit: true},
+	{id: "krea-2-medium", title: "Krea 2 Medium", speed: "15 to 25 seconds", strengths: "Illustration, anime, painting and expressive styles, faster and cheaper",
+		price: "$0.030 from text, $0.035 with style references, $0.040 with moodboards", path: "/generate/image/krea/krea-2/medium"},
+	{id: "krea-2-large", title: "Krea 2 Large", speed: "25 to 60 seconds", strengths: "Photorealism, raw textured looks such as motion blur and grain, expressive styles",
+		price: "$0.060 from text, $0.065 with style references, $0.070 with moodboards", path: "/generate/image/krea/krea-2/large"},
+	{id: "krea-2-medium-turbo", title: "Krea 2 Medium Turbo", speed: "8 to 15 seconds", strengths: "The fastest Krea 2, medium quality for less wait and cost",
+		price: "$0.015 from text, $0.0175 with style references", path: "/generate/image/krea/krea-2/medium-turbo"},
 }
 
 var (
@@ -82,8 +82,7 @@ func (services) Services() []generation.Service {
 		Ready: func(cfg *config.Config) bool { return key(cfg) != "" },
 		Setup: generation.Setup{Badge: "paid", Key: kreaconfig.APIKey, Prompt: "Krea API key", Link: kreaconfig.KeyLink},
 		Images: &generation.Images{
-			About: "Krea 3 — generates and edits images ($0.03 at 1K, $0.06 at 2K) — and Krea 2 Medium ($0.03), Large ($0.06), Medium Turbo ($0.015) with style " +
-				"transfer and moodboards. Uses your Krea API key.",
+			About:    "Stylized images and edits, needs a Krea API key",
 			Settings: []string{kreaconfig.APIKey, kreaconfig.Model, kreaconfig.Creativity, kreaconfig.Upscale},
 			Model:    kreaconfig.Model,
 			Models: func(context.Context, *config.Config) []generation.Model {

@@ -38,8 +38,8 @@ func Register(registry *contexts.Registry) {
 }
 
 func (k kinds) Kinds() []contexts.Kind {
-	return []contexts.Kind{{Name: contextsconfig.Compressor, Title: "Compressor",
-		About: "Built in: prunes old tool output, keeps the start and the latest messages, and summarises the middle on a helper model",
+	return []contexts.Kind{{Name: contextsconfig.Compressor, Title: "Built-in summaries",
+		About: "Trim old tool output and summarize the middle of a session",
 		New:   func() contexts.Engine { return &compressor{slots: k.slots} }}}
 }
 
@@ -448,7 +448,7 @@ func (c *compressor) Settled(outcome contexts.Outcome) {
 		c.madeProgress = false
 		c.pruneRearm = c.rearmBefore
 		c.setModelConfig(ctx, pruneRearmKey, c.pruneRearm)
-		c.recordCooldown(splitFailureCooldown, "session_split_failed: "+outcome.Failure)
+		c.recordCooldown(splitFailureCooldown, "The session could not be split after its summary: "+outcome.Failure)
 	case outcome.Stored:
 		c.roughAfter = outcome.Tokens
 		c.lastPrompt, c.lastCompletion = -1, 0
@@ -506,10 +506,12 @@ func (c *compressor) Status() contexts.Status {
 		Savings: c.savings, Measured: c.lastPrompt > 0, Blocked: c.blockReasonQuiet(), Raised: c.autoraised, Awaiting: c.awaitingReal, After: c.roughAfter,
 		Target: c.s.targetRatio}
 	if c.s.micro && c.micro.passes > 0 {
-		status.Lines = append(status.Lines, fmt.Sprintf("Micro-compaction: %d passes, ~%s tokens saved", c.micro.passes, strs.Thousands(c.micro.saved)))
+		status.Lines = append(status.Lines, fmt.Sprintf("Running summary: %s, about %s tokens saved", strs.Count(c.micro.passes, "pass"),
+			strs.Thousands(c.micro.saved)))
 	}
 	if c.fallbackStreak >= 2 {
-		status.Lines = append(status.Lines, fmt.Sprintf("Summary model benched after %d fallback summaries in a row", c.fallbackStreak))
+		status.Lines = append(status.Lines, fmt.Sprintf("The summary model is set aside after %s in a row that fell back to a short stand-in.",
+			strs.Count(c.fallbackStreak, "summary")))
 	}
 	return status
 }

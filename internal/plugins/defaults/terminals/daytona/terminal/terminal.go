@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/daytona/clients/sdk-go/pkg/daytona"
@@ -29,7 +30,7 @@ func (r registrant) Backends() []terminal.Backend {
 	return []terminal.Backend{{
 		Name:      "daytona",
 		Title:     "Daytona",
-		About:     "Persistent cloud development environment",
+		About:     "A cloud sandbox on your Daytona account",
 		Where:     "a Daytona workspace (Linux)",
 		Remote:    true,
 		Container: true,
@@ -68,11 +69,12 @@ func image(cfg *config.Config) any {
 	return name
 }
 
+// Why a sandbox can't be made, as the agent is told it
 const missing = "the 'daytona' backend is missing its API key or SDK"
 
 func check(cfg *config.Config) error {
 	if apiKey(cfg) == "" {
-		return errors.New(missing + "; set the Daytona API key in /backends")
+		return errors.New("No Daytona API key is set. Set API key in /settings under Terminal › Daytona, or export DAYTONA_API_KEY.")
 	}
 	_, err := terminal.SandboxResources(cfg)
 	return err
@@ -80,24 +82,24 @@ func check(cfg *config.Config) error {
 
 func setup(cfg *config.Config) []string {
 	lines := []string{
-		"Persistent cloud development environments.",
-		"Each session gets a dedicated sandbox with filesystem persistence.",
-		"Sign up at: https://daytona.io and set the Daytona API key in the Daytona settings (or DAYTONA_API_KEY).",
-		"Daytona disks are capped at 10 GB, whatever the sandbox disk setting asks.",
-		"Readying the backend checks the API key with Daytona.",
+		"Cloud sandboxes that can keep their files.",
+		"Each session gets a sandbox of its own.",
+		"Sign up at https://daytona.io, then set API key in /settings under Terminal › Daytona, or export DAYTONA_API_KEY.",
+		"Daytona disks hold at most 10 GB, whatever Sandbox disk in /settings under Terminal asks for.",
+		"Preparing Daytona on this screen checks the API key with Daytona.",
 	}
 	if cfg.GetBool(terminalconfig.ContainerPersistent) {
-		return append(lines, "Sandbox files are kept: a session's sandbox is stopped when it goes and started again when it comes back.")
+		return append(lines, "Sandbox files are kept. A session's sandbox is stopped when the session ends and started again when it comes back.")
 	}
-	return append(lines, "Sandbox files are not kept: a session's sandbox is deleted when it goes.")
+	return append(lines, "Sandbox files are not kept. A session's sandbox is deleted when the session ends.")
 }
 
 func doctor(cfg *config.Config) []terminal.Check {
-	rows := []terminal.Check{{OK: false, Label: "Daytona API key missing", Detail: "(needed for the 'daytona' terminal backend)"}}
+	rows := []terminal.Check{{OK: false, Label: "The Daytona API key is not set.", Detail: "Commands run on Daytona only once it is."}}
 	if apiKey(cfg) != "" {
-		rows = []terminal.Check{{OK: true, Label: "Daytona API key", Detail: "(configured)"}}
+		rows = []terminal.Check{{OK: true, Label: "The Daytona API key is set."}}
 	}
-	return append(rows, terminal.Check{OK: true, Label: "daytona SDK", Detail: "(installed)"})
+	return append(rows, terminal.Check{OK: true, Label: "The Daytona client comes with icebath."})
 }
 
 // Checks the key with Daytona by listing a sandbox
@@ -107,16 +109,16 @@ func prepare(ctx context.Context, cfg *config.Config, say func(string)) error {
 	}
 	client, err := newClient(cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("Could not set up the Daytona client: %w", err)
 	}
 	defer client.Close(context.Background())
-	say("Checking the Daytona API key...")
+	say("Checking the Daytona API key…")
 	limit := 1
 	sandboxes := client.List(ctx, &daytona.ListSandboxesQuery{Limit: &limit})
 	sandboxes.Next()
 	if err := sandboxes.Err(); err != nil {
-		return err
+		return fmt.Errorf("Daytona did not accept the API key: %w", err)
 	}
-	say("Daytona accepted the key: sandboxes can be made.")
+	say("Daytona accepted the API key, so sandboxes can be made there.")
 	return nil
 }

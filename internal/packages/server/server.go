@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"strings"
 
 	"connectrpc.com/connect/v2"
 
@@ -55,7 +56,10 @@ func (s *service) finish(r *stream, code int, result string, err error) error {
 	if err != nil {
 		message, known := s.packages.Failed(err)
 		if !known {
-			message = "icebath: " + err.Error()
+			message = "✗ " + strings.TrimSpace(err.Error())
+			if !strings.ContainsAny(message[len(message)-1:], ".!?") {
+				message += "."
+			}
 		}
 		done.ExitCode, done.Error = 1, message
 	}

@@ -10,10 +10,11 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: transportconfig.Key,
 		Title:  "Chat completions API",
-		About:  "Requests to providers that use the OpenAI chat completions API",
+		About:  "Requests to providers that use OpenAI chat completions",
+		Order:  30,
 		Settings: []config.Setting{
-			{Key: ReasoningEcho, Title: "Echo reasoning back", About: "Sends the model's earlier reasoning back to it on each request; only needed for providers that require it",
-				Default: false},
+			{Key: ReasoningEcho, Title: "Send reasoning back", About: "Send the earlier reasoning of the model back with each request.",
+				Help: "Only some providers need this.", Default: false, Advanced: true},
 		},
 	}})
 }

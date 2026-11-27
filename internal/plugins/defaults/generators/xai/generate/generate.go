@@ -37,11 +37,11 @@ func Register(registry *generation.Registry, providers *provider.Registry, creds
 func (s *Services) Services() []generation.Service {
 	return []generation.Service{{
 		Name:  xaiconfig.Name,
-		Title: "xAI (Grok)",
+		Title: "xAI",
 		Ready: func(cfg *config.Config) bool { _, ok := s.bearer(cfg); return ok },
 		Setup: generation.Setup{Badge: "paid", Provider: web.XAIOAuth, Link: "https://console.x.ai/"},
 		Images: &generation.Images{
-			About:    "grok-imagine-image - text-to-image & image editing; uses xAI Grok OAuth or XAI_API_KEY",
+			About:    "Grok images and edits, needs an xAI API key or a Grok sign-in",
 			Settings: []string{xaiconfig.ImageModel, xaiconfig.Resolution, xaiconfig.ImageKey + xaiconfig.StorageEnabled, xaiconfig.ImageKey + xaiconfig.StoragePublic, xaiconfig.ImageKey + xaiconfig.StorageExpires},
 			Model:    xaiconfig.ImageModel,
 			Models:   s.imageModels,
@@ -54,8 +54,7 @@ func (s *Services) Services() []generation.Service {
 			Generate: s.draw,
 		},
 		Videos: &generation.Videos{
-			About: "grok-imagine-video for text/reference; grok-imagine-video-1.5 for image-to-video; edit/extend: pass the stored public HTTPS MP4 " +
-				"(`video` / `public_url` from a prior Imagine result); uses xAI Grok OAuth or XAI_API_KEY",
+			About:    "Grok videos you can edit and extend, needs an xAI key or sign-in",
 			Settings: []string{xaiconfig.VideoKey + xaiconfig.StorageEnabled, xaiconfig.VideoKey + xaiconfig.StoragePublic, xaiconfig.VideoKey + xaiconfig.StorageExpires},
 			Models:   func(context.Context, *config.Config) []generation.Model { return videoModels },
 			Default:  func(context.Context, *config.Config) string { return textVideoModel },

@@ -113,7 +113,7 @@ func cloneFilter(f *sessionsv1.Filter) *sessionsv1.Filter {
 func (s *store) Prune(ctx context.Context, request *sessionsv1.PruneRequest) (*sessionsv1.PruneResponse, error) {
 	f, dryRun := request.GetFilter(), request.GetDryRun()
 	if f.GetIncludeOpen() {
-		return nil, errors.New("prune never deletes open sessions: include open is for archive only")
+		return nil, errors.New("prune never deletes open sessions. --include-open works only with archive.")
 	}
 	if f.GetNeverActive() {
 		return s.pruneNeverActive(ctx, f, dryRun)
@@ -175,7 +175,7 @@ func (s *store) pruneNeverActive(ctx context.Context, f *sessionsv1.Filter, dryR
 		age = time.Since(f.GetActiveBefore().AsTime())
 	}
 	if age < 0 {
-		return nil, errors.New("the age of never-active sessions must be at least 0: a negative one matches every never-active keyed row.")
+		return nil, errors.New("The age of unused sessions to delete must be at least 0 days.")
 	}
 	idle, err := s.NeverActive(ctx, age)
 	if err != nil {

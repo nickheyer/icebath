@@ -14,6 +14,7 @@ import (
 	toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
 	"github.com/nickheyer/icebath/internal/tools/diff"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Times in a row a reply may name only tools that don't exist, or send arguments that are no JSON, before the turn gives up
@@ -59,7 +60,7 @@ func (a *Agent) vet(r *run, reply *sessionsv1.Message, history []*sessionsv1.Mes
 			continue
 		}
 		if fixed, ok := a.resolve(call.GetName(), offered); ok {
-			a.tell(r, fmt.Sprintf("🔧 Auto-repaired tool name: '%s' -> '%s'", call.GetName(), fixed))
+			a.tell(r, fmt.Sprintf("The model asked for a tool named %s, so icebath used %s.", call.GetName(), fixed))
 			call.Name = fixed
 		}
 	}
@@ -73,15 +74,16 @@ func (a *Agent) vet(r *run, reply *sessionsv1.Message, history []*sessionsv1.Mes
 	case len(invalid) > 0 && len(invalid) < len(calls):
 		// A batch with some calls the model can run: those run, the others are answered as unavailable by the executor
 		strike.names = 0
-		a.tell(r, fmt.Sprintf("⚠️  %s '%s' in batch — erroring that call, executing %d valid call(s)", a.label(invalid[0], offered),
-			preview(invalid[0]), len(calls)-len(invalid)))
+		a.tell(r, fmt.Sprintf("The model asked for %s, a tool that %s. The other %s run, and the model is told about that one.", preview(invalid[0]),
+			a.label(invalid[0], offered), strs.Count(len(calls)-len(invalid), "tool call")))
 	case len(invalid) > 0:
 		strike.names++
-		a.tell(r, fmt.Sprintf("⚠️  %s '%s' — sending error to model for agent-correction (%d/%d)", a.label(invalid[0], offered), preview(invalid[0]),
-			strike.names, strikes))
+		a.tell(r, fmt.Sprintf("The model asked for %s, a tool that %s. It is told so it can correct itself, try %d of %d.", preview(invalid[0]),
+			a.label(invalid[0], offered), strike.names, strikes))
 		if strike.names >= strikes {
 			strike.names = 0
-			return halted, nil, "Model generated invalid tool call: " + preview(invalid[0])
+			return halted, nil, "The model kept asking for a tool that doesn't exist: " + preview(invalid[0]) + ". Send your message again, or pick " +
+				"another model with /model."
 		}
 		results := map[string]string{}
 		for _, call := range calls {
@@ -113,24 +115,24 @@ func (a *Agent) vet(r *run, reply *sessionsv1.Message, history []*sessionsv1.Mes
 	for _, call := range broken {
 		if end := strings.TrimRightFunc(call.GetArguments(), unicode.IsSpace); !strings.HasSuffix(end, "}") && !strings.HasSuffix(end, "]") {
 			strike.json = 0
-			a.tell(r, fmt.Sprintf("⚠️  Truncated tool call arguments detected (finish_reason=%q) — refusing to execute.", finish))
+			a.tell(r, "The model's tool call arrived cut off, so icebath did not run it.")
 			if finish == "length" {
-				return halted, nil, "The model's reply was cut off before it finished (it hit its output length limit), so Icebath didn't run the " +
-					"incomplete action. Nothing was changed. Send `continue`, ask for the work in smaller steps, or raise max_tokens for this model."
+				return halted, nil, "The model's reply reached its length limit before its action was whole, so icebath did not run it and nothing " +
+					"changed. Send “continue”, or ask for the work in smaller steps.\nFor Claude models you can also raise Max output in /settings " +
+					"under Connections › Anthropic messages API."
 			}
-			return halted, nil, "The model's action arrived cut off partway through, so Icebath didn't run it. Nothing was changed. The model " +
-				"didn't report hitting its output limit, so this was most likely a dropped connection or a provider/router cutting the reply short. " +
-				"Send /retry; if it keeps happening, ask for the work in smaller steps."
+			return halted, nil, "The model's action arrived cut off, most likely by a dropped connection, so icebath did not run it and nothing " +
+				"changed. Send /retry, and if it keeps happening, ask for the work in smaller steps."
 		}
 	}
 	strike.json++
-	a.tell(r, fmt.Sprintf("⚠️  Invalid JSON in tool call arguments for '%s': %s", broken[0].GetName(), reasons[broken[0].GetId()]))
+	a.tell(r, fmt.Sprintf("The model sent a tool call to %s that could not be read.", broken[0].GetName()))
 	if strike.json < strikes {
-		a.tell(r, fmt.Sprintf("🔄 Retrying API call (%d/%d)...", strike.json, strikes))
+		a.tell(r, fmt.Sprintf("Asking the model again, try %d of %d.", strike.json, strikes))
 		return again, nil, ""
 	}
 	strike.json = 0
-	a.tell(r, "⚠️  Injecting recovery tool results for invalid JSON...")
+	a.tell(r, "The model is told that its tool call could not be read, so it can correct itself.")
 	results := map[string]string{}
 	for _, call := range calls {
 		if reason, ok := reasons[call.GetId()]; ok {
@@ -152,17 +154,17 @@ func (a *Agent) tell(r *run, text string) {
 
 func preview(name string) string {
 	if runes := []rune(name); len(runes) > 80 {
-		return string(runes[:80]) + "..."
+		return string(runes[:79]) + "…"
 	}
 	return name
 }
 
-// What a name that is no offered tool is called: unavailable when a tool of the name exists, else unknown
+// What is wrong with a name that is no offered tool, to follow "a tool that": not offered when a tool of the name exists, else none
 func (a *Agent) label(name string, offered map[string]tools.Def) string {
 	if target, ok := a.resolve(name, a.registered()); ok && offered[target].Name == "" {
-		return "Unavailable tool"
+		return "this session does not offer"
 	}
-	return "Unknown tool"
+	return "doesn't exist"
 }
 
 // Tools that exist, offered to the session or not, by name

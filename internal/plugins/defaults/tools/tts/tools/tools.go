@@ -34,7 +34,8 @@ func Register(registry *tools.Registry, sp *speech.Speech) {
 
 func (r *registrant) Tools() []tools.Def {
 	return []tools.Def{{
-		Name: Name, Toolset: "tts", Title: "Speak", Icon: tools.IconRecord, Subject: "text",
+		Name: Name, Toolset: "tts", Title: "Speak", About: "Turn text into speech that you can listen to", Group: "Text to speech",
+		Icon: tools.IconRecord, Subject: "text",
 		Schema:    schema("the profile's audio cache", nil),
 		Dynamic:   r.schema,
 		Handler:   r.speak,

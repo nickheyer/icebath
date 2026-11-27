@@ -28,14 +28,13 @@ func Register(registry *web.Registry, providers *provider.Registry, creds *crede
 func (b backends) Backends() []web.Backend {
 	return []web.Backend{{
 		Name:  "openai-native",
-		Title: "OpenAI Native Web Search (Codex Responses)",
-		About: "OpenAI native web search — declares the Responses API server-side web_search built-in instead of running a client-side search. " +
-			"Requires the Codex Responses transport plus an openai-codex sign in (ChatGPT or Codex Subscription, connected with /providers).",
+		Title: "OpenAI web search",
+		About: "Search that OpenAI runs, with your ChatGPT or Codex sign-in",
 		Plans: []web.Plan{{
-			Title:  "OpenAI Native Web Search (Codex Responses)",
-			Badge:  "native",
-			About:  "Search runs on the provider side (needs the Codex Responses transport + an openai-codex login); search only, extraction still uses another backend",
-			Prompt: "Uses the ChatGPT or Codex Subscription sign in: connect it with /providers",
+			Title:  "With your sign-in",
+			Badge:  "built in · search only",
+			About:  "Needs a ChatGPT or Codex sign-in, and another service to read pages",
+			Prompt: "ChatGPT or Codex sign-in, connected in /providers",
 		}},
 		Search: func(context.Context, *config.Config, string, int) (*web.Results, error) {
 			return web.Failed(unsupported), nil

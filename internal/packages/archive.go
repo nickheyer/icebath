@@ -54,12 +54,12 @@ func Extract(archive, dest string) error {
 			defer f.Close()
 			r, err := decompressed(f, suffix)
 			if err != nil {
-				return fmt.Errorf("%s: %w", filepath.Base(archive), err)
+				return fmt.Errorf("The archive %s could not be unpacked: %w", filepath.Base(archive), err)
 			}
 			return extractTar(r, dest)
 		}
 	}
-	return fmt.Errorf("unsupported archive: %s", filepath.Base(archive))
+	return fmt.Errorf("icebath cannot unpack an archive of the kind %s.", filepath.Base(archive))
 }
 
 // Stream of a compressed tarball by the suffix of its name
@@ -78,7 +78,7 @@ func decompressed(r io.Reader, suffix string) (io.Reader, error) {
 		}
 		return dec.IOReadCloser(), nil
 	case strings.HasSuffix(suffix, ".lzma"):
-		return nil, errors.New("lzma compressed data is not supported")
+		return nil, errors.New("icebath cannot unpack data compressed with lzma.")
 	}
 	return r, nil
 }
@@ -90,7 +90,7 @@ type UnsafeMember struct {
 }
 
 func (e *UnsafeMember) Error() string {
-	return fmt.Sprintf("unsafe member %s: %s", strconv.Quote(e.Member), e.Reason)
+	return fmt.Sprintf("The archive member %s %s, so it is not safe to unpack.", strconv.Quote(e.Member), e.Reason)
 }
 
 // Extracts a tar stream under the one containment rule: names, link targets and the folders on the way stay inside dest
@@ -251,7 +251,7 @@ func placeLink(root string, h *tar.Header) error {
 	if st, err := os.Stat(source); err == nil && st.Mode().IsRegular() {
 		return fsx.Copy(source, target)
 	}
-	return &UnsafeMember{Member: h.Name, Reason: "is a link this system can't make and whose target is no file to copy"}
+	return &UnsafeMember{Member: h.Name, Reason: "is a link this system cannot make, and its target is no file to copy"}
 }
 
 // Extracts a zip, keeping executable bits and placing symlinks that stay inside dest last
@@ -374,7 +374,7 @@ func extractDeb(archive, dest string) error {
 	suffix := strings.TrimPrefix(member, "data")
 	r, err := decompressed(bytes.NewReader(data), suffix)
 	if err != nil {
-		return fmt.Errorf("unsupported data compression %s in %s", member, filepath.Base(archive))
+		return fmt.Errorf("icebath cannot unpack %s in %s, because of its compression.", member, filepath.Base(archive))
 	}
 	if err := extractTar(r, dest); err != nil {
 		return err
@@ -404,26 +404,26 @@ func debData(archive string) ([]byte, string, error) {
 	}
 	base := filepath.Base(archive)
 	if len(raw) < 8 || string(raw[:8]) != "!<arch>\n" {
-		return nil, "", fmt.Errorf("not an ar archive: %s", base)
+		return nil, "", fmt.Errorf("%s is not an ar archive.", base)
 	}
 	for offset := 8; offset+60 <= len(raw); {
 		header := raw[offset : offset+60]
 		member := strings.TrimRight(string(header[0:16]), " /")
 		size, err := strconv.Atoi(strings.TrimSpace(string(header[48:58])))
 		if err != nil || size < 0 {
-			return nil, "", fmt.Errorf("bad ar member size in %s", base)
+			return nil, "", fmt.Errorf("%s gives a member a size that is not valid.", base)
 		}
 		start := offset + 60
 		end := min(start+size, len(raw))
 		if strings.HasPrefix(member, "data.tar") {
 			if strings.HasSuffix(member, ".lzma") {
-				return nil, "", fmt.Errorf("unsupported data compression %s in %s", member, base)
+				return nil, "", fmt.Errorf("icebath cannot unpack %s in %s, because of its compression.", member, base)
 			}
 			return raw[start:end], member, nil
 		}
 		offset = start + size + size%2
 	}
-	return nil, "", fmt.Errorf("no data.tar member in %s", base)
+	return nil, "", fmt.Errorf("%s has no data.tar member.", base)
 }
 
 // Inert desktop metadata: a junk name or an AppleDouble file that is no program
@@ -498,7 +498,7 @@ func Merge(src, dst string) error {
 		}
 		target := filepath.Join(dst, rel)
 		if fsx.Lexists(target) {
-			return fmt.Errorf("archives disagree about %s", rel)
+			return fmt.Errorf("The archives disagree about %s.", rel)
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o777); err != nil {
 			return err

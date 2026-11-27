@@ -30,6 +30,7 @@ import (
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/internal/tools"
 	"github.com/nickheyer/icebath/internal/transport"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // What sampling needs to reach the helper models of a profile when no session is calling
@@ -287,7 +288,7 @@ func (p *pool) connect(ctx context.Context, s *spec) (*server, error) {
 	p.mu.Lock()
 	if p.m.closed {
 		p.mu.Unlock()
-		return nil, errors.New("icebath is shutting down")
+		return nil, errors.New("The server was not started, as icebath is shutting down.")
 	}
 	old := p.servers[s.Name]
 	p.servers[s.Name] = srv
@@ -311,7 +312,7 @@ func (p *pool) connect(ctx context.Context, s *spec) (*server, error) {
 		return srv, nil
 	}
 	if timedOut {
-		err = fmt.Errorf("the server did not answer within %s", s.ConnectTimeout+30*time.Second)
+		err = fmt.Errorf("The server did not answer within %s.", strs.Span(s.ConnectTimeout+30*time.Second))
 	}
 	p.failures[s.Name] = describe(err)
 	p.strikes[s.Name]++
@@ -559,7 +560,7 @@ func (p *pool) managedLauncher(ctx context.Context, command string) (string, []s
 	dirs = slices.DeleteFunc(dirs, func(dir string) bool { return dir == "" })
 	executable := packages.Which(command, strings.Join(dirs, string(os.PathListSeparator)))
 	if executable == "" {
-		return "", nil, false, fmt.Errorf("icebath-managed %s is not installed; run `icebath pm install %s`", command, name)
+		return "", nil, false, fmt.Errorf("The %s that icebath installs is not installed. Install it with icebath pm install %s.", command, name)
 	}
 	return executable, dirs, true, nil
 }
@@ -594,7 +595,7 @@ func (p *pool) preflight(ctx context.Context, server, command string, args []str
 	select {
 	case message := <-verdict:
 		if message != "" {
-			return "", nil, fmt.Errorf("MCP server '%s': %s", server, message)
+			return "", nil, fmt.Errorf("The MCP server %s was not started. %s", server, message)
 		}
 	case <-time.After(osvBound):
 		slog.Warn("MCP malware check timed out (network slow or unreachable); starting the server without it", "server", server)

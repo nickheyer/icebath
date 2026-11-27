@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,15 +11,22 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/internal/app"
-	"github.com/nickheyer/icebath/internal/plugins/defaults/tools/checkpoints/server"
+	"github.com/nickheyer/icebath/internal/checkpoints"
+	checkpointsconfig "github.com/nickheyer/icebath/internal/checkpoints/config"
+	"github.com/nickheyer/icebath/internal/config"
+	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
+	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1/agentv1connect"
 	checkpointsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/checkpoints/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/checkpoints/v1/checkpointsv1connect"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1/sessionsv1connect"
+	toolsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/tools/v1"
+	"github.com/nickheyer/icebath/pkg/gen/icebath/tools/v1/toolsv1connect"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -27,24 +35,24 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Keymap contexts of the checkpoints of a session and of the store
+// Keymap contexts of the checkpoints of a session and of the checkpoint storage
 const (
 	rollbackContext = "checkpoints.rollback"
 	storageContext  = "checkpoints.storage"
 )
 
 var rollbackKeys = []keys.Action{
-	{ID: "checkpoints.restore", Context: rollbackContext, Label: "restore", Doc: "restore the files the agent changed since the checkpoint, keeping your edits", Default: []string{"enter"}},
-	{ID: "checkpoints.restore.all", Context: rollbackContext, Label: "restore all", Doc: "restore every file changed since the checkpoint, your edits too", Default: []string{"a"}},
-	{ID: "checkpoints.diff", Context: rollbackContext, Label: "diff", Doc: "show what changed since the checkpoint", Default: []string{"d"}},
-	{ID: "checkpoints.file", Context: rollbackContext, Label: "one file", Doc: "restore one file from the checkpoint", Default: []string{"f"}},
-	{ID: "checkpoints.session", Context: rollbackContext, Label: "since oldest", Doc: "show everything changed since the oldest checkpoint kept", Default: []string{"s"}},
+	{ID: "checkpoints.restore", Context: rollbackContext, Label: "restore", Doc: "Undo the agent's changes since the checkpoint, keeping your edits", Default: []string{"enter"}},
+	{ID: "checkpoints.restore.all", Context: rollbackContext, Label: "restore all", Doc: "Restore every file changed since the checkpoint, your edits too", Default: []string{"a"}},
+	{ID: "checkpoints.diff", Context: rollbackContext, Label: "show changes", Doc: "Show what changed since the checkpoint", Default: []string{"d"}},
+	{ID: "checkpoints.file", Context: rollbackContext, Label: "restore file", Doc: "Restore one file from the checkpoint", Default: []string{"f"}},
+	{ID: "checkpoints.session", Context: rollbackContext, Label: "compare oldest", Doc: "Show everything changed since the oldest checkpoint kept", Default: []string{"s"}},
 }
 
 var storageKeys = []keys.Action{
-	{ID: "checkpoints.prune", Context: storageContext, Label: "prune", Doc: "delete orphan and stale snapshots and reclaim space", Default: []string{"p"}},
-	{ID: "checkpoints.clear.legacy", Context: storageContext, Label: "clear archives", Doc: "delete the archives of what the snapshot folder held before", Default: []string{"l"}},
-	{ID: "checkpoints.clear", Context: storageContext, Label: "clear all", Doc: "delete every file snapshot", Default: []string{"x"}},
+	{ID: "checkpoints.prune", Context: storageContext, Label: "prune", Doc: "Delete old checkpoints and those of projects that are gone", Default: []string{"p"}},
+	{ID: "checkpoints.clear.legacy", Context: storageContext, Label: "clear archives", Doc: "Delete the archives left from the old checkpoint folder", Default: []string{"l"}},
+	{ID: "checkpoints.clear", Context: storageContext, Label: "clear all", Doc: "Delete every checkpoint", Default: []string{"x"}},
 }
 
 type screens struct{}
@@ -55,12 +63,14 @@ func Register(registry *app.Registry) {
 
 func (screens) Screens(conn *connect.Client) []tui.Screen {
 	c := &clients{checkpoints: checkpointsv1connect.NewCheckpointServiceClient(conn), sessions: sessionsv1connect.NewSessionServiceClient(conn),
-		agents: agentv1connect.NewAgentServiceClient(conn)}
+		agents: agentv1connect.NewAgentServiceClient(conn), tools: toolsv1connect.NewToolServiceClient(conn), settings: configv1connect.NewConfigServiceClient(conn)}
 	return []tui.Screen{
 		{
 			ID:      "rollback",
+			Group:   tui.GroupSessions,
+			Order:   30,
 			Title:   "Rollback",
-			Short:   "list, diff, or restore checkpoints",
+			Short:   "Restore files from a checkpoint",
 			Slash:   []string{"rollback"},
 			Usage:   "[list|diff [N]|<N> [file] [--all]]",
 			Actions: rollbackKeys,
@@ -69,11 +79,13 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 		},
 		{
 			ID:      "checkpoints",
-			Title:   "File snapshots",
-			Short:   "size of the snapshots /rollback uses, by project",
+			Group:   tui.GroupAbilities,
+			Order:   120,
+			Title:   "Checkpoint storage",
+			Short:   "Free the disk space that checkpoints take",
 			Slash:   []string{"checkpoints"},
 			Actions: storageKeys,
-			Where:   map[string]string{storageContext: "file snapshots"},
+			Where:   map[string]string{storageContext: "checkpoint storage"},
 			Open:    c.storage,
 		},
 	}
@@ -83,18 +95,55 @@ type clients struct {
 	checkpoints checkpointsv1connect.CheckpointServiceClient
 	sessions    sessionsv1connect.SessionServiceClient
 	agents      agentv1connect.AgentServiceClient
+	tools       toolsv1connect.ToolServiceClient
+	settings    configv1connect.ConfigServiceClient
+}
+
+// Length of time in words, rounded down to its largest whole unit: 45 seconds, 3 minutes, 1 hour, 2 days
+func span(d time.Duration) string {
+	for _, unit := range []time.Duration{24 * time.Hour, time.Hour, time.Minute} {
+		if d >= unit {
+			return config.Span(d.Truncate(unit))
+		}
+	}
+	return config.Span(max(d, 0).Truncate(time.Second))
+}
+
+// How long ago a moment was, in words
+func ago(at time.Time) string {
+	return span(time.Since(at)) + " ago"
+}
+
+// Size of a count of bytes in the largest unit that fits
+func size(n int64) string {
+	return config.Size(float64(max(n, 0)))
+}
+
+// Sentence of a reason a server gave: capital first letter, ending in a period
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	text = strings.ToUpper(text[:1]) + text[1:]
+	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
+		text += "."
+	}
+	return text
 }
 
 // Lists, diffs or restores the checkpoints of the session the focused chat shows
 func (c *clients) rollback(kit *tui.Kit, argument string) tea.Cmd {
-	session := ""
-	if shown, ok := kit.Focused().(tui.Sessioned); ok {
-		session = shown.Session()
+	shown, chat := kit.Focused().(tui.Sessioned)
+	if !chat {
+		return wm.Notify("Focus a chat first. Rollback restores the files of the chat in focus.", wm.Info)
 	}
+	session := shown.Session()
+	// A chat nothing was sent in has no session, so nothing of it was saved
 	if session == "" {
-		return wm.Notify("no active session — nothing to rollback", wm.Info)
+		return wm.Notify("This chat has no checkpoints yet. Send a message first.", wm.Info)
 	}
-	r := &rollback{clients: c, kit: kit, session: session}
+	r := &rollback{clients: c, kit: kit, session: session, titles: map[string]string{}}
 	words := strings.Fields(argument)
 	first := ""
 	if len(words) > 0 {
@@ -130,116 +179,177 @@ type rollback struct {
 	hub     *cards.Hub
 	list    *cards.List
 	state   *checkpointsv1.ListResponse
-	loaded  bool
-	err     error
+	// Titles of the tools by name, for the reasons that name the tool a checkpoint was saved before
+	titles map[string]string
+	loaded bool
+	err    error
 }
 
 func (r *rollback) open() tea.Cmd {
 	t := r.kit.Env.Theme
 	r.list = cards.NewList(r.kit.Env, cards.ListSpec{
-		Title:   "Rollback checkpoints",
+		Title:   "Rollback",
 		Glyph:   t.Glyphs.Jobs,
 		Key:     "checkpoints:rollback",
 		Context: rollbackContext,
 		Primary: "checkpoints.restore",
-		Free:    map[string]bool{"checkpoints.session": true},
-		Columns: []render.Column{{Title: "#"}, {Title: "Checkpoint"}, {Title: "Taken"}, {Title: "Reason", Flex: 3}, {Title: "Changed"}},
-		Yield:   []int{4, 2},
+		Free:    map[string]bool{"checkpoints.session": true, "hub.refresh": true},
+		Intro: func() []string {
+			var lines []string
+			if refusal := r.state.GetRefusal(); refusal != "" {
+				lines = append(lines, sentence(refusal))
+			}
+			if dir := r.state.GetDirectory(); dir != "" && len(r.state.GetCheckpoints()) > 0 {
+				lines = append(lines, "Checkpoints of "+dir+", newest first. Restoring one puts your files back as they were then.")
+			}
+			return lines
+		},
+		Columns: []render.Column{{Right: true}, {}, {Flex: 1}, {}},
+		Yield:   []int{3},
 		Rows: func() [][]string {
 			rows := make([][]string, len(r.state.GetCheckpoints()))
 			for i, entry := range r.state.GetCheckpoints() {
-				rows[i] = []string{fmt.Sprint(i + 1), entry.GetShort(), entry.GetWhen().AsTime().Local().Format("2006-01-02 15:04"),
-					cmp.Or(entry.GetReason(), "(no metadata)"), changed(entry, t)}
+				rows[i] = []string{strconv.Itoa(i + 1), ago(entry.GetWhen().AsTime()), r.reason(entry.GetReason()), render.Dim(changed(entry), t)}
 			}
 			return rows
 		},
-		Detail: func(i int) []string {
-			entries := r.state.GetCheckpoints()
-			if i < 0 || i >= len(entries) {
-				return nil
-			}
-			return []string{entries[i].GetHash() + " · " + r.state.GetDirectory()}
-		},
-		Banner: func() string {
-			if refusal := r.state.GetRefusal(); refusal != "" {
-				return render.Warm(refusal, t)
-			}
-			return ""
-		},
+		Detail: func(i int) []string { return r.detail(i) },
 		Empty: func() string {
 			switch {
-			case r.loaded && r.err == nil && !r.state.GetEnabled():
-				return "checkpoints are not enabled — turn on File checkpoints in /settings under Tools › Checkpoints"
-			case r.loaded && r.err == nil:
-				return "no checkpoints found for " + r.state.GetDirectory()
+			case r.err != nil:
+				return "Could not read the checkpoints. " + sentence(tui.Reason(r.err)) + " " + r.kit.Env.Keys.Display("hub.refresh") + " tries again."
+			case !r.loaded:
+				return "Reading the checkpoints…"
+			case !r.state.GetEnabled():
+				return checkpoints.NotEnabled
 			}
-			return tui.Waiting(r.loaded, r.err, "")
+			return "No checkpoints of " + r.state.GetDirectory() + " yet. The agent saves one before it changes your files."
+		},
+		Hints: func(_ *cards.List, i int) []wm.Hint {
+			if i < 0 {
+				return nil
+			}
+			return []wm.Hint{{Action: "checkpoints.restore"}, {Action: "checkpoints.diff"}, {Action: "checkpoints.file"}, {Action: "checkpoints.restore.all"},
+				{Action: "checkpoints.session"}}
 		},
 		Actions: map[string]func(*cards.List, int) tea.Cmd{
 			"checkpoints.restore": func(l *cards.List, i int) tea.Cmd {
-				return r.confirm(l, i, "Restore the files the agent changed since checkpoint %d? Your own edits are kept.", false)
+				l.Confirm(fmt.Sprintf("Restore checkpoint %d and take back your last message? Your edits stay.", i+1),
+					func() tea.Cmd { return r.restore(r.hub, strconv.Itoa(i+1), "", false) })
+				return nil
 			},
 			"checkpoints.restore.all": func(l *cards.List, i int) tea.Cmd {
-				return r.confirm(l, i, "Restore every file changed since checkpoint %d, your own edits too?", true)
+				l.Confirm(fmt.Sprintf("Restore checkpoint %d and take back your last message? Your edits go too.", i+1),
+					func() tea.Cmd { return r.restore(r.hub, strconv.Itoa(i+1), "", true) })
+				return nil
 			},
-			"checkpoints.diff":    func(_ *cards.List, i int) tea.Cmd { return r.diff(r.hub, fmt.Sprint(i+1)) },
+			"checkpoints.diff":    func(_ *cards.List, i int) tea.Cmd { return r.diff(r.hub, strconv.Itoa(i+1)) },
 			"checkpoints.session": func(*cards.List, int) tea.Cmd { return r.diff(r.hub, "") },
 			"checkpoints.file": func(_ *cards.List, i int) tea.Cmd {
-				number := fmt.Sprint(i + 1)
-				return r.kit.Ask(r.hub, "Restore one file from checkpoint "+number, cards.Field{Label: "File", Placeholder: "path relative to " +
-					r.state.GetDirectory()}, "Restore", func(file string) tea.Cmd { return r.restore(r.hub, number, file, false) })
+				number := strconv.Itoa(i + 1)
+				return r.kit.Ask(r.hub, "Restore one file from checkpoint "+number, cards.Field{Label: "File",
+					Help: "The path of the file inside " + r.state.GetDirectory() + ", such as src/main.go."}, "Restore",
+					func(file string) tea.Cmd { return r.restore(r.hub, number, file, false) })
 			},
+			"hub.refresh": func(*cards.List, int) tea.Cmd { return r.load() },
 		},
 	})
+	r.list.ToggleDetail()
 	r.hub = r.kit.Hub("checkpoints:rollback", r.list)
 	return tea.Batch(r.kit.WM.ShowOverlay(r.hub), r.load())
 }
 
-// What a checkpoint changed against the one before it
-func changed(entry *checkpointsv1.Checkpoint, t theme.Theme) string {
+// Files and lines a checkpoint changed against the one before it, empty for none
+func changed(entry *checkpointsv1.Checkpoint) string {
 	if entry.GetFiles() == 0 {
 		return ""
 	}
-	return render.Count(int(entry.GetFiles()), "file") + " " + render.Good(fmt.Sprintf("+%d", entry.GetInsertions()), t) + "/" +
-		render.Bad(fmt.Sprintf("-%d", entry.GetDeletions()), t)
+	return render.Count(int(entry.GetFiles()), "file")
 }
 
+// Why a checkpoint was saved, in words: before a command, before a tool of the agent, before a rollback
+func (r *rollback) reason(text string) string {
+	text = strings.TrimSpace(text)
+	switch {
+	case text == "":
+		return "No reason saved"
+	case strings.HasPrefix(text, "before terminal: "):
+		return "Before the command " + strings.TrimPrefix(text, "before terminal: ")
+	case strings.HasPrefix(text, "pre-rollback"):
+		if _, to, ok := strings.Cut(text, "restoring to "); ok {
+			return "Before the rollback to " + strings.TrimSuffix(to, ")")
+		}
+		return "Before a rollback"
+	case strings.HasPrefix(text, "before "):
+		name := strings.TrimPrefix(text, "before ")
+		return "Before the agent used " + cmp.Or(r.titles[name], name)
+	}
+	return strings.ToUpper(text[:1]) + text[1:]
+}
+
+// Lines under the list about a checkpoint: why it was saved, then when, what it changed and the command that restores it, then its folder
+// and hash
+func (r *rollback) detail(i int) []string {
+	t := r.kit.Env.Theme
+	entries := r.state.GetCheckpoints()
+	if i < 0 || i >= len(entries) {
+		return nil
+	}
+	entry := entries[i]
+	lines := []string{r.reason(entry.GetReason()) + "."}
+	facts := []string{"Saved " + entry.GetWhen().AsTime().Local().Format("Mon 2 Jan 2006 at 15:04")}
+	if files := entry.GetFiles(); files > 0 {
+		facts = append(facts, fmt.Sprintf("%s changed since the checkpoint before it: %s added, %s removed", render.Count(int(files), "file"),
+			render.Count(int(entry.GetInsertions()), "line"), render.Count(int(entry.GetDeletions()), "line")))
+	}
+	facts = append(facts, "Also /rollback "+strconv.Itoa(i+1))
+	lines = append(lines, render.Dim(strings.Join(facts, " · "), t))
+	return append(lines, render.Dim("In "+r.state.GetDirectory()+" · Hash "+entry.GetHash(), t))
+}
+
+// Reads the checkpoints, and the titles of the tools their reasons name
 func (r *rollback) load() tea.Cmd {
 	return tui.Async(func() func() tea.Cmd {
-		response, err := r.checkpoints.List(r.kit.Env.Ctx, &checkpointsv1.ListRequest{SessionId: r.session})
+		ctx := r.kit.Env.Ctx
+		response, err := r.checkpoints.List(ctx, &checkpointsv1.ListRequest{SessionId: r.session})
+		titles := map[string]string{}
+		if listed, err := r.tools.List(ctx, &toolsv1.ListRequest{}); err == nil {
+			for _, tool := range listed.GetTools() {
+				titles[tool.GetName()] = tool.GetTitle()
+			}
+		}
 		return func() tea.Cmd {
 			if err == nil {
 				r.state = response
 			}
-			r.err, r.loaded = err, true
+			r.err, r.loaded, r.titles = err, true, titles
 			r.list.Refresh()
 			return nil
 		}
 	})
 }
 
-func (r *rollback) confirm(l *cards.List, i int, question string, all bool) tea.Cmd {
-	l.Confirm(fmt.Sprintf(question, i+1), func() tea.Cmd { return r.restore(r.hub, fmt.Sprint(i+1), "", all) })
-	return nil
-}
-
-// Pages what changed in the project since the checkpoint, over the list when one is open
+// Pages what changed in the project since the checkpoint, the oldest kept when none is named, over the list when one is open
 func (r *rollback) diff(hub *cards.Hub, checkpoint string) tea.Cmd {
+	since := "checkpoint " + checkpoint
+	if checkpoint == "" {
+		since = "the oldest checkpoint"
+	}
 	return tui.Async(func() func() tea.Cmd {
 		response, err := r.checkpoints.Diff(r.kit.Env.Ctx, &checkpointsv1.DiffRequest{SessionId: r.session, Checkpoint: checkpoint})
 		return func() tea.Cmd {
 			if err != nil {
-				return r.fail(hub, "rollback failed: "+tui.Reason(err))
+				return r.fail(hub, "Could not show the changes since "+since+". "+sentence(tui.Reason(err)))
 			}
 			if response.GetHash() == "" {
-				return r.say(hub, "no checkpoints found", wm.Info)
+				return r.say(hub, "There are no checkpoints of this folder yet.", wm.Info)
 			}
 			if strings.TrimSpace(response.GetStat()) == "" && strings.TrimSpace(response.GetDiff()) == "" {
-				return r.say(hub, "no changes since this checkpoint", wm.Info)
+				return r.say(hub, "Nothing changed since "+since+".", wm.Info)
 			}
 			t := r.kit.Env.Theme
 			page := cards.NewPage(r.kit.Env, cards.PageSpec{
-				Title: "Rollback diff · " + response.GetHash()[:min(10, len(response.GetHash()))],
+				Title: "Changes since " + since,
 				Key:   "checkpoints:diff:" + response.GetHash(),
 				Lines: func(w int) []string {
 					var out []string
@@ -265,7 +375,7 @@ func (r *rollback) diff(hub *cards.Hub, checkpoint string) tea.Cmd {
 	})
 }
 
-// A diff line in the colour of what it is
+// A diff line in the color of what it is
 func paint(shown, line string, t theme.Theme) string {
 	switch {
 	case strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") || strings.HasPrefix(line, "diff ") || strings.HasPrefix(line, "index "):
@@ -289,12 +399,12 @@ func (r *rollback) fail(hub *cards.Hub, text string) tea.Cmd {
 
 func (r *rollback) say(hub *cards.Hub, text string, level wm.Level) tea.Cmd {
 	if hub != nil {
-		return hub.Done(text)
+		return hub.Say(text, cards.NoteInfo)
 	}
 	return wm.Notify(text, level)
 }
 
-// Restores the project, or one file of it, to the checkpoint; a restore of the whole project also takes back the session's last turn,
+// Restores the project, or one file of it, to the checkpoint; a restore of the whole project also takes back the session's last message,
 // so the agent doesn't remember changes rolled back. What happened is paged
 func (r *rollback) restore(hub *cards.Hub, checkpoint, file string, all bool) tea.Cmd {
 	if hub != nil {
@@ -303,45 +413,80 @@ func (r *rollback) restore(hub *cards.Hub, checkpoint, file string, all bool) te
 	return tui.Async(func() func() tea.Cmd {
 		ctx := r.kit.Env.Ctx
 		response, err := r.checkpoints.Restore(ctx, &checkpointsv1.RestoreRequest{SessionId: r.session, Checkpoint: checkpoint, File: file, All: all})
-		lines := []string{}
+		var lines []string
 		if err == nil {
-			lines = server.Report(response)
+			lines = report(response, "/rollback "+checkpoint+" --all", r.kit.Env.Theme)
 			if file == "" && (len(response.GetRestored()) > 0 || !response.GetSafe()) {
-				lines = append(lines, r.takeBack())
+				if took := r.takeBack(); took != "" {
+					lines = append(lines, "", took)
+				}
 			}
 		}
 		return func() tea.Cmd {
 			if err != nil {
-				return r.fail(hub, "rollback failed: "+tui.Reason(err))
+				return r.fail(hub, "Could not restore checkpoint "+checkpoint+". "+sentence(tui.Reason(err)))
 			}
 			page := cards.NewPage(r.kit.Env, cards.PageSpec{
-				Title: "Rollback",
+				Title: "Restored checkpoint " + checkpoint,
 				Key:   "checkpoints:restored:" + r.session,
 				Lines: func(w int) []string {
 					var out []string
 					for _, line := range lines {
-						if line != "" {
-							out = append(out, strings.Split(render.Wrap(line, max(w, 1)), "\n")...)
-						}
+						out = append(out, strings.Split(render.Wrap(line, max(w, 1)), "\n")...)
 					}
 					return out
 				},
 			})
-			notice := wm.Notify("rollback restored "+cmp.Or(file, "all files")+": "+cmp.Or(response.GetReason(), response.GetRestoredTo()), wm.Success)
 			if hub != nil {
-				return tea.Batch(hub.Push(page), hub.Done("Restored to "+response.GetRestoredTo()), r.load(), notice)
+				return tea.Batch(hub.Push(page), hub.Done("Restored checkpoint "+checkpoint+"."), r.load())
 			}
-			return tea.Batch(r.kit.WM.ShowOverlay(r.kit.Hub(page.Key(), page)), notice)
+			return r.kit.WM.ShowOverlay(r.kit.Hub(page.Key(), page))
 		}
 	})
 }
 
-// Takes back the session's last turn after a restore of its whole project: what became of it, as a line
+// What a restore did, as lines of the page that reports it: what was put back, what was kept and why, and what could not be removed. All
+// is the command that restores the edits a restore kept
+func report(restored *checkpointsv1.RestoreResponse, all string, t theme.Theme) []string {
+	files := func(heading string, paths []string) []string {
+		if len(paths) == 0 {
+			return nil
+		}
+		out := []string{"", render.Heading(heading, t)}
+		for _, path := range paths {
+			out = append(out, "  "+path)
+		}
+		return out
+	}
+	if restored.GetSafe() && len(restored.GetRestored()) == 0 && len(restored.GetKeptEdits()) > 0 {
+		lines := []string{"Nothing was restored: you edited every file that changed since the checkpoint. " + all + " puts those back too."}
+		return append(lines, files("Your edits, kept", restored.GetKeptEdits())...)
+	}
+	what := "your files"
+	if restored.GetFile() != "" {
+		what = restored.GetFile()
+	}
+	lines := []string{"Restored " + what + " to checkpoint " + restored.GetRestoredTo() + "."}
+	if reason := strings.TrimSpace(restored.GetReason()); reason != "" {
+		lines = append(lines, render.Dim("It was saved for this reason: "+reason+".", t))
+	}
+	lines = append(lines, "A checkpoint of how your files were just before was saved, so you can undo this rollback.")
+	lines = append(lines, files("Put back", restored.GetRestored())...)
+	if edits := restored.GetKeptEdits(); len(edits) > 0 {
+		lines = append(lines, files("Your edits, kept", edits)...)
+		lines = append(lines, render.Dim(all+" puts these back too.", t))
+	}
+	lines = append(lines, files("Kept as they are, too large for a checkpoint to hold", restored.GetKeptOversize())...)
+	lines = append(lines, files("Could not be removed, so they are still there", restored.GetFailedDeletes())...)
+	return lines
+}
+
+// Takes back the session's last message after a restore of its whole project: what became of it, as a line
 func (r *rollback) takeBack() string {
 	ctx := r.kit.Env.Ctx
 	got, err := r.sessions.Get(ctx, &sessionsv1.GetRequest{Id: r.session})
 	if err != nil {
-		return "The conversation was kept: " + tui.Reason(err)
+		return "Your last message was kept. " + sentence(tui.Reason(err))
 	}
 	var last *sessionsv1.Message
 	for _, message := range slices.Backward(got.GetMessages()) {
@@ -355,17 +500,18 @@ func (r *rollback) takeBack() string {
 	}
 	edited, err := r.agents.Edit(ctx, &agentv1.EditRequest{SessionId: r.session, MessageId: last.GetId()})
 	if err != nil {
-		return "The conversation was kept: " + tui.Reason(err)
+		return "Your last message was kept. " + sentence(tui.Reason(err))
 	}
-	return fmt.Sprintf("↶ Took back the last turn (%s), so the agent doesn't remember the changes rolled back.", render.Count(int(edited.GetRemoved()), "message"))
+	return "Took back your last message and the reply to it, " + render.Count(int(edited.GetRemoved()), "message") +
+		" in all, so the agent does not remember the changes you rolled back."
 }
 
-// Opens the snapshots of the profile in use: what they take by project, and the cleanups
+// Opens the checkpoint storage of the profile in use: what it takes by project, and the cleanups
 func (c *clients) storage(kit *tui.Kit, _ string) tea.Cmd {
 	return (&storage{clients: c, kit: kit}).open()
 }
 
-// Store of the profile in use in a list of its projects
+// Checkpoint storage of the profile in use in a list of its projects
 type storage struct {
 	*clients
 	kit    *tui.Kit
@@ -376,90 +522,152 @@ type storage struct {
 	err    error
 }
 
+// Projects with checkpoints, the one saved to last first
 func (s *storage) projects() []*checkpointsv1.Project {
 	projects := slices.Clone(s.state.GetProjects())
 	slices.SortStableFunc(projects, func(a, b *checkpointsv1.Project) int { return b.GetTouched().AsTime().Compare(a.GetTouched().AsTime()) })
 	return projects
 }
 
+// Projects whose folder is gone
+func (s *storage) orphans() []*checkpointsv1.Project {
+	return slices.DeleteFunc(slices.Clone(s.state.GetProjects()), func(project *checkpointsv1.Project) bool { return project.GetExists() })
+}
+
+// Folder of a project, or what stands for one that is not known
+func folder(project *checkpointsv1.Project) string {
+	return cmp.Or(project.GetWorkdir(), "Unknown folder")
+}
+
 func (s *storage) open() tea.Cmd {
 	t := s.kit.Env.Theme
+	var shown []*checkpointsv1.Project
 	s.list = cards.NewList(s.kit.Env, cards.ListSpec{
-		Title:   "File snapshots",
+		Title:   "Checkpoint storage",
 		Glyph:   t.Glyphs.Jobs,
 		Key:     "checkpoints:storage",
 		Context: storageContext,
-		Columns: []render.Column{{Title: "Project", Flex: 3}, {Title: "Snapshots"}, {Title: "Last"}, {Title: "State"}},
+		Shared:  []string{cards.HubContext},
+		Intro:   s.intro,
+		Columns: []render.Column{{Flex: 1}, {}, {}, {}},
 		Yield:   []int{2},
 		Rows: func() [][]string {
-			projects := s.projects()
-			rows := make([][]string, len(projects))
-			for i, project := range projects {
-				state := render.Good("live", t)
+			shown = s.projects()
+			rows := make([][]string, len(shown))
+			for i, project := range shown {
+				state := ""
 				if !project.GetExists() {
-					state = render.Warm("orphan", t)
+					state = render.Warm("Folder is gone", t)
 				}
-				rows[i] = []string{cmp.Or(project.GetWorkdir(), "(unknown)"), fmt.Sprint(project.GetCommits()),
-					render.Elapsed(timeSince(project)) + " ago", state}
+				rows[i] = []string{folder(project), render.Count(int(project.GetCommits()), "checkpoint"), render.Dim(s.last(project), t), state}
 			}
 			return rows
 		},
-		Banner: func() string {
-			if !s.loaded || s.err != nil {
-				return ""
+		Detail: func(i int) []string { return s.detail(shown[i]) },
+		Empty: func() string {
+			switch {
+			case s.err != nil:
+				return "Could not read the checkpoint storage. " + sentence(tui.Reason(s.err)) + " " + s.kit.Env.Keys.Display("hub.refresh") + " tries again."
+			case !s.loaded:
+				return "Reading the checkpoint storage…"
 			}
-			line := fmt.Sprintf("%s in all · store %s · archives %s (%d) · %s", render.Bytes(s.state.GetTotalBytes()), render.Bytes(s.state.GetStoreBytes()),
-				render.Bytes(s.state.GetLegacyBytes()), len(s.state.GetArchives()), s.state.GetBase())
-			if notice := s.state.GetFootprint(); notice != "" {
-				return render.Warm(notice, t) + "\n" + render.Dim(line, t)
-			}
-			return render.Dim(line, t)
+			return "No checkpoints yet. While Save checkpoints is on, the agent saves one before it changes your files."
 		},
-		Empty: func() string { return tui.Waiting(s.loaded, s.err, "no file snapshots yet") },
-		Free:  map[string]bool{"checkpoints.prune": true, "checkpoints.clear.legacy": true, "checkpoints.clear": true},
-		Hints: func(*cards.List, int) []wm.Hint {
-			return []wm.Hint{{Action: "checkpoints.prune", Label: "prune"}, {Action: "checkpoints.clear.legacy", Label: "clear archives"},
-				{Action: "checkpoints.clear", Label: "clear all"}}
+		Free: map[string]bool{"checkpoints.prune": true, "checkpoints.clear.legacy": true, "checkpoints.clear": true, "hub.refresh": true},
+		Hints: func(_ *cards.List, i int) []wm.Hint {
+			var out []wm.Hint
+			if i >= 0 && i < len(shown) && !shown[i].GetExists() {
+				out = append(out, wm.Hint{Action: "hub.remove", Label: "delete"})
+			}
+			if len(s.state.GetProjects()) > 0 {
+				out = append(out, wm.Hint{Action: "checkpoints.prune"})
+			}
+			if len(s.state.GetArchives()) > 0 {
+				out = append(out, wm.Hint{Action: "checkpoints.clear.legacy"})
+			}
+			if len(s.state.GetProjects()) > 0 || len(s.state.GetArchives()) > 0 {
+				out = append(out, wm.Hint{Action: "checkpoints.clear"})
+			}
+			return out
 		},
 		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"checkpoints.prune": func(l *cards.List, _ int) tea.Cmd { return s.prune(l) },
+			"hub.remove": func(l *cards.List, i int) tea.Cmd {
+				project := shown[i]
+				if project.GetExists() {
+					return nil
+				}
+				l.Confirm("Delete the checkpoints of "+filepath.Base(folder(project))+"? Its folder is gone.", func() tea.Cmd { return s.drop(project) })
+				return nil
+			},
+			"checkpoints.prune": func(l *cards.List, _ int) tea.Cmd {
+				if len(s.state.GetProjects()) == 0 {
+					return nil
+				}
+				return s.prune(l)
+			},
 			"checkpoints.clear.legacy": func(l *cards.List, _ int) tea.Cmd {
-				l.Confirm("Delete the old snapshot archives?", func() tea.Cmd {
-					s.hub.Busy("Clearing the archives…")
-					return tui.Call(s.hub, func() (*checkpointsv1.ClearLegacyResponse, error) {
-						return s.checkpoints.ClearLegacy(s.kit.Env.Ctx, &checkpointsv1.ClearLegacyRequest{})
-					}, func(cleared *checkpointsv1.ClearLegacyResponse) tea.Cmd {
-						text := fmt.Sprintf("Deleted %s, reclaimed %s.", render.Count(int(cleared.GetDeleted()), "archive"), render.Bytes(cleared.GetFreed()))
-						if cleared.GetErrors() > 0 {
-							return tea.Batch(s.hub.Fail(text+fmt.Sprintf(" Could not delete %d (see logs).", cleared.GetErrors())), s.load())
-						}
-						return tea.Batch(s.hub.Done(text), s.load())
-					})
-				})
+				if len(s.state.GetArchives()) == 0 {
+					return nil
+				}
+				l.Confirm("Delete the old checkpoint archives? They take "+size(s.state.GetLegacyBytes())+".", s.clearLegacy)
 				return nil
 			},
 			"checkpoints.clear": func(l *cards.List, _ int) tea.Cmd {
-				l.Confirm("Delete every file snapshot? /rollback cannot undo anything after this.", func() tea.Cmd {
-					s.hub.Busy("Clearing every snapshot…")
-					return tui.Call(s.hub, func() (*checkpointsv1.ClearResponse, error) {
-						return s.checkpoints.Clear(s.kit.Env.Ctx, &checkpointsv1.ClearRequest{})
-					}, func(cleared *checkpointsv1.ClearResponse) tea.Cmd {
-						return tea.Batch(s.hub.Done("Cleared. Reclaimed "+render.Bytes(cleared.GetFreed())+"."), s.load())
-					})
-				})
+				if len(s.state.GetProjects()) == 0 && len(s.state.GetArchives()) == 0 {
+					return nil
+				}
+				l.Confirm("Delete every checkpoint? /rollback can't undo anything after this.", s.clear)
 				return nil
 			},
+			"hub.refresh": func(*cards.List, int) tea.Cmd { return s.load() },
 		},
 	})
+	s.list.ToggleDetail()
 	s.hub = s.kit.Hub("checkpoints:storage", s.list)
 	return tea.Batch(s.kit.WM.ShowOverlay(s.hub), s.load())
 }
 
-func timeSince(project *checkpointsv1.Project) time.Duration {
-	if project.GetTouched() == nil {
-		return 0
+// Lines above the projects: the warning of a store at its size, how much the checkpoints take and where they are kept
+func (s *storage) intro() []string {
+	var lines []string
+	if footprint := s.state.GetFootprint(); footprint != "" {
+		lines = append(lines, footprint)
 	}
-	return time.Since(project.GetTouched().AsTime()).Round(time.Second)
+	if !s.loaded || s.err != nil || (len(s.state.GetProjects()) == 0 && len(s.state.GetArchives()) == 0) {
+		return lines
+	}
+	said := "Checkpoints take " + size(s.state.GetTotalBytes()) + " in all"
+	if archives := len(s.state.GetArchives()); archives > 0 {
+		said += ": " + size(s.state.GetStoreBytes()) + " for your projects and " + size(s.state.GetLegacyBytes()) + " in " +
+			render.Count(archives, "old archive")
+	}
+	return append(lines, said+".", "They are kept in "+s.state.GetBase()+".")
+}
+
+// When a checkpoint of the project was saved last, in words
+func (s *storage) last(project *checkpointsv1.Project) string {
+	if project.GetTouched() == nil {
+		return ""
+	}
+	return ago(project.GetTouched().AsTime())
+}
+
+// Lines under the list about a project: its whole folder, its checkpoints and when they were saved, and why a gone folder may only look gone
+func (s *storage) detail(project *checkpointsv1.Project) []string {
+	t := s.kit.Env.Theme
+	lines := []string{folder(project)}
+	facts := []string{render.Count(int(project.GetCommits()), "checkpoint")}
+	if project.GetTouched() != nil {
+		facts = append(facts, "Last saved "+s.last(project))
+	}
+	if project.GetCreated() != nil {
+		facts = append(facts, "First saved "+project.GetCreated().AsTime().Local().Format("2 Jan 2006"))
+	}
+	lines = append(lines, render.Dim(strings.Join(facts, " · "), t))
+	if !project.GetExists() {
+		lines = append(lines, render.Warm("Its folder is gone. It may have been deleted, or its drive, share or VPN is not connected.", t))
+	}
+	return lines
 }
 
 func (s *storage) load() tea.Cmd {
@@ -476,59 +684,172 @@ func (s *storage) load() tea.Cmd {
 	})
 }
 
-// Form of a cleanup: how old a project may get, the size the store is brought within and whether projects whose folder is gone go; the
-// orphans shown now are the only ones it deletes
-func (s *storage) prune(l *cards.List) tea.Cmd {
-	whole := func(value string) string {
-		if n, err := strconv.Atoi(strings.TrimSpace(value)); err != nil || n < 0 {
-			return "needs a number"
-		}
+// Sentence of what a cleanup could not delete, empty when it deleted everything
+func failures(errors int32) string {
+	switch errors {
+	case 0:
 		return ""
+	case 1:
+		return " 1 could not be deleted. The log says why."
+	}
+	return " " + strconv.Itoa(int(errors)) + " could not be deleted. The log says why."
+}
+
+// Deletes the archives of what the checkpoint folder held before checkpoints had a store of their own
+func (s *storage) clearLegacy() tea.Cmd {
+	s.hub.Busy("Deleting the old archives…")
+	return tui.Call(s.hub, func() (*checkpointsv1.ClearLegacyResponse, error) {
+		return s.checkpoints.ClearLegacy(s.kit.Env.Ctx, &checkpointsv1.ClearLegacyRequest{})
+	}, func(cleared *checkpointsv1.ClearLegacyResponse) tea.Cmd {
+		text := "Deleted " + render.Count(int(cleared.GetDeleted()), "old archive") + " and freed " + size(cleared.GetFreed()) + "."
+		if cleared.GetErrors() > 0 {
+			return tea.Batch(s.hub.Fail(text+failures(cleared.GetErrors())), s.load())
+		}
+		return tea.Batch(s.hub.Done(text), s.load())
+	})
+}
+
+// Deletes every checkpoint
+func (s *storage) clear() tea.Cmd {
+	s.hub.Busy("Deleting every checkpoint…")
+	return tui.Call(s.hub, func() (*checkpointsv1.ClearResponse, error) {
+		return s.checkpoints.Clear(s.kit.Env.Ctx, &checkpointsv1.ClearRequest{})
+	}, func(cleared *checkpointsv1.ClearResponse) tea.Cmd {
+		return tea.Batch(s.hub.Done("Deleted every checkpoint and freed "+size(cleared.GetFreed())+"."), s.load())
+	})
+}
+
+// Deletes the checkpoints of one project whose folder is gone, and no other
+func (s *storage) drop(project *checkpointsv1.Project) tea.Cmd {
+	s.hub.Busy("Deleting the checkpoints of " + folder(project) + "…")
+	return tui.Call(s.hub, func() (*checkpointsv1.PruneResponse, error) {
+		return s.checkpoints.Prune(s.kit.Env.Ctx, &checkpointsv1.PruneRequest{Orphans: true, AllowListed: true, Allow: []string{project.GetHash()}})
+	}, func(pruned *checkpointsv1.PruneResponse) tea.Cmd {
+		if pruned.GetErrors() > 0 || pruned.GetOrphans() == 0 {
+			return tea.Batch(s.hub.Fail("Could not delete the checkpoints of "+folder(project)+". The log says why."), s.load())
+		}
+		return tea.Batch(s.hub.Done("Deleted the checkpoints of "+folder(project)+" and freed "+size(pruned.GetFreed())+"."), s.load())
+	})
+}
+
+// Whole number a setting holds, its YAML read as a length of time in unit when unit is set
+func whole(value string, unit time.Duration) (int, bool) {
+	var decoded any
+	if yaml.Unmarshal([]byte(value), &decoded) != nil || decoded == nil {
+		return 0, false
+	}
+	if unit > 0 {
+		length, ok := config.Length(decoded, unit)
+		return int(length / unit), ok
+	}
+	switch n := decoded.(type) {
+	case int:
+		return n, true
+	case float64:
+		return int(n), true
+	}
+	return 0, false
+}
+
+// Form of a cleanup, its numbers those of the settings Keep for and Disk limit: how old a project may get, the size the checkpoints are
+// brought within and whether projects whose folder is gone go; the projects whose folder is gone now are the only ones it deletes
+func (s *storage) prune(l *cards.List) tea.Cmd {
+	return tui.Async(func() func() tea.Cmd {
+		ctx := s.kit.Env.Ctx
+		days, limit := 7, 500
+		if got, err := s.settings.Get(ctx, &configv1.GetRequest{Key: checkpointsconfig.Retention}); err == nil {
+			if n, ok := whole(got.GetSetting().GetValue(), 24*time.Hour); ok {
+				days = n
+			}
+		}
+		if got, err := s.settings.Get(ctx, &configv1.GetRequest{Key: checkpointsconfig.MaxTotalSize}); err == nil {
+			if n, ok := whole(got.GetSetting().GetValue(), 0); ok {
+				limit = n
+			}
+		}
+		return func() tea.Cmd { return s.hub.Push(s.pruneForm(l, days, limit)) }
+	})
+}
+
+func (s *storage) pruneForm(l *cards.List, days, limit int) *cards.Form {
+	count := func(unit string) func(string) string {
+		return func(value string) string {
+			if n, err := strconv.Atoi(strings.TrimSpace(value)); err != nil || n < 0 {
+				return "Enter a whole number of " + unit + ", 0 or more."
+			}
+			return ""
+		}
+	}
+	orphans := s.orphans()
+	fields := []cards.Field{
+		{ID: "days", Label: "Days untouched", Kind: cards.FieldNumber, Value: strconv.Itoa(days), Required: true, Check: count("days"),
+			Help: "Delete the checkpoints of projects with no new checkpoint for this many days.\n0 keeps them however old they are."},
+		{ID: "size", Label: "Disk limit in MB", Kind: cards.FieldNumber, Value: strconv.Itoa(limit), Required: true, Check: count("MB"),
+			Help: "Then delete the oldest checkpoints of each project until all of them fit. The newest of each project is always kept.\n0 means no limit."},
+	}
+	if len(orphans) > 0 {
+		fields = append(fields, cards.Field{ID: "orphans", Label: "Gone folders", Kind: cards.FieldBool, Value: "true",
+			Help: "Also delete the checkpoints of " + render.Count(len(orphans), "project") + " whose folder is gone. A folder can look gone when its " +
+				"drive, share or VPN is not connected."})
 	}
 	var form *cards.Form
 	form = cards.NewForm(s.kit.Env, cards.FormSpec{
-		Title: "Prune file snapshots",
-		Intro: []string{"Deletes the snapshots of projects not snapshotted for a while, and of projects whose folder is gone, then reclaims space."},
-		Fields: []cards.Field{
-			{ID: "days", Label: "Untouched for days", Kind: cards.FieldNumber, Value: "7", Required: true, Check: whole,
-				Help: "Projects not snapshotted for this many days go"},
-			{ID: "size", Label: "Store size in MB", Kind: cards.FieldNumber, Value: "500", Required: true, Check: whole,
-				Help: "The oldest snapshots of each project go until the store fits"},
-			{ID: "orphans", Label: "Projects that are gone", Kind: cards.FieldBool, Value: "true",
-				Help: "A folder can be unreachable because it was deleted, or because its volume, share or VPN is down"},
-		},
+		Title:  "Prune checkpoints",
+		Intro:  []string{"Delete old checkpoints to free disk space."},
+		Fields: fields,
 		Submit: "Prune",
 		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
 			days, _ := strconv.Atoi(strings.TrimSpace(values["days"]))
-			size, _ := strconv.Atoi(strings.TrimSpace(values["size"]))
-			request := &checkpointsv1.PruneRequest{RetentionDays: int32(days), MaxSizeMb: int32(size), Orphans: values["orphans"] == "true", AllowListed: true}
-			for _, project := range s.state.GetProjects() {
-				if !project.GetExists() {
+			limit, _ := strconv.Atoi(strings.TrimSpace(values["size"]))
+			request := &checkpointsv1.PruneRequest{RetentionDays: int32(days), MaxSizeMb: int32(limit), Orphans: values["orphans"] == "true", AllowListed: true}
+			if request.Orphans {
+				for _, project := range orphans {
 					request.Allow = append(request.Allow, project.GetHash())
 				}
 			}
-			return tea.Batch(s.hub.Close(form), tui.Async(func() func() tea.Cmd {
-				return func() tea.Cmd {
-					question := fmt.Sprintf("Delete snapshots untouched for %d days", days)
-					if request.Orphans && len(request.Allow) > 0 {
-						question += fmt.Sprintf(" and %s whose folder is gone", render.Count(len(request.Allow), "project"))
-					}
-					l.Confirm(question+"?", func() tea.Cmd {
-						s.hub.Busy("Pruning file snapshots…")
-						return tui.Call(s.hub, func() (*checkpointsv1.PruneResponse, error) {
-							return s.checkpoints.Prune(s.kit.Env.Ctx, request)
-						}, func(pruned *checkpointsv1.PruneResponse) tea.Cmd {
-							text := fmt.Sprintf("Deleted %d orphan and %d stale, reclaimed %s.", pruned.GetOrphans(), pruned.GetStale(), render.Bytes(pruned.GetFreed()))
-							if pruned.GetErrors() > 0 {
-								return tea.Batch(s.hub.Fail(text+fmt.Sprintf(" %d error(s), see logs.", pruned.GetErrors())), s.load())
-							}
-							return tea.Batch(s.hub.Done(text), s.load())
-						})
-					})
-					return nil
-				}
-			}))
+			var parts []string
+			if days > 0 {
+				parts = append(parts, "checkpoints untouched for "+render.Count(days, "day"))
+			}
+			if request.Orphans {
+				parts = append(parts, "those of "+render.Count(len(orphans), "gone folder"))
+			}
+			question := ""
+			switch {
+			case len(parts) > 0:
+				question = "Delete " + strings.Join(parts, " and ") + "?"
+			case limit > 0:
+				question = "Delete the oldest checkpoints until all fit in " + strconv.Itoa(limit) + " MB?"
+			default:
+				return tea.Batch(s.hub.Close(form), s.hub.Say("Nothing to prune: every number is 0 and no gone folder is chosen.", cards.NoteInfo))
+			}
+			l.Confirm(question, func() tea.Cmd { return s.run(request) })
+			return s.hub.Close(form)
 		},
 	})
-	return s.hub.Push(form)
+	return form
+}
+
+// Runs a cleanup and says what it deleted and freed
+func (s *storage) run(request *checkpointsv1.PruneRequest) tea.Cmd {
+	s.hub.Busy("Pruning checkpoints…")
+	return tui.Call(s.hub, func() (*checkpointsv1.PruneResponse, error) {
+		return s.checkpoints.Prune(s.kit.Env.Ctx, request)
+	}, func(pruned *checkpointsv1.PruneResponse) tea.Cmd {
+		var parts []string
+		if n := pruned.GetOrphans(); n > 0 {
+			parts = append(parts, render.Count(int(n), "gone folder"))
+		}
+		if n := pruned.GetStale(); n > 0 {
+			parts = append(parts, render.Count(int(n), "untouched project"))
+		}
+		text := "Freed " + size(pruned.GetFreed()) + "."
+		if len(parts) > 0 {
+			text = "Deleted the checkpoints of " + strings.Join(parts, " and ") + " and freed " + size(pruned.GetFreed()) + "."
+		}
+		if pruned.GetErrors() > 0 {
+			return tea.Batch(s.hub.Fail(text+failures(pruned.GetErrors())), s.load())
+		}
+		return tea.Batch(s.hub.Done(text), s.load())
+	})
 }

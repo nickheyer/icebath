@@ -136,7 +136,7 @@ func (s *store) Append(ctx context.Context, id string, guard sessions.Guard, lis
 			return err
 		}
 		if reason.String == sessions.EndCompression && child.Valid {
-			return fmt.Errorf("Session %q is closed by compression; adopt its live continuation before appending messages", id)
+			return fmt.Errorf("The session %s was summarized into a new session, so nothing more is saved to it. Go on in the new session.", id)
 		}
 		if err := checkGuard(ctx, tx, id, guard); err != nil {
 			return err
@@ -173,14 +173,14 @@ func checkGuard(ctx context.Context, tx *sql.Tx, id string, guard sessions.Guard
 			return err
 		}
 	case holder != guard.Compression:
-		return fmt.Errorf("Session %q is being compressed by another writer", id)
+		return fmt.Errorf("Another icebath is summarizing the session %s right now, so this was not saved to it.", id)
 	}
 	if guard.Turn == "" {
 		return nil
 	}
 	err = tx.QueryRowContext(ctx, `SELECT holder, expires_at FROM session_turn_leases WHERE session_id = ?`, id).Scan(&holder, &expires)
 	if errors.Is(err, sql.ErrNoRows) || err == nil && holder != guard.Turn {
-		return fmt.Errorf("Session turn lease lost; refusing transcript write for %q", id)
+		return fmt.Errorf("Another icebath took over the session %s, so this reply was not saved to it.", id)
 	}
 	if err != nil {
 		return err
@@ -259,13 +259,13 @@ func (s *store) Rewind(ctx context.Context, id string, message int64) (int, erro
 		err := tx.QueryRowContext(ctx, `SELECT role, active, compacted, message_uid FROM messages WHERE id = ? AND session_id = ?`, message, id).
 			Scan(&roleText, &active, &compacted, &uid)
 		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("message %d not found in session %s", message, id)
+			return fmt.Errorf("The session %s has no message %d to go back to.", id, message)
 		}
 		if err != nil {
 			return err
 		}
 		if roleText != "user" {
-			return fmt.Errorf(`rewind target must be a "user" message (got role=%q, id=%d)`, roleText, message)
+			return fmt.Errorf("The chat can go back only to a message you sent, and message %d is not one.", message)
 		}
 		// The message as the person saw it, the first stored under its uid, and the copy compaction left of it for the model
 		origin := message
@@ -279,7 +279,7 @@ func (s *store) Rewind(ctx context.Context, id string, message int64) (int, erro
 		}
 		if active == 0 {
 			if compacted == 0 {
-				return errors.New("rewind target is not active")
+				return errors.New("That message is no longer part of the session, so the chat can't go back to it.")
 			}
 			var live int64
 			err := tx.QueryRowContext(ctx, `SELECT id FROM messages WHERE session_id = ? AND message_uid = ? AND active = 1 ORDER BY id LIMIT 1`, id, uid).
@@ -502,7 +502,7 @@ func (s *store) Import(ctx context.Context, transcripts []*sessionsv1.Transcript
 		for _, transcript := range orderParents(transcripts) {
 			session := transcript.GetSession()
 			if session.GetId() == "" {
-				return errors.New("an imported session has no id")
+				return errors.New("An imported session has no id, so nothing was imported.")
 			}
 			var found int
 			err := tx.QueryRowContext(ctx, `SELECT 1 FROM sessions WHERE id = ?`, session.GetId()).Scan(&found)
@@ -514,7 +514,7 @@ func (s *store) Import(ctx context.Context, transcripts []*sessionsv1.Transcript
 				return err
 			}
 			if err := importSession(ctx, tx, transcript); err != nil {
-				return fmt.Errorf("session %s: %w", session.GetId(), err)
+				return fmt.Errorf("The session %s could not be imported: %w", session.GetId(), err)
 			}
 			out.Ids = append(out.Ids, session.GetId())
 		}

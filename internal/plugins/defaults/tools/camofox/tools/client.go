@@ -210,16 +210,16 @@ func (e *connectionError) Unwrap() error { return e.err }
 func prepare(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("invalid Camofox URL: %w", err)
+		return nil, fmt.Errorf("The Camofox address “%s” cannot be read. Give one such as http://localhost:9377.", raw)
 	}
 	if u.Scheme == "" {
-		return nil, fmt.Errorf("invalid Camofox URL %q: no scheme, perhaps https://%s", raw, raw)
+		return nil, fmt.Errorf("The Camofox address “%s” does not start with http:// or https://. Perhaps you meant https://%s.", raw, raw)
 	}
 	if scheme := strings.ToLower(u.Scheme); scheme != "http" && scheme != "https" {
-		return nil, fmt.Errorf("invalid Camofox URL %q: scheme %q is neither http nor https", raw, u.Scheme)
+		return nil, fmt.Errorf("The Camofox address “%s” starts with %s://, but it must start with http:// or https://.", raw, u.Scheme)
 	}
 	if u.Host == "" {
-		return nil, fmt.Errorf("invalid Camofox URL %q: no host", raw)
+		return nil, fmt.Errorf("The Camofox address “%s” names no computer. Give one such as http://localhost:9377.", raw)
 	}
 	return u, nil
 }
@@ -665,11 +665,11 @@ func (s *scope) cleanupTask(task string) {
 func (s *scope) identityMode() string {
 	switch {
 	case s.identityOverride("") != nil:
-		return "external (CAMOFOX_USER_ID / browser.camofox.user_id)"
+		return "The user you chose, under Browser › Camofox › User or with CAMOFOX_USER_ID"
 	case s.managed():
-		return "managed persistence (stable per-profile Camofox profile)"
+		return "One user for every session of this profile, so sign-ins last"
 	}
-	return "ephemeral (new Camofox profile per session)"
+	return "A new user for each session"
 }
 
 func text(v any) string {

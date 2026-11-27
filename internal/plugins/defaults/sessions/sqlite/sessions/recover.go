@@ -17,6 +17,7 @@ import (
 
 	sqliteconfig "github.com/nickheyer/icebath/internal/plugins/defaults/sessions/sqlite/config"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Tables recovery copies, parents first; leases, beats and admissions are runtime state a new process starts without
@@ -70,7 +71,7 @@ func (s *store) recover(ctx context.Context, r *sessionsv1.MaintainRequest, prog
 	source, output := r.GetPath(), r.GetOutput()
 	info, err := os.Stat(source)
 	if err != nil || !info.Mode().IsRegular() {
-		return fmt.Errorf("Source is not a file: %s", source)
+		return fmt.Errorf("There is no file at %s to recover from.", source)
 	}
 	if source, err = filepath.EvalSymlinks(source); err != nil {
 		return err
@@ -78,11 +79,11 @@ func (s *store) recover(ctx context.Context, r *sessionsv1.MaintainRequest, prog
 	inspect := r.GetCheckOnly()
 	switch {
 	case inspect && output != "":
-		return errors.New("--output cannot be used with --inspect-only.")
+		return errors.New("--output can't go with --inspect-only, which writes no new database.")
 	case inspect && r.GetAllowPartial():
-		return errors.New("--allow-partial cannot be used with --inspect-only.")
+		return errors.New("--allow-partial can't go with --inspect-only, which rescues nothing.")
 	case !inspect && output == "":
-		return errors.New("--output is required unless --inspect-only is used.")
+		return errors.New("recover needs --output, unless you pass --inspect-only.")
 	}
 	report := r.GetReport()
 	if !inspect {
@@ -90,14 +91,14 @@ func (s *store) recover(ctx context.Context, r *sessionsv1.MaintainRequest, prog
 			return err
 		}
 		if filepath.Base(output) == "" || filepath.Base(output) == string(filepath.Separator) {
-			return fmt.Errorf("the recovery output path %s has no file name", output)
+			return fmt.Errorf("%s names a folder, and --output needs the name of a file.", output)
 		}
 		for _, sidecar := range []string{"", "-wal", "-shm", "-journal"} {
 			if output == source+sidecar {
-				return errors.New("The recovery output must not be the source database or one of its journal sidecars.")
+				return errors.New("--output must be a new file, not the damaged database or one of its journal files.")
 			}
 			if _, err := os.Stat(output + sidecar); err == nil {
-				return fmt.Errorf("Refusing to overwrite existing recovery output: %s", output+sidecar)
+				return fmt.Errorf("%s exists already, and recover never writes over a file. Pick another --output.", output+sidecar)
 			}
 		}
 		if report == "" {
@@ -106,7 +107,7 @@ func (s *store) recover(ctx context.Context, r *sessionsv1.MaintainRequest, prog
 	}
 	if report != "" {
 		if _, err := os.Stat(report); err == nil {
-			return fmt.Errorf("refusing to overwrite existing report: %s", report)
+			return fmt.Errorf("The report %s exists already, and recover never writes over a file. Pick another --report.", report)
 		}
 	}
 	chunk := int(r.GetChunkSize())
@@ -114,11 +115,11 @@ func (s *store) recover(ctx context.Context, r *sessionsv1.MaintainRequest, prog
 		chunk = 1000
 	}
 	if chunk < 0 {
-		return errors.New("chunk_size must be greater than zero")
+		return errors.New("--chunk-size must be greater than 0.")
 	}
 	root := cmp.Or(r.GetWorkDir(), filepath.Dir(cmp.Or(output, source)))
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
-		return fmt.Errorf("Recovery work directory is not a directory: %s", root)
+		return fmt.Errorf("%s is not a folder, so recover can't work in it. Pass another --work-dir.", root)
 	}
 	var bundle int64
 	for _, p := range bundleFingerprint(source) {
@@ -130,8 +131,8 @@ func (s *store) recover(ctx context.Context, r *sessionsv1.MaintainRequest, prog
 	}
 	headroom := max(256<<20, (bundle+allowance)/20)
 	if free, ok := freeSpace(root); ok && free < bundle+allowance+headroom {
-		return fmt.Errorf("Not enough free disk space for a safe recovery copy: %s available at %s, %s required (%s source bundle + %s output allowance + "+
-			"%s headroom). Use --work-dir or --output on a filesystem with more free space.", human(free), root, human(bundle+allowance+headroom), human(bundle),
+		return fmt.Errorf("The disk at %s has %s free, and a safe rescue needs %s: %s for the copy of the damaged files, %s for the new database and %s "+
+			"to spare. Pass --work-dir or --output on a disk with more space.", root, human(free), human(bundle+allowance+headroom), human(bundle),
 			human(allowance), human(headroom))
 	}
 	if source == s.config.GetString(sqliteconfig.Path) {
@@ -149,8 +150,8 @@ func (s *store) recover(ctx context.Context, r *sessionsv1.MaintainRequest, prog
 	}
 	unchanged := fmt.Sprint(before) == fmt.Sprint(bundleFingerprint(source))
 	if !unchanged {
-		return errors.New("The source database bundle changed while it was being copied. Stop every icebath process using it and retry, or point --source " +
-			"at an immutable snapshot copy of the database.")
+		return errors.New("The damaged database changed while icebath copied it. Stop every icebath that uses it and try again, or point --source at a " +
+			"copy of the database that nothing changes.")
 	}
 	doc := map[string]any{"source": source, "source_bundle": bundle, "source_fingerprint": before, "source_unchanged": unchanged,
 		"disk_space": map[string]any{"bundle": bundle, "allowance": allowance, "headroom": headroom}}
@@ -162,11 +163,11 @@ func (s *store) recover(ctx context.Context, r *sessionsv1.MaintainRequest, prog
 		doc["operation"] = "inspect"
 		return finishReport(doc, report, progress, inspection["recoverable"] == true, "")
 	}
-	progress("Recovering canonical session data into a new database…")
+	progress("Rescuing the sessions and messages into a new database…")
 	recoverable := inspection["recoverable"] == true
 	if !recoverable && !r.GetAllowPartial() {
-		return fmt.Errorf("Required canonical tables are not readable: %s. Re-run with --allow-partial to salvage every readable row into a new database "+
-			"(the source is never modified).", strings.Join(inspection["errors"].([]string), "; "))
+		return fmt.Errorf("The tables of sessions and messages can't be read: %s. Run the command again with --allow-partial to rescue every "+
+			"row that can be read. The damaged database is never changed.", strings.Join(inspection["errors"].([]string), ", "))
 	}
 	doc["operation"], doc["output"], doc["inspection"], doc["allow_partial"] = "recover", output, inspection, r.GetAllowPartial()
 	doc["runtime_state"] = map[string]any{"policy": "transcript-only; runtime ledger excluded; fresh epoch on activation"}
@@ -183,12 +184,12 @@ func (s *store) recover(ctx context.Context, r *sessionsv1.MaintainRequest, prog
 	}
 	copies, err := s.copyCanonical(ctx, from, output, chunk, r.GetAllowPartial(), progress)
 	if err != nil {
-		return fmt.Errorf("session recovery failed: %w\nThe supplied source database was not replaced or deleted.", err)
+		return fmt.Errorf("The rescue failed: %w.\nThe damaged database was not replaced or deleted.", err)
 	}
 	doc["copy"] = copies
 	cleanup, err := finalize(ctx, output, r.GetAllowPartial())
 	if err != nil {
-		return fmt.Errorf("session recovery failed: %w\nThe supplied source database was not replaced or deleted.", err)
+		return fmt.Errorf("The rescue failed: %w.\nThe damaged database was not replaced or deleted.", err)
 	}
 	doc["orphan_cleanup"] = cleanup
 	verified, checks, sessionCount, messageCount := verify(ctx, output, copies, r.GetAllowPartial())
@@ -200,18 +201,20 @@ func (s *store) recover(ctx context.Context, r *sessionsv1.MaintainRequest, prog
 	verdict := ""
 	switch {
 	case complete:
-		verdict = "✓ Recovered database verified at: " + output + "\n  The active session database was not changed.\n  Review the JSON report before installing this database."
+		verdict = "✓ Rescued the sessions into " + output + ", and the new database checks out.\n  The session database in use was not changed.\n" +
+			"  Read the report before you use the new database."
 	case r.GetAllowPartial() && verified && bestEffort:
-		verdict = fmt.Sprintf("✓ BEST-EFFORT page-level salvage verified at: %s\n  The source table schemas were unreadable; rows were rebuilt from raw pages "+
-			"via sqlite3 .recover.\n  Recovered %d sessions and %d messages.\n  The active session database was not changed.\n  This output is incomplete. "+
-			"Review every skipped range and orphan count in the JSON report before installing it.", output, sessionCount, messageCount)
+		verdict = fmt.Sprintf("✓ Rescued what could be read into %s, and the new database checks out.\n  The layout of the tables could not be read, so "+
+			"the rows were rebuilt from the raw pages with sqlite3 .recover.\n  It holds %s and %s.\n  The session database in use was not changed.\n"+
+			"  The new database is incomplete. Read every skipped range and lost row in the report before you use it.", output,
+			strs.Count(int(sessionCount), "session"), strs.Count(int(messageCount), "message"))
 	case r.GetAllowPartial() && verified:
-		verdict = fmt.Sprintf("✓ Partial recovery output verified at: %s\n  Recovered %d sessions and %d messages.\n  The active session database was not "+
-			"changed.\n  This output is incomplete. Review every skipped range and orphan count in the JSON report before installing it.", output, sessionCount,
-			messageCount)
+		verdict = fmt.Sprintf("✓ Rescued part of the sessions into %s, and the new database checks out.\n  It holds %s and %s.\n  The session "+
+			"database in use was not changed.\n  The new database is incomplete. Read every skipped range and lost row in the report before you use it.",
+			output, strs.Count(int(sessionCount), "session"), strs.Count(int(messageCount), "message"))
 	}
 	if verdict == "" {
-		verdict = "✗ Recovery output did not pass every verification check.\n  Do not install it. Review the JSON report for partial data or errors."
+		verdict = "✗ The new database did not pass every check.\n  Do not use it. Read the report for the missing data or errors."
 	}
 	return finishReport(doc, report, progress, verdict != "" && !strings.HasPrefix(verdict, "✗"), verdict)
 }
@@ -227,20 +230,20 @@ func finishReport(doc map[string]any, path string, progress func(string), good b
 	} else {
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if err != nil {
-			return fmt.Errorf("could not write recovery report: %w", err)
+			return fmt.Errorf("The report could not be written: %w.", err)
 		}
 		_, err = f.Write(append(data, '\n'))
 		if closeErr := f.Close(); err == nil {
 			err = closeErr
 		}
 		if err != nil {
-			return fmt.Errorf("could not write recovery report: %w", err)
+			return fmt.Errorf("The report could not be written: %w.", err)
 		}
-		progress("Recovery report: " + path)
+		progress("The report is in " + path + ".")
 	}
 	if !good {
 		if verdict == "" {
-			verdict = "The source is not fully recoverable."
+			verdict = "✗ Not everything in the damaged database can be rescued. Read the report for what is missing."
 		}
 		return errors.New(verdict)
 	}
@@ -251,14 +254,7 @@ func finishReport(doc map[string]any, path string, progress func(string), good b
 }
 
 func human(n int64) string {
-	value := float64(n)
-	for _, unit := range []string{"B", "KiB", "MiB", "GiB"} {
-		if value < 1024 {
-			return fmt.Sprintf("%.1f %s", value, unit)
-		}
-		value /= 1024
-	}
-	return fmt.Sprintf("%.1f TiB", value)
+	return strs.Size(float64(n))
 }
 
 // How readable each table of the copy is, and whether the canonical ones are whole
@@ -408,7 +404,7 @@ func (s *store) copyCanonical(ctx context.Context, source, output string, chunk 
 			report.CopiedRows = copied
 			if err != nil {
 				report.Status, report.Error = "failed", err.Error()
-				return reports, fmt.Errorf("table %s: %w", table, err)
+				return reports, fmt.Errorf("the table %s could not be copied: %w", table, err)
 			}
 		} else {
 			s.salvage(ctx, in, table, select_, where, copyRange, report)
@@ -423,7 +419,7 @@ func (s *store) copyCanonical(ctx context.Context, source, output string, chunk 
 		default:
 			report.Status = "failed"
 		}
-		progress(fmt.Sprintf("  %s: %d/%d", table, report.CopiedRows, report.SourceRows))
+		progress(fmt.Sprintf("  %s: %s of %s rows", table, strs.Number(float64(report.CopiedRows)), strs.Number(float64(report.SourceRows))))
 	}
 	return reports, nil
 }
@@ -595,8 +591,8 @@ func verify(ctx context.Context, output string, copies map[string]*copyReport, p
 func lostAndFound(ctx context.Context, snapshot, work string) (string, map[string]any, error) {
 	cli, err := exec.LookPath("sqlite3")
 	if err != nil {
-		return "", nil, errors.New("Partial recovery still requires readable table schemas for: sessions, messages. Page-level salvage needs the sqlite3 " +
-			"command line (3.29 or later, with .recover) on PATH; install it, then re-run.")
+		return "", nil, errors.New("The layout of the tables of sessions and messages can't be read, so a rescue from the raw pages needs the sqlite3 " +
+			"command, version 3.29 or later, on PATH. Install it, then run the command again.")
 	}
 	salvaged := filepath.Join(work, "lost_and_found.db")
 	notes := map[string]any{"best_effort": true}
@@ -616,7 +612,7 @@ func lostAndFound(ctx context.Context, snapshot, work string) (string, map[strin
 		os.Remove(salvaged)
 		if err := run(".recover"); err != nil {
 			if !strings.Contains(err.Error(), "not a database") {
-				return "", nil, fmt.Errorf("page-level salvage failed: %w", err)
+				return "", nil, fmt.Errorf("the rescue from the raw pages failed: %w", err)
 			}
 			if err := zeroHeader(snapshot); err != nil {
 				return "", nil, err
@@ -624,7 +620,7 @@ func lostAndFound(ctx context.Context, snapshot, work string) (string, map[strin
 			notes["header_zeroed"] = true
 			os.Remove(salvaged)
 			if err := run(".recover"); err != nil {
-				return "", nil, fmt.Errorf("page-level salvage failed: %w", err)
+				return "", nil, fmt.Errorf("the rescue from the raw pages failed: %w", err)
 			}
 		}
 	}

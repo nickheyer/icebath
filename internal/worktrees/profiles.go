@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/profile"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Trees as profiles are renamed: the record a profile keeps of its trees moves with its folder, so the trees of repositories inside the
@@ -79,8 +80,8 @@ func (p Profiles) Move(old, renamed string) ([]string, error) {
 			err = errors.New(strings.TrimSpace(result.Stderr))
 		}
 		if err != nil {
-			errs = append(errs, &profile.StoreError{Store: repo, Err: fmt.Errorf("git worktree repair: %w", err)})
+			errs = append(errs, &profile.StoreError{Store: repo, Err: fmt.Errorf("`git worktree repair` failed: %w", err)})
 		}
 	}
-	return []string{fmt.Sprintf("✓ Worktree record updated: %d tree(s)", count)}, errors.Join(errs...)
+	return []string{fmt.Sprintf("✓ Updated the record of %s.", strs.Count(count, "worktree"))}, errors.Join(errs...)
 }

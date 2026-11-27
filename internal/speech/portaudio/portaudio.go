@@ -63,7 +63,7 @@ type HostAPI struct {
 }
 
 // This build has no loader for PortAudio
-var ErrUnsupported = fmt.Errorf("load portaudio: %w", native.ErrUnsupported)
+var ErrUnsupported = fmt.Errorf("PortAudio can't be loaded, because %w", native.ErrUnsupported)
 
 // Any call on a stream once Close has begun
 var ErrClosed = errors.New("portaudio stream is closed")
@@ -74,16 +74,19 @@ var ErrNoPlayback = errors.New("no portaudio playback started")
 // Audio that does not match the stream's channels
 var ErrChannelMismatch = errors.New("audio data does not match the stream's channel count")
 
-var errNoLibrary = errors.New("no library found")
+var errNoLibrary = errors.New("PortAudio is not installed")
 
 // PortAudio could not be found, opened or bound
 type LibraryError struct{ Err error }
 
 func (e *LibraryError) Error() string {
-	if e.Err == nil {
-		return "load portaudio: library unavailable"
+	switch {
+	case e.Err == nil:
+		return "PortAudio can't be loaded"
+	case errors.Is(e.Err, errNoLibrary):
+		return e.Err.Error()
 	}
-	return "load portaudio: " + e.Err.Error()
+	return "PortAudio can't be loaded: " + e.Err.Error()
 }
 
 func (e *LibraryError) Unwrap() error { return e.Err }
@@ -129,15 +132,16 @@ type DeviceError struct {
 
 func (e *DeviceError) Error() string {
 	if len(e.Matches) > 0 {
-		return fmt.Sprintf("several %s devices match %q:\n%s", e.Direction, fmt.Sprint(e.Selector), strings.Join(e.Matches, "\n"))
+		return fmt.Sprintf("%d %s devices match “%s”, so give the whole name of one:\n%s", len(e.Matches), e.Direction, fmt.Sprint(e.Selector),
+			strings.Join(e.Matches, "\n"))
 	}
 	switch sel := e.Selector.(type) {
 	case nil:
-		return "no default " + e.Direction.String() + " device"
+		return "there is no default " + e.Direction.String() + " device"
 	case int:
-		return fmt.Sprintf("no %s device at index %d", e.Direction, sel)
+		return fmt.Sprintf("there is no %s device number %d", e.Direction, sel)
 	}
-	return fmt.Sprintf("no %s device matches %q", e.Direction, fmt.Sprint(e.Selector))
+	return fmt.Sprintf("no %s device is named “%s”", e.Direction, fmt.Sprint(e.Selector))
 }
 
 // Error of a negative PortAudio code, with the host API's details for an unanticipated host error

@@ -18,7 +18,9 @@ import (
 	"connectrpc.com/connect/v2"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/nickheyer/icebath/internal/config"
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
+	"github.com/nickheyer/icebath/internal/provider"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
 	"github.com/nickheyer/icebath/internal/tools"
 	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
@@ -39,6 +41,10 @@ const (
 	reconnect   = 3 * time.Second
 	completions = 50
 )
+
+// What an empty chat says while no provider is connected: why the agent can't answer and the way to fix it. Models that run on this
+// computer are connected on the same screen
+const noProvider = "No provider is connected yet, so the agent can't answer. Type /providers to connect one."
 
 type chat struct {
 	desk     *desk
@@ -151,7 +157,7 @@ func newChat(desk *desk, key string, session *sessionsv1.Session, profile string
 
 // Text the empty prompt shows: what typing does, and the shell a leading ! runs a line in
 func (c *chat) hint() string {
-	return "Message the agent · / for commands · ! to run in " + filepath.Base(c.kit.Env.Shell().Path)
+	return "Message the agent · / lists commands · ! runs a line in " + filepath.Base(c.kit.Env.Shell().Path)
 }
 
 func (c *chat) Title() string { return cmp.Or(c.title, "New chat") }
@@ -167,7 +173,7 @@ func (c *chat) MinSize() (int, int) { return 40, 10 }
 
 // Action that compresses the session's conversation now, the /compress of the key map
 var compactKeys = []keys.Action{
-	{ID: "session.compact", Context: keys.Session, Label: "compact", Doc: "summarise older turns to free context (/compress)"},
+	{ID: "session.compact", Context: keys.Session, Label: "summarize", Doc: "Summarize older messages to make room, as /compress does"},
 }
 
 func (c *chat) Answers(action string) bool {
@@ -248,29 +254,45 @@ func (c *chat) check() tea.Cmd {
 }
 
 func (c *chat) Status() string {
-	status := c.status()
-	if hud := spawnHUD(c.spawn.live(), c.limits); hud != "" {
-		status = strings.TrimSpace(status + " " + hud)
-	}
-	if voiced := c.desk.voice.status(c); voiced != "" {
-		status = strings.TrimSpace(status + " " + voiced)
-	}
-	return status
+	parts := []string{c.status(), spawnHUD(c.spawn.live(), c.limits), c.desk.voice.status(c)}
+	return strings.Join(slices.DeleteFunc(parts, func(part string) bool { return part == "" }), " · ")
 }
 
+// What enter does with a message typed while the agent works, by the value of Enter while busy
+var whileBusy = map[string]string{
+	agentconfig.BusyQueue:     "enter sends it after this reply",
+	agentconfig.BusySteer:     "enter adds it to this reply",
+	agentconfig.BusyInterrupt: "enter stops the reply and sends it",
+}
+
+// Words of each reasoning effort, as the settings screen names them
+var effortWords = func() map[string]string {
+	words := map[string]string{}
+	for _, option := range provider.EffortOptions(config.Option{}) {
+		if option.Value != "" {
+			words[option.Value] = option.Title
+		}
+	}
+	return words
+}()
+
+// Reasoning effort in words, the value itself for one icebath has no words for
+func effortTitle(effort string) string { return cmp.Or(effortWords[effort], effort) }
+
+// What the chat's window says it is doing: waiting on you, working and what enter does meanwhile, else the profile, provider and model,
+// effort, approvals skipped, how full the context is, what the session cost and how often it was summarized
 func (c *chat) status() string {
 	switch {
 	case len(c.log.approvals) > 0:
-		return "waiting for approval"
+		return "waiting for your approval"
 	case c.log.questions != nil:
 		return "waiting for your answers"
 	case c.log.activity != "":
 		return c.log.activity
 	case c.log.busy && c.outcome != "":
 		return "working · " + c.outcome
-	case c.log.busy && !c.composer.Empty() && c.log.state.GetBusyInputMode() != "":
-		// What enter does with the message typed while the agent works
-		return "working · enter: " + c.log.state.GetBusyInputMode()
+	case c.log.busy && !c.composer.Empty() && whileBusy[c.log.state.GetBusyInputMode()] != "":
+		return "working · " + whileBusy[c.log.state.GetBusyInputMode()]
 	case c.log.busy:
 		return "working"
 	}
@@ -278,29 +300,48 @@ func (c *chat) status() string {
 		return status
 	}
 	state := c.log.state
-	status := state.GetProvider()
-	if state.GetModel() != "" {
-		status += "/" + state.GetModel()
-	}
+	parts := []string{}
 	if profile := c.on(); profile != "" {
-		status = strings.TrimSpace("@" + profile + " " + status)
+		parts = append(parts, "@"+profile)
 	}
-	if state.GetReasoningEffort() != "" {
-		status += " " + state.GetReasoningEffort()
+	model := state.GetProvider()
+	if state.GetModel() != "" {
+		model = strings.TrimPrefix(model+"/"+state.GetModel(), "/")
+	}
+	if model != "" {
+		parts = append(parts, model)
+	}
+	switch effort := state.GetReasoningEffort(); effort {
+	case "":
+	case "none":
+		parts = append(parts, strings.ToLower(effortTitle(effort)))
+	default:
+		parts = append(parts, strings.ToLower(effortTitle(effort))+" effort")
 	}
 	if state.GetYolo() {
-		status += " yolo"
+		parts = append(parts, "approvals skipped")
 	}
 	if dial := contextDial(state); dial != "" {
-		status += " " + dial
+		parts = append(parts, dial)
 	}
 	if cost := state.GetCost(); cost > 0 {
-		status += " " + money(cost)
+		parts = append(parts, money(cost))
 	}
 	if n := state.GetCompressions(); n > 0 {
-		status += fmt.Sprintf(" cmp %d", n)
+		parts = append(parts, "summarized "+times(int(n)))
 	}
-	return status
+	return strings.Join(parts, " · ")
+}
+
+// How many times something happened, in words for once and twice
+func times(n int) string {
+	switch n {
+	case 1:
+		return "once"
+	case 2:
+		return "twice"
+	}
+	return strconv.Itoa(n) + " times"
 }
 
 // Dollars with cents, or with four decimals below a cent
@@ -311,8 +352,8 @@ func money(dollars float64) string {
 	return fmt.Sprintf("$%.2f", dollars)
 }
 
-// How full the session's context is: ctx, the size led by ~ when part of it is estimated, the window and the share; empty while either
-// is not known
+// How full the session's context is: the share, then the size led by ~ when part of it is estimated, of the window; empty while either is
+// not known
 func contextDial(state *agentv1.State) string {
 	used, limit := state.GetContextUsed(), state.GetContextMax()
 	if used <= 0 || limit <= 0 {
@@ -322,7 +363,7 @@ func contextDial(state *agentv1.State) string {
 	if state.GetContextEstimated() {
 		mark = "~"
 	}
-	return fmt.Sprintf("ctx %s%s/%s %d%%", mark, compactNumber(float64(used)), compactNumber(float64(limit)), int(float64(used)/float64(limit)*100+0.5))
+	return fmt.Sprintf("%d%% of context, %s%s of %s", int(float64(used)/float64(limit)*100+0.5), mark, compactNumber(float64(used)), compactNumber(float64(limit)))
 }
 
 // Number in a few characters: thousands as k and millions as M with a decimal when it says something
@@ -508,10 +549,29 @@ func (c *chat) action(id string) tea.Cmd {
 func (c *chat) take(text string, replace int) tea.Cmd {
 	typed := []rune(c.composer.Value())
 	set := c.composer.SetValue(string(typed[:min(replace, len(typed))]) + text)
-	if command, ok := c.command(text); c.entering && replace == 0 && ok && !strings.Contains(command.GetUsage(), "<") {
+	if command, ok := c.command(text); c.entering && replace == 0 && ok && !needsArgument(command.GetUsage()) {
 		return tea.Batch(set, c.composer.Send())
 	}
 	return set
+}
+
+// Whether a command can't run without something typed after it: its usage names an argument in angle brackets outside every optional
+// part, so "[enable|disable <tool>...]" asks for nothing and "<message>" does
+func needsArgument(usage string) bool {
+	depth := 0
+	for _, r := range usage {
+		switch r {
+		case '[':
+			depth++
+		case ']':
+			depth = max(depth-1, 0)
+		case '<':
+			if depth == 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (c *chat) complete() {
@@ -538,7 +598,7 @@ func (c *chat) complete() {
 			}
 		}
 		if strings.HasPrefix(name, typed) {
-			offers = append(offers, cards.Offer{Text: "/" + name + " ", Display: "/" + name, Meta: command.GetHelp()})
+			offers = append(offers, cards.Offer{Text: "/" + name + " ", Display: "/" + name, Meta: command.GetHelp(), Group: heading(command)})
 		}
 	}
 	c.composer.Offer(value, offers, 0)
@@ -603,7 +663,10 @@ func (c *chat) View(w, h int) string {
 	}
 	c.kept = map[string][]string{}
 	if c.lines = c.paint(w); len(c.lines) == 0 && c.stranded {
-		c.lines = []row{{}, {text: render.Dim("No provider connected. Type /providers to connect one.", c.kit.Env.Theme)}}
+		c.lines = []row{{}}
+		for _, line := range strings.Split(render.Wrap(noProvider, max(w-1, 8)), "\n") {
+			c.lines = append(c.lines, row{text: render.Dim(line, c.kit.Env.Theme)})
+		}
 	}
 	c.rendered = c.kept
 	last := max(len(c.lines)-c.shown, 0)
@@ -723,10 +786,12 @@ func (c *chat) post(request *agentv1.SendRequest) tea.Cmd {
 			}
 			c.starting = false
 			if err != nil {
-				c.log.note("**Not sent:** " + tui.Reason(err))
+				said := "**Your message was not sent.** " + tui.Reason(err)
 				if c.composer.Empty() {
+					said += " It is back in the message box."
 					cmds = append(cmds, c.composer.SetValue(text))
 				}
+				c.log.note(said)
 			}
 			waiting := c.waiting
 			c.waiting = nil
@@ -766,7 +831,7 @@ func (c *chat) interrupt() tea.Cmd {
 		_, err := c.desk.agents.Stop(c.kit.Env.Ctx, &agentv1.StopRequest{SessionId: id})
 		return func() tea.Cmd {
 			if err != nil {
-				c.log.note("**Couldn't stop:** " + tui.Reason(err))
+				c.log.note("**The reply did not stop.** " + tui.Reason(err))
 			}
 			return nil
 		}

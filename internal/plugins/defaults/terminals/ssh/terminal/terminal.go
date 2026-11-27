@@ -17,6 +17,7 @@ import (
 	sshconfig "github.com/nickheyer/icebath/internal/plugins/defaults/terminals/ssh/config"
 	"github.com/nickheyer/icebath/internal/skills"
 	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type registrant struct {
@@ -31,7 +32,7 @@ func (r registrant) Backends() []terminal.Backend {
 	return []terminal.Backend{{
 		Name:    "ssh",
 		Title:   "SSH",
-		About:   "Run commands on a remote machine over SSH",
+		About:   "Another computer that commands reach over SSH",
 		Where:   "a remote host reached over SSH (likely Linux)",
 		Remote:  true,
 		Home:    "~/.icebath",
@@ -59,10 +60,10 @@ type target struct {
 func targetOf(cfg *config.Config) (target, error) {
 	port, err := cast.ToIntE(cfg.Get(sshconfig.Port))
 	if err != nil {
-		return target{}, fmt.Errorf("%s holds %q, which is not a whole number; fix it in /settings Terminal", sshconfig.Port, cfg.GetString(sshconfig.Port))
+		return target{}, fmt.Errorf("Port in /settings under Terminal › SSH is set to %q, which is not a whole number. Change it there.", cfg.GetString(sshconfig.Port))
 	}
 	if port < 1 || port > 65535 {
-		return target{}, fmt.Errorf("%s is %d, which is not a port from 1 to 65535; fix it in /settings Terminal", sshconfig.Port, port)
+		return target{}, fmt.Errorf("Port in /settings under Terminal › SSH is %s, which is not a port from 1 to 65,535. Change it there.", strs.Number(float64(port)))
 	}
 	t := target{host: strings.TrimSpace(cfg.GetString(sshconfig.Host)), user: strings.TrimSpace(cfg.GetString(sshconfig.User)), port: port}
 	if key := strings.TrimSpace(cfg.GetString(sshconfig.KeyFile)); key != "" {
@@ -76,7 +77,7 @@ func (t target) login() string { return t.user + "@" + t.host }
 // Why the ssh client can't run here, nil when it is on PATH
 func client() error {
 	if _, err := exec.LookPath("ssh"); err != nil {
-		return &terminal.MissingError{Reason: "SSH is not installed or not in PATH. Install OpenSSH client: apt install openssh-client"}
+		return &terminal.MissingError{Reason: "The ssh program is not installed or not on your PATH. Install the OpenSSH client, such as with `apt install openssh-client`."}
 	}
 	return nil
 }
@@ -87,33 +88,35 @@ func check(cfg *config.Config) error {
 		return err
 	}
 	if t.host == "" || t.user == "" {
-		return errors.New("the SSH host and user are not set; open /backends and enter them in the SSH settings, or run commands on this machine instead")
+		return errors.New("The SSH host and user are not set. Enter them in /settings under Terminal › SSH, or choose another place to run commands in /backends.")
 	}
 	return client()
 }
 
 func setup(*config.Config) []string {
 	return []string{
-		"Run commands on a remote machine via SSH.",
-		"Set the SSH host and user in the SSH settings, plus the port and key file when they differ from the defaults.",
-		"Readying the backend tests the connection with your key, as commands will make it.",
-		"Secrets reach the remote shell only for names the remote SSH server accepts (AcceptEnv).",
+		"Runs the agent's commands on another computer over SSH.",
+		"Set Host and User in /settings under Terminal › SSH, and Port and Key file when they differ from the defaults.",
+		"Preparing SSH on this screen tests the connection with your key, the way commands make it.",
+		"Secret variables reach the other computer only when its SSH server accepts their names with AcceptEnv.",
 	}
 }
 
 func doctor(cfg *config.Config) []terminal.Check {
 	t, err := targetOf(cfg)
 	if err != nil {
-		return []terminal.Check{{OK: false, Label: "SSH port invalid", Detail: "(" + err.Error() + ")"}}
+		return []terminal.Check{{OK: false, Label: "The SSH port is not valid.", Detail: err.Error()}}
 	}
 	if t.host == "" {
-		return []terminal.Check{{OK: false, Label: "SSH host not configured", Detail: "(needed for the 'ssh' terminal backend)"}}
+		return []terminal.Check{{OK: false, Label: "The SSH host is not set.", Detail: "Commands run over SSH only once it is."}}
 	}
 	if err := client(); err != nil {
-		return []terminal.Check{{OK: false, Label: "SSH client not installed", Detail: "(" + err.Error() + ")"}}
+		return []terminal.Check{{OK: false, Label: "The SSH client is not installed.", Detail: "Install OpenSSH, such as with `apt install openssh-client`."}}
 	}
-	ok, detail := probe(context.Background(), t)
-	return []terminal.Check{{OK: ok, Label: "SSH connection to " + t.host, Detail: detail}}
+	if ok, detail := probe(context.Background(), t); !ok {
+		return []terminal.Check{{OK: false, Label: "Could not connect to " + t.host + " over SSH.", Detail: "It said: " + reason(detail) + "."}}
+	}
+	return []terminal.Check{{OK: true, Label: "Connected to " + t.host + " over SSH."}}
 }
 
 // Tests the connection the way commands make it
@@ -122,12 +125,21 @@ func prepare(ctx context.Context, cfg *config.Config, say func(string)) error {
 		return err
 	}
 	t, _ := targetOf(cfg)
-	say("Testing connection...")
+	say("Testing the SSH connection to " + t.host + "…")
 	if ok, detail := probe(ctx, t); !ok {
-		return fmt.Errorf("SSH connection failed: %s. Check your SSH key and host settings.", detail)
+		return fmt.Errorf("Could not connect to %s over SSH: %s. Check Host, User and Key file in /settings under Terminal › SSH.", t.host, reason(detail))
 	}
-	say("SSH connection successful!")
+	say("Connected to " + t.host + " over SSH.")
 	return nil
+}
+
+// Why a connection failed as the middle of a sentence: one line, no closing period, and words for no answer at all
+func reason(detail string) string {
+	detail = strings.TrimRight(strings.Join(strings.Fields(detail), " "), ".")
+	if detail == "" {
+		return "no answer came"
+	}
+	return detail
 }
 
 // Runs echo ok over a fresh batch mode connection that takes a new host's key as commands do, answering whether it worked and why not

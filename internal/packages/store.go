@@ -70,7 +70,7 @@ func (s *store) lock(r Reporter) (func(), error) {
 	if !errors.Is(err, os.ErrDeadlineExceeded) {
 		return release, err
 	}
-	reporter(r).Line(fmt.Sprintf("waiting for %s (another PM operation holds it)", path))
+	reporter(r).Line(fmt.Sprintf("Waiting for another pm command to finish, because it holds %s…", path))
 	return fsx.Lock(context.Background(), path, -1)
 }
 

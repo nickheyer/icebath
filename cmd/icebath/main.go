@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"os/signal"
 	"slices"
@@ -100,8 +102,11 @@ func main() {
 		}](err); ok {
 			code = status.ExitCode()
 		}
-		if err.Error() != "" {
-			fmt.Fprintln(os.Stderr, "icebath:", err)
+		// A server's refusal is said without the name of its code, as the app shows it
+		if failure, ok := err.(*connect.Error); ok {
+			fmt.Fprintln(os.Stderr, failure.Message())
+		} else if err.Error() != "" {
+			fmt.Fprintln(os.Stderr, err)
 		}
 		os.Exit(code)
 	}
@@ -198,7 +203,7 @@ func run(ctx context.Context, args []string) (err error) {
 	pr.Register(credentials.Profiles{Credentials: cr, Providers: &p.Registry, Config: cfg})
 	// Backends that decide where each subagent of delegate_task runs
 	dl := delegation.New(cfg)
-	// Services that draw pictures and make videos for image_generate and video_generate
+	// Services that make images and videos for image_generate and video_generate
 	gn := generation.New(cfg)
 	// Voices, recognizers and wake engines that text_to_speech, transcription and voice mode run on
 	sp := speech.New(cfg, pk, tm, &p.Registry, &cr.Registry, &t.Registry, ax, hk, &tl.Registry)
@@ -260,18 +265,21 @@ func run(ctx context.Context, args []string) (err error) {
 	if err := pr.Load(profilecli.Recovering(args), os.Stderr); err != nil {
 		return err
 	}
-	// The launcher of a Bot Desktop runs this binary for one idle check of its screen between its sleeps
+	// The launcher of the agent desktop runs this binary for one idle check of its screen between its sleeps
 	if len(args) > 0 && args[0] == botdesktop.IdleEntry {
 		return bd.Idle(ctx, args[1:], os.Stdout)
 	}
+	// icebath server serves here, ahead of the command line; asked for help, it leaves that to the command line like every other command
+	serving := len(args) > 0 && args[0] == "server" && !cli.Helped(args[1:])
 	// A process that serves its own profiles carries the variables of the one in use, saying what its secret stores did
-	if st.Backend == "" || (len(args) > 0 && args[0] == "server") {
+	carried := st.Backend == "" || serving
+	if carried {
 		sc.Serve(os.Stderr)
 	}
-
-	if len(args) > 0 && args[0] == "server" {
-		if len(args) > 1 {
-			return errors.New("server takes no arguments")
+	serve := func(ctx context.Context) error {
+		// Reached through the command line, as after flags of a launch, a process of a remote backend carries them only now
+		if !carried {
+			sc.Serve(os.Stderr)
 		}
 		terminal.RegisterSelf(cfg, "server")
 		tm.Outlive()
@@ -279,10 +287,16 @@ func run(ctx context.Context, args []string) (err error) {
 		s.Start(ctx)
 		return srv.Serve(ctx)
 	}
+	if serving {
+		if len(args) > 1 {
+			return errors.New("icebath server takes no arguments.\nUsage: icebath server")
+		}
+		return serve(ctx)
+	}
 
 	terminal.RegisterSelf(cfg, "cli")
 	if warning := terminal.SharedProfile(cfg); warning != "" {
-		fmt.Fprintln(os.Stderr, "Warning: "+warning)
+		fmt.Fprintln(os.Stderr, "⚠ "+warning)
 	}
 	var conn *connect.Client
 	if st.Backend != "" {
@@ -293,8 +307,32 @@ func run(ctx context.Context, args []string) (err error) {
 
 	args, given = ln.Take(args)
 	if launched, err := sessionscli.Launch(ctx, conn, dir, args, launch); launched {
-		return err
+		return reached(err, st.Backend)
 	}
 	c.Launch(ln.Flags(), given)
-	return c.Run(profile.WithPicked(ctx, picked), conn, args)
+	c.Serve(serve)
+	return reached(c.Run(profile.WithPicked(ctx, picked), conn, args), st.Backend)
+}
+
+// Failure of a command run against the server icebath connect set, said in words when that server could not be reached or refused its
+// password
+func reached(err error, backend string) error {
+	if err == nil || backend == "" {
+		return err
+	}
+	address := backend
+	if u, parseErr := url.Parse(backend); parseErr == nil {
+		u.User = nil
+		address = u.String()
+	}
+	if _, ok := errors.AsType[*net.OpError](err); ok {
+		return fmt.Errorf("icebath can't reach the server at %s. Start icebath server on that computer, or run icebath disconnect to use "+
+			"icebath's own server.", address)
+	}
+	if failure, ok := errors.AsType[*connect.Error](err); ok && failure.Code() == connect.CodeUnauthenticated &&
+		strings.HasPrefix(failure.Message(), "HTTP status 401") {
+		return fmt.Errorf("The server at %s refused the password. Run icebath connect again with the password in /settings under Server on "+
+			"that computer.", address)
+	}
+	return err
 }

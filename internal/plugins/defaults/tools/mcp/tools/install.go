@@ -85,7 +85,7 @@ func (m *Manager) StoredNames(cfg *config.Config) []string {
 // Why a server's settings would be refused: a name the settings can't hold, a backdoor shape, or costs that don't parse
 func (m *Manager) Check(name string, settings map[string]any) []string {
 	if !config.Named(name) {
-		return []string{fmt.Sprintf("%q can't name an MCP server: use lower case letters, digits, dashes or underscores", name)}
+		return []string{fmt.Sprintf("“%s” cannot name an MCP server. Use lower case letters, digits, dashes and underscores.", name)}
 	}
 	issues := validate(name, settings)
 	if _, err := parseCosts(name, settings); err != nil {
@@ -97,10 +97,10 @@ func (m *Manager) Check(name string, settings map[string]any) []string {
 // Keeps a server's settings, refusing a backdoor shape; the issues that refused it
 func (m *Manager) Save(cfg *config.Config, name string, settings map[string]any) ([]string, error) {
 	if !config.Named(name) {
-		return nil, fmt.Errorf("%q can't name an MCP server: use lower case letters, digits, dashes or underscores", name)
+		return nil, fmt.Errorf("“%s” cannot name an MCP server. Use lower case letters, digits, dashes and underscores.", name)
 	}
 	if issues := validate(name, settings); len(issues) > 0 {
-		return append(issues, fmt.Sprintf("Server '%s' was NOT saved due to suspicious configuration.", name)), nil
+		return append(issues, fmt.Sprintf("The MCP server %s was not saved, because its settings look like an attack.", name)), nil
 	}
 	if _, err := parseCosts(name, settings); err != nil {
 		return nil, err
@@ -126,7 +126,7 @@ func (m *Manager) Remove(cfg *config.Config, name string) (bool, error) {
 func (m *Manager) Enable(cfg *config.Config, name string, enabled bool) error {
 	entry := m.Stored(cfg, name)
 	if entry == nil {
-		return fmt.Errorf("'%s' is not a configured MCP server", name)
+		return fmt.Errorf("No MCP server is called “%s”. Run icebath mcp list to see yours.", name)
 	}
 	entry["enabled"] = enabled
 	return m.config.In(cfg.Profile()).Set(mcpconfig.Servers+"."+name, entry)
@@ -136,7 +136,7 @@ func (m *Manager) Enable(cfg *config.Config, name string, enabled bool) error {
 func (m *Manager) SetFilter(cfg *config.Config, name, mode string, values []string) error {
 	entry := m.Stored(cfg, name)
 	if entry == nil {
-		return fmt.Errorf("config %s.%s is not a table", mcpconfig.Servers, name)
+		return fmt.Errorf("No MCP server is called “%s”. Run icebath mcp list to see yours.", name)
 	}
 	if values == nil {
 		delete(entry, "tools")
@@ -165,7 +165,7 @@ var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // Keeps a value the servers' settings name as ${NAME}
 func (m *Manager) SetValue(cfg *config.Config, name, value string) error {
 	if !envName.MatchString(name) {
-		return fmt.Errorf("%q can't name a value: use letters, digits and underscores, not starting with a digit", name)
+		return fmt.Errorf("“%s” cannot name a value. Use letters, digits and underscores, and do not start with a digit.", name)
 	}
 	return m.config.In(cfg.Profile()).Set(mcpconfig.Env+"."+strings.ToLower(name), value)
 }
@@ -186,7 +186,7 @@ func (m *Manager) Value(cfg *config.Config, name string) string {
 func (m *Manager) SaveBearer(cfg *config.Config, name, token string) (map[string]any, error) {
 	normalized := StripBearer(token)
 	if normalized == "" || strings.EqualFold(normalized, "bearer") {
-		return nil, errors.New("Bearer token is required")
+		return nil, errors.New("Give the API key or token that the server needs.")
 	}
 	if err := m.SetValue(cfg, mcp.KeyEnv(name), normalized); err != nil {
 		return nil, err
@@ -286,15 +286,15 @@ func (m *Manager) GitInstall(ctx context.Context, cfg *config.Config, entry mcp.
 	dest := filepath.Join(root, entry.Name)
 	git, err := exec.LookPath("git")
 	if err != nil {
-		return "", &InstallError{Class: "git_missing", Msg: "git is required to install this MCP but was not found on PATH"}
+		return "", &InstallError{Class: "git_missing", Msg: "Installing this MCP server needs git, which was not found on your PATH. Install git, then try again."}
 	}
 	if _, err := os.Stat(dest); err == nil {
-		fmt.Fprintf(out, "  Removing existing install at %s\n", dest)
+		fmt.Fprintf(out, "  Removing the earlier copy at %s\n", dest)
 		if err := os.RemoveAll(dest); err != nil {
 			return "", err
 		}
 	}
-	fmt.Fprintf(out, "  Cloning %s (%s) → %s\n", install.URL, install.Ref, dest)
+	fmt.Fprintf(out, "  Downloading %s at %s into %s\n", install.URL, install.Ref, dest)
 	run := func(args ...string) error {
 		cmd := exec.CommandContext(ctx, git, args...)
 		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never", "GIT_ASKPASS=", "SSH_ASKPASS=")
@@ -315,10 +315,10 @@ func (m *Manager) GitInstall(ctx context.Context, cfg *config.Config, entry mcp.
 	}
 	if sha {
 		if run("clone", install.URL, dest) != nil {
-			return "", &InstallError{Class: "clone_failed", Msg: "git clone failed for " + install.URL}
+			return "", &InstallError{Class: "clone_failed", Msg: "Could not download " + install.URL + " with git. The lines above say why."}
 		}
 		if run("-C", dest, "checkout", install.Ref) != nil {
-			return "", &InstallError{Class: "clone_failed", Msg: "git checkout " + install.Ref + " failed"}
+			return "", &InstallError{Class: "clone_failed", Msg: "Could not switch the download to " + install.Ref + " with git. The lines above say why."}
 		}
 	}
 	for _, step := range install.Bootstrap {
@@ -333,7 +333,7 @@ func (m *Manager) GitInstall(ctx context.Context, cfg *config.Config, entry mcp.
 			if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 				code = exit.ExitCode()
 			}
-			return "", &InstallError{Class: "bootstrap_failed", Msg: fmt.Sprintf("bootstrap step failed (exit %d): %s", code, step)}
+			return "", &InstallError{Class: "bootstrap_failed", Msg: fmt.Sprintf("The setup step %s failed with exit code %d. The lines above say why.", step, code)}
 		}
 	}
 	return dest, nil

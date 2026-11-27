@@ -6,9 +6,9 @@ import (
 )
 
 func Register(cfg *config.Config) {
-	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.Wake, Title: "openWakeWord", About: "openWakeWord, which hears the phrase a model file was " +
-		"trained for", Settings: []config.Setting{
-		{Key: Model, Title: "Wake model file", About: "Path to the openWakeWord model file trained for your wake phrase; setting it makes auto pick openWakeWord",
-			Default: ""},
-	}}})
+	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.Wake, Title: "openWakeWord", About: "Hears a phrase that a model file was trained for",
+		Order: 20, Settings: []config.Setting{
+			{Key: Model, Title: "Model file", About: "The model file trained for your wake phrase.", Help: "Once one is set, Automatic picks openWakeWord.",
+				Default: "", Advanced: true},
+		}}})
 }

@@ -3,6 +3,7 @@ package packages
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -37,7 +38,7 @@ func reporter(r Reporter) Reporter {
 	return r
 }
 
-// Download, unpack and check of one package as the person watches: redrawn in place on a terminal, a line every 4 MiB off one
+// Download, unpack and check of one package as the person watches: redrawn in place on a terminal, a line every 4 MB off one
 type progress struct {
 	r        Reporter
 	name     string
@@ -69,7 +70,7 @@ func (p *progress) report(stage string, done, total int64, label string) {
 		if label != "" {
 			suffix = " " + label
 		}
-		p.show(fmt.Sprintf("  %s: unpacking%s", p.name, suffix))
+		p.show(fmt.Sprintf("  %s: unpacking%s…", p.name, suffix))
 		return
 	case "verify":
 		return
@@ -89,7 +90,8 @@ func (p *progress) report(stage string, done, total int64, label string) {
 		}
 	}
 	p.last = done
-	p.show(fmt.Sprintf("  %s: %5.1f%%  %s / %s", p.name, float64(done)/float64(total)*100, mib(done), mib(total)))
+	p.show(fmt.Sprintf("  %s: %s%%, %s of %s", p.name, strs.Number(math.Round(float64(done)/float64(total)*1000)/10), strs.Size(float64(done)),
+		strs.Size(float64(total))))
 }
 
 // Clears the progress so the verdict line starts clean
@@ -99,15 +101,15 @@ func (p *progress) finish() {
 	}
 }
 
-func mib(n int64) string { return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20)) }
-
 // Lines a failed child's output keeps for its report
 const tailLines = 80
 
 // A child's output held behind one status line, its last lines printed when it fails
 type liveTail struct {
-	r       Reporter
-	label   string
+	r     Reporter
+	label string
+	// What the success line says, the label when empty
+	done    string
 	indent  string
 	live    bool
 	width   int
@@ -116,17 +118,17 @@ type liveTail struct {
 	drawn   time.Time
 }
 
-// Opens the status of a labelled step, an empty label running silently until a failure
-func newLiveTail(r Reporter, label, indent string) *liveTail {
+// Opens the status of a labelled step, said as done once it succeeds; an empty label running silently until a failure
+func newLiveTail(r Reporter, label, done, indent string) *liveTail {
 	r = reporter(r)
-	t := &liveTail{r: r, label: label, indent: indent}
+	t := &liveTail{r: r, label: label, done: done, indent: indent}
 	t.live, t.width = r.Terminal()
 	t.live = t.live && label != ""
 	switch {
 	case t.live:
-		t.status(fmt.Sprintf("%s→ %s…", indent, label))
+		t.status(fmt.Sprintf("%s%s…", indent, label))
 	case label != "":
-		r.Line(fmt.Sprintf("%s→ %s…", indent, label))
+		r.Line(fmt.Sprintf("%s%s…", indent, label))
 	}
 	return t
 }
@@ -154,7 +156,7 @@ func (t *liveTail) line(line string) {
 		return
 	}
 	t.drawn = time.Now()
-	t.status(fmt.Sprintf("%s→ %s… %s", t.indent, t.label, strings.TrimSpace(line)))
+	t.status(fmt.Sprintf("%s%s… %s", t.indent, t.label, strings.TrimSpace(line)))
 }
 
 func (t *liveTail) status(text string) {
@@ -178,16 +180,16 @@ func (t *liveTail) close(ok bool) {
 	t.discard()
 	if ok {
 		if t.label != "" {
-			t.r.Line(fmt.Sprintf("%s✓ %s", t.indent, t.label))
+			t.r.Line(fmt.Sprintf("%s✓ %s.", t.indent, cmp.Or(t.done, t.label)))
 		}
 		return
 	}
-	name := cmp.Or(t.label, "command")
+	name := cmp.Or(t.label, "The command")
 	if len(t.tail) == 0 {
-		t.r.Line(fmt.Sprintf("%s✗ %s failed", t.indent, name))
+		t.r.Line(fmt.Sprintf("%s✗ %s failed.", t.indent, name))
 		return
 	}
-	t.r.Line(fmt.Sprintf("%s✗ %s failed; last %d lines of output:", t.indent, name, len(t.tail)))
+	t.r.Line(fmt.Sprintf("%s✗ %s failed. The last %s of its output:", t.indent, name, strs.Count(len(t.tail), "line")))
 	for _, line := range t.tail {
 		t.r.Line(t.indent + "    " + line)
 	}

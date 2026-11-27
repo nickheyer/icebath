@@ -15,6 +15,7 @@ func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               stepfunconfig.Name,
 		DisplayName:        stepfunconfig.Title,
+		Description:        "Step models on a StepFun Step Plan, with your plan's key",
 		BaseURL:            stepfunconfig.BaseURL,
 		BaseURLEnv:         stepfunconfig.BaseURLEnv,
 		ModelsURL:          stepfunconfig.ModelsURL,

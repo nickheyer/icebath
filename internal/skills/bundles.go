@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	skillsconfig "github.com/nickheyer/icebath/internal/skills/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Several skills loaded together under one slash command, kept as a YAML file of the bundles folder
@@ -76,7 +77,7 @@ func readBundle(path string) (Bundle, bool, error) {
 	}
 	content, err := strictText(data, path)
 	if err != nil {
-		return Bundle{}, false, fmt.Errorf("bundle %s: %w", path, err)
+		return Bundle{}, false, fmt.Errorf("The bundle file %s can't be read: %w", path, err)
 	}
 	parsed, err := decodeYAML(content)
 	if err != nil {
@@ -125,7 +126,7 @@ func readBundle(path string) (Bundle, bool, error) {
 	}
 	description := strings.TrimSpace(text(m["description"]))
 	if description == "" {
-		description = fmt.Sprintf("Load %d skills as a bundle", len(members))
+		description = "Loads " + strs.Count(len(members), "skill") + " at once"
 	}
 	return Bundle{Name: name, Slug: slug, Skills: members, Path: path, Description: description, Instruction: strings.TrimSpace(text(m["instruction"]))}, true, nil
 }
@@ -174,11 +175,20 @@ func (s *Scope) Bundle(name string) (Bundle, bool, error) {
 	return bundle, ok, nil
 }
 
+// Failure said in words that matches a sentinel such as fs.ErrExist
+type marked struct {
+	text   string
+	target error
+}
+
+func (m marked) Error() string        { return m.text }
+func (m marked) Is(target error) bool { return target == m.target }
+
 // File a bundle of the name is kept in
 func (s *Scope) bundlePath(name string) (string, error) {
 	slug := Slug(name)
 	if slug == "" {
-		return "", fmt.Errorf("Bundle name %q normalizes to an empty slug", name)
+		return "", fmt.Errorf("%q can't be the name of a bundle, because it has no letters or digits.", name)
 	}
 	return filepath.Join(s.BundlesDir(), slug+".yaml"), nil
 }
@@ -186,7 +196,7 @@ func (s *Scope) bundlePath(name string) (string, error) {
 // Writes a bundle, refusing to replace one unless asked; its file
 func (s *Scope) SaveBundle(name string, skills []string, description, instruction string, overwrite bool) (string, error) {
 	if name = strings.TrimSpace(name); name == "" {
-		return "", errors.New("Bundle name is required")
+		return "", errors.New("Give the bundle a name.")
 	}
 	var members []string
 	for _, skill := range skills {
@@ -195,14 +205,14 @@ func (s *Scope) SaveBundle(name string, skills []string, description, instructio
 		}
 	}
 	if len(members) == 0 {
-		return "", errors.New("Bundle must reference at least one skill")
+		return "", errors.New("A bundle needs at least one skill.")
 	}
 	path, err := s.bundlePath(name)
 	if err != nil {
 		return "", err
 	}
 	if fsx.Exists(path) && !overwrite {
-		return "", fmt.Errorf("Bundle already exists at %s: %w", path, fs.ErrExist)
+		return "", marked{fmt.Sprintf("A bundle of that name exists already, in %s.", path), fs.ErrExist}
 	}
 	content := struct {
 		Name        string   `yaml:"name"`
@@ -224,7 +234,7 @@ func (s *Scope) DeleteBundle(name string) (string, error) {
 		return "", err
 	}
 	if !fsx.Exists(path) {
-		return "", fmt.Errorf("No bundle at %s: %w", path, fs.ErrNotExist)
+		return "", marked{fmt.Sprintf("There is no bundle at %s. Run icebath bundles to see your bundles.", path), fs.ErrNotExist}
 	}
 	return path, os.Remove(path)
 }

@@ -22,7 +22,7 @@ const title = "Firecrawl"
 
 func Register(registry *browser.Registry) {
 	registry.Register(browser.Declared{Services: []browser.Provider{{
-		Name: "firecrawl", Title: title, About: "Cloud browser with remote execution.",
+		Name: "firecrawl", Title: title, About: "Cloud browsers that use your Firecrawl API key",
 		Keys:      []browser.Key{{Env: fcconfig.APIKeyEnv, Prompt: "Firecrawl API key", URL: "https://firecrawl.dev"}},
 		Available: func(cfg *config.Config) bool { return key(cfg) != "" },
 		Create:    create,

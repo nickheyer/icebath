@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -11,8 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/nickheyer/icebath/internal/cli"
 	"github.com/nickheyer/icebath/internal/sessions/export"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 )
 
@@ -55,7 +58,16 @@ func addExport(parent *cobra.Command, at func(*cobra.Command) *run) {
 	var f filters
 	var format, only, sessionID, lineage string
 	var upload, public, noRedact, redactFlag, deleteAfter, force bool
-	command := &cobra.Command{Use: "export [OUTPUT]", Short: "Export sessions to JSONL, Markdown, or QMD", Args: cobra.MaximumNArgs(1),
+	command := &cobra.Command{Use: "export [OUTPUT]", Short: "Save sessions to a file",
+		Long: "Writes sessions to OUTPUT, a file or a folder, or to standard output for -. jsonl and html need an OUTPUT, and md and qmd go " +
+			"to the session-exports folder when you give none. With --session-id, export writes one session, with filters the sessions " +
+			"that match, and with neither every session. Filtered exports include pinned and archived sessions, so they back up " +
+			"everything a matching prune could delete. " + times + "\n\n" +
+			"trace writes the Claude Code format for the Hugging Face Agent Trace Viewer, and --upload sends it to your Hugging Face " +
+			"dataset with HF_TOKEN. trace always hides secrets unless you pass --no-redact. The other formats hide them only with --redact.",
+		Example: "  icebath sessions export backup.jsonl\n  icebath sessions export --session-id 3f2a9c --format md\n" +
+			"  icebath sessions export old.jsonl --older-than 90",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := at(cmd)
 			output := ""
@@ -65,19 +77,19 @@ func addExport(parent *cobra.Command, at func(*cobra.Command) *run) {
 			switch format {
 			case "jsonl", "md", "qmd", "html", "trace":
 			default:
-				return fmt.Errorf("invalid choice: '%s' (choose from 'jsonl', 'md', 'qmd', 'html', 'trace')", format)
+				return fmt.Errorf("--format takes jsonl, md, qmd, html or trace, not “%s”.", format)
 			}
 			if only != "" && only != "user-prompts" {
-				return fmt.Errorf("invalid choice: '%s' (choose from 'user-prompts')", only)
+				return fmt.Errorf("--only takes user-prompts, not “%s”.", only)
 			}
 			if lineage != "single" && lineage != "logical" {
-				return fmt.Errorf("invalid choice: '%s' (choose from 'single', 'logical')", lineage)
+				return fmt.Errorf("--lineage takes single or logical, not “%s”.", lineage)
 			}
 			var filter *sessionsv1.Filter
 			if f.any() {
 				var err error
 				if filter, err = f.build(""); err != nil {
-					return errors.New("Error: " + err.Error())
+					return err
 				}
 				filter.IncludeArchived, filter.IncludePinned = true, true
 			}
@@ -99,18 +111,17 @@ func addExport(parent *cobra.Command, at func(*cobra.Command) *run) {
 			}
 			return r.exportMemory(output, format, id, filter, &f, redactFlag, lineage == "logical", deleteAfter, force)
 		}}
-	command.Flags().StringVar(&format, "format", "jsonl", "Export format (default: jsonl). 'trace' emits Claude Code JSONL for the Hugging Face Agent Trace Viewer")
-	command.Flags().BoolVar(&upload, "upload", false, "trace only: upload to your Hugging Face traces dataset instead of writing a local file (needs HF_TOKEN)")
-	command.Flags().BoolVar(&public, "public", false, "trace --upload only: create/update a public dataset instead of private")
-	command.Flags().BoolVar(&noRedact, "no-redact", false, "trace only: skip the forced secret redaction; only use after manual review")
-	command.Flags().StringVar(&only, "only", "", "Export only a filtered view (user-prompts: one prompt record per line for jsonl, headed sections for md)")
-	command.Flags().StringVar(&sessionID, "session-id", "", "Session ID or unique prefix to export")
-	f.bind(command, "Only export sessions older than AGE (duration like '5h'/'2d', bare number of days, or an ISO timestamp). Filtered exports include pinned "+
-		"and archived sessions, so they back up everything a matching prune could delete")
-	command.Flags().BoolVar(&redactFlag, "redact", false, "Redact secrets (API keys, tokens, credentials) from exported content")
-	command.Flags().StringVar(&lineage, "lineage", "single", "md/qmd only: export one row or its compression lineage")
-	command.Flags().BoolVar(&deleteAfter, "delete-after-verified", false, "md/qmd only: after verified single-session export, delete that session (needs --yes)")
-	command.Flags().BoolVar(&force, "force", false, "md/qmd only: overwrite an existing export file")
+	command.Flags().StringVar(&format, "format", "jsonl", "File format: jsonl, md, qmd, html or trace")
+	command.Flags().BoolVar(&upload, "upload", false, "With trace, upload to your Hugging Face traces dataset instead of a file")
+	command.Flags().BoolVar(&public, "public", false, "With --upload, make the dataset public instead of private")
+	command.Flags().BoolVar(&noRedact, "no-redact", false, "With trace, keep secrets in, only after you checked the sessions")
+	command.Flags().StringVar(&only, "only", "", "Export only part of each session: user-prompts for your messages")
+	command.Flags().StringVar(&sessionID, "session-id", "", "Session to export, by id or the unique start of one")
+	f.bind(command, "Only sessions older than this time, such as 30 for 30 days, 5h or a date")
+	command.Flags().BoolVar(&redactFlag, "redact", false, "Hide API keys, tokens and passwords in the file")
+	command.Flags().StringVar(&lineage, "lineage", "single", "With md or qmd: single, or logical to include the sessions it continues")
+	command.Flags().BoolVar(&deleteAfter, "delete-after-verified", false, "With md or qmd, delete the one exported session once checked, needs --yes")
+	command.Flags().BoolVar(&force, "force", false, "With md or qmd, replace an export file that is there")
 	parent.AddCommand(command)
 }
 
@@ -118,19 +129,23 @@ func addExport(parent *cobra.Command, at func(*cobra.Command) *run) {
 func (r *run) matching(filter *sessionsv1.Filter) ([]*sessionsv1.Session, error) {
 	response, err := r.service.Prune(r.ctx(), &sessionsv1.PruneRequest{Filter: filter, DryRun: true})
 	if err != nil {
-		return nil, errors.New("Error: " + tui.Reason(err))
+		return nil, errors.New(sentence(tui.Reason(err)))
 	}
 	return response.GetSessions(), nil
 }
 
 // Preview of what a filtered export would write
 func (r *run) previewExport(filter *sessionsv1.Filter, list []*sessionsv1.Session) {
-	r.printf("Would export %d session(s) (%s).", len(list), describe(filter))
+	r.printf("Would export %s, which match %s. Nothing was written, because you passed --dry-run.", strs.Count(len(list), "session"), describe(filter))
+	var table [][]string
 	for _, s := range list[:min(100, len(list))] {
-		r.printf("  %s  %s", s.GetId(), s.GetSource())
+		table = append(table, []string{s.GetId(), cmp.Or(s.GetSource(), "Unknown")})
+	}
+	if len(table) > 0 {
+		cli.NewConsole(r.cmd).Table([]string{"ID", "Source"}, table)
 	}
 	if len(list) > 100 {
-		r.printf("  … %d more", len(list)-100)
+		r.printf("  And %s more.", strs.Number(float64(len(list)-100)))
 	}
 }
 
@@ -158,13 +173,13 @@ func (r *run) collect(id string, filter *sessionsv1.Filter, f *filters, capped, 
 		}
 		request.Filter = &sessionsv1.Filter{Ids: ids}
 	case f.dryRun:
-		return nil, false, errors.New("--dry-run requires at least one filter.")
+		return nil, false, errors.New("--dry-run needs a filter, such as --older-than 90.")
 	default:
 		request.Filter = &sessionsv1.Filter{IncludeArchived: true, IncludePinned: true, IncludeHidden: true}
 	}
 	response, err := r.service.Export(r.ctx(), request)
 	if err != nil {
-		return nil, false, errors.New("Error: " + tui.Reason(err))
+		return nil, false, errors.New(sentence(tui.Reason(err)))
 	}
 	return response.GetTranscripts(), false, nil
 }
@@ -184,14 +199,14 @@ func (r *run) exportFlat(output, format, id string, filter *sessionsv1.Filter, f
 	if onlyPrompts {
 		view = strings.TrimPrefix(format, "only:")
 		if view != "jsonl" && view != "md" {
-			return errors.New("--only user-prompts supports --format jsonl or md.")
+			return errors.New("--only user-prompts works with --format jsonl or md.")
 		}
 	}
 	switch {
 	case view == "html" && (output == "" || output == "-"):
-		return errors.New("HTML export requires an output file path.")
+		return errors.New("An HTML export needs the path of the file to write, such as icebath sessions export sessions.html --format html.")
 	case view == "jsonl" && !onlyPrompts && output == "":
-		return errors.New("JSONL export requires an output path (use - for stdout).")
+		return errors.New("A JSONL export needs the path of the file to write, or - to print it, such as icebath sessions export backup.jsonl.")
 	}
 	transcripts, previewed, err := r.collect(id, filter, f, view == "jsonl" && !onlyPrompts, false)
 	if err != nil || previewed {
@@ -237,15 +252,13 @@ func (r *run) exportFlat(output, format, id string, filter *sessionsv1.Filter, f
 	}
 	switch {
 	case onlyPrompts && view == "jsonl":
-		r.printf("Exported %s to %s", plural(prompts, "prompt"), path)
+		r.printf("✓ Exported %s to %s.", strs.Count(prompts, "message"), path)
 	case onlyPrompts:
-		r.printf("Exported %s to %s", plural(len(transcripts), "session"), path)
+		r.printf("✓ Exported your messages of %s to %s.", strs.Count(len(transcripts), "session"), path)
 	case view == "html":
-		r.printf("Exported %s to %s (HTML)", plural(len(transcripts), "session"), path)
-	case id != "":
-		r.printf("Exported %d session to %s", len(transcripts), path)
+		r.printf("✓ Exported %s as a web page to %s.", strs.Count(len(transcripts), "session"), path)
 	default:
-		r.printf("Exported %d sessions to %s", len(transcripts), path)
+		r.printf("✓ Exported %s to %s.", strs.Count(len(transcripts), "session"), path)
 	}
 	return nil
 }
@@ -259,30 +272,30 @@ func (r *run) exportTrace(output, id string, filter *sessionsv1.Filter, f *filte
 		}
 		if len(response.GetSessions()) == 0 {
 			if upload {
-				r.print("No active session to upload.")
+				r.print("You have no session to upload yet.")
 				return nil
 			}
-			return errors.New("No session found to export. Pass --session-id.")
+			return errors.New("You have no session to export yet.")
 		}
 		id = response.GetSessions()[0].GetId()
 	}
 	if upload {
 		if id == "" {
-			return errors.New("--upload exports one session: pass --session-id (or drop filters to use the most recent).")
+			return errors.New("--upload sends one session. Pass --session-id, or leave out the filters to send the newest one.")
 		}
 		transcripts, _, err := r.collect(id, nil, f, false, false)
 		if err != nil {
-			r.printf("Could not load session %s: %s", id, err)
+			r.printf("✗ The session %s could not be loaded: %s", id, sentence(err.Error()))
 			return nil
 		}
 		if len(transcripts) == 0 || len(transcripts[0].GetMessages()) == 0 {
-			r.print("No transcript to upload for this session yet.")
+			r.print("This session has no messages to upload yet.")
 			return nil
 		}
 		trace, err := export.Trace(transcripts[0], mask)
 		if err != nil {
-			r.print("Trace upload blocked: secret redaction failed, so the transcript may still contain credentials or other sensitive data. Fix the redactor " +
-				"or rerun with --no-redact only after manually reviewing the transcript.")
+			r.print("✗ Nothing was uploaded, because hiding the secrets failed, so the session may still hold API keys or other private data. " +
+				"Check the session yourself, and only then run the command again with --no-redact.")
 			return nil
 		}
 		ctx, cancel := context.WithTimeout(r.ctx(), 10*time.Minute)
@@ -296,7 +309,7 @@ func (r *run) exportTrace(output, id string, filter *sessionsv1.Filter, f *filte
 	}
 	if id != "" {
 		if len(transcripts) == 0 || len(transcripts[0].GetMessages()) == 0 {
-			return fmt.Errorf("No transcript to export for session '%s'.", id)
+			return fmt.Errorf("The session %s has no messages to export yet.", id)
 		}
 		trace, err := export.Trace(transcripts[0], mask)
 		if err != nil {
@@ -308,7 +321,7 @@ func (r *run) exportTrace(output, id string, filter *sessionsv1.Filter, f *filte
 		}
 		toFile, err := r.write(path, trace)
 		if err == nil && toFile {
-			r.printf("Exported 1 session trace to %s", path)
+			r.printf("✓ Exported the trace of the session to %s.", path)
 		}
 		return err
 	}
@@ -333,7 +346,7 @@ func (r *run) exportTrace(output, id string, filter *sessionsv1.Filter, f *filte
 		}
 		written++
 	}
-	r.printf("Exported %d session trace(s) to %s", written, dir)
+	r.printf("✓ Exported the traces of %s to %s.", strs.Count(written, "session"), dir)
 	return nil
 }
 
@@ -341,20 +354,21 @@ func (r *run) exportTrace(output, id string, filter *sessionsv1.Filter, f *filte
 // file verifies
 func (r *run) exportMemory(output, format, id string, filter *sessionsv1.Filter, f *filters, mask, lineage, deleteAfter, force bool) error {
 	if output == "-" {
-		return errors.New("Markdown/QMD export writes files; stdout (-) is only supported with --format jsonl.")
+		return errors.New("Markdown and QMD exports write files, so - to print works only with --format jsonl.")
 	}
 	dir, err := folder(output)
 	if err != nil {
 		return err
 	}
 	if deleteAfter && !f.yes {
-		return errors.New("--delete-after-verified requires --yes.")
+		return errors.New("--delete-after-verified needs --yes too.")
 	}
 	if deleteAfter && id == "" {
-		return errors.New("--delete-after-verified is only supported with --session-id.")
+		return errors.New("--delete-after-verified works only with --session-id.")
 	}
 	if id == "" && filter == nil {
-		return errors.New("Refusing bulk export without a filter. Pass --session-id or at least one filter (e.g. --older-than 90, --source telegram).")
+		return errors.New("A Markdown or QMD export of many sessions needs a filter. Pass --session-id, or a filter such as --older-than 90 or " +
+			"--source telegram.")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -384,12 +398,12 @@ func (r *run) exportMemory(output, format, id string, filter *sessionsv1.Filter,
 	for _, head := range heads {
 		response, err := r.service.Export(r.ctx(), &sessionsv1.ExportRequest{Filter: &sessionsv1.Filter{Ids: []string{head}}, Lineage: lineage})
 		if err != nil {
-			return errors.New("Error: " + tui.Reason(err))
+			return errors.New(sentence(tui.Reason(err)))
 		}
 		segments := response.GetTranscripts()
 		if len(segments) == 0 {
 			if id != "" {
-				return fmt.Errorf("Session '%s' disappeared during export; nothing was deleted.", head)
+				return fmt.Errorf("The session %s was gone before it could be exported, so nothing was deleted.", head)
 			}
 			continue
 		}
@@ -403,9 +417,9 @@ func (r *run) exportMemory(output, format, id string, filter *sessionsv1.Filter,
 		path := filepath.Join(dir, export.FileName(last, format))
 		if _, err := os.Stat(path); err == nil && !force {
 			if id != "" {
-				return fmt.Errorf("Export already exists: %s. Pass --force to overwrite.", path)
+				return fmt.Errorf("%s exists already. Pass --force to replace it.", path)
 			}
-			r.printf("Skipping existing export: %s. Pass --force to overwrite.", path)
+			r.printf("Skipped %s, which exists already. Pass --force to replace it.", path)
 			continue
 		}
 		now := time.Now()
@@ -436,37 +450,38 @@ func (r *run) exportMemory(output, format, id string, filter *sessionsv1.Filter,
 		messages += count
 	}
 	if id == "" {
-		r.printf("Exported %d session(s) to %s", len(files), dir)
+		r.printf("✓ Exported %s to %s.", strs.Count(len(files), "session"), dir)
 		return nil
 	}
 	destination := dir
 	if len(files) == 1 {
 		destination = files[0].path
 	}
-	r.printf("Exported %s (%s) to %s", plural(len(files), "session"), plural(messages, "message"), destination)
+	r.printf("✓ Exported %s with %s to %s.", strs.Count(len(files), "session"), strs.Count(messages, "message"), destination)
 	if !deleteAfter {
 		return nil
 	}
 	for _, file := range files {
 		data, err := os.ReadFile(file.path)
 		if err != nil {
-			return fmt.Errorf("Export verification failed; not deleting session '%s': file missing", id)
+			return fmt.Errorf("The session %s was not deleted, because its export file %s is missing.", id, file.path)
 		}
 		if outcome := export.Verify(data, file.id, file.count); outcome != "ok" {
-			return fmt.Errorf("Export verification failed; not deleting session '%s': %s", id, outcome)
+			return fmt.Errorf("The session %s was not deleted, because its export did not check out: %s", id, sentence(outcome))
 		}
 	}
 	deleted, err := r.service.Delete(r.ctx(), &sessionsv1.DeleteRequest{Id: id})
 	if err != nil {
-		if strings.Contains(tui.Reason(err), "active turn lease or compression lock") {
-			return fmt.Errorf("Exported, but not deleted: session '%s' (or a delegate child) has an active turn lease or compression lock", id)
+		if strings.Contains(tui.Reason(err), "in the middle of a reply") {
+			return fmt.Errorf("The session %s was exported but not deleted, because it, or one of its subagents, is in the middle of a reply or of "+
+				"being summarized.", id)
 		}
-		return fmt.Errorf("Exported, but session '%s' was not deleted: %s", id, tui.Reason(err))
+		return fmt.Errorf("The session %s was exported but not deleted: %s", id, sentence(tui.Reason(err)))
 	}
 	others := len(deleted.GetIds()) - 1
-	line := fmt.Sprintf("Deleted exported session '%s'", id)
+	line := fmt.Sprintf("✓ Deleted the exported session %s", id)
 	if others > 0 {
-		line += fmt.Sprintf(" and %s", plural(others, "related session"))
+		line += " and " + strs.Count(others, "related session")
 	}
 	r.print(line + ".")
 	return nil

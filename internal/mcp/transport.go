@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Moves JSON-RPC messages between this side and the other
@@ -29,7 +31,7 @@ type Transport interface {
 // Largest body, and largest single event of a stream, read before any JSON is parsed
 const MaxBodyBytes = 10 << 20
 
-var ErrBodyTooLarge = errors.New("MCP response exceeds the wire body cap")
+var ErrBodyTooLarge = errors.New("the answer is too large to read")
 
 // One server sent event
 type SSEEvent struct {
@@ -66,7 +68,7 @@ func (s *SSEReader) Next() (*SSEEvent, error) {
 			return nil, err
 		}
 		if counted += len(line) + 1; counted > s.limit {
-			return nil, fmt.Errorf("MCP SSE event exceeds %d bytes (from %s): %w", s.limit, s.source, ErrBodyTooLarge)
+			return nil, fmt.Errorf("The server at %s sent an event larger than %s, and %w.", s.source, strs.Size(float64(s.limit)), ErrBodyTooLarge)
 		}
 		if len(line) == 0 {
 			if !seen {
@@ -122,7 +124,7 @@ func (s *SSEReader) line() ([]byte, error) {
 			buf = append(buf, window...)
 			s.r.Discard(len(window))
 			if len(buf) > s.limit {
-				return nil, fmt.Errorf("MCP SSE line exceeds %d bytes (from %s): %w", s.limit, s.source, ErrBodyTooLarge)
+				return nil, fmt.Errorf("The server at %s sent a line larger than %s, and %w.", s.source, strs.Size(float64(s.limit)), ErrBodyTooLarge)
 			}
 			continue
 		}
@@ -140,7 +142,7 @@ func readCapped(body io.Reader, limit int, source string) ([]byte, error) {
 		return nil, err
 	}
 	if len(data) > limit {
-		return nil, fmt.Errorf("MCP HTTP response exceeds %d bytes (from %s): %w", limit, source, ErrBodyTooLarge)
+		return nil, fmt.Errorf("The server at %s sent an answer larger than %s, and %w.", source, strs.Size(float64(limit)), ErrBodyTooLarge)
 	}
 	return data, nil
 }
@@ -158,7 +160,8 @@ func (c capped) RoundTrip(req *http.Request) (*http.Response, error) {
 	if declared := resp.Header.Get("Content-Length"); declared != "" {
 		if n, err := strconv.ParseInt(strings.TrimSpace(declared), 10, 64); err == nil && n > MaxBodyBytes {
 			resp.Body.Close()
-			return nil, fmt.Errorf("MCP HTTP response declares Content-Length %s > %d bytes cap (from %s): %w", declared, MaxBodyBytes, req.URL, ErrBodyTooLarge)
+			return nil, fmt.Errorf("The server at %s says its answer has %s bytes, more than %s, and %w.", req.URL, declared, strs.Size(float64(MaxBodyBytes)),
+				ErrBodyTooLarge)
 		}
 	}
 	return resp, nil

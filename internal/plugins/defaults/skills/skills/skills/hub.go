@@ -100,7 +100,7 @@ func (r *run) line(tone Tone, format string, args ...any) {
 
 // Says an error line
 func (r *run) fail(format string, args ...any) {
-	r.line(Bad, "Error: "+format, args...)
+	r.line(Bad, "✗ "+format, args...)
 }
 
 // Folder of the hub's own state in the profile's skills folder

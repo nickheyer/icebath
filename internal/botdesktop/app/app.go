@@ -1,5 +1,5 @@
-// The Bot screen: the profile's own headless desktop, its status, start and stop, a picture of it, taking it over and handing it back, the
-// install of its packages and the sandbox image it needs
+// The agent desktop: the profile's own hidden desktop, how it stands, start and stop, a screenshot of it, taking it over and handing it
+// back, the install of its programs and the sandbox image it needs
 package app
 
 import (
@@ -7,15 +7,20 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"io"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/internal/app"
+	botdesktopconfig "github.com/nickheyer/icebath/internal/botdesktop/config"
+	"github.com/nickheyer/icebath/internal/config"
+	configapp "github.com/nickheyer/icebath/internal/config/app"
 	"github.com/nickheyer/icebath/internal/profile"
 	botdesktopv1 "github.com/nickheyer/icebath/pkg/gen/icebath/botdesktop/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/botdesktop/v1/botdesktopv1connect"
@@ -28,23 +33,26 @@ import (
 
 const screenContext = "tui.screen"
 
-const usage = "usage: /screen [status|start|stop [force]|take [reason]|release [force]|shot|install|switch|keep]"
+// What /screen takes after its name
+const subcommands = "status, start, stop, take, release, shot, install, switch or keep"
 
 var actions = []keys.Action{
-	{ID: "tui.screen.start", Context: screenContext, Label: "start", Doc: "start the bot screen", Default: []string{"s"}},
-	{ID: "tui.screen.stop", Context: screenContext, Label: "stop", Doc: "stop the bot screen, handing it back to the agent first", Default: []string{"x"}},
-	{ID: "tui.screen.take", Context: screenContext, Label: "take over", Doc: "take the bot screen over: the agent's actions on it wait until you hand it back", Default: []string{"t"}},
-	{ID: "tui.screen.release", Context: screenContext, Label: "hand back", Doc: "hand the bot screen back to the agent", Default: []string{"r"}},
-	{ID: "tui.screen.shot", Context: screenContext, Label: "picture", Doc: "save a picture of the bot screen", Default: []string{"p"}},
-	{ID: "tui.screen.install", Context: screenContext, Label: "install", Doc: "install the screen packages with the package manager", Default: []string{"i"}},
-	{ID: "tui.screen.switch", Context: screenContext, Label: "switch image", Doc: "move the sandbox to the image with the desktop", Default: []string{"w"}},
-	{ID: "tui.screen.keep", Context: screenContext, Label: "keep image", Doc: "keep the sandbox on the image it runs", Default: []string{"k"}},
-	{ID: "tui.screen.refresh", Context: screenContext, Label: "refresh", Doc: "read how the bot screen stands again", Default: []string{"ctrl+r"}},
+	{ID: "tui.screen.main", Context: screenContext, Label: "do", Doc: "Run the first action the agent desktop shows, such as starting it", Default: []string{"enter"}},
+	{ID: "tui.screen.start", Context: screenContext, Label: "start", Doc: "Start the agent desktop", Default: []string{"s"}},
+	{ID: "tui.screen.stop", Context: screenContext, Label: "stop", Doc: "Hand the agent desktop back and stop it", Default: []string{"x"}},
+	{ID: "tui.screen.take", Context: screenContext, Label: "take over", Doc: "Take over the agent desktop, so the agent waits until you hand it back", Default: []string{"t"}},
+	{ID: "tui.screen.release", Context: screenContext, Label: "hand back", Doc: "Hand the agent desktop back to the agent", Default: []string{"r"}},
+	{ID: "tui.screen.shot", Context: screenContext, Label: "screenshot", Doc: "Save a screenshot of the agent desktop", Default: []string{"p"}},
+	{ID: "tui.screen.install", Context: screenContext, Label: "install", Doc: "Install the programs the agent desktop needs", Default: []string{"i"}},
+	{ID: "tui.screen.switch", Context: screenContext, Label: "switch image", Doc: "Move the sandbox to an image that has a desktop", Default: []string{"w"}},
+	{ID: "tui.screen.keep", Context: screenContext, Label: "keep image", Doc: "Keep the sandbox on the image it runs now", Default: []string{"n"}},
+	{ID: "tui.screen.settings", Context: screenContext, Label: "settings", Doc: "Open the settings of the agent desktop", Default: []string{"e"}},
+	{ID: "tui.screen.refresh", Context: screenContext, Label: "refresh", Doc: "Check the agent desktop again", Default: []string{"ctrl+r"}},
 }
 
 type screens struct {
 	mu sync.Mutex
-	// Id this app takes the screen under, random and kept for its life, so only it hands back what it took
+	// Id this app takes the desktop under, random and kept for its life, so only it hands back what it took
 	viewer string
 }
 
@@ -66,14 +74,15 @@ func (s *screens) id() string {
 func (s *screens) Screens(conn *connect.Client) []tui.Screen {
 	service := botdesktopv1connect.NewDesktopServiceClient(conn)
 	return []tui.Screen{{
-		ID:    "screen",
-		Title: "Bot screen",
-		Short: "the bot screen of this profile, its status, start, stop, a picture of it, taking it over and handing it back, install and sandbox " +
-			"image switch",
-		Slash:   []string{"screen"},
+		ID:      "screen",
+		Group:   tui.GroupAbilities,
+		Order:   80,
+		Title:   "Agent desktop",
+		Short:   "Start, stop or take over the agent desktop",
+		Slash:   []string{"screen", "desktop"},
 		Usage:   "[status|start|stop [force]|take [reason]|release [force]|shot|install|switch|keep] [@profile]",
 		Actions: actions,
-		Where:   map[string]string{screenContext: "bot screen"},
+		Where:   map[string]string{screenContext: "agent desktop"},
 		Open: func(kit *tui.Kit, argument string) tea.Cmd {
 			name, rest := profile.Split(argument)
 			v := &view{kit: kit, service: service, profile: name, viewer: s.id()}
@@ -94,29 +103,51 @@ type view struct {
 	log    []string
 	loaded bool
 	err    error
-	// Ends the watch of the screen, once the page is gone
+	// Ends the watch of the desktop, once the page is gone
 	stop context.CancelFunc
 }
 
 func (v *view) open(argument string) tea.Cmd {
+	run := map[string]func() tea.Cmd{
+		"tui.screen.start":    v.start,
+		"tui.screen.stop":     func() tea.Cmd { return v.halt(false) },
+		"tui.screen.take":     func() tea.Cmd { return v.take("") },
+		"tui.screen.release":  func() tea.Cmd { return v.release(false) },
+		"tui.screen.shot":     v.shot,
+		"tui.screen.install":  v.install,
+		"tui.screen.switch":   func() tea.Cmd { return v.choose(true) },
+		"tui.screen.keep":     func() tea.Cmd { return v.choose(false) },
+		"tui.screen.settings": v.settings,
+		"tui.screen.refresh":  v.load,
+	}
+	// A key runs its action only while the desktop offers it, so a key of an action that does not apply does nothing
+	handlers := map[string]func(*cards.Page) tea.Cmd{}
+	for id, fn := range run {
+		handlers[id] = func(*cards.Page) tea.Cmd {
+			if id != "tui.screen.settings" && id != "tui.screen.refresh" && !slices.Contains(v.offered(), id) {
+				return nil
+			}
+			return fn()
+		}
+	}
+	handlers["tui.screen.main"] = func(*cards.Page) tea.Cmd {
+		if offered := v.offered(); len(offered) > 0 {
+			return run[offered[0]]()
+		}
+		return nil
+	}
+	title := "Agent desktop"
+	if v.profile != "" {
+		title += " · " + v.profile
+	}
 	v.page = cards.NewPage(v.kit.Env, cards.PageSpec{
-		Title:   "Bot screen",
-		Key:     "tui:screen",
+		Title:   title,
+		Key:     "screen",
 		Context: screenContext,
 		Follow:  true,
 		Lines:   v.lines,
 		Hints:   v.hints,
-		Actions: map[string]func(*cards.Page) tea.Cmd{
-			"tui.screen.start":   func(*cards.Page) tea.Cmd { return v.start() },
-			"tui.screen.stop":    func(*cards.Page) tea.Cmd { return v.halt(false) },
-			"tui.screen.take":    func(*cards.Page) tea.Cmd { return v.take("") },
-			"tui.screen.release": func(*cards.Page) tea.Cmd { return v.release(false) },
-			"tui.screen.shot":    func(*cards.Page) tea.Cmd { return v.shot() },
-			"tui.screen.install": func(*cards.Page) tea.Cmd { return v.install() },
-			"tui.screen.switch":  func(*cards.Page) tea.Cmd { return v.choose(true) },
-			"tui.screen.keep":    func(*cards.Page) tea.Cmd { return v.choose(false) },
-			"tui.screen.refresh": func(*cards.Page) tea.Cmd { return v.load() },
-		},
+		Actions: handlers,
 	})
 	v.hub = v.kit.Hub("screen", v.page)
 	var watched context.Context
@@ -159,7 +190,7 @@ func (v *view) run(argument string) tea.Cmd {
 	case "switch", "keep":
 		return v.choose(action == "switch")
 	}
-	v.say(usage)
+	v.say(render.Warm("There is no /screen "+action+". It takes "+subcommands+".", v.kit.Env.Theme))
 	return v.load()
 }
 
@@ -168,18 +199,45 @@ func (v *view) say(text string) {
 	v.log = append(v.log, text)
 }
 
-func yes(on bool) string {
-	if on {
-		return "yes"
-	}
-	return "no"
-}
-
+// Who drives the desktop, in words
 func holder(l *botdesktopv1.Lease) string {
 	if l.GetHolder() == "human" {
-		return "a person"
+		return "A person"
 	}
-	return "the agent"
+	return "The agent"
+}
+
+// Whether a person drives the desktop
+func human(s *botdesktopv1.Screen) bool { return s.GetLease().GetHolder() == "human" }
+
+// How the desktop stands in a word or two
+func state(s *botdesktopv1.Screen) string {
+	switch {
+	case s.GetRunning():
+		return "Running"
+	case !s.GetSupported():
+		return "Can't run here"
+	case !s.GetInstalled():
+		return "Not installed"
+	}
+	return "Stopped"
+}
+
+// Where the desktop runs, in words: this computer, or the sandbox of the agent's commands
+func placement(where string) string {
+	backend, sandboxed := strings.CutPrefix(where, "terminal:")
+	switch {
+	case where == "":
+		return ""
+	case !sandboxed, backend == "local":
+		return "On this computer"
+	}
+	return "In the " + backend + " sandbox, with the agent's commands"
+}
+
+// Memory in MB in the largest unit that fits
+func memory(mb int32) string {
+	return config.Size(float64(mb) * 1024 * 1024)
 }
 
 func (v *view) lines(w int) []string {
@@ -187,23 +245,44 @@ func (v *view) lines(w int) []string {
 	width := max(w, 1)
 	var lines []string
 	add := func(text string) { lines = append(lines, strings.Split(render.Wrap(text, width), "\n")...) }
+	// What the screen is about, for a person who meets it for the first time
+	add(render.Dim("A hidden desktop of its own that the agent can open programs and click around in.", t))
+	lines = append(lines, "")
 	if v.status == nil {
-		add(tui.Waiting(v.loaded, v.err, ""))
+		switch {
+		case v.err != nil:
+		case !v.loaded:
+			add(render.Dim("Checking the agent desktop…", t))
+		}
 	} else {
 		s := v.status
-		rows := [][2]string{{"profile", s.GetProfile()}, {"supported", yes(s.GetSupported())}, {"installed", yes(s.GetInstalled())},
-			{"running", yes(s.GetRunning())}}
-		if len(s.GetMissing()) > 0 {
-			rows = append(rows, [2]string{"missing", strings.Join(s.GetMissing(), ", ")})
+		rows := [][2]string{{"State", state(s)}, {"In control", holder(s.GetLease())}}
+		if reason := s.GetLease().GetReason(); human(s) && reason != "" {
+			rows = append(rows, [2]string{"Taken for", reason})
 		}
-		for _, row := range [][2]string{{"display", s.GetDisplay()}, {"size", s.GetGeometry()}, {"runs on", s.GetPlacement()}, {"browser", s.GetBrowser()}} {
+		rows = append(rows, [2]string{"Profile", s.GetProfile()})
+		if len(s.GetMissing()) > 0 {
+			rows = append(rows, [2]string{"Missing", strings.Join(s.GetMissing(), ", ")})
+		}
+		for _, row := range [][2]string{{"Display", s.GetDisplay()}, {"Screen size", s.GetGeometry()}, {"Runs", placement(s.GetPlacement())},
+			{"Browser", s.GetBrowser()}} {
 			if row[1] != "" {
 				rows = append(rows, row)
 			}
 		}
-		rows = append(rows, [2]string{"in control", holder(s.GetLease())})
+		if free := s.GetMemoryAvailableMb(); free >= 0 {
+			said := memory(free)
+			if limit := s.GetMemoryLimitMb(); limit > 0 {
+				said += " of " + memory(limit)
+			}
+			rows = append(rows, [2]string{"Free memory", said})
+		}
+		label := 0
 		for _, row := range rows {
-			add(render.Dim(fmt.Sprintf("%-11s", row[0]), t) + row[1])
+			label = max(label, ansi.StringWidth(row[0]))
+		}
+		for _, row := range rows {
+			add(render.Dim(row[0]+strings.Repeat(" ", label-ansi.StringWidth(row[0])+2), t) + row[1])
 		}
 		if blocker := s.GetBlocker(); blocker != "" {
 			lines = append(lines, "")
@@ -211,12 +290,14 @@ func (v *view) lines(w int) []string {
 		}
 		if sw := s.GetImageSwitch(); sw != nil {
 			lines = append(lines, "")
-			add(fmt.Sprintf("The sandbox still runs %s, which has no desktop. /screen switch moves it to %s, files in /root and /workspace stay. "+
-				"/screen keep stays on %s.", sw.GetCurrentImage(), sw.GetTargetImage(), sw.GetCurrentImage()))
+			add("The sandbox still runs " + sw.GetCurrentImage() + ", which has no desktop. Switch image moves it to " + sw.GetTargetImage() +
+				" and keeps the files in /root and /workspace. Keep image leaves it on " + sw.GetCurrentImage() + ".")
 		}
 	}
 	if len(v.log) > 0 {
-		lines = append(lines, "")
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
 		for _, line := range v.log {
 			add(line)
 		}
@@ -224,27 +305,49 @@ func (v *view) lines(w int) []string {
 	return lines
 }
 
-func (v *view) hints(*cards.Page) []wm.Hint {
+// Actions the desktop offers as it stands, the one enter runs first
+func (v *view) offered() []string {
 	s := v.status
-	var out []wm.Hint
 	switch {
 	case s == nil:
+		return nil
+	case s.GetRunning() && human(s):
+		return []string{"tui.screen.release", "tui.screen.shot", "tui.screen.stop"}
 	case s.GetRunning():
-		out = append(out, wm.Hint{Action: "tui.screen.shot"})
-		if s.GetLease().GetHolder() == "human" {
-			out = append(out, wm.Hint{Action: "tui.screen.release"})
-		} else {
-			out = append(out, wm.Hint{Action: "tui.screen.take"})
-		}
-		out = append(out, wm.Hint{Action: "tui.screen.stop"})
-	case !s.GetInstalled() && s.GetSupported() && !strings.HasPrefix(s.GetPlacement(), "terminal"):
-		out = append(out, wm.Hint{Action: "tui.screen.install"})
+		return []string{"tui.screen.take", "tui.screen.shot", "tui.screen.stop"}
 	case s.GetImageSwitch() != nil:
-		out = append(out, wm.Hint{Action: "tui.screen.switch"}, wm.Hint{Action: "tui.screen.keep"})
-	default:
-		out = append(out, wm.Hint{Action: "tui.screen.start"})
+		return []string{"tui.screen.switch", "tui.screen.keep"}
+	case !s.GetSupported():
+		return []string{"tui.screen.settings"}
+	case !s.GetInstalled() && !strings.HasPrefix(s.GetPlacement(), "terminal"):
+		return []string{"tui.screen.install"}
 	}
-	return append(out, wm.Hint{Action: "tui.screen.refresh"})
+	return []string{"tui.screen.start"}
+}
+
+// Buttons of the page: what enter runs first, then the other actions the desktop offers, its settings, and checking again once a check
+// failed
+func (v *view) hints(*cards.Page) []wm.Hint {
+	var out []wm.Hint
+	offered := v.offered()
+	for i, id := range offered {
+		if i == 0 {
+			label := id
+			if a, ok := v.kit.Env.Keys.Action(id); ok {
+				label = a.LabelText()
+			}
+			out = append(out, wm.Hint{Action: "tui.screen.main", Label: label})
+			continue
+		}
+		out = append(out, wm.Hint{Action: id})
+	}
+	if len(offered) > 0 && offered[0] != "tui.screen.settings" {
+		out = append(out, wm.Hint{Action: "tui.screen.settings"})
+	}
+	if v.status == nil || v.err != nil {
+		out = append(out, wm.Hint{Action: "tui.screen.refresh"})
+	}
+	return out
 }
 
 // Shows the status the call answered, or why it failed
@@ -252,11 +355,24 @@ func (v *view) show(status *botdesktopv1.Screen, err error) tea.Cmd {
 	v.loaded = true
 	if err != nil {
 		v.err = err
-		v.say(render.Bad(tui.Reason(err), v.kit.Env.Theme))
+		v.say(render.Bad(sentence(tui.Reason(err))+" "+v.kit.Env.Keys.Display("tui.screen.refresh")+" checks again.", v.kit.Env.Theme))
 		return nil
 	}
 	v.err, v.status = nil, status
 	return nil
+}
+
+// Sentence of a reason a server gave: capital first letter, ending in a period
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	text = strings.ToUpper(text[:1]) + text[1:]
+	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
+		text += "."
+	}
+	return text
 }
 
 func (v *view) load() tea.Cmd {
@@ -267,23 +383,18 @@ func (v *view) load() tea.Cmd {
 }
 
 func (v *view) start() tea.Cmd {
-	v.say("starting the bot screen…")
+	v.say("Starting the agent desktop…")
 	return tui.Async(func() func() tea.Cmd {
 		status, err := v.service.Start(v.kit.Env.Ctx, &botdesktopv1.StartRequest{Profile: v.profile})
 		return func() tea.Cmd { return v.show(status, err) }
 	})
 }
 
-// Stops the screen; while a person holds it, asks first and stops it anyway on yes
+// Stops the desktop; while a person holds it, asks first and stops it anyway on yes
 func (v *view) halt(force bool) tea.Cmd {
-	if !force && v.status.GetLease().GetHolder() == "human" {
-		return v.hub.Push(cards.NewForm(v.kit.Env, cards.FormSpec{
-			Title:  "Stop the bot screen?",
-			Intro:  []string{"A person holds the bot screen; stopping it ends what they are doing on it."},
-			Submit: "stop anyway",
-			Done:   func(*cards.Form, map[string]string) tea.Cmd { return tea.Batch(v.hub.Pop(), v.halt(true)) },
-			Cancel: func(*cards.Form) tea.Cmd { return v.hub.Pop() },
-		}))
+	if !force && human(v.status) {
+		v.page.Confirm("Stop the agent desktop? A person holds it now, and stopping ends what they are doing on it.", func() tea.Cmd { return v.halt(true) })
+		return nil
 	}
 	return tui.Async(func() func() tea.Cmd {
 		reply, err := v.service.Stop(v.kit.Env.Ctx, &botdesktopv1.StopRequest{Profile: v.profile, Force: force})
@@ -292,7 +403,7 @@ func (v *view) halt(force bool) tea.Cmd {
 				return v.show(nil, err)
 			}
 			if reply.GetStopped() {
-				v.say("bot screen stopped")
+				v.say("The agent desktop stopped.")
 			}
 			return v.show(reply.GetStatus(), nil)
 		}
@@ -306,7 +417,7 @@ func (v *view) take(reason string) tea.Cmd {
 			if err != nil {
 				return v.show(nil, err)
 			}
-			v.say("you hold the bot screen: the agent's actions on it wait until /screen release")
+			v.say("You hold the agent desktop now. What the agent does on it waits until you hand it back.")
 			return v.load()
 		}
 	})
@@ -319,7 +430,7 @@ func (v *view) release(force bool) tea.Cmd {
 			if err != nil {
 				return v.show(nil, err)
 			}
-			v.say("bot screen handed back to the agent")
+			v.say("You handed the agent desktop back to the agent.")
 			return v.load()
 		}
 	})
@@ -333,11 +444,11 @@ func (v *view) shot() tea.Cmd {
 			case err != nil:
 				return v.show(nil, err)
 			case reply.GetSuppressed() != "":
-				v.say("a person holds the bot screen, no picture is taken until it is handed back with /screen release")
+				v.say("A person holds the agent desktop, so no screenshot is taken until it is handed back.")
 			case reply.GetPath() == "":
-				v.say("the bot screen is not running, /screen start brings it up")
+				v.say("The agent desktop is not running. Start it first.")
 			default:
-				v.say("picture of the bot screen saved to " + reply.GetPath())
+				v.say("Saved a screenshot of the agent desktop to " + reply.GetPath() + ".")
 			}
 			return nil
 		}
@@ -351,26 +462,31 @@ func (v *view) choose(approve bool) tea.Cmd {
 			if err != nil {
 				return v.show(nil, err)
 			}
-			v.say("sandbox image: " + reply.GetImage())
+			v.say("The sandbox image is now " + reply.GetImage() + ".")
 			return v.show(reply.GetStatus(), nil)
 		}
 	})
+}
+
+// Opens the settings of the agent desktop in place of this screen
+func (v *view) settings() tea.Cmd {
+	return tea.Batch(v.kit.WM.DismissCard(v.hub), v.kit.Open(configapp.Settings, profile.Join(v.profile, botdesktopconfig.Key)))
 }
 
 // Line of how the install ended
 func ended(code int32) string {
 	switch code {
 	case 0:
-		return "screen packages installed, /screen start runs the screen"
+		return "The programs of the agent desktop are installed. Start runs the desktop."
 	case -1:
-		return "screen package install cancelled"
+		return "The install was cancelled."
 	case -2:
-		return "no sudo password was given, run the install command printed above in a shell"
+		return "No sudo password was given. Run the install command shown above in a shell."
 	}
-	return fmt.Sprintf("screen package install failed with status %d", code)
+	return "The install failed with exit code " + strconv.Itoa(int(code)) + "."
 }
 
-// Installs the packages, their output following on the page and the sudo password asked for in a masked form
+// Installs the programs, their output following on the page and the sudo password asked for in a masked form
 func (v *view) install() tea.Cmd {
 	ctx := v.kit.Env.Ctx
 	go func() {
@@ -378,7 +494,7 @@ func (v *view) install() tea.Cmd {
 		if err != nil {
 			v.kit.Apply(func() tea.Cmd {
 				if connect.CodeOf(err) == connect.CodeFailedPrecondition && v.status.GetInstallCommand() != "" {
-					v.say("the install runs only on the background service's computer, run there: " + v.status.GetInstallCommand())
+					v.say("The install runs only on the computer where icebath's server runs. Run this there: " + v.status.GetInstallCommand())
 				}
 				return v.show(nil, err)
 			})
@@ -399,7 +515,7 @@ func (v *view) install() tea.Cmd {
 			switch kind := event.GetKind().(type) {
 			case *botdesktopv1.InstallEvent_Command:
 				v.kit.Apply(func() tea.Cmd {
-					v.say("installing the screen packages, their output follows")
+					v.say("Installing the programs of the agent desktop. Their output follows.")
 					return nil
 				})
 			case *botdesktopv1.InstallEvent_Line:
@@ -421,7 +537,7 @@ func (v *view) install() tea.Cmd {
 	return nil
 }
 
-// Masked form asking the sudo password the install waits on, cancelled when left empty or closed
+// Masked form asking the sudo password the install waits on, cancelled when closed
 func (v *view) password(id string) tea.Cmd {
 	answer := func(password string) tea.Cmd {
 		return tui.Async(func() func() tea.Cmd {
@@ -438,23 +554,28 @@ func (v *view) password(id string) tea.Cmd {
 	if v.status != nil {
 		name = v.status.GetProfile()
 	}
-	form := cards.NewForm(v.kit.Env, cards.FormSpec{
-		Title:  "sudo password required",
-		Intro:  []string{"The screen packages of profile " + name + " install with sudo, the password goes to sudo once and is never stored"},
-		Fields: []cards.Field{{ID: "password", Label: "password", Kind: cards.FieldSecret}},
-		Submit: "install",
-		Done: func(f *cards.Form, values map[string]string) tea.Cmd {
-			return tea.Batch(v.hub.Pop(), answer(values["password"]))
+	about := "Installing the programs of the agent desktop needs sudo."
+	if name != "" {
+		about = "Installing the programs of the agent desktop for the profile " + name + " needs sudo."
+	}
+	var form *cards.Form
+	form = cards.NewForm(v.kit.Env, cards.FormSpec{
+		Title:  "Password for sudo",
+		Intro:  []string{about + " Your password goes to sudo once and is never kept."},
+		Fields: []cards.Field{{ID: "password", Label: "Password", Kind: cards.FieldSecret, Required: true}},
+		Submit: "Install",
+		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
+			return tea.Batch(v.hub.Close(form), answer(values["password"]))
 		},
-		Cancel: func(f *cards.Form) tea.Cmd {
-			v.say("sudo cancelled")
-			return tea.Batch(v.hub.Pop(), answer(""))
+		Cancel: func(*cards.Form) tea.Cmd {
+			v.say("No password was given, so the install stops.")
+			return tea.Batch(v.hub.Close(form), answer(""))
 		},
 	})
 	return v.hub.Push(form)
 }
 
-// Follows the changes of the screen until the page closes, a start or stop and a change of hands said as they come
+// Follows the changes of the desktop until the page closes, a start or stop and a change of hands said as they come
 func (v *view) watch(ctx context.Context) {
 	go func() {
 		stream, err := v.service.Watch(ctx, &botdesktopv1.WatchRequest{Profile: v.profile})
@@ -473,9 +594,9 @@ func (v *view) watch(ctx context.Context) {
 					running := kind.Status.GetRunning()
 					if v.status == nil || v.status.GetRunning() != running {
 						if running {
-							v.say("bot screen running")
+							v.say("The agent desktop is running.")
 						} else {
-							v.say("bot screen stopped")
+							v.say("The agent desktop stopped.")
 						}
 					}
 					return v.show(kind.Status, nil)
@@ -483,7 +604,11 @@ func (v *view) watch(ctx context.Context) {
 					if v.status != nil {
 						v.status.Lease = kind.Lease
 					}
-					v.say("bot screen: " + holder(kind.Lease) + " in control")
+					if kind.Lease.GetHolder() == "human" {
+						v.say("A person now controls the agent desktop.")
+					} else {
+						v.say("The agent now controls the agent desktop.")
+					}
 				}
 				return nil
 			})

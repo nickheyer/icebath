@@ -34,7 +34,11 @@ type Tool struct {
 	// Argument whose value names what a call works on, such as "path"
 	Subject string `protobuf:"bytes,7,opt,name=subject,proto3" json:"subject,omitempty"`
 	// Turned off in the settings
-	Disabled      bool `protobuf:"varint,8,opt,name=disabled,proto3" json:"disabled,omitempty"`
+	Disabled bool `protobuf:"varint,8,opt,name=disabled,proto3" json:"disabled,omitempty"`
+	// What the tool lets the agent do, in a phrase written for a person; the description is written for the model
+	About string `protobuf:"bytes,9,opt,name=about,proto3" json:"about,omitempty"`
+	// Heading the app lists the tool under, the title of its toolset
+	Group         string `protobuf:"bytes,10,opt,name=group,proto3" json:"group,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -125,6 +129,20 @@ func (x *Tool) GetDisabled() bool {
 	return false
 }
 
+func (x *Tool) GetAbout() string {
+	if x != nil {
+		return x.About
+	}
+	return ""
+}
+
+func (x *Tool) GetGroup() string {
+	if x != nil {
+		return x.Group
+	}
+	return ""
+}
+
 type ListRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -209,7 +227,7 @@ var File_icebath_tools_v1_tools_proto protoreflect.FileDescriptor
 
 const file_icebath_tools_v1_tools_proto_rawDesc = "" +
 	"\n" +
-	"\x1cicebath/tools/v1/tools.proto\x12\x10icebath.tools.v1\"\xd4\x01\n" +
+	"\x1cicebath/tools/v1/tools.proto\x12\x10icebath.tools.v1\"\x80\x02\n" +
 	"\x04Tool\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\atoolset\x18\x02 \x01(\tR\atoolset\x12 \n" +
@@ -218,7 +236,10 @@ const file_icebath_tools_v1_tools_proto_rawDesc = "" +
 	"\x05title\x18\x05 \x01(\tR\x05title\x12\x12\n" +
 	"\x04icon\x18\x06 \x01(\tR\x04icon\x12\x18\n" +
 	"\asubject\x18\a \x01(\tR\asubject\x12\x1a\n" +
-	"\bdisabled\x18\b \x01(\bR\bdisabled\"\r\n" +
+	"\bdisabled\x18\b \x01(\bR\bdisabled\x12\x14\n" +
+	"\x05about\x18\t \x01(\tR\x05about\x12\x14\n" +
+	"\x05group\x18\n" +
+	" \x01(\tR\x05group\"\r\n" +
 	"\vListRequest\"<\n" +
 	"\fListResponse\x12,\n" +
 	"\x05tools\x18\x01 \x03(\v2\x16.icebath.tools.v1.ToolR\x05tools2T\n" +

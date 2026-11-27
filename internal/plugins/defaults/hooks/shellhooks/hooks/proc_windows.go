@@ -42,7 +42,7 @@ func (r *Registrant) interpreter(_ context.Context, argv []string) ([]string, er
 	if bash, err := exec.LookPath("bash"); err == nil {
 		return []string{bash}, nil
 	}
-	return nil, errors.New("No shell found. icebath needs bash (Git for Windows on Windows). Run `icebath pm install git` or install Git for Windows.")
+	return nil, errors.New("icebath runs hooks with bash, and there is none on this computer. Run icebath pm install git, or install Git for Windows, which brings bash.")
 }
 
 // Program of a bare command, found the way CreateProcess searches PATH

@@ -237,11 +237,11 @@ func (a *auth) mint(ctx context.Context, id, keyPath, installation string) (stri
 		return "", err
 	}
 	if !utf8.Valid(raw) {
-		return "", fmt.Errorf("private key file %s is not valid UTF-8", keyPath)
+		return "", fmt.Errorf("The GitHub App key file %s can't be read, because it is not text.", keyPath)
 	}
 	block, _ := pem.Decode(bytes.TrimPrefix(raw, []byte("\xEF\xBB\xBF")))
 	if block == nil {
-		return "", fmt.Errorf("private key file %s holds no PEM key", keyPath)
+		return "", fmt.Errorf("The GitHub App key file %s holds no PEM key.", keyPath)
 	}
 	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
@@ -251,7 +251,7 @@ func (a *auth) mint(ctx context.Context, id, keyPath, installation string) (stri
 		}
 		var ok bool
 		if key, ok = parsed.(*rsa.PrivateKey); !ok {
-			return "", fmt.Errorf("private key file %s holds no RSA key", keyPath)
+			return "", fmt.Errorf("The GitHub App key file %s holds no RSA key.", keyPath)
 		}
 	}
 	now := time.Now().Unix()
@@ -281,7 +281,7 @@ func (a *auth) mint(ctx context.Context, id, keyPath, installation string) (stri
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("GitHub answered %d minting the installation token", resp.StatusCode)
+		return "", fmt.Errorf("GitHub answered with status %d when asked for a token of the GitHub App installation.", resp.StatusCode)
 	}
 	var answer struct {
 		Token string `json:"token"`

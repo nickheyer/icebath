@@ -23,14 +23,14 @@ func (backends) Backends() []web.Backend {
 	return []web.Backend{{
 		Name:     "searxng",
 		Title:    "SearXNG",
-		About:    "SearXNG web search — free, self-hosted, privacy-respecting metasearch engine. Requires SEARXNG_URL pointing at your instance.",
+		About:    "Free search through a SearXNG server that you run",
 		Settings: []string{searxngconfig.URL},
 		Plans: []web.Plan{{
-			Title:  "SearXNG",
+			Title:  "Your own server",
 			Badge:  "free · self-hosted",
-			About:  "Free, privacy-respecting metasearch. Point SEARXNG_URL at your instance.",
+			About:  "Private search across many engines, on a server that you run",
 			Key:    searxngconfig.URL,
-			Prompt: "SearXNG instance URL (e.g. http://localhost:8080)",
+			Prompt: "Address of your SearXNG server, such as http://localhost:8080",
 			Link:   "https://searx.space/",
 		}},
 		Search: search,

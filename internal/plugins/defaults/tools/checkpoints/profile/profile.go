@@ -1,11 +1,10 @@
 package profile
 
 import (
-	"fmt"
-
 	"github.com/nickheyer/icebath/internal/checkpoints"
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/profile"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Checkpoints as profiles come and go: kept in the profile's folder, so deleted with it, and their projects moved to their new paths when
@@ -29,7 +28,7 @@ func (r registrant) Move(old, renamed string) ([]string, error) {
 	migrated, err := checkpoints.Open(r.config.In(renamed)).Rekey(r.config.ProfileDir(old), r.config.ProfileDir(renamed))
 	var lines []string
 	if migrated > 0 {
-		lines = append(lines, fmt.Sprintf("✓ Checkpoint identity updated: %d project(s)", migrated))
+		lines = append(lines, "✓ Moved the checkpoints of "+strs.Count(migrated, "project")+" to the new name.")
 	}
 	if err == nil {
 		return lines, nil
@@ -38,5 +37,5 @@ func (r registrant) Move(old, renamed string) ([]string, error) {
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {
 		failed = len(joined.Unwrap())
 	}
-	return lines, profile.Worded(fmt.Sprintf("Profile was renamed, but checkpoint identity migration failed for %d project(s).", failed))
+	return lines, profile.Worded("The checkpoints of " + strs.Count(failed, "project") + " could not move with it.")
 }

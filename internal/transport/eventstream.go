@@ -68,7 +68,9 @@ type FrameReadError struct {
 	Detail string
 }
 
-func (e *FrameReadError) Error() string { return "aws event stream " + e.Kind + ": " + e.Detail }
+func (e *FrameReadError) Error() string {
+	return "The AWS reply stream could not be read, " + e.Kind + ": " + strings.TrimSuffix(e.Detail, ".") + "."
+}
 
 // HTTP status each exception of the Bedrock runtime stands for
 var exceptionStatus = map[string]int{

@@ -142,7 +142,7 @@ func (a *Agent) speakTurn(ctx context.Context, r *run, settings *config.Config, 
 		case err != nil:
 			reason = strings.SplitN(err.Error(), "\n", 2)[0]
 		case !a.voiceFits(ctx, r, settings, instance, route, aux, measure):
-			reason = "the conversation is larger than its context window"
+			reason = "this session is too long for it"
 		}
 		if reason != "" {
 			a.warnVoice(r, name, model, live, reason)
@@ -219,7 +219,8 @@ func (a *Agent) warnVoice(r *run, name, model string, live provider.Route, reaso
 		return
 	}
 	r.warnedVoice = true
-	a.notify(r, fmt.Sprintf("⚠ Voice chat model %s via %s unavailable (%s); using %s.", model, name, reason, live.Model))
+	a.notify(r, fmt.Sprintf("⚠ The voice chat model %s on %s can't be used, so what you say is answered by %s. %s Check Voice chat in /settings "+
+		"under Helper models.", model, name, live.Model, sentence(reason)))
 }
 
 // Puts the session's own route, fallback state, effort and what its route refused of reasoning back after a turn the person spoke; the

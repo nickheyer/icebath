@@ -60,6 +60,8 @@ func (d delegates) Tools() []tools.Def {
 		Name:    "delegate_task",
 		Toolset: "delegation",
 		Title:   "Delegate",
+		About:   "Hand parts of a task to subagents that work on them",
+		Group:   "Subagents",
 		Icon:    tools.IconAgent,
 		Subject: "goal",
 		Schema:  d.schema(nil),
@@ -574,7 +576,7 @@ func (a *Agent) control(ctx context.Context, session, action string, args map[st
 			"completion message). Use action='list' to see live children.", id))
 	}
 	if action == "stop" {
-		if !c.interrupt(fmt.Sprintf("Interrupted via TUI (%s)", id)) {
+		if !c.interrupt("The agent stopped subagent " + id + ".") {
 			return errorResult(fmt.Sprintf("Could not interrupt '%s' — it likely finished in the last moment. Its result arrives as a normal completion "+
 				"message.", id))
 		}

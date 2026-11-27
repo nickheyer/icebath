@@ -102,7 +102,7 @@ func (c *compressor) Compress(ctx context.Context, env *contexts.Env, request *c
 		c.adopt(prepared)
 		summary = prepared.summary
 	case request.Deterministic:
-		c.lastError = "summary model stalled on every route; deterministic fallback summary inserted"
+		c.lastError = "The summary model stalled on every provider."
 		c.record.Failure = "stall_deterministic_fallback"
 	case !skip:
 		focus := request.Focus

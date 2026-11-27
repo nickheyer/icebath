@@ -1,6 +1,8 @@
 package config
 
 import (
+	"strings"
+
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
@@ -9,20 +11,27 @@ func Register(cfg *config.Config) {
 	cfg.Register(config.Sections{{
 		Key:    Key,
 		Global: true,
-		Title:  "App",
+		Title:  "Appearance",
 		About:  "Colors and keyboard",
+		Group:  config.GroupApp,
+		Order:  10,
 		Settings: []config.Setting{
-			{Key: Skin, Title: "Skin", About: "Color theme", Default: theme.DefaultName, Options: skins},
-			{Key: Option, Title: "Option as alt", About: "Treat Option as Alt in a Mac terminal", Default: false},
-			{Key: Keys, Title: "Keys", About: "Shortcuts changed from their defaults", Default: map[string]any{}, Internal: true},
+			{Key: Skin, Title: "Color theme", About: "Which colors and borders this app draws with.", Default: theme.DefaultName, Options: skins, Slash: "skin"},
+			{Key: Option, Title: "Option as alt", About: "Use the Option key of a Mac as Alt in shortcuts.",
+				Help: "Turn this on when alt shortcuts do nothing in your Mac terminal.", Default: false, Slash: "keys"},
+			{Key: Keys, Title: "Shortcuts", About: "Shortcuts you changed from their defaults.", Default: map[string]any{}, Internal: true, Slash: "keys",
+				Entry: &config.Entry{Noun: "shortcut", Name: "Action", Fields: []config.Setting{
+					{Title: "Keys", About: "The keys that run the action.", Default: []string{}},
+				}}},
 		},
 	}})
 }
 
+// Color themes, each titled by its name with a capital first letter
 func skins() []config.Option {
 	var options []config.Option
 	for _, skin := range theme.All() {
-		options = append(options, config.Option{Value: skin.Name, Title: skin.Name, About: skin.About})
+		options = append(options, config.Option{Value: skin.Name, Title: strings.ToUpper(skin.Name[:1]) + skin.Name[1:], About: skin.About})
 	}
 	return options
 }

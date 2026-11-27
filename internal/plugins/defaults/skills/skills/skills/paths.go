@@ -14,7 +14,7 @@ import (
 func clean(value, field string, nested bool) (string, error) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
-		return "", fmt.Errorf("Unsafe %s: empty path", field)
+		return "", fmt.Errorf("The %s is empty, so it is not safe to use.", field)
 	}
 	normalized := strings.ReplaceAll(raw, `\`, "/")
 	var parts []string
@@ -25,7 +25,7 @@ func clean(value, field string, nested bool) (string, error) {
 	}
 	if strings.HasPrefix(normalized, "/") || len(parts) == 0 || slices.Contains(parts, "..") ||
 		slices.ContainsFunc(parts, func(p string) bool { return strings.Contains(p, ":") }) || !nested && len(parts) != 1 {
-		return "", fmt.Errorf("Unsafe %s: %s", field, value)
+		return "", fmt.Errorf("The %s %s is not safe, because it leaves its folder or is not a plain name.", field, value)
 	}
 	return strings.Join(parts, "/"), nil
 }
@@ -51,7 +51,7 @@ func lockPath(installPath, name string) (string, error) {
 		return "", err
 	}
 	if parts := strings.Split(normalized, "/"); parts[len(parts)-1] != safe {
-		return "", fmt.Errorf("Unsafe install path: %s", installPath)
+		return "", fmt.Errorf("The install path %s is not safe, because it leaves the skills folder or passes through a link.", installPath)
 	}
 	return normalized, nil
 }
@@ -67,12 +67,12 @@ func (r *run) installDir(installPath, name string) (string, error) {
 	for _, part := range strings.Split(normalized, "/") {
 		target = filepath.Join(target, part)
 		if redirect(target) {
-			return "", fmt.Errorf("Unsafe install path: %s", installPath)
+			return "", fmt.Errorf("The install path %s is not safe, because it leaves the skills folder or passes through a link.", installPath)
 		}
 	}
 	dir := resolved(target)
 	if dir == root || !inside(dir, root) {
-		return "", fmt.Errorf("Unsafe install path: %s", installPath)
+		return "", fmt.Errorf("The install path %s is not safe, because it leaves the skills folder or passes through a link.", installPath)
 	}
 	return dir, nil
 }

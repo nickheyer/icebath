@@ -1,13 +1,14 @@
 package provider
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // One window of a provider's rate limits, such as its requests a minute
@@ -57,10 +58,10 @@ func (l *RateLimits) windows() []struct {
 		bucket    *Bucket
 		tag, name string
 	}{
-		{&l.RequestsMinute, "requests", "Requests/min"},
-		{&l.RequestsHour, "requests-1h", "Requests/hr"},
-		{&l.TokensMinute, "tokens", "Tokens/min"},
-		{&l.TokensHour, "tokens-1h", "Tokens/hr"},
+		{&l.RequestsMinute, "requests", "Requests a minute"},
+		{&l.RequestsHour, "requests-1h", "Requests an hour"},
+		{&l.TokensMinute, "tokens", "Tokens a minute"},
+		{&l.TokensHour, "tokens-1h", "Tokens an hour"},
 	}
 }
 
@@ -101,10 +102,10 @@ func (l *RateLimits) Lines(now time.Time) []string {
 			continue
 		}
 		resets := span(b.Left(now))
-		rows = append(rows, fmt.Sprintf("%s: %.1f%% · %s/%s used · %s left · resets in %s", window.name, b.Percent(), shortCount(b.Used()), shortCount(b.Limit),
-			shortCount(b.Remaining), resets))
+		rows = append(rows, fmt.Sprintf("%s: %.0f%% used, %s of %s, %s left, resets in %s", window.name, b.Percent(), strs.Thousands(b.Used()),
+			strs.Thousands(b.Limit), strs.Thousands(b.Remaining), resets))
 		if b.Percent() >= 80 {
-			warnings = append(warnings, fmt.Sprintf("⚠ %s at %.0f%% — resets in %s", window.name, b.Percent(), resets))
+			warnings = append(warnings, fmt.Sprintf("⚠ %s is %.0f%% used and resets in %s.", window.name, b.Percent(), resets))
 		}
 	}
 	if len(rows) == 0 {
@@ -114,36 +115,20 @@ func (l *RateLimits) Lines(now time.Time) []string {
 	if age := now.Sub(l.Captured).Seconds(); age >= 5 {
 		freshness = span(age) + " ago"
 	}
-	name := "Provider"
-	if first, size := utf8.DecodeRuneInString(l.Provider); size > 0 {
-		name = string(unicode.ToUpper(first)) + l.Provider[size:]
-	}
-	return append(append([]string{fmt.Sprintf("⏱️ **%s rate limits** (captured %s)", name, freshness)}, rows...), warnings...)
+	name := cmp.Or(l.Provider, "the provider")
+	return append(append([]string{fmt.Sprintf("**Rate limits of %s**, read %s", name, freshness)}, rows...), warnings...)
 }
 
-// Count shortened as 33.6K or 8.0M
-func shortCount(n int) string {
-	switch {
-	case n >= 1_000_000:
-		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
-	case n >= 1_000:
-		return fmt.Sprintf("%.1fK", float64(n)/1_000)
-	}
-	return strconv.Itoa(n)
-}
-
-// Seconds as 58s, 2m 14s or 1h 2m
+// Seconds in words, rounded to the unit a person reads them in
 func span(seconds float64) string {
-	s := max(int(seconds), 0)
+	d := time.Duration(max(seconds, 0)) * time.Second
 	switch {
-	case s < 60:
-		return fmt.Sprintf("%ds", s)
-	case s < 3600 && s%60 == 0:
-		return fmt.Sprintf("%dm", s/60)
-	case s < 3600:
-		return fmt.Sprintf("%dm %ds", s/60, s%60)
-	case s%3600/60 == 0:
-		return fmt.Sprintf("%dh", s/3600)
+	case d >= 2*time.Hour:
+		d = d.Round(time.Hour)
+	case d >= 2*time.Minute:
+		d = d.Round(time.Minute)
+	default:
+		d = d.Round(time.Second)
 	}
-	return fmt.Sprintf("%dh %dm", s/3600, s%3600/60)
+	return strs.Span(d)
 }

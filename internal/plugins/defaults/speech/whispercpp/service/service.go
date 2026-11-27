@@ -42,7 +42,7 @@ var native = strs.Set(".wav", ".aiff", ".aif")
 const deadline = 300 * time.Second
 
 // What a transcription answers when there is no program to run
-const absent = speechconfig.LocalCommandEnv + " not configured and no local whisper binary was found"
+const absent = "No whisper program was found on this computer. Install whisper.cpp or whisper, or set Local command in /settings under Speech to text."
 
 // A program that exited with a failure, with what it said: its error output, else its output, else how it exited
 type exitedError struct{ detail string }
@@ -52,7 +52,7 @@ func (e *exitedError) Error() string { return e.detail }
 func Register(registry *speech.Registry, host *packages.Packages) {
 	w := &whisper{packages: host}
 	registry.Register(speech.Services{Recognizing: []speech.Recognizer{{
-		Name: Name, Title: "Local command", About: "A program you name, else the bundled whisper.cpp engine or a whisper command on this machine",
+		Name: Name, Title: "Local command", About: "A program you name or whisper.cpp, on this computer",
 		Local: true, Rank: 2, Fallback: localconfig.Name, Label: "local command", Warning: "STT provider 'local_command' configured but unavailable",
 		Instead: "Local STT command unavailable, using local faster-whisper",
 		Missing: func(_ context.Context, job *speech.Job) string {

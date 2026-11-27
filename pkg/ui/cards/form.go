@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -34,14 +35,14 @@ func registerFormKeys(km *keys.Map) {
 		}
 	}
 	for _, a := range []keys.Action{
-		{ID: "form.next", Context: FormContext, Label: "next", Doc: "move to the next field", Default: []string{"down", "tab"}, Quiet: true},
-		{ID: "form.prev", Context: FormContext, Label: "previous", Doc: "move to the previous field", Default: []string{"up", "shift+tab"}, Quiet: true},
-		{ID: "form.submit", Context: FormContext, Label: "submit", Doc: "submit the form", Default: []string{"ctrl+s"}},
-		{ID: "form.cancel", Context: FormContext, Label: "cancel", Doc: "close the form without saving", Default: []string{"esc"}},
-		{ID: "form.enter", Context: FormTextContext, Label: "next", Doc: "go to the next field, or submit from the last one", Default: []string{"enter"}},
-		{ID: "form.toggle", Context: FormPickContext, Label: "change", Doc: "toggle, choose or press the selected field", Default: []string{"enter", "space"}},
-		{ID: "form.choice.next", Context: FormPickContext, Label: "next choice", Doc: "move to the next choice", Default: []string{"right"}, Quiet: true},
-		{ID: "form.choice.prev", Context: FormPickContext, Label: "previous choice", Doc: "move to the previous choice", Default: []string{"left"}, Quiet: true},
+		{ID: "form.next", Context: FormContext, Label: "next", Doc: "Move to the next field", Default: []string{"down", "tab"}, Quiet: true},
+		{ID: "form.prev", Context: FormContext, Label: "previous", Doc: "Move to the previous field", Default: []string{"up", "shift+tab"}, Quiet: true},
+		{ID: "form.submit", Context: FormContext, Label: "submit", Doc: "Submit the form", Default: []string{"ctrl+s"}},
+		{ID: "form.cancel", Context: FormContext, Label: "cancel", Doc: "Close the form without saving", Default: []string{"esc"}},
+		{ID: "form.enter", Context: FormTextContext, Label: "next", Doc: "Go to the next field, or submit from the last one", Default: []string{"enter"}},
+		{ID: "form.toggle", Context: FormPickContext, Label: "change", Doc: "Toggle, choose or press the selected field", Default: []string{"enter", "space"}},
+		{ID: "form.choice.next", Context: FormPickContext, Label: "next choice", Doc: "Move to the next choice", Default: []string{"right"}, Quiet: true},
+		{ID: "form.choice.prev", Context: FormPickContext, Label: "previous choice", Doc: "Move to the previous choice", Default: []string{"left"}, Quiet: true},
 	} {
 		km.Register(a)
 	}
@@ -88,6 +89,12 @@ type Field struct {
 	Placeholder string
 	// Kept behind the more options row until it is opened
 	More bool
+	// A choice made in the picker of the caller whatever the number of choices, such as one that ticks several values
+	Picked bool
+	// What a choice shows for a value none of its choices has, the value itself when nil
+	Says func(value string) string
+	// The text it opens with is selected, so the first key typed replaces it and a key that moves the cursor keeps it
+	Select bool
 	// Says what is wrong with a value, empty when it is fine
 	Check func(value string) string
 }
@@ -168,6 +175,9 @@ func (f *Form) place(fields []Field) {
 		if typed(fd.Kind) {
 			f.edits[i] = field.New(fd.Value)
 			f.edits[i].Masked = fd.Kind == FieldSecret
+			if fd.Select {
+				f.edits[i].SelectAll()
+			}
 			f.kept[fd.ID] = fd.Value
 		}
 	}
@@ -314,7 +324,31 @@ func (f *Form) Contexts() []string {
 	return append(out, FormPickContext, FormContext)
 }
 
-func (f *Form) Hints() []wm.Hint { return f.spec.Hints }
+// Buttons of the form: what enter does on the row in hand, sending the form when enter does something else, then the form's own
+func (f *Form) Hints() []wm.Hint {
+	send := f.spec.Submit
+	if send == "" {
+		send = lang.T(txt.KitFormSend)
+	}
+	rows := f.rows()
+	r := f.row()
+	var hints []wm.Hint
+	switch fd := f.field(); {
+	case r.submit:
+		hints = []wm.Hint{{Action: "form.toggle", Label: send}}
+	case r.more:
+		hints = []wm.Hint{{Action: "form.toggle", Label: "show"}, {Action: "form.submit", Label: send}}
+	case fd != nil && typed(fd.Kind) && rows[f.next(f.focus, 1)].submit:
+		hints = []wm.Hint{{Action: "form.enter", Label: send}}
+	case fd != nil && typed(fd.Kind):
+		hints = []wm.Hint{{Action: "form.enter", Label: "next"}, {Action: "form.submit", Label: send}}
+	case fd != nil && fd.Kind == FieldButton:
+		hints = []wm.Hint{{Action: "form.toggle", Label: fd.Label}, {Action: "form.submit", Label: send}}
+	default:
+		hints = []wm.Hint{{Action: "form.toggle", Label: "change"}, {Action: "form.submit", Label: send}}
+	}
+	return append(hints, f.spec.Hints...)
+}
 
 // Value of a field by id, empty for an unknown one
 func (f *Form) Value(id string) string {
@@ -448,7 +482,7 @@ func (f *Form) toggle() tea.Cmd {
 		delete(f.errs, fd.ID)
 		return f.changed(*fd)
 	case FieldChoice:
-		if len(fd.Choices) > pickAbove && f.spec.Pick != nil {
+		if (len(fd.Choices) > pickAbove || fd.Picked) && f.spec.Pick != nil {
 			return f.spec.Pick(f, *fd)
 		}
 		f.cycle(fd, 1)
@@ -578,7 +612,7 @@ type formLine struct {
 	cursor int
 }
 
-// Width of the label column: the widest label shown, held to a third of the width
+// Width of the label column: the widest label shown
 func (f *Form) labelWidth(w int) int {
 	n := 0
 	for _, r := range f.rows() {
@@ -586,7 +620,8 @@ func (f *Form) labelWidth(w int) int {
 			n = max(n, ansi.StringWidth(f.fields[r.field].Label)+2)
 		}
 	}
-	return min(n, max(w/3, 12), 30)
+	// A label is never cut: its column is as wide as the longest, short of the room a value needs beside it
+	return min(n, max(w-12, 12))
 }
 
 // Every line of the form at width w
@@ -649,11 +684,7 @@ func (f *Form) layout(w int) []formLine {
 			}
 			continue
 		}
-		label := fd.Label
-		if fd.Required {
-			label += " *"
-		}
-		label = padRight(ansi.Truncate(label, lw, "…"), lw)
+		label := padRight(ansi.Truncate(fd.Label, lw, "…"), lw)
 		if focused {
 			label = render.Paint(lipgloss.NewStyle().Foreground(t.Text).Bold(true), label)
 		} else {
@@ -673,18 +704,30 @@ func (f *Form) layout(w int) []formLine {
 			if c := choiceAt(&fd); c >= 0 && fd.Choices[c].Meaning != "" {
 				under = render.Dim(fd.Choices[c].Meaning, t)
 			} else if fd.Help != "" {
-				under = render.Dim(fd.Help, t)
+				under = dimLines(fd.Help, t)
 			}
 		case focused && fd.Help != "":
-			under = render.Dim(fd.Help, t)
+			under = dimLines(fd.Help, t)
 		}
-		if under != "" {
-			for _, part := range wrapWords(under, vw) {
+		for _, said := range strings.Split(under, "\n") {
+			if said == "" {
+				continue
+			}
+			for _, part := range wrapWords(said, vw) {
 				out = append(out, formLine{text: strings.Repeat(" ", lw+3) + part, row: i, cursor: -1})
 			}
 		}
 	}
 	return out
+}
+
+// Text dimmed line by line, so each line of a help of several lines keeps its color once it is split
+func dimLines(text string, t theme.Theme) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = render.Dim(line, t)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Value of a field as one cell vw wide, lit while it has the cursor, with the cursor column inside it for a field typed into
@@ -704,6 +747,8 @@ func (f *Form) valueCell(fd Field, vw int, focused bool) (string, int) {
 		label := fd.Value
 		if c := choiceAt(&fd); c >= 0 {
 			label = fd.Choices[c].Label
+		} else if fd.Says != nil && label != "" {
+			label = fd.Says(label)
 		}
 		if label == "" {
 			label = render.Dim(fd.Placeholder, t)
@@ -723,15 +768,21 @@ func (f *Form) valueCell(fd Field, vw int, focused bool) (string, int) {
 		}
 		return ansi.Truncate(text, vw, "…"), -1
 	}
-	cell, cursor := text, ansi.StringWidth(text)
+	cell, cursor, selected := text, ansi.StringWidth(text), false
 	if e := f.editOf(fd.ID); e != nil {
 		cell, cursor = e.Line(vw - 1)
+		selected = e.Whole()
 	}
 	if text == "" && fd.Placeholder != "" {
 		cell = render.Dim(ansi.Truncate(fd.Placeholder, vw, "…"), t)
 	}
-	pad := max(vw-ansi.StringWidth(ansi.Strip(cell)), 0)
-	return render.Paint(lipgloss.NewStyle().Background(t.Ghost), cell+strings.Repeat(" ", pad)), cursor
+	pad := strings.Repeat(" ", max(vw-ansi.StringWidth(ansi.Strip(cell)), 0))
+	box := lipgloss.NewStyle().Background(t.Ghost)
+	if selected {
+		// Text the next key replaces shows as a selection does
+		return lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Render(ansi.Strip(cell)) + box.Render(pad), cursor
+	}
+	return render.Paint(box, cell+pad), cursor
 }
 
 // Line editor of the field with the id, nil when it is not typed into

@@ -20,6 +20,7 @@ func (specs) Specs() []provider.Spec {
 		EchoesReasoning:   true,
 		Native:            native,
 		DisplayName:       xiaomiconfig.Title,
+		Description:       "Xiaomi's MiMo models, with an API key",
 		BaseURL:           base,
 		BaseURLEnv:        xiaomiconfig.BaseURLEnv,
 		ModelsURL:         provider.ModelsURL(base),

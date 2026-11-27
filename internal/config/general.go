@@ -17,10 +17,12 @@ func general() Sections {
 	return Sections{{
 		Key:   GeneralKey,
 		Title: "General",
-		About: "Settings every part of icebath reads",
+		About: "Time zone",
+		Group: GroupApp,
+		Order: 20,
 		Settings: []Setting{
-			{Key: Timezone, Title: "Timezone", About: "Time zone for dates, times and schedules, such as Europe/Berlin; empty uses this computer's", Default: "",
-				Env: []string{"ICEBATH_TIMEZONE"}},
+			{Key: Timezone, Title: "Time zone", About: "The time zone for dates, times and schedules.", Help: "A name such as Europe/Berlin.",
+				Default: "", Zero: "This computer's", Env: []string{"ICEBATH_TIMEZONE"}},
 		},
 	}}
 }
@@ -34,7 +36,7 @@ func (c *Config) Zone() (*time.Location, error) {
 	}
 	zone, err := time.LoadLocation(name)
 	if err != nil {
-		return nil, fmt.Errorf("Invalid timezone %q: %v.", name, err)
+		return nil, fmt.Errorf("%q is not a time zone icebath knows. Set Time zone in /settings under General to a name such as Europe/Berlin.", name)
 	}
 	return zone, nil
 }

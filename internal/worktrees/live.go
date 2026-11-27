@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/terminal"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Lock of a tree icebath made: by the process using it, or kept for the session working in it, with the folder of the icebath whose
@@ -49,7 +50,7 @@ func lockReason(repo, tree string, timeout time.Duration) (bool, *string, error)
 		return false, nil, err
 	}
 	if !ok || common == "" {
-		return false, nil, errors.New("not a git repository")
+		return false, nil, errors.New("The folder is not a git repository.")
 	}
 	dotGit := filepath.Join(tree, ".git")
 	if info, err := os.Stat(dotGit); err != nil || !info.Mode().IsRegular() {
@@ -61,7 +62,7 @@ func lockReason(repo, tree string, timeout time.Duration) (bool, *string, error)
 	}
 	link, ok := strings.CutPrefix(strings.TrimPrefix(string(data), bom), "gitdir:")
 	if !ok {
-		return false, nil, fmt.Errorf("unreadable .git file in %s", tree)
+		return false, nil, fmt.Errorf("The .git file in %s cannot be read.", tree)
 	}
 	target := strings.TrimSpace(link)
 	if !filepath.IsAbs(target) {
@@ -324,10 +325,10 @@ func lastActivity(tree string) time.Time {
 // Why the tree must not be removed now: a process working in it, or a change at or after the time; empty while it sits idle
 func inUseSince(tree string, since time.Time, exclude ...int) string {
 	if found := Live([]string{tree}, exclude...)[tree]; len(found) > 0 {
-		return "in use by pid " + pids(found)
+		return "it is in use by process " + pids(found)
 	}
 	if active := lastActivity(tree); !active.Before(since) {
-		return fmt.Sprintf("changed %.0fs ago", max(0, time.Since(active).Seconds()))
+		return "it changed " + strs.Span(max(0, time.Since(active)).Truncate(time.Second)) + " ago"
 	}
 	return ""
 }

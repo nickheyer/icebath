@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -66,6 +67,9 @@ type Spec struct {
 	DisplayName string
 	Description string
 	SignupURL   string
+	// Place among the well-known kinds, which a person adding a provider is offered first, 1 at the top. A kind with none is listed by its
+	// name with the rest
+	Rank int
 	// Base URL a provider of the kind starts with, and the variable that sets it for all of them
 	BaseURL    string
 	BaseURLEnv string
@@ -322,6 +326,19 @@ func (s Spec) Label() string {
 	return s.Name
 }
 
+// Names of the efforts as a person reads them
+var effortTitles = map[string]string{"none": "No reasoning", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High",
+	"xhigh": "Extra high", "max": "Maximum"}
+
+// Choices of a setting of the reasoning effort: the one given for no effort, then every effort
+func EffortOptions(unset config.Option) []config.Option {
+	options := []config.Option{unset}
+	for _, effort := range Efforts {
+		options = append(options, config.Option{Value: effort, Title: cmp.Or(effortTitles[effort], effort)})
+	}
+	return options
+}
+
 func (s Spec) KeyEnvNames() []string {
 	out := make([]string, 0, len(s.KeyEnv))
 	for _, v := range s.KeyEnv {
@@ -521,13 +538,64 @@ type APIError struct {
 	Reason                            string
 	Retry, Compress, Rotate, Fallback *bool
 	Context                           map[string]any
+	// The message is icebath's own account of what happened and what to do, such as a request it gave up waiting on, rather than the
+	// provider's words
+	Own bool
 }
 
 func (e *APIError) Error() string {
-	if e.StatusCode > 0 {
-		return fmt.Sprintf("%s/%s: %s (%d %s)", e.Provider, e.Model, e.Message, e.StatusCode, e.Kind)
+	if e.Own && strings.TrimSpace(e.Message) != "" {
+		message := strings.TrimSpace(e.Message)
+		if !strings.ContainsAny(message[len(message)-1:], ".!?") {
+			message += "."
+		}
+		return message
 	}
-	return fmt.Sprintf("%s/%s: %s (%s)", e.Provider, e.Model, e.Message, e.Kind)
+	who, model := cmp.Or(e.Provider, "The provider"), cmp.Or(e.Model, "the model")
+	status := ""
+	if e.StatusCode > 0 {
+		status = fmt.Sprintf(", with HTTP status %d", e.StatusCode)
+	}
+	var lead string
+	switch e.Kind {
+	case ErrAuth:
+		lead = who + " did not accept the account" + status + ". Check its API key or sign-in in /providers."
+	case ErrRateLimit:
+		lead = who + " is limiting requests for " + model + status + ". Wait a moment, then send your message again."
+	case ErrQuota:
+		lead = who + " says the account is out of credit or usage for " + model + status + "."
+	case ErrContextOverflow:
+		lead = "The session is too long for " + model + " on " + who + status + ". Type /compress to summarize it, or /new to start a new one."
+	case ErrModelNotFound:
+		lead = who + " does not have the model " + model + status + ". Pick another with /model."
+	case ErrServer:
+		lead = who + " had a failure of its own" + status + ". Send your message again shortly."
+	case ErrNetwork:
+		lead = "icebath could not get an answer from " + who + status + ". Check your connection, then send your message again."
+	case ErrContentFilter:
+		lead = who + "'s safety filter refused the request" + status + ". Rephrase your message, or pick another model with /model."
+	case ErrEmptyResponse:
+		lead = who + " sent back an empty reply" + status + ". Send your message again."
+	case ErrInvalidRequest:
+		lead = who + " refused the request for " + model + status + "."
+	default:
+		lead = who + " refused the request for " + model + status + "."
+	}
+	detail := strings.TrimSpace(e.Message)
+	if e.StatusCode > 0 {
+		detail = strings.TrimSpace(strings.TrimPrefix(detail, fmt.Sprintf("HTTP %d:", e.StatusCode)))
+	}
+	if detail == "" {
+		return lead
+	}
+	first, rest, _ := strings.Cut(detail, "\n")
+	if first = strings.TrimSpace(first); first != "" && !strings.ContainsAny(first[len(first)-1:], ".!?") {
+		first += "."
+	}
+	if rest != "" {
+		first += "\n" + rest
+	}
+	return lead + "\n" + who + " said: " + first
 }
 
 func (e *APIError) Unwrap() error {

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -67,7 +68,7 @@ func (a *Agent) sessionInstance(r *run, name string) (provider.Instance, error) 
 	settings := a.settings(r)
 	instance, ok := a.provider(settings, name)
 	if !ok {
-		return instance, fmt.Errorf("Profile %s has no provider named %s.", settings.Profile(), name)
+		return instance, noProvider(settings.Profile(), name)
 	}
 	return instance, nil
 }
@@ -97,7 +98,7 @@ func (a *Agent) SetLogin(ctx context.Context, id, name, login, onExhausted strin
 			}
 		}
 		if found == "" {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Sprintf("%s has no login named %s. Add one with /providers.", instance.Label(), login))
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Sprintf("%s has no account named %s. Add one in /providers.", instance.Label(), login))
 		}
 		values[loginKey(instance.ID)] = found
 	}
@@ -108,7 +109,7 @@ func (a *Agent) SetLogin(ctx context.Context, id, name, login, onExhausted strin
 			values[exhaustedKey(instance.ID)] = onExhausted
 		}
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument, "on_exhausted must be fail or rotate.")
+		return nil, connect.NewError(connect.CodeInvalidArgument, "When accounts run out must be Stop or Move on.")
 	}
 	if len(values) > 0 {
 		store, err := a.store()
@@ -135,7 +136,7 @@ func (a *Agent) SetLogin(ctx context.Context, id, name, login, onExhausted strin
 		switch err := a.Retry(id); {
 		case err == nil:
 			out.Retried = true
-		case !strings.Contains(err.Error(), "Nothing to retry"):
+		case !errors.Is(err, errNothingToRetry):
 			out.Warning = err.Error()
 		}
 	}
@@ -149,9 +150,9 @@ func (a *Agent) Login(ctx context.Context, id, name, login string) (string, erro
 		return "", err
 	}
 	if response.GetLogin() == providerconfig.Rotation {
-		return "This session takes turns between the logins in the provider's rotation from its next message on.", nil
+		return "From your next message on, this session takes turns between the accounts that the provider rotates through.", nil
 	}
-	return "This session uses the login " + response.GetLogin() + " from its next message on.", nil
+	return "From your next message on, this session uses the account " + response.GetLogin() + ".", nil
 }
 
 // Tells the session's windows once that the login it is held to ran out, when the turn failed on it: when it resets, why, and the
@@ -194,9 +195,9 @@ func (a *Agent) exhaustedLogin(r *run) {
 	if !resets.IsZero() {
 		when = " until " + resets.Local().Format("15:04")
 	}
-	text := fmt.Sprintf("The %s login %s is unavailable%s.", instance.ID, event.Login.Name, when)
+	text := fmt.Sprintf("The %s account %s can't be used%s.", instance.ID, event.Login.Name, when)
 	if len(event.Ready) > 0 {
-		text += fmt.Sprintf(" Switch with /model --login %s.", event.Ready[0].Name)
+		text += fmt.Sprintf(" Switch to another with /model --login %s.", event.Ready[0].Name)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -317,7 +318,7 @@ func (a *Agent) WaitLogin(ctx context.Context, id, name string, now, cancel bool
 		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 	}
 	if !instance.Pinned {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Sprintf("the session uses no single %s login to wait for", instance.ID))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Sprintf("This session uses no single %s account, so there is none to wait for.", instance.ID))
 	}
 	out.Login = &agentv1.Login{Id: instance.Account, Name: loginName(instance, instance.Account)}
 	_, until := a.credentials.State(credentials.Of(instance, instance.Account))

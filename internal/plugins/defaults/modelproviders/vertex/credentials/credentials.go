@@ -234,14 +234,14 @@ var ServiceAccount = credentials.SignIn{Spec: vertexconfig.Name, Title: "Google 
 func serviceAccountKey(p *credentials.Prompter) (credentials.Signed, error) {
 	keyPath := p.Option("key")
 	if keyPath == "" {
-		typed, ok := p.Ask("Path to the Vertex service account JSON: ", false)
+		typed, ok := p.Ask("Service account key file, a JSON file: ", false)
 		if !ok {
 			return credentials.Signed{}, credentials.ErrCancelled
 		}
 		keyPath = strings.TrimSpace(typed)
 	}
 	if keyPath == "" {
-		return credentials.Signed{}, errors.New("No service account JSON path given.")
+		return credentials.Signed{}, errors.New("No key file was given, so nothing was added.")
 	}
 	if strings.HasPrefix(keyPath, "~") {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -253,14 +253,14 @@ func serviceAccountKey(p *credentials.Prompter) (credentials.Signed, error) {
 	}
 	raw, err := os.ReadFile(keyPath)
 	if err != nil {
-		return credentials.Signed{}, fmt.Errorf("Cannot read the service account JSON at %s: %v", keyPath, err)
+		return credentials.Signed{}, fmt.Errorf("The key file %s can't be read: %v.", keyPath, err)
 	}
 	var key serviceKey
 	if json.Unmarshal(raw, &key) != nil || key.Type != "service_account" || key.ClientEmail == "" || key.PrivateKey == "" {
-		return credentials.Signed{}, fmt.Errorf("%s is not a Google service account key: it needs \"type\": \"service_account\", client_email and private_key. "+
-			"Create one in the Google Cloud console under IAM & Admin > Service accounts > Keys.", keyPath)
+		return credentials.Signed{}, fmt.Errorf("%s is not a Google service account key, which holds \"type\": \"service_account\", client_email "+
+			"and private_key. Make one in the Google Cloud console under IAM & Admin › Service accounts › Keys.", keyPath)
 	}
-	p.Say("Saved Vertex service account %s (project %s) as the account's key.", key.ClientEmail, key.ProjectID)
+	p.Say("✓ Saved the service account %s of the project %s as this account's key.", key.ClientEmail, key.ProjectID)
 	return credentials.Signed{Fields: map[string]any{vertexconfig.CredentialsPath: keyPath}, Identity: key.ClientEmail}, nil
 }
 
@@ -274,18 +274,18 @@ func (s *source) Why(account credentials.Account) (string, bool) {
 	defer cancel()
 	_, project, key, err := s.credentials(ctx, account, keyPath)
 	if err != nil {
-		return fmt.Sprintf("Google credentials could not be loaded (%v). Run `gcloud auth application-default login`, set GOOGLE_APPLICATION_CREDENTIALS, "+
-			"or add a service account key with `icebath auth add %s`.", err, account.Provider.ID), true
+		return fmt.Sprintf("No Google sign-in can be used: %v. Run `gcloud auth application-default login`, set GOOGLE_APPLICATION_CREDENTIALS, "+
+			"or add a service account key with `icebath auth add %s`.", strings.TrimSuffix(err.Error(), "."), account.Provider.ID), true
 	}
 	if project, _ = target(account, project); project == "" {
-		return fmt.Sprintf("No Vertex AI project id resolves; set providers.%s.%s, %s, or use credentials that embed one.", account.Provider.ID,
-			vertexconfig.Project, vertexconfig.ProjectEnv), true
+		return fmt.Sprintf("No Google Cloud project is known for Vertex AI. Set the project in /providers or set %s, or use credentials "+
+			"that name one.", vertexconfig.ProjectEnv), true
 	}
 	s.mu.Lock()
 	last, failed := s.failed[key]
 	s.mu.Unlock()
 	if failed {
-		return "A Vertex AI access token could not be minted: " + last.err.Error(), true
+		return "Google did not give a token for Vertex AI: " + strings.TrimSuffix(last.err.Error(), ".") + ".", true
 	}
 	return "", false
 }

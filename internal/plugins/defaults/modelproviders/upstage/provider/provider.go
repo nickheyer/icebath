@@ -17,7 +17,7 @@ func (specs) Specs() []provider.Spec {
 		Shape:              shape,
 		Carriers:           []string{"reasoning_content", "reasoning"},
 		DisplayName:        upstageconfig.Title,
-		Description:        "Solar models",
+		Description:        "Upstage's Solar models, with an API key paid by use",
 		SignupURL:          "https://console.upstage.ai/api-keys",
 		BaseURL:            upstageconfig.BaseURL,
 		BaseURLEnv:         upstageconfig.BaseURLEnv,

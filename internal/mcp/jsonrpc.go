@@ -113,7 +113,7 @@ func encodeParams(params any) (json.RawMessage, error) {
 	}
 	raw, err := json.Marshal(params)
 	if err != nil {
-		return nil, fmt.Errorf("encode params: %w", err)
+		return nil, fmt.Errorf("Could not write the request: %w", err)
 	}
 	return raw, nil
 }
@@ -122,18 +122,18 @@ func encodeParams(params any) (json.RawMessage, error) {
 func DecodeMessages(data []byte) ([]*Message, error) {
 	trimmed := trimSpace(data)
 	if len(trimmed) == 0 {
-		return nil, errors.New("empty JSON-RPC payload")
+		return nil, errors.New("The server sent an empty message.")
 	}
 	if trimmed[0] == '[' {
 		var batch []*Message
 		if err := json.Unmarshal(trimmed, &batch); err != nil {
-			return nil, fmt.Errorf("decode JSON-RPC batch: %w", err)
+			return nil, fmt.Errorf("The server sent messages that cannot be read: %w", err)
 		}
 		return batch, nil
 	}
 	var one Message
 	if err := json.Unmarshal(trimmed, &one); err != nil {
-		return nil, fmt.Errorf("decode JSON-RPC message: %w", err)
+		return nil, fmt.Errorf("The server sent a message that cannot be read: %w", err)
 	}
 	return []*Message{&one}, nil
 }

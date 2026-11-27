@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 
 	"connectrpc.com/connect/v2"
@@ -40,15 +39,17 @@ func Register(host *cli.CLI) {
 func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	service := packagesv1connect.NewPackageServiceClient(conn)
 	root := &cobra.Command{
-		Use:   "pm",
-		Short: "Package manager: lock, install, repair, env, doctor, gc",
-		Args:  cobra.ArbitraryArgs,
+		Use:     "pm",
+		GroupID: cli.GroupApp,
+		Short:   "Install and repair the programs icebath downloads",
+		Long: "icebath downloads some programs it needs, such as Python, Node and Chromium, and keeps them in one place. Use these commands to " +
+			"install them ahead of time, check them, repair them or move them to newer versions.",
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			usage := "[-h] {" + strings.Join(verbs, ",") + "} ..."
 			if len(args) > 0 {
-				return usageError(cmd, usage, "argument cmd: invalid choice: "+strconv.Quote(args[0])+" (choose from "+quoted(verbs)+")")
+				return listed(cmd, cmd.CommandPath()+" has no command “"+args[0]+"”. Its commands are:")
 			}
-			return usageError(cmd, usage, "the following arguments are required: cmd")
+			return listed(cmd, cmd.CommandPath()+" needs one of these commands:")
 		},
 	}
 	root.AddCommand(lock(service), install(service), env(service), doctor(service), repair(service), environment(service), gc(service), status(service),
@@ -56,18 +57,39 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	return []*cobra.Command{root}
 }
 
-// Verbs quoted and joined the way the usage lists choices
-func quoted(items []string) string {
-	out := make([]string, len(items))
-	for i, item := range items {
-		out[i] = "'" + item + "'"
+// Choices joined the way a sentence lists them, the last after "or"
+func choices(items []string) string {
+	if len(items) < 2 {
+		return strings.Join(items, "")
 	}
-	return strings.Join(out, ", ")
+	return strings.Join(items[:len(items)-1], ", ") + " or " + items[len(items)-1]
 }
 
-// Refusal of a command line: its usage and the error on standard error, status 2
-func usageError(cmd *cobra.Command, usage, message string) error {
-	fmt.Fprintf(cmd.ErrOrStderr(), "usage: %s %s\n%s: error: %s\n", cmd.CommandPath(), usage, cmd.CommandPath(), message)
+// Refusal of a command line on standard error, status 2: the sentence, then the words of the command as its Use names them
+func usageError(cmd *cobra.Command, message string) error {
+	line := cmd.CommandPath()
+	if _, rest, ok := strings.Cut(cmd.Use, " "); ok {
+		line += " " + rest
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "%s\nUsage: %s\n", message, line)
+	return exit(2)
+}
+
+// Refusal of pm without a command it has, on standard error, status 2: the sentence, then each command in the order pm lists them with
+// what it does
+func listed(cmd *cobra.Command, message string) error {
+	out := cmd.ErrOrStderr()
+	fmt.Fprintln(out, message)
+	width := 0
+	for _, verb := range verbs {
+		width = max(width, len(verb))
+	}
+	for _, verb := range verbs {
+		if sub, _, err := cmd.Find([]string{verb}); err == nil && sub != cmd {
+			fmt.Fprintf(out, "  %-*s  %s\n", width, verb, sub.Short)
+		}
+	}
+	fmt.Fprintf(out, "Run %s <command> --help to read about one.\n", cmd.CommandPath())
 	return exit(2)
 }
 
@@ -122,7 +144,7 @@ func follow(cmd *cobra.Command, s *screen, receive func() (*packagesv1.Event, er
 		event, err := receive()
 		if errors.Is(err, io.EOF) {
 			s.clear()
-			return "", errors.New("the server ended the command without saying how it went")
+			return "", errors.New("The server ended the command without saying how it went.")
 		}
 		if err != nil {
 			s.clear()
@@ -166,10 +188,12 @@ func lock(service packagesv1connect.PackageServiceClient) *cobra.Command {
 	var bump string
 	cmd := &cobra.Command{
 		Use:   "lock [--bump NAME] [VERSION]",
-		Short: "relock the extras (or --bump a tool pin in the package manager's lock)",
-		Long: "With no arguments: resolve every declared extra again with the pinned uv for every platform and keep the result in the package manager's " +
-			"lock; writes nothing when it is current. With --bump NAME VERSION: pin a tool's archives for every target in the package manager's lock.",
-		Args: cobra.MaximumNArgs(1),
+		Short: "Pin the versions of the downloaded programs again",
+		Long: "With no arguments, lock works out the packages of every Python extra again, for every platform, and saves them in the lock file. " +
+			"An extra is a named set of Python packages. Nothing is written when the lock file is up to date. With --bump NAME VERSION, lock " +
+			"pins that version of one program for every platform instead.",
+		Example: "  icebath pm lock\n  icebath pm lock --bump uv 0.8.4",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			request := &packagesv1.LockRequest{}
 			if cmd.Flags().Changed("bump") {
@@ -179,7 +203,7 @@ func lock(service packagesv1connect.PackageServiceClient) *cobra.Command {
 				request.Version = &args[0]
 			}
 			if usage := (packages.LockArgs{Name: request.Bump, Version: request.Version}).Usage(); usage != "" {
-				return usageError(cmd, "[-h] [--bump NAME] [VERSION]", usage)
+				return usageError(cmd, usage)
 			}
 			return streamed(cmd, func(t *packagesv1.Terminal) (packagesv1connect.PackageServiceLockClientStream, error) {
 				request.Terminal = t
@@ -187,7 +211,7 @@ func lock(service packagesv1connect.PackageServiceClient) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&bump, "bump", "", "pin tool NAME at VERSION in the package manager's lock instead of relocking the extras")
+	cmd.Flags().StringVar(&bump, "bump", "", "Program to pin at VERSION, instead of working out the Python extras again")
 	return cmd
 }
 
@@ -197,7 +221,11 @@ func install(service packagesv1connect.PackageServiceClient) *cobra.Command {
 	var target string
 	cmd := &cobra.Command{
 		Use:   "install [names...]",
-		Short: "install packages (default: all required + optional defaults)",
+		Short: "Install programs, or the default set when you name none",
+		Long: "Installs the programs you name. With no names, install sets up every program icebath needs and the optional ones it installs by " +
+			"default. A program or extra you leave out with --without stays out of later installs and updates until you install it by name " +
+			"or with --extra. --target prepares programs for another platform and needs their names.",
+		Example: "  icebath pm install\n  icebath pm install chromium\n  icebath pm install --without cua-driver",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return streamed(cmd, func(t *packagesv1.Terminal) (packagesv1connect.PackageServiceInstallClientStream, error) {
 				return service.Install(cmd.Context(), &packagesv1.InstallRequest{Terminal: t, Names: args, Extras: extras, Without: without, ToolsOnly: toolsOnly,
@@ -206,19 +234,20 @@ func install(service packagesv1connect.PackageServiceClient) *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringArrayVar(&extras, "extra", nil, "provision a declared Python dependency set in its own environment (repeatable)")
-	f.StringArrayVar(&without, "without", nil, "leave an optional default package (chromium, cua-driver) or an extra out of this and every later default "+
-		"install and update; `icebath pm install NAME` / `--extra NAME` opts back in (repeatable)")
-	f.BoolVar(&toolsOnly, "tools-only", false, "install the tool closure, put it on PATH, and stop before the Python environments")
-	f.BoolVar(&trust, "trust-recorded", false, "trust the recorded tool digest instead of re-hashing every entry. a deliberate install re-checks the bytes")
-	f.StringVar(&target, "target", "", "stage for a cross target (e.g. linux-arm64-bionic on a glibc CI host); requires explicit package names")
+	f.StringArrayVar(&extras, "extra", nil, "Python extra to install in its own environment, repeatable")
+	f.StringArrayVar(&without, "without", nil, "Optional program or extra to leave out, now and in later installs, repeatable")
+	f.BoolVar(&toolsOnly, "tools-only", false, "Install the programs and put them on PATH, but skip the Python environments")
+	f.BoolVar(&trust, "trust-recorded", false, "Trust the recorded checksums instead of checking every file again")
+	f.StringVar(&target, "target", "", "Platform to prepare the named programs for, such as linux-arm64-bionic")
 	return cmd
 }
 
 func env(service packagesv1connect.PackageServiceClient) *cobra.Command {
 	return &cobra.Command{
 		Use:   "env [names...]",
-		Short: "print composed env of installed packages",
+		Short: "Print the environment variables of installed programs",
+		Long: "Prints, as JSON, the environment variables that let you run the installed programs you name, or all of them. Use env to run those " +
+			"programs outside icebath.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			response, err := service.Env(cmd.Context(), &packagesv1.EnvRequest{Names: args})
 			if err != nil {
@@ -238,23 +267,27 @@ func doctor(service packagesv1connect.PackageServiceClient) *cobra.Command {
 	var fix bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "check installed state against the lockfile",
-		Args:  cobra.NoArgs,
+		Short: "Check the installed programs against the lock file",
+		Long: "Checks the installed programs against the lock file and says what is missing or does not match. With --repair, doctor also " +
+			"removes broken entries from the uv cache.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return streamed(cmd, func(t *packagesv1.Terminal) (packagesv1connect.PackageServiceDoctorClientStream, error) {
 				return service.Doctor(cmd.Context(), &packagesv1.DoctorRequest{Terminal: t, Repair: fix})
 			})
 		},
 	}
-	cmd.Flags().BoolVar(&fix, "repair", false, "remove corrupt entries from PM's uv cache so they are fetched again")
+	cmd.Flags().BoolVar(&fix, "repair", false, "Remove broken entries from the uv cache so they download again")
 	return cmd
 }
 
 func repair(service packagesv1connect.PackageServiceClient) *cobra.Command {
 	return &cobra.Command{
 		Use:   "repair",
-		Short: "rebuild the recorded dependency environment without changing its graph",
-		Args:  cobra.NoArgs,
+		Short: "Rebuild the Python environment without changing versions",
+		Long: "Builds the Python environment again from the versions already recorded. Use repair when the environment is broken and you do not " +
+			"want any version to change.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return streamed(cmd, func(t *packagesv1.Terminal) (packagesv1connect.PackageServiceRepairClientStream, error) {
 				return service.Repair(cmd.Context(), &packagesv1.RepairRequest{Terminal: t})
@@ -267,10 +300,12 @@ func environment(service packagesv1connect.PackageServiceClient) *cobra.Command 
 	var extras, requirements []string
 	cmd := &cobra.Command{
 		Use:   "environment <name>",
-		Short: "make a named side environment current and print its python",
-		Long: "Build or reuse the profile's environments/NAME, an isolated venv that never touches another: --extra installs the pins of a declared extra, " +
-			"--requirement an ad hoc bounded requirement (both repeatable). Prints only the interpreter path on stdout.",
-		Args: cobra.ExactArgs(1),
+		Short: "Build a separate Python environment and print its path",
+		Long: "Builds the Python environment NAME of this profile, or reuses it when it exists. Each such environment is kept apart from every " +
+			"other. --extra installs the pinned packages of an extra and --requirement installs a requirement you write. Only the path of the " +
+			"environment's Python is printed on standard output, so a script can use it.",
+		Example: "  icebath pm environment notebooks --requirement 'pandas>=2,<3'",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s := newScreen(cmd.ErrOrStderr())
 			stream, err := service.Environment(cmd.Context(), &packagesv1.EnvironmentRequest{Terminal: s.terminal(), Name: args[0], Extras: extras,
@@ -287,15 +322,16 @@ func environment(service packagesv1connect.PackageServiceClient) *cobra.Command 
 			return nil
 		},
 	}
-	cmd.Flags().StringArrayVar(&extras, "extra", nil, "")
-	cmd.Flags().StringArrayVar(&requirements, "requirement", nil, "")
+	cmd.Flags().StringArrayVar(&extras, "extra", nil, "Python extra to install in the environment, repeatable")
+	cmd.Flags().StringArrayVar(&requirements, "requirement", nil, "Requirement to install, such as 'httpx>=0.27,<1', repeatable")
 	return cmd
 }
 
 func gc(service packagesv1connect.PackageServiceClient) *cobra.Command {
 	return &cobra.Command{
 		Use:   "gc",
-		Short: "remove store entries nothing references",
+		Short: "Remove downloaded files that nothing uses",
+		Long:  "Deletes the downloaded files that no installed program or Python environment uses any more, to free disk space.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return streamed(cmd, func(t *packagesv1.Terminal) (packagesv1connect.PackageServiceCollectClientStream, error) {
@@ -308,7 +344,8 @@ func gc(service packagesv1connect.PackageServiceClient) *cobra.Command {
 func status(service packagesv1connect.PackageServiceClient) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "print the latest pm sync receipt (machine-readable)",
+		Short: "Print the record of the last pm command as JSON",
+		Long:  "Prints, as JSON, what the last pm command did: each step, any warning or refusal, and how it ended.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			response, err := service.Status(cmd.Context(), &packagesv1.StatusRequest{})
@@ -327,12 +364,15 @@ func update(service packagesv1connect.PackageServiceClient) *cobra.Command {
 	var skip []string
 	cmd := &cobra.Command{
 		Use:   "update [names...]",
-		Short: "resolve latest versions and re-pin the lockfile",
+		Short: "Find the newest versions and pin them in the lock file",
+		Long: "Looks up the newest version of the programs you name, or of all of them, and pins those versions in the lock file. Use --check " +
+			"to see what would change first. --skip-target keeps the pins of a platform whose archives lag behind, such as " +
+			"linux-arm64-bionic while the Termux pool catches up. With --termux, --check reports the retired archives without writing.",
+		Example: "  icebath pm update --check\n  icebath pm update chromium\n  icebath pm update --skip-target linux-arm64-bionic",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, t := range skip {
 				if !slices.Contains(packages.Targets, t) {
-					return usageError(cmd, "[-h] [--check] [--target TARGET] [--skip-target {"+strings.Join(packages.Targets, ",")+"}] [--uv] [--npm] [--termux] [names ...]",
-						"argument --skip-target: invalid choice: "+strconv.Quote(t)+" (choose from "+quoted(packages.Targets)+")")
+					return usageError(cmd, "“"+t+"” is not a platform --skip-target takes. It takes "+choices(packages.Targets)+".")
 				}
 			}
 			return streamed(cmd, func(t *packagesv1.Terminal) (packagesv1connect.PackageServiceUpdateClientStream, error) {
@@ -342,11 +382,11 @@ func update(service packagesv1connect.PackageServiceClient) *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.BoolVar(&check, "check", false, "dry-run: print what would change, write nothing (exit 1 if updates exist)")
-	f.StringVar(&target, "target", "", "resolve for a different target instead of this machine (e.g. win32-arm64)")
-	f.StringArrayVar(&skip, "skip-target", nil, "leave TARGET's pins as they are, e.g. linux-arm64-bionic while the termux pool lags upstream (repeatable)")
-	f.BoolVar(&uv, "uv", false, "also refresh the Python environments (resolve again + rebuild)")
-	f.BoolVar(&npm, "npm", false, "also refresh the Node dependency trees (npm update)")
-	f.BoolVar(&termux, "termux", false, "repin the termux pool archives the pool has retired; --check reports without writing")
+	f.BoolVar(&check, "check", false, "Only print what would change, ending with status 1 when something would")
+	f.StringVar(&target, "target", "", "Platform to look up versions for instead of this machine, such as win32-arm64")
+	f.StringArrayVar(&skip, "skip-target", nil, "Platform whose pins stay as they are, repeatable")
+	f.BoolVar(&uv, "uv", false, "Also work out and rebuild the Python environments")
+	f.BoolVar(&npm, "npm", false, "Also update the Node packages")
+	f.BoolVar(&termux, "termux", false, "Pin again the archives that the Termux pool has retired")
 	return cmd
 }

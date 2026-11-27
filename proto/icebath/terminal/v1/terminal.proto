@@ -89,6 +89,8 @@ message Backend {
   repeated string setup = 7;
   // Key of the section of its own settings, empty when it has none
   string section = 8;
+  // Has something to get ready before commands run there, such as an image to build
+  bool prepares = 9;
 }
 
 message BackendsRequest {

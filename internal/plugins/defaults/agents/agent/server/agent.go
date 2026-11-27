@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/internal/hooks"
 	"github.com/nickheyer/icebath/internal/models"
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
+	agentlaunch "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/launch"
 	"github.com/nickheyer/icebath/internal/prompt"
 	"github.com/nickheyer/icebath/internal/provider"
 	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
@@ -216,6 +217,19 @@ func echo(line string) string {
 	return "`" + strings.ReplaceAll(line, "`", "'") + "`"
 }
 
+// Told a person whose message waits for the reply running
+const queuedNote = "Your message is queued. It is sent when the current reply finishes."
+
+// Why a command was refused, marked once as a refusal
+func refused(err error) string {
+	return "✗ " + strings.TrimPrefix(err.Error(), "✗ ")
+}
+
+// Refusal of a provider the profile does not have
+func noProvider(profile, name string) error {
+	return fmt.Errorf("The profile %s has no provider named %s. Add it in /providers, or pick another with /model.", profile, name)
+}
+
 func (a *Agent) Close() error {
 	a.mu.Lock()
 	a.cancel()
@@ -244,7 +258,7 @@ func (a *Agent) Message(ctx context.Context, id, text string, voice, interrupted
 		return err
 	}
 	if text = strings.TrimSpace(text); text == "" {
-		return connect.NewError(connect.CodeInvalidArgument, "Nothing to send")
+		return connect.NewError(connect.CodeInvalidArgument, "Your message is empty. Type something to send.")
 	}
 	line, _, _ := strings.Cut(text, "\n")
 	word, _, _ := strings.Cut(line, " ")
@@ -259,7 +273,7 @@ func (a *Agent) Message(ctx context.Context, id, text string, voice, interrupted
 		}
 		note, err := command.Run(ctx, &slash.Call{SessionID: id, Argument: argument})
 		if err != nil {
-			note = err.Error()
+			note = refused(err)
 		}
 		if note != "" {
 			r.mu.Lock()
@@ -273,11 +287,11 @@ func (a *Agent) Message(ctx context.Context, id, text string, voice, interrupted
 	// A cut spoken reply waits for the next message queued, past a steer, a refusal or a mistyped command
 	r.cut = r.cut || interrupted
 	if named.MatchString(word) {
-		a.notify(r, echo(line)+"\n\nUnknown command "+word+". Type /help to list commands.")
+		a.notify(r, echo(line)+"\n\n✗ There is no command "+word+". Type /help to list the commands.")
 		return nil
 	}
 	if err := a.blocked(ctx, r); err != nil {
-		a.notify(r, echo(line)+"\n\n"+err.Error())
+		a.notify(r, echo(line)+"\n\n"+refused(err))
 		return nil
 	}
 	// A message sent while the reply runs is queued, steers the turn or stops it to go now, as the session's settings say
@@ -287,7 +301,7 @@ func (a *Agent) Message(ctx context.Context, id, text string, voice, interrupted
 	}
 	if mode == agentconfig.BusySteer {
 		r.steering = append(r.steering, text)
-		a.notify(r, "steer queued — arrives after next tool call: \""+steerPreview(text)+"\"")
+		a.notify(r, "The agent gets your message after its next tool call: “"+steerPreview(text)+"”.")
 		return nil
 	}
 	a.admit(r, text)
@@ -298,10 +312,10 @@ func (a *Agent) Message(ctx context.Context, id, text string, voice, interrupted
 	r.yield.Store(true)
 	if mode == agentconfig.BusyInterrupt && r.stop != nil {
 		r.stop()
-		a.notify(r, "Interrupting the current reply; this message is sent next.")
+		a.notify(r, "Stopping the current reply. Your message is sent next.")
 		return nil
 	}
-	a.notify(r, "Queued. It sends when the current reply finishes.")
+	a.notify(r, queuedNote)
 	return nil
 }
 
@@ -379,10 +393,10 @@ func (a *Agent) Watch(ctx context.Context, id, client string, send func(*agentv1
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-a.ctx.Done():
-			return connect.NewError(connect.CodeUnavailable, "icebath is shutting down")
+			return connect.NewError(connect.CodeUnavailable, "icebath is shutting down.")
 		case event, ok := <-events:
 			if !ok {
-				return connect.NewError(connect.CodeAborted, "Fell behind the session")
+				return connect.NewError(connect.CodeAborted, "This window fell behind the session. Open the session again to see new messages.")
 			}
 			if err := send(event); err != nil {
 				return err
@@ -436,7 +450,7 @@ func (a *Agent) run(id string) (*run, error) {
 	}
 	if made && a.approvals.Restore(id, session.GetYolo()) {
 		r.mu.Lock()
-		a.notify(r, "⚡ YOLO mode restored from session — all commands auto-approved. /yolo to turn off.")
+		a.notify(r, "⚠ This session still runs every command without asking. Type /yolo to have the agent ask again.")
 		r.mu.Unlock()
 	}
 	a.evict()
@@ -461,7 +475,7 @@ func (a *Agent) start(r *run) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.ctx.Err() != nil {
-		return connect.NewError(connect.CodeUnavailable, "icebath is shutting down")
+		return connect.NewError(connect.CodeUnavailable, "icebath is shutting down.")
 	}
 	r.busy = true
 	r.publish(busyEvent(true))
@@ -547,9 +561,9 @@ func (a *Agent) work(r *run) {
 		failed := false
 		switch {
 		case ctx.Err() != nil:
-			a.notify(r, "Stopped.")
+			a.notify(r, agentlaunch.Stopped)
 		case err != nil:
-			a.notify(r, "**Error:** "+err.Error())
+			a.notify(r, agentlaunch.Failed+strings.TrimPrefix(err.Error(), agentlaunch.Failed))
 			failed = true
 		}
 		if r.child == nil && len(r.steering) > 0 {
@@ -559,7 +573,7 @@ func (a *Agent) work(r *run) {
 			if ctx.Err() == nil {
 				a.admit(r, leftover)
 				r.queue = append(r.queue, queued{text: leftover})
-				a.notify(r, "The steer arrived after the last tool call, so it is sent as the next message.")
+				a.notify(r, "Your /steer message came after the agent's last tool call, so it is sent as your next message.")
 			}
 		}
 		r.mu.Unlock()
@@ -628,7 +642,7 @@ func (a *Agent) instance(settings *config.Config, name string) (provider.Instanc
 	if name != "" {
 		instance, ok := a.provider(settings, name)
 		if !ok {
-			return instance, fmt.Errorf("Profile %s has no provider named %s.", settings.Profile(), name)
+			return instance, noProvider(settings.Profile(), name)
 		}
 		return instance, nil
 	}

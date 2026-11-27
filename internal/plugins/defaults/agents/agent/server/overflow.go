@@ -61,7 +61,7 @@ func (a *Agent) recover(ctx context.Context, r *run, settings *config.Config, en
 		r.cx.nativeOff = true
 		r.mu.Unlock()
 		if !off {
-			a.tell(r, "⚠️  Provider rejected native compaction (context_management) — disabled for this session, local compression stays active. Retrying...")
+			a.tell(r, "The provider won't summarize this session itself, so icebath does it from now on. Trying again.")
 			return retried, "", nil
 		}
 	}
@@ -75,7 +75,7 @@ func (a *Agent) recover(ctx context.Context, r *run, settings *config.Config, en
 		}
 		r.mu.Unlock()
 		if _, changed := contexts.ShrinkImages(request, contexts.ImageLimit(message)); first && changed {
-			a.tell(r, "📐 Image(s) exceeded provider size limit — shrank and retrying...")
+			a.tell(r, "An image was larger than the provider takes, so icebath shrank the images. Trying again.")
 			return retried, "", nil
 		}
 		r.mu.Lock()
@@ -102,11 +102,11 @@ func (a *Agent) spend(r *run, settings *config.Config, tooLarge bool, model stri
 		return "", false
 	}
 	if tooLarge {
-		a.tell(r, fmt.Sprintf("❌ Max compression attempts (%d) reached for payload-too-large error.\n%s", limit, overflowRetryHint))
+		a.tell(r, fmt.Sprintf("⚠ Summarizing was tried %s and the request is still too large to send.\n%s", strs.Count(limit, "time"), overflowRetryHint))
 		slog.Error(fmt.Sprintf("413 compression failed after %d attempts.", limit))
 		return fmt.Sprintf(tooLargeCopy, model), true
 	}
-	a.tell(r, fmt.Sprintf("❌ Max compression attempts (%d) reached.\n%s", limit, overflowRetryHint))
+	a.tell(r, fmt.Sprintf("⚠ Summarizing was tried %s and the session still does not fit the model.\n%s", strs.Count(limit, "time"), overflowRetryHint))
 	slog.Error(fmt.Sprintf("Context compression failed after %d attempts.", limit))
 	return fmt.Sprintf(overflowCopy, model), true
 }
@@ -164,7 +164,8 @@ func (a *Agent) recoverTooLarge(ctx context.Context, r *run, settings *config.Co
 	r.mu.Lock()
 	attempts := r.cx.attempts
 	r.mu.Unlock()
-	a.tell(r, fmt.Sprintf("⚠️  Request payload too large (413) — compression attempt %d/%d...", attempts, max(settings.GetInt(contextsconfig.MaxAttempts), 1)))
+	a.tell(r, fmt.Sprintf("The request was too large for the provider. Summarizing older messages, try %d of %d.", attempts,
+		max(settings.GetInt(contextsconfig.MaxAttempts), 1)))
 	before := payloadBytes(request)
 	done, reply, err := a.squeeze(ctx, r, settings, env, engine, tokens, false)
 	if err != nil || reply != "" {
@@ -175,7 +176,7 @@ func (a *Agent) recoverTooLarge(ctx context.Context, r *run, settings *config.Co
 		if len(done.after) < len(done.before) {
 			a.tell(r, retryMessagesStatus(len(done.before), len(done.after)))
 		} else {
-			a.tell(r, fmt.Sprintf("🗜️ Compressed %s → %s payload bytes, retrying...", strs.Thousands(before), strs.Thousands(after)))
+			a.tell(r, fmt.Sprintf("Shrank the request from %s to %s. Trying again.", strs.Size(float64(before)), strs.Size(float64(after))))
 		}
 		pause(ctx, recoveryPause)
 		return retried, "", nil
@@ -185,10 +186,10 @@ func (a *Agent) recoverTooLarge(ctx context.Context, r *run, settings *config.Co
 	r.cx.stripTools = true
 	r.mu.Unlock()
 	if !stripped && toolImages(request) {
-		a.tell(r, "📐 Compression could not reduce the request further — removed retained vision payloads and retrying...")
+		a.tell(r, "Summarizing could not shrink the request further, so images from tool results are left out. Trying again.")
 		return retried, "", nil
 	}
-	a.tell(r, "❌ Payload too large and cannot compress further.\n"+overflowRetryHint)
+	a.tell(r, "⚠ The request is too large to send and can't be made smaller.\n"+overflowRetryHint)
 	slog.Error("413 payload too large. Cannot compress further.")
 	return ended, fmt.Sprintf(tooLargeCopy, model), nil
 }
@@ -207,8 +208,8 @@ func (a *Agent) recoverLength(ctx context.Context, r *run, settings *config.Conf
 		r.mu.Lock()
 		r.cx.outputCap = safe
 		r.mu.Unlock()
-		a.tell(r, fmt.Sprintf("⚠️  Output cap too large for current prompt — retrying with max_tokens=%s (provider_available=%s, estimated_request_tokens=%s; "+
-			"context_length unchanged at %s)", strs.Thousands(safe), strs.Thousands(room), strs.Thousands(tokens), strs.Thousands(window)))
+		a.tell(r, fmt.Sprintf("The provider has room for only %s tokens of reply beside the session's about %s, so replies are held to %s tokens. "+
+			"Trying again.", strs.Thousands(room), strs.Thousands(tokens), strs.Thousands(safe)))
 		if reply, spent := a.spend(r, settings, false, model); spent {
 			return ended, reply, nil
 		}
@@ -223,33 +224,31 @@ func (a *Agent) recoverLength(ctx context.Context, r *run, settings *config.Conf
 		return retried, "", nil
 	}
 	if models.OutputCapError(message) {
-		a.tell(r, "❌ The provider rejected the request because the requested output length exceeds its output cap for this model, and the error did "+
-			"not state the allowed limit.\n   💡 Icebath has no user setting for the output cap — check the endpoint's default max output (completion) "+
-			"tokens for this model on the server or proxy. (This is an output-cap error, not a context overflow — compression cannot fix it.)")
+		a.tell(r, "⚠ The provider refused the reply length asked for as more than it allows for this model, and did not say how much it allows. "+
+			"Summarizing can't fix this, because the limit is on the reply.\nFor Claude models, lower Max output in /settings under Connections › "+
+			"Anthropic messages API. For other models, check the most output tokens set for the model on the server or proxy.")
 		slog.Error("Output-cap error not routed into compression (max_tokens over provider cap): " + strs.Head(message, 200))
-		return ended, "The requested output length exceeds the provider's output cap for this model, and the error did not state the allowed limit.", nil
+		return ended, "The provider refused the reply length asked for as more than it allows for this model, and did not say how much it allows.", nil
 	}
 	adopted := 0
 	if lower, ok := models.LowerContextLimit(message, window); ok && refusal == contexts.Overflow {
-		a.tell(r, fmt.Sprintf("Context limit detected from API: %s tokens (was %s)", strs.Thousands(lower), strs.Thousands(window)))
+		a.tell(r, fmt.Sprintf("The provider says the model reads at most %s tokens, not %s, so icebath uses that from now on.", strs.Thousands(lower),
+			strs.Thousands(window)))
 		if host := a.models.Host(); host != nil {
 			host.SaveContext(settings, env.Route.Model, env.Route.BaseURL, lower)
 		}
-		a.tell(r, fmt.Sprintf("⚠️  Context length exceeded — using provider limit: %s → %s tokens", strs.Thousands(window), strs.Thousands(lower)))
 		adopted, env.Window = lower, lower
 		engine.Bind(env)
-		a.tell(r, retryWindowStatus(lower, window))
 	} else if quoted, ok := models.ContextLimit(message); ok {
-		a.tell(r, fmt.Sprintf("Provider reported a context limit of %s tokens, not below the %s assumed; keeping context_length at %s tokens.",
-			strs.Thousands(quoted), strs.Thousands(window), strs.Thousands(window)))
+		a.tell(r, fmt.Sprintf("The provider says the model reads at most %s tokens, which is not below the %s icebath assumed, so that stays.",
+			strs.Thousands(quoted), strs.Thousands(window)))
 	} else {
-		a.tell(r, fmt.Sprintf("⚠️  Context length exceeded, but provider did not report a max context length; keeping context_length at %s tokens.",
-			strs.Thousands(window)))
+		a.tell(r, fmt.Sprintf("The request was more than the model can read, and the provider did not say how much it reads, so icebath keeps "+
+			"assuming %s tokens.", strs.Thousands(window)))
 	}
 	if models.Local(env.Route.BaseURL) && !quotedCount.MatchString(message) && env.Window > 0 && float64(tokens) < float64(env.Window)*unexplainedShare {
-		a.tell(r, fmt.Sprintf("❌ The server rejected the request as too large, but it is only ~%s tokens against a %s-token window — not compressing.\n"+
-			"   💡 Wait a moment and /retry; another request on the same server (e.g. a background review) may have been holding its context.",
-			strs.Thousands(tokens), strs.Thousands(env.Window)))
+		a.tell(r, fmt.Sprintf("⚠ The model server refused the request as too large, though it holds only about %s of %s tokens, so the session is "+
+			"not summarized.", strs.Thousands(tokens), strs.Thousands(env.Window)))
 		slog.Error(fmt.Sprintf("Provider context rejection not explained by request size (~%s of %s tokens); skipping compression: %s",
 			strs.Thousands(tokens), strs.Thousands(env.Window), strs.Head(message, 200)))
 		// The server may run the model with a smaller window than the one kept for it, so the next turn asks it again
@@ -288,7 +287,7 @@ func (a *Agent) recoverLength(ctx context.Context, r *run, settings *config.Conf
 		r.mu.Unlock()
 		return retried, "", nil
 	}
-	a.tell(r, fmt.Sprintf("❌ The conversation is too long for the model (%s tokens) and cannot be shrunk further.\n%s", strs.Thousands(after),
+	a.tell(r, fmt.Sprintf("⚠ The session, at about %s tokens, is too long for the model and can't be made smaller.\n%s", strs.Thousands(after),
 		overflowRetryHint))
 	slog.Error(fmt.Sprintf("Context length exceeded: %s tokens. Cannot compress further.", strs.Thousands(after)))
 	return ended, fmt.Sprintf(overflowCopy, model), nil

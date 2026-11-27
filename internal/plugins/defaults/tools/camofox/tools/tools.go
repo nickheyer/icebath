@@ -868,12 +868,13 @@ func (r *registrant) Tools() []tools.Def {
 		s := r.scope(context.Background(), env.Config, env)
 		return s.url() != "" && s.setting(camofoxconfig.APIKey) != ""
 	}
-	def := func(name, title, icon, subject string, effect tools.Effect, spec map[string]any, check func(*tools.Env) bool, run tools.Handler) tools.Def {
-		return tools.Def{Name: name, Toolset: camofoxconfig.Toolset, Title: title, Icon: icon, Subject: subject, Schema: spec, Handler: run,
-			Check: check, Effect: effect, Fallible: true, Untrusted: true}
+	def := func(name, title, about, icon, subject string, effect tools.Effect, spec map[string]any, check func(*tools.Env) bool,
+		run tools.Handler) tools.Def {
+		return tools.Def{Name: name, Toolset: camofoxconfig.Toolset, Title: title, About: about, Group: "Browser", Icon: icon, Subject: subject,
+			Schema: spec, Handler: run, Check: check, Effect: effect, Fallible: true, Untrusted: true}
 	}
 	return []tools.Def{
-		def("browser_navigate", "Navigate", tools.IconFetch, "url", tools.MayChange, schema("Navigate to a URL in the browser. Initializes the session "+
+		def("browser_navigate", "Open page", "Open a web page in the Camofox browser", tools.IconFetch, "url", tools.MayChange, schema("Navigate to a URL in the browser. Initializes the session "+
 			"and loads the page. Must be called before other browser tools. For simple information retrieval, prefer a lightweight retrieval tool "+
 			"when one is available (faster, cheaper). For plain-text endpoints — URLs ending in .md, .txt, .json, .yaml, .yml, .csv, .xml, "+
 			"raw.githubusercontent.com, or any documented API endpoint — prefer an available text-extraction or terminal-fetch tool; the browser "+
@@ -881,17 +882,17 @@ func (r *registrant) Tools() []tools.Def {
 			"content). Returns a compact page snapshot with interactive elements and ref IDs — no need to call browser_snapshot separately after "+
 			"navigating.", map[string]any{"url": stringParam("The URL to navigate to (e.g., 'https://example.com')")}, "url"), configured,
 			r.handler(func(s *scope, a map[string]any, task string) string { return s.navigate(arg(a, "url", ""), task) })),
-		def("browser_snapshot", "Page snapshot", tools.IconRead, "", tools.ReadOnly, schema("Get a text-based snapshot of the current page's "+
+		def("browser_snapshot", "Read page", "Read the text and buttons of the open page", tools.IconRead, "", tools.ReadOnly, schema("Get a text-based snapshot of the current page's "+
 			"accessibility tree. Returns interactive elements with ref IDs (like @e1, @e2) for browser_click and browser_type. Snapshots over 15000 "+
 			"chars are truncated; when that happens the complete snapshot is saved to a file and the output includes its path so you can page "+
 			"through the rest with read_file. Requires browser_navigate first. Note: browser_navigate already returns a snapshot — use this to "+
 			"refresh after interactions that change the page.", map[string]any{}), configured,
 			r.handler(func(s *scope, _ map[string]any, task string) string { return s.snapshotTool(task) })),
-		def("browser_click", "Click", tools.IconWrite, "ref", tools.Mutates, schema("Click on an element identified by its ref ID from the snapshot "+
+		def("browser_click", "Click", "Click a button or a link on the page", tools.IconWrite, "ref", tools.Mutates, schema("Click on an element identified by its ref ID from the snapshot "+
 			"(e.g., '@e5'). The ref IDs are shown in square brackets in the snapshot output. Requires browser_navigate and browser_snapshot to be "+
 			"called first.", map[string]any{"ref": stringParam("The element reference from the snapshot (e.g., '@e5', '@e12')")}, "ref"), configured,
 			r.handler(func(s *scope, a map[string]any, task string) string { return s.click(arg(a, "ref", ""), task) })),
-		def("browser_type", "Type", tools.IconWrite, "ref", tools.Mutates, schema("Type text into an input field identified by its ref ID. Clears "+
+		def("browser_type", "Type", "Type text into a field on the page", tools.IconWrite, "ref", tools.Mutates, schema("Type text into an input field identified by its ref ID. Clears "+
 			"the field first, then types the new text. Requires browser_navigate and browser_snapshot to be called first.", map[string]any{
 			"ref":  stringParam("The element reference from the snapshot (e.g., '@e3')"),
 			"text": stringParam("The text to type into the field"),
@@ -899,25 +900,25 @@ func (r *registrant) Tools() []tools.Def {
 			r.handler(func(s *scope, a map[string]any, task string) string {
 				return s.typeText(arg(a, "ref", ""), arg(a, "text", ""), task)
 			})),
-		def("browser_scroll", "Scroll", tools.IconRead, "direction", tools.MayChange, schema("Scroll the page in a direction. Use this to reveal "+
+		def("browser_scroll", "Scroll", "Scroll the page up or down", tools.IconRead, "direction", tools.MayChange, schema("Scroll the page in a direction. Use this to reveal "+
 			"more content that may be below or above the current viewport. Requires browser_navigate to be called first.", map[string]any{
 			"direction": map[string]any{"type": "string", "enum": []string{"up", "down"}, "description": "Direction to scroll"},
 		}, "direction"), configured,
 			r.handler(func(s *scope, a map[string]any, task string) string {
 				return s.scroll(arg(a, "direction", "down"), task)
 			})),
-		def("browser_back", "Back", tools.IconFetch, "", tools.MayChange, schema("Navigate back to the previous page in browser history. Requires "+
+		def("browser_back", "Go back", "Go back to the page before", tools.IconFetch, "", tools.MayChange, schema("Navigate back to the previous page in browser history. Requires "+
 			"browser_navigate to be called first.", map[string]any{}), configured,
 			r.handler(func(s *scope, _ map[string]any, task string) string { return s.back(task) })),
-		def("browser_press", "Press key", tools.IconWrite, "key", tools.Mutates, schema("Press a keyboard key. Useful for submitting forms (Enter), "+
+		def("browser_press", "Press key", "Press a key on the page, such as Enter or Tab", tools.IconWrite, "key", tools.Mutates, schema("Press a keyboard key. Useful for submitting forms (Enter), "+
 			"navigating (Tab), or keyboard shortcuts. Requires browser_navigate to be called first.",
 			map[string]any{"key": stringParam("Key to press (e.g., 'Enter', 'Tab', 'Escape', 'ArrowDown')")}, "key"), configured,
 			r.handler(func(s *scope, a map[string]any, task string) string { return s.press(arg(a, "key", ""), task) })),
-		def("browser_get_images", "Page images", tools.IconRead, "", tools.ReadOnly, schema("Get a list of all images on the current page with their "+
+		def("browser_get_images", "List images", "List the images on the page", tools.IconRead, "", tools.ReadOnly, schema("Get a list of all images on the current page with their "+
 			"URLs and alt text. Useful for finding images to analyze with the vision tool. Requires browser_navigate to be called first.",
 			map[string]any{}), configured,
 			r.handler(func(s *scope, _ map[string]any, task string) string { return s.images(task) })),
-		def("browser_vision", "Look at page", tools.IconRead, "question", tools.ReadOnly, schema("Take a screenshot of the current page so you can "+
+		def("browser_vision", "Look at page", "Take a screenshot of the page and look at it", tools.IconRead, "question", tools.ReadOnly, schema("Take a screenshot of the current page so you can "+
 			"inspect it visually. Use this when you need to understand what the page looks like - especially for CAPTCHAs, visual verification "+
 			"challenges, complex layouts, or cases where the text snapshot misses important visual information. An auxiliary vision model analyzes "+
 			"the screenshot and returns a text answer to your question. Includes a screenshot_path that you can share with the user by including "+
@@ -925,7 +926,7 @@ func (r *registrant) Tools() []tools.Def {
 			"question": stringParam("What you want to know about the page visually. Be specific about what you're looking for."),
 		}, "question"), configured,
 			r.handler(func(s *scope, a map[string]any, task string) string { return s.vision(arg(a, "question", ""), task) })),
-		def("browser_console", "Page script", tools.IconShell, "expression", tools.MayChange, schema("Evaluate JavaScript in the page context and "+
+		def("browser_console", "Run page script", "Run JavaScript on the page", tools.IconShell, "expression", tools.MayChange, schema("Evaluate JavaScript in the page context and "+
 			"return the result when 'expression' is provided — use this for DOM inspection, reading page state, or extracting data "+
 			"programmatically. Console log and JavaScript error capture are not available with the Camofox backend, so a call without 'expression' "+
 			"returns an empty result. Requires browser_navigate to be called first.", map[string]any{
@@ -936,7 +937,7 @@ func (r *registrant) Tools() []tools.Def {
 			r.handler(func(s *scope, a map[string]any, task string) string {
 				return s.console(optional(a, "expression"), task)
 			})),
-		def("browser_import_cookies", "Import cookies", tools.IconWrite, "cookies_path", tools.Mutates, schema("Import cookies from a "+
+		def("browser_import_cookies", "Import cookies", "Sign in to sites with cookies from a file", tools.IconWrite, "cookies_path", tools.Mutates, schema("Import cookies from a "+
 			"Netscape-format cookies.txt file into the current browser session. Use to authenticate to sites without interactive login. Files must "+
 			"live under browser.camofox.cookies_dir (default ~/.camofox/cookies/). Requires CAMOFOX_API_KEY for bearer-token authentication.",
 			map[string]any{

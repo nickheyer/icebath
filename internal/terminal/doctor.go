@@ -57,11 +57,10 @@ func (t *Terminal) Survey(cfg *config.Config) []Survey {
 func (t *Terminal) Prepare(ctx context.Context, cfg *config.Config, name string, say func(line string)) error {
 	backend, ok := t.Backend(name)
 	if !ok {
-		return fmt.Errorf("There is no terminal backend named '%s'.", name)
+		return fmt.Errorf("icebath has no place to run commands named %q. Choose one of %s in /backends.", name, t.titles())
 	}
-	say("Terminal backend: " + backend.Title)
 	if backend.Prepare == nil {
-		say("Nothing to set up: commands run as soon as the backend is picked.")
+		say(backend.Title + " needs nothing set up first. Commands run there as soon as you choose it.")
 		return nil
 	}
 	return backend.Prepare(ctx, cfg, say)

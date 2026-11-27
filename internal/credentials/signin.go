@@ -37,6 +37,9 @@ type Prompter struct {
 	Timeout time.Duration
 	// Flags of the sign in by name, such as browser for a Codex browser sign in or region for MiniMax's
 	Options map[string]string
+	// The sign in runs at the terminal of a command rather than on the app's sign in page, so it may say what only a terminal does, such
+	// as how ctrl+c stops it
+	Terminal bool
 	// Settings of the provider the account is of, by their names below it, as the front end read them
 	Settings map[string]string
 }
@@ -96,18 +99,26 @@ func Remote() bool {
 	return false
 }
 
+// Says what the sign in waits for, and at a terminal how to stop it
+func (p *Prompter) Pending(text string) {
+	if p.Terminal {
+		text += " Press ctrl+c to stop."
+	}
+	p.Say("%s", text)
+}
+
 // Tells the person where to go and what code to type there, and opens the address when the sign in may
 func (p *Prompter) Instructions(link, code string) {
 	p.Say("")
 	p.Say("To continue:")
-	p.Say("  1. Open: %s", link)
+	p.Say("  1. Open this address in your browser: %s", link)
 	if code != "" {
-		p.Say("  2. If prompted, enter code: %s", code)
+		p.Say("  2. When the page asks for a code, type: %s", code)
 	}
 	if p.Show != nil {
 		p.Show(link, code)
 	}
-	p.OpenBrowser(link, "  (Opened browser for verification)", "  Could not open browser automatically — use the URL above.")
+	p.OpenBrowser(link, "  The address is open in your browser.", "  Your browser could not be opened, so open the address yourself.")
 }
 
 // Opens the address in this computer's browser when the sign in may and one is here, saying how that went
@@ -136,7 +147,8 @@ type Callback struct {
 func Listen(host string, port int, path, name, busy string) (*Callback, error) {
 	listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
-		return nil, &AuthError{Code: busy, Message: fmt.Sprintf("Could not listen for the sign in's answer on %s:%d: %v", host, port, err), Err: err}
+		return nil, &AuthError{Code: busy, Message: fmt.Sprintf("icebath could not wait for the sign-in's answer on %s:%d, because another program "+
+			"may be using that port. Close it, then try again.", host, port), Err: err}
 	}
 	c := &Callback{listener: listener, answer: make(chan url.Values, 1)}
 	c.Redirect = fmt.Sprintf("http://localhost:%d%s", listener.Addr().(*net.TCPAddr).Port, path)
@@ -146,12 +158,12 @@ func Listen(host string, port int, path, name, busy string) (*Callback, error) {
 			return
 		}
 		query := r.URL.Query()
-		outcome := "received"
+		page := "<h1>You are signed in to %s.</h1>You can close this tab and go back to icebath."
 		if query.Get("error") != "" {
-			outcome = "failed"
+			page = "<h1>The sign-in to %s did not finish.</h1>Close this tab and go back to icebath to see why."
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, "<html><body><h1>%s authorization %s.</h1>You can close this tab.</body></html>", html.EscapeString(name), outcome)
+		fmt.Fprintf(w, "<html><body>"+page+"</body></html>", html.EscapeString(name))
 		c.once.Do(func() { c.answer <- query })
 	})}
 	go c.server.Serve(listener)
@@ -169,18 +181,20 @@ func (c *Callback) Wait(ctx context.Context, timeout time.Duration, state, provi
 	case <-ctx.Done():
 		return "", errors.Join(ErrCancelled, ctx.Err())
 	case <-timer.C:
-		return "", Failed(provider, "callback_timeout", "Authorization timed out waiting for the local callback.", false, nil)
+		return "", Failed(provider, "callback_timeout", "The browser did not come back in time, so the sign-in stopped. Start it again.", false, nil)
 	case query = <-c.answer:
 	}
 	if failure := query.Get("error"); failure != "" {
-		return "", Failed(provider, "authorization_denied", "Authorization failed: "+strs.Filled(query.Get("error_description"), failure), false, nil)
+		return "", Failed(provider, "authorization_denied", "The provider refused the sign-in. It said: "+
+			strings.TrimSuffix(strs.Filled(query.Get("error_description"), failure), ".")+".", false, nil)
 	}
 	if state != "" && subtle.ConstantTimeCompare([]byte(query.Get("state")), []byte(state)) != 1 {
-		return "", Failed(provider, "state_mismatch", "Authorization callback state mismatch — the redirect did not come from this login. Aborting.", false, nil)
+		return "", Failed(provider, "state_mismatch", "The browser's answer did not come from this sign-in, so it was refused. Start the sign-in again.",
+			false, nil)
 	}
 	code := strings.TrimSpace(query.Get("code"))
 	if code == "" {
-		return "", Failed(provider, "no_code", "Authorization callback did not carry a code.", false, nil)
+		return "", Failed(provider, "no_code", "The browser's answer carried no code. Start the sign-in again.", false, nil)
 	}
 	return code, nil
 }
@@ -205,11 +219,16 @@ func (p *Prompter) Tunnel(redirect string) {
 	user := strs.Filled(os.Getenv("USER"), os.Getenv("LOGNAME"), "<user>")
 	target := user + "@" + strs.Filled(host, "<this-host>")
 	port := parsed.Port()
-	divider := strings.Repeat("-", 60)
-	p.Say("\n%s\nRemote session detected — SSH tunnel required\n%s", divider, divider)
-	p.Say("Icebath is waiting for the OAuth callback on %s\nbut your browser is on a different machine. Run this command\n"+
-		"in a NEW terminal on your local machine BEFORE opening the URL:\n\n  ssh -N -L %s:127.0.0.1:%s %s\n\nThen open the authorize URL above in your local browser.", redirect, port, port, target)
-	p.Say("Through a jump box: ssh -N -L %s:127.0.0.1:%s -J <jump-user>@<jump-host> %s\n%s\n", port, port, target, divider)
+	p.Say("")
+	p.Say("Your browser is on another computer, so it needs a tunnel to send the sign-in's answer back to this one.")
+	p.Say("icebath waits for the answer at %s. Before you open the address, run this in a new terminal on the computer your browser is on:", redirect)
+	p.Say("")
+	p.Say("  ssh -N -L %s:127.0.0.1:%s %s", port, port, target)
+	p.Say("")
+	p.Say("Through a jump host, run this instead:")
+	p.Say("  ssh -N -L %s:127.0.0.1:%s -J <jump-user>@<jump-host> %s", port, port, target)
+	p.Say("")
+	p.Say("Then open the address in that browser.")
 }
 
 // One RFC 8628 token poll: what to post, how long the code lives and how often to ask
@@ -263,7 +282,8 @@ func (p Poll) Run(ctx context.Context) (map[string]any, error) {
 				}
 				continue
 			}
-			return nil, Failed(p.Provider, "device_token_failed", fmt.Sprintf("Device code token polling returned HTTP %d with a body that is not JSON.", status), false, nil)
+			return nil, Failed(p.Provider, "device_token_failed", fmt.Sprintf("While waiting for your approval, the provider gave an answer icebath "+
+				"could not read, with HTTP status %d. Try again later.", status), false, nil)
 		}
 		backoff, unavailable = 0, 0
 		switch code := Text(payload["error"]); code {
@@ -282,16 +302,17 @@ func (p Poll) Run(ctx context.Context) (map[string]any, error) {
 			}
 			continue
 		case "expired_token":
-			return nil, Failed(p.Provider, Expired, "The device code expired before the sign in was approved.", false, nil)
+			return nil, Failed(p.Provider, Expired, "The code expired before you approved the sign-in.", false, nil)
 		case "access_denied":
-			return nil, Failed(p.Provider, "access_denied", "Authorization was denied.", false, nil)
+			return nil, Failed(p.Provider, "access_denied", "The sign-in was turned down at the provider, so nothing was saved.", false, nil)
 		default:
-			return nil, Failed(p.Provider, "device_token_failed", "Device code token polling failed: "+strs.Filled(Text(payload["error_description"]), code, reply.Text(300)), false, nil)
+			return nil, Failed(p.Provider, "device_token_failed", "The provider ended the sign-in. It said: "+
+				strings.TrimSuffix(strs.Filled(Text(payload["error_description"]), code, reply.Text(300)), ".")+".", false, nil)
 		}
 	}
-	message := "Timed out waiting for device authorization."
+	message := "The sign-in was not approved in time."
 	if unavailable != 0 {
-		message += fmt.Sprintf(" The token endpoint answered HTTP %d.", unavailable)
+		message += fmt.Sprintf(" The provider was answering with HTTP status %d.", unavailable)
 	}
 	return nil, Failed(p.Provider, Expired, message, false, nil)
 }

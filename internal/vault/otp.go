@@ -35,10 +35,10 @@ func NormalizeOTP(value string) (string, error) {
 	if strings.HasPrefix(strings.ToLower(value), "otpauth://") {
 		parsed, err := url.Parse(value)
 		if err != nil {
-			return "", &Error{"authenticator key must be a base32 secret or an otpauth:// URI"}
+			return "", &Error{"An authenticator key is the setup key a site shows, or a link that starts with otpauth://."}
 		}
 		if strings.ToLower(parsed.Host) != "totp" {
-			return "", &Error{"only otpauth://totp links are supported (counter-based HOTP is not)"}
+			return "", &Error{"Only otpauth://totp links work here. Codes that count up with each use, from otpauth://hotp links, do not."}
 		}
 		query := map[string]string{}
 		for _, pair := range strings.Split(parsed.RawQuery, "&") {
@@ -66,19 +66,19 @@ func NormalizeOTP(value string) (string, error) {
 			period, okPeriod = whole("period", period)
 		}
 		if !okDigits || !okPeriod {
-			return "", &Error{"otpauth:// digits/period must be integers"}
+			return "", &Error{"The digits and period of an otpauth:// link must be whole numbers."}
 		}
 		if a, ok := query["algorithm"]; ok {
 			algo = a
 		}
 		algo = strings.ReplaceAll(strings.ToUpper(algo), "-", "")
 		if _, known := otpHashes[algo]; digits < 6 || digits > 8 || period <= 0 || !known {
-			return "", &Error{"unsupported otpauth:// parameters (digits 6-8, period > 0, SHA1/SHA256/SHA512)"}
+			return "", &Error{"The otpauth:// link asks for codes icebath can't make. Codes have 6 to 8 digits, a period above 0 and the hash SHA1, SHA256 or SHA512."}
 		}
 	}
 	seed := strings.TrimRight(strings.ToUpper(otpStrip.ReplaceAllString(value, "")), "=")
 	if seed == "" || otpBadSeed.MatchString(seed) {
-		return "", &Error{"authenticator key must be a base32 secret or an otpauth:// URI"}
+		return "", &Error{"An authenticator key is the setup key a site shows, or a link that starts with otpauth://."}
 	}
 	if digits == 6 && period == 30 && algo == "SHA1" {
 		return seed, nil
@@ -92,12 +92,12 @@ func totp(seed string, at time.Time) (string, error) {
 	if strings.Contains(seed, "|") {
 		parts := strings.SplitN(seed, "|", 4)
 		if len(parts) != 4 {
-			return "", fmt.Errorf("the stored OTP seed has %d of its 4 parts", len(parts))
+			return "", fmt.Errorf("The saved authenticator key is damaged: it has %d of its 4 parts.", len(parts))
 		}
 		d, errD := strconv.Atoi(strings.TrimSpace(parts[1]))
 		p, errP := strconv.Atoi(strings.TrimSpace(parts[2]))
 		if errD != nil || errP != nil || p <= 0 {
-			return "", fmt.Errorf("the stored OTP seed digits or period is not a whole number")
+			return "", fmt.Errorf("The saved authenticator key is damaged: its digits or period is not a whole number.")
 		}
 		seed, digits, period = parts[0], d, p
 		if h, ok := otpHashes[strings.ToUpper(parts[3])]; ok {
@@ -106,7 +106,7 @@ func totp(seed string, at time.Time) (string, error) {
 	}
 	key, err := base32.StdEncoding.DecodeString(strings.ToUpper(seed) + strings.Repeat("=", (8-len(seed)%8)%8))
 	if err != nil {
-		return "", fmt.Errorf("the stored OTP seed is not base32: %v", err)
+		return "", fmt.Errorf("The saved authenticator key is damaged: %v.", err)
 	}
 	counter := uint64(int64(math.Floor(float64(at.UnixNano()) / 1e9 / float64(period))))
 	mac := hmac.New(newHash, key)
@@ -121,18 +121,18 @@ func totp(seed string, at time.Time) (string, error) {
 func NormalizeOrigin(raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
-		return "", &Error{"origin is required"}
+		return "", &Error{"Give the address of the site, such as https://github.com."}
 	}
 	if !strings.Contains(value, "://") {
-		return "", &Error{fmt.Sprintf("origin must include a scheme (got %q)", value)}
+		return "", &Error{fmt.Sprintf("%q needs to start with https:// or http://, such as https://github.com.", value)}
 	}
 	parsed, err := url.Parse(value)
 	if err != nil {
-		return "", &Error{fmt.Sprintf("could not parse origin from %q", value)}
+		return "", &Error{fmt.Sprintf("%q is not the address of a site, such as https://github.com.", value)}
 	}
 	scheme, host := strings.ToLower(parsed.Scheme), strings.ToLower(parsed.Hostname())
 	if scheme == "" || host == "" {
-		return "", &Error{fmt.Sprintf("could not parse origin from %q", value)}
+		return "", &Error{fmt.Sprintf("%q is not the address of a site, such as https://github.com.", value)}
 	}
 	if strings.Contains(host, ":") {
 		host = "[" + host + "]"
@@ -143,7 +143,7 @@ func NormalizeOrigin(raw string) (string, error) {
 	}
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 0 || n > 65535 {
-		return "", &Error{fmt.Sprintf("invalid port in origin %q", value)}
+		return "", &Error{fmt.Sprintf("The port in %q is not a number from 0 to 65535.", value)}
 	}
 	if (scheme == "http" && n == 80) || (scheme == "https" && n == 443) {
 		return scheme + "://" + host, nil

@@ -10,6 +10,7 @@ import (
 	mcptools "github.com/nickheyer/icebath/internal/plugins/defaults/tools/mcp/tools"
 	"github.com/nickheyer/icebath/internal/sessions"
 	"github.com/nickheyer/icebath/internal/slash"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type commands struct {
@@ -23,7 +24,7 @@ func Register(registry *slash.Registry, cfg *config.Config, manager *mcptools.Ma
 }
 
 func (c commands) Commands() []slash.Command {
-	return []slash.Command{{Name: "reload-mcp", Aliases: []string{"reload_mcp"}, Usage: "[now]", Help: "Reload MCP servers in the live session", Run: c.reload}}
+	return []slash.Command{{Name: "reload-mcp", Aliases: []string{"reload_mcp"}, Usage: "[now]", Help: "Connect this session's MCP servers again", Run: c.reload}}
 }
 
 // Stops the session's MCP servers and connects them again from the settings, asking first unless told now or the setting says not to
@@ -37,28 +38,28 @@ func (c commands) reload(ctx context.Context, call *slash.Call) (string, error) 
 		return "", fmt.Errorf("Usage: /reload-mcp [now]")
 	}
 	if argument != "now" && cfg.GetBool(mcpconfig.ReloadConfirm) {
-		return "**Confirm /reload-mcp**\n\nReloading MCP servers rebuilds the tool set for this session and **invalidates the provider prompt cache** — the " +
-			"next message will re-send full input tokens. On long-context or high-reasoning models this can be expensive.\n\n" +
-			"• `/reload-mcp now` — reload now\n• turn off **Confirm tool reload** in /settings (" + mcpconfig.ReloadConfirm + ") — reload without this prompt " +
-			"from now on\n\nOtherwise MCP tools stay unchanged.", nil
+		return "Connecting the MCP servers again changes the tools of this session, so the provider loses its cache of the session. Your next " +
+			"message then sends the whole session again, which can cost a lot on long sessions or on models that reason.\n\n" +
+			"Run /reload-mcp now to connect them again anyway. To stop this question, turn off Confirm tool reload in /settings under " +
+			"Tools › MCP servers.\n\nUntil then the MCP tools stay as they are.", nil
 	}
 	r := c.manager.Reload(ctx, cfg)
-	lines := []string{"**MCP Servers Reloaded**", ""}
+	lines := []string{"Connected the MCP servers again.", ""}
 	for _, change := range []struct {
 		label string
 		names []string
-	}{{"Reconnected", r.Reconnected}, {"Added", r.Added}, {"Removed", r.Removed}} {
+	}{{"Connected again", r.Reconnected}, {"Added", r.Added}, {"Removed", r.Removed}} {
 		if len(change.names) > 0 {
 			lines = append(lines, change.label+": "+strings.Join(change.names, ", "))
 		}
 	}
 	if r.Servers == 0 {
-		lines = append(lines, "No MCP servers connected.")
+		lines = append(lines, "No MCP server is connected now.")
 	} else {
-		lines = append(lines, "", fmt.Sprintf("%d tool(s) available from %d server(s)", r.Tools, r.Servers))
+		lines = append(lines, "", strs.Count(r.Tools, "tool")+" from "+strs.Count(r.Servers, "server")+" are ready.")
 	}
 	if len(r.Failed) > 0 {
-		lines = append(lines, "MCP reload failed: did not connect: "+strings.Join(r.Failed, ", "))
+		lines = append(lines, "⚠ Could not connect to "+strings.Join(r.Failed, ", ")+". Run icebath mcp test <name> to see why.")
 	}
 	return strings.Join(lines, "\n"), nil
 }

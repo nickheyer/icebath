@@ -41,7 +41,7 @@ func (e *TimeoutError) Error() string {
 	if e.Err != nil {
 		return e.Err.Error()
 	}
-	return "Request timed out."
+	return "The request took too long."
 }
 
 func (e *TimeoutError) Unwrap() error { return e.Err }
@@ -58,14 +58,13 @@ type StreamError struct {
 
 func (e *StreamError) Error() string {
 	object, _ := e.Body["error"].(map[string]any)
-	parts := []string{"Provider stream returned an error event"}
+	text := "The provider sent an error in its reply"
 	if e.Status != 0 {
-		parts = append(parts, fmt.Sprintf("HTTP %d", e.Status))
+		text += fmt.Sprintf(", with HTTP status %d", e.Status)
 	}
 	if code := scalar(object["code"]); code != "" {
-		parts = append(parts, code)
+		text += ", code " + code
 	}
-	text := strings.Join(parts, " - ")
 	if message := scalar(object["message"]); message != "" {
 		text += ": " + message
 	}
@@ -86,7 +85,7 @@ func FrameError(raw string, header http.Header) *StreamError {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return &StreamError{Body: ErrorBody(map[string]any{"code": CodeEmptyFrame,
-			"message": "Provider stream returned an empty SSE data frame (keepalive with no payload)."}, 0), Header: header}
+			"message": "The provider's reply held an empty piece with nothing in it."}, 0), Header: header}
 	}
 	safe := redact.Text(strings.ToValidUTF8(raw, "�"), false, redact.Ends)
 	if len(safe) > streamTextLimit {
@@ -152,7 +151,7 @@ func ErrorBody(payload map[string]any, status int) map[string]any {
 		}
 	}
 	message := first(payload["message"], payload["error_description"], payload["error"])
-	message = cmp.Or(message, "Provider stream returned an error event.")
+	message = cmp.Or(message, "The provider sent an error in its reply.")
 	normalized := map[string]any{"message": message, "code": code}
 	for _, key := range []string{"request_id", "param", "type"} {
 		if v, ok := payload[key]; ok && v != nil && v != "" {
@@ -282,7 +281,7 @@ func (r Refused) Transport(ctx context.Context, err error) error {
 
 // Error of a reply that came back empty, with the message given
 func (r Refused) Empty(message string, err error) *provider.APIError {
-	failure := &provider.APIError{Provider: r.Route.Provider, Model: r.Model, Kind: provider.ErrEmptyResponse, Message: message, Err: err}
+	failure := &provider.APIError{Provider: r.Route.Provider, Model: r.Model, Kind: provider.ErrEmptyResponse, Message: message, Err: err, Own: true}
 	if r.Classify != nil {
 		r.Classify(failure)
 	}
@@ -298,11 +297,12 @@ func (r Refused) classify(status int, body string, header http.Header, err error
 		message: messageOf(strings.ToLower(raw), payload, body), code: strings.ToLower(errorCode(payload))}
 	kind := c.kind()
 	message := extracted(raw, payload)
+	own := watched(err)
 	if timeout, ok := Summary(err, r.Route.Provider); ok && status == 0 && !watched(err) {
-		message = timeout
+		message, own = timeout, true
 	}
 	if kind == provider.ErrAuth && !r.owns() {
-		message += " (endpoint: " + provider.BaseHost(r.Route.BaseURL) + ")"
+		message += ". The request went to " + provider.BaseHost(r.Route.BaseURL)
 	}
 	if r.Spec.RejectionHint != nil {
 		if hint := r.Spec.RejectionHint(status, r.Route.BaseURL, message); len(hint) > 0 {
@@ -310,7 +310,7 @@ func (r Refused) classify(status int, body string, header http.Header, err error
 		}
 	}
 	failure := &provider.APIError{Provider: r.Route.Provider, Model: r.Model, StatusCode: status, Message: message, Kind: kind, Err: err,
-		Body: payload, Type: fmt.Sprintf("%T", err), Code: errorCode(payload)}
+		Body: payload, Type: fmt.Sprintf("%T", err), Code: errorCode(payload), Own: own}
 	if after, ok := retryAfterValue(errorObject(payload)["retry_after"]); ok && after > 0 {
 		failure.RetryAfter = after
 	} else if after, ok := retryAfterValue(payload["retry_after"]); ok && after > 0 {
@@ -491,12 +491,10 @@ func watched(err error) bool {
 func Summary(err error, provider string) (string, bool) {
 	switch Phase(err) {
 	case PhaseConnect:
-		return "Connection to the provider timed out before it was established (check the base_url and network path)", true
+		return "The connection to the provider took too long to open. Check the provider's Base URL in /providers and your network", true
 	case PhaseRead:
-		key := strings.TrimSpace(provider)
-		key = cmp.Or(key, "<provider>")
-		return "Request timed out waiting for the provider to respond (if the model needs longer, raise providers." + key +
-			".request_timeout_seconds in /settings)", true
+		name := cmp.Or(strings.TrimSpace(provider), "the provider")
+		return "The provider took too long to answer. If the model needs longer, raise Request time limit for " + name + " in /providers", true
 	}
 	return "", false
 }
@@ -889,7 +887,7 @@ func (c *classing) byTransport() (provider.ErrorKind, bool) {
 		return provider.ErrNetwork, true
 	case c.status == 0 && c.has(disconnects):
 		return provider.ErrNetwork, true
-	case strings.Contains(c.message, "consecutive stale attempts") && strings.Contains(c.message, "aborting this call"):
+	case strings.Contains(c.message, "in a row, so icebath stopped asking"):
 		return provider.ErrNetwork, true
 	case unreached(c.err):
 		return provider.ErrNetwork, true

@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/internal/packages"
 	lspconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/lsp/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Ways a recipe installs its server
@@ -228,7 +229,7 @@ func (m *Manager) installRecipe(ctx context.Context, cfg *config.Config, key str
 	}
 	switch strategy {
 	case manualInstall:
-		m.installf(ctx, slog.LevelDebug, "[install] %s requires manual install (recipe=%s)", key, describe(r))
+		m.installf(ctx, slog.LevelDebug, "%s requires manual install (recipe=%s)", key, describe(r))
 		return "", nil
 	case npmInstall:
 		return m.installNode(ctx, cfg, r.pkg, name, r.extra, explicit)
@@ -237,7 +238,7 @@ func (m *Manager) installRecipe(ctx context.Context, cfg *config.Config, key str
 	case pipInstall:
 		return m.installPython(ctx, cfg, r.pkg, name, explicit)
 	}
-	m.installf(ctx, slog.LevelWarn, "[install] unknown strategy %q for %s", strategy, key)
+	m.installf(ctx, slog.LevelWarn, "There is no way to install %s that icebath knows, as its install method “%s” is unknown.", key, strategy)
 	return "", nil
 }
 
@@ -264,7 +265,7 @@ func (m *Manager) installf(ctx context.Context, level slog.Level, format string,
 		say(fmt.Sprintf(format, args...))
 		return
 	}
-	m.logf(level, format, args...)
+	m.logf(level, "[install] "+format, args...)
 }
 
 // Runs one installer child with the runner's environment, its output captured and no input, false after logging when it fails
@@ -278,12 +279,12 @@ func (m *Manager) run(ctx context.Context, runner *packages.Runner, pkg string, 
 	err := cmd.Run()
 	tool := runner.Name
 	if ctx.Err() == context.DeadlineExceeded {
-		m.installf(ctx, slog.LevelWarn, "[install] %s install errored for %s: command %q timed out after %d seconds", tool, pkg, cmd.Args, int(timeout/time.Second))
+		m.installf(ctx, slog.LevelWarn, "Installing %s with %s took longer than %s, so it was stopped.", pkg, tool, strs.Span(timeout))
 		return false
 	}
 	if err != nil {
 		if _, exited := errors.AsType[*exec.ExitError](err); !exited {
-			m.installf(ctx, slog.LevelWarn, "[install] %s install errored for %s: %s", tool, pkg, err)
+			m.installf(ctx, slog.LevelWarn, "Could not install %s with %s: %s.", pkg, tool, err)
 			return false
 		}
 		detail := strings.TrimSpace(strings.ToValidUTF8(stderr.String(), "\uFFFD"))
@@ -293,7 +294,7 @@ func (m *Manager) run(ctx context.Context, runner *packages.Runner, pkg string, 
 		if runes := []rune(detail); len(runes) > 500 {
 			detail = string(runes[:500])
 		}
-		m.installf(ctx, slog.LevelWarn, "[install] %s install failed for %s: %s", tool, pkg, detail)
+		m.installf(ctx, slog.LevelWarn, "Could not install %s with %s. It said: %s", pkg, tool, detail)
 		return false
 	}
 	return true
@@ -361,7 +362,8 @@ func (m *Manager) nodeManager(ctx context.Context, cfg *config.Config) string {
 		pm = "npm"
 	}
 	if _, ok := nodeArgs[pm]; !ok {
-		m.installf(ctx, slog.LevelWarn, "[install] %s=%q is not one of npm, pnpm, yarn; skipping install", lspconfig.PackageManager, pm)
+		m.installf(ctx, slog.LevelWarn, "The Node package manager is set to “%s”, which is not npm, pnpm or yarn, so nothing was installed. Choose one "+
+			"in /settings under Tools › Language servers › Node package manager.", pm)
 		return ""
 	}
 	return pm
@@ -417,7 +419,7 @@ func (m *Manager) installNode(ctx context.Context, cfg *config.Config, pkg, name
 	}
 	if tool == "" && pm == "npm" {
 		if _, err := m.packages.Ensure(ctx, cfg, packages.NPM, packages.Ensuring{Explicit: explicit}); err != nil {
-			m.installf(ctx, slog.LevelWarn, "[install] cannot install %s: managed npm unavailable (%s)", pkg, err)
+			m.installf(ctx, slog.LevelWarn, "Could not install %s, because npm could not be set up: %s", pkg, err)
 			return "", nil
 		}
 		if tool, err = m.nodeTool("npm"); err != nil {
@@ -425,8 +427,8 @@ func (m *Manager) installNode(ctx context.Context, cfg *config.Config, pkg, name
 		}
 	}
 	if tool == "" {
-		m.installf(ctx, slog.LevelWarn, "[install] cannot install %s: %s is %q but no usable %s was found (install it, or set %s: npm)", pkg,
-			lspconfig.PackageManager, pm, pm, lspconfig.PackageManager)
+		m.installf(ctx, slog.LevelWarn, "Could not install %s, because %s was not found. Install %s, or choose npm in /settings under "+
+			"Tools › Language servers › Node package manager.", pkg, pm, pm)
 		return "", nil
 	}
 	if _, err := m.binDir(cfg); err != nil {
@@ -434,14 +436,14 @@ func (m *Manager) installNode(ctx context.Context, cfg *config.Config, pkg, name
 	}
 	dir := m.dir(cfg)
 	args := append(append(nodeArgs[pm](dir), pkg), extra...)
-	m.installf(ctx, slog.LevelInfo, "[install] %s %s", pm, strings.Join(args, " "))
+	m.installf(ctx, slog.LevelInfo, "Running %s %s", pm, strings.Join(args, " "))
 	runner := &packages.Runner{Name: pm, Env: m.packages.EnvFor([]string{packages.NPM}, m.terminal.ChildEnv(cfg, nil))}
 	if !m.run(ctx, runner, pkg, 300*time.Second, tool, args...) {
 		return "", nil
 	}
 	if pm == "npm" {
 		if err := m.packages.RecordTree(dir); err != nil {
-			m.installf(ctx, slog.LevelDebug, "[install] %s could not be recorded for pm update --npm: %s", dir, err)
+			m.installf(ctx, slog.LevelDebug, "%s could not be recorded for pm update --npm: %s", dir, err)
 		}
 	}
 	for _, found := range candidates(filepath.Join(dir, "node_modules", ".bin", name)) {
@@ -453,7 +455,7 @@ func (m *Manager) installNode(ctx context.Context, cfg *config.Config, pkg, name
 		}
 		return m.link(cfg, found)
 	}
-	m.installf(ctx, slog.LevelWarn, "[install] %s install for %s succeeded but bin %s not found", pm, pkg, name)
+	m.installf(ctx, slog.LevelWarn, "%s installed %s, but its program %s was not found.", pm, pkg, name)
 	return "", nil
 }
 
@@ -461,14 +463,14 @@ func (m *Manager) installNode(ctx context.Context, cfg *config.Config, pkg, name
 func (m *Manager) installGo(ctx context.Context, cfg *config.Config, pkg, name string) (string, error) {
 	goBin := which("go")
 	if goBin == "" {
-		m.installf(ctx, slog.LevelInfo, "[install] cannot install %s: go not on PATH", pkg)
+		m.installf(ctx, slog.LevelInfo, "Could not install %s, because Go is not installed or not on your PATH.", pkg)
 		return "", nil
 	}
 	bin, err := m.binDir(cfg)
 	if err != nil {
 		return "", err
 	}
-	m.installf(ctx, slog.LevelInfo, "[install] go install %s (GOBIN=%s)", pkg, bin)
+	m.installf(ctx, slog.LevelInfo, "Running go install %s into %s", pkg, bin)
 	env := m.terminal.ChildEnv(cfg, nil)
 	env["GOBIN"] = bin
 	if !m.run(ctx, &packages.Runner{Name: "go", Env: env}, pkg, 600*time.Second, goBin, "install", pkg) {
@@ -481,7 +483,7 @@ func (m *Manager) installGo(ctx context.Context, cfg *config.Config, pkg, name s
 	if fsx.Exists(path) {
 		return path, nil
 	}
-	m.installf(ctx, slog.LevelWarn, "[install] go install for %s succeeded but bin %s not found", pkg, name)
+	m.installf(ctx, slog.LevelWarn, "Go installed %s, but its program %s was not found.", pkg, name)
 	return "", nil
 }
 
@@ -489,7 +491,7 @@ func (m *Manager) installGo(ctx context.Context, cfg *config.Config, pkg, name s
 func (m *Manager) installPython(ctx context.Context, cfg *config.Config, pkg, name string, explicit bool) (string, error) {
 	if _, err := m.packages.Environment(ctx, cfg, packages.EnvironmentOptions{Name: "lsp-" + name, Requirements: []string{pkg}, Explicit: explicit,
 		Timeout: 300 * time.Second, Executable: name}); err != nil {
-		m.installf(ctx, slog.LevelWarn, "[install] Python server install failed for %s: %s", pkg, err)
+		m.installf(ctx, slog.LevelWarn, "Could not install %s: %s", pkg, err)
 		return "", nil
 	}
 	path, found, err := m.packages.PythonTool(cfg, "lsp-"+name, name)
@@ -506,8 +508,8 @@ func (m *Manager) warnings(cfg *config.Config) ([]string, error) {
 		return nil, err
 	}
 	if bash != "" && which("shellcheck") == "" {
-		return []string{"bash-language-server is installed but shellcheck is missing — diagnostics will be empty (apt: shellcheck, brew: shellcheck, " +
-			"scoop: shellcheck)."}, nil
+		return []string{"bash-language-server is installed, but shellcheck is missing, so shell scripts get no checks. Install shellcheck with " +
+			"apt, brew or scoop."}, nil
 	}
 	return nil, nil
 }

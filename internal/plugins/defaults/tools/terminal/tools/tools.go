@@ -17,6 +17,9 @@ import (
 
 const toolset = "terminal"
 
+// Heading the Tools screen lists the terminal tools under
+const group = "Terminal"
+
 type registrant struct {
 	host *terminal.Terminal
 	// Approvals and command guards every tool shares
@@ -44,6 +47,8 @@ func (r *registrant) Tools() []tools.Def {
 			Name:           "terminal",
 			Toolset:        toolset,
 			Title:          "Shell",
+			About:          "Run a command in the terminal",
+			Group:          group,
 			Icon:           tools.IconShell,
 			Subject:        "command",
 			Risks:          approvals.Kinds(),
@@ -59,6 +64,8 @@ func (r *registrant) Tools() []tools.Def {
 			Name:    "process_manage",
 			Toolset: toolset,
 			Title:   "Processes",
+			About:   "Check on, answer or stop commands running in the background",
+			Group:   group,
 			Icon:    tools.IconOutput,
 			Subject: "session_id",
 			Schema:  processSchema,

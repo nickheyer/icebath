@@ -6,13 +6,15 @@ import (
 )
 
 func Register(cfg *config.Config) {
-	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.TTS, Title: "KittenTTS speech", About: "A small voice model of about 25 MB that runs on this machine",
-		Settings: []config.Setting{
-			{Key: CleanText, Title: "Clean text", About: "Tidy text before KittenTTS speaks it", Default: true},
-			{Key: Model, Title: "KittenTTS model", About: "On-device speech model used with KittenTTS", Default: DefaultModel},
-			{Key: Speed, Title: "KittenTTS speed", About: "How fast KittenTTS speaks, 1 being normal; 0 uses Speech speed", Default: 0.0},
-			{Key: Voice, Title: "KittenTTS voice", About: "Voice used with KittenTTS", Default: DefaultVoice},
-			{Key: MaxTextLength, Title: "KittenTTS text limit", About: "Most characters one KittenTTS request takes, longer text split into several; 0 uses 2000",
-				Default: 0},
+	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.TTS, Title: "KittenTTS", About: "A small voice model that runs on this computer",
+		Order: 100, Settings: []config.Setting{
+			{Key: Voice, Title: "Voice", About: "The KittenTTS voice that speaks.", Default: DefaultVoice},
+			{Key: Model, Title: "Model", About: "The KittenTTS model that speaks.", Default: DefaultModel},
+			{Key: Speed, Title: "Speed", About: "The speed the KittenTTS voice speaks at.",
+				Help: "1 is normal speed. The general speed is Speed under Text to speech.", Default: 0.0, Zero: "The general speed"},
+			{Key: CleanText, Title: "Tidy text", About: "Tidy the text before KittenTTS speaks it.", Default: true},
+			{Key: MaxTextLength, Title: "Text limit", About: "The most characters one request to KittenTTS takes.",
+				Help: "Longer text is split into several requests.", Default: 0, Zero: "2,000 characters", Counts: "characters", Least: config.Num(1),
+				Advanced: true},
 		}}})
 }

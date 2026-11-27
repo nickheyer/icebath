@@ -17,7 +17,7 @@ func (specs) Specs() []provider.Spec {
 		Name:               deepinfraconfig.Name,
 		Shape:              shape,
 		DisplayName:        deepinfraconfig.Title,
-		Description:        "100+ open models, pay per use",
+		Description:        "Open models hosted by DeepInfra, with an API key paid by use",
 		SignupURL:          "https://deepinfra.com/dash/api_keys",
 		BaseURL:            base,
 		BaseURLEnv:         deepinfraconfig.BaseURLEnv,

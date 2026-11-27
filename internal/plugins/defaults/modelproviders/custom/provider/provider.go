@@ -20,16 +20,17 @@ func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:        customconfig.Name,
 		DisplayName: customconfig.Title,
-		Description: "Server of your own that speaks a supported API",
+		Description: "A model server you run or rent, at an address you give",
 		Mode:        provider.ModeChatCompletions,
 		Auth:        provider.AuthNone,
 		Local:       true,
 		Settings: []config.Setting{
-			{Key: customconfig.KeyEnv, Title: "API key variable", About: "Environment variable to read the API key from when the account keeps none", Default: ""},
-			{Key: providerconfig.CatalogProvider, Title: "Model details from", About: "Kind of provider, or provider of the models.dev registry, " +
-				"whose details such as limits and prices its models take", Default: ""},
-			{Key: customconfig.OllamaNumCtx, Title: "Ollama context", About: "Context size an Ollama server is asked for on every request, in tokens; " +
-				"0 uses the size the server reports", Default: 0},
+			{Key: customconfig.KeyEnv, Title: "Key variable", About: "The environment variable that holds the API key.",
+				Help: "Read when the account keeps no API key.", Default: "", Advanced: true},
+			{Key: providerconfig.CatalogProvider, Title: "Model details from", About: "The provider whose details, such as limits and prices, these models take.",
+				Help: "A kind of provider, or a provider's name in the models.dev registry.", Default: "", Advanced: true},
+			{Key: customconfig.OllamaNumCtx, Title: "Ollama context size", About: "The context size an Ollama server is asked for on every request.",
+				Default: 0, Zero: "The server's own", Counts: "tokens", Advanced: true},
 		},
 		Billing: []provider.Billing{
 			{Label: "Groq", URL: "https://console.groq.com/settings/billing", Hosts: []string{"api.groq.com"}},

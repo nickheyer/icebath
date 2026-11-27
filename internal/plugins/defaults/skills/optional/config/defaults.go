@@ -9,10 +9,12 @@ func Register(cfg *config.Config) {
 	cfg.Register(config.Sections{{
 		Key:    Key,
 		Parent: skillsconfig.Key,
-		Title:  "Official optional skills",
-		About:  "The heavier skills icebath ships for installing on request from the hub's official source",
+		Title:  "Optional skills",
+		About:  "Larger skills from icebath that you install when you want",
+		Order:  50,
 		Settings: []config.Setting{
-			{Key: Path, Title: "Source folder", About: "Folder to offer official optional skills from instead of the copy built into icebath", Default: "", Env: []string{"ICEBATH_OPTIONAL_SKILLS"}},
+			{Key: Path, Title: "Source folder", About: "The folder that optional skills are offered from.", Default: "", Zero: "Built-in copy",
+				Env: []string{"ICEBATH_OPTIONAL_SKILLS"}, Advanced: true},
 		},
 	}})
 }

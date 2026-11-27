@@ -26,6 +26,7 @@ import (
 	"github.com/nickheyer/icebath/internal/tools"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -238,7 +239,7 @@ func (x *executor) inTurn(ctx context.Context, calls []*pending, last bool) erro
 	for i, p := range calls {
 		final := last && i == len(calls)-1
 		if ctx.Err() != nil {
-			x.a.tell(x.r, fmt.Sprintf("⚡ Interrupt: skipping %d tool call(s)", len(calls)-i))
+			x.a.tell(x.r, fmt.Sprintf("The reply was stopped, so %s did not run.", strs.Count(len(calls)-i, "tool call")))
 			for j, rest := range calls[i:] {
 				// Calls cut off before any ran were cancelled; those after one that ran were never started
 				text := fmt.Sprintf("[Tool execution cancelled — %s was skipped. %s]", toolName(rest), stopWording)

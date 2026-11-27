@@ -19,7 +19,7 @@ var Pasted = credentials.SignIn{Spec: anthropicconfig.Name, Title: "Setup token 
 var SetupToken = credentials.SignIn{Spec: anthropicconfig.Name, Title: "Setup token from claude setup-token", Type: setupToken, Run: run}
 
 // Claude Code's own sign-in on this computer, used as it renews it
-var ClaudeCode = credentials.SignIn{Spec: anthropicconfig.Name, Title: "Claude Code login on this computer", Type: "claude-code", Run: borrowed}
+var ClaudeCode = credentials.SignIn{Spec: anthropicconfig.Name, Title: "Claude Code sign-in on this computer", Type: "claude-code", Run: borrowed}
 
 // Name auth add --type takes the setup token by
 const setupToken = "setup-token"
@@ -60,7 +60,7 @@ func pasted(p *credentials.Prompter) (credentials.Signed, error) {
 		return credentials.Signed{}, credentials.ErrCancelled
 	}
 	if token = strings.TrimSpace(token); token == "" {
-		return credentials.Signed{}, errors.New("No token entered.")
+		return credentials.Signed{}, errors.New("No token was entered, so nothing was added.")
 	}
 	return tokenFields(token), nil
 }
@@ -77,7 +77,7 @@ func run(p *credentials.Prompter) (credentials.Signed, error) {
 		if p.Ctx.Err() != nil {
 			return credentials.Signed{}, credentials.ErrCancelled
 		}
-		p.Say("claude setup-token left no token behind.")
+		p.Say("claude setup-token did not leave a token behind, so paste the one it printed.")
 		return pasted(p)
 	}
 	return tokenFields(token), nil
@@ -86,7 +86,7 @@ func run(p *credentials.Prompter) (credentials.Signed, error) {
 // Clears what the account keeps, so its credential is the one Claude Code keeps on this computer
 func borrowed(p *credentials.Prompter) (credentials.Signed, error) {
 	if ReadClaudeCodeCredentials(PoolEnv{Ctx: p.Ctx}) == nil {
-		return credentials.Signed{}, errors.New("No Claude Code login was found on this computer. Sign in with `claude` first, or turn on adopt_external_logins.")
+		return credentials.Signed{}, errors.New("No Claude Code sign-in was found on this computer. Sign in with `claude` first, then try again.")
 	}
 	return credentials.Signed{Fields: map[string]any{anthropicconfig.Token: nil, anthropicconfig.OAuthToken: nil, anthropicconfig.APIKey: nil,
 		anthropicconfig.RefreshToken: nil, anthropicconfig.TokenExpires: nil}}, nil

@@ -11,11 +11,18 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: terminalconfig.Key,
 		Title:  "Modal",
-		About:  "Commands run in a serverless Modal cloud sandbox, one per session",
+		About:  "A Modal cloud sandbox for each session",
+		Order:  40,
 		Settings: []config.Setting{
-			{Key: Image, Title: "Modal image", About: "Image Modal sandboxes start from, a registry reference or an im- image id; the default builds icebath's own sandbox image on Modal", Default: sandbox.Image, Env: []string{"TERMINAL_MODAL_IMAGE"}},
-			{Key: TokenID, Title: "Modal token ID", About: "Token ID of your Modal account, from https://modal.com/settings; empty uses ~/.modal.toml", Default: "", Env: []string{"MODAL_TOKEN_ID"}, Secret: true},
-			{Key: TokenSecret, Title: "Modal token secret", About: "Token secret of your Modal account, from https://modal.com/settings; empty uses ~/.modal.toml", Default: "", Env: []string{"MODAL_TOKEN_SECRET"}, Secret: true},
+			{Key: TokenID, Title: "Token ID", About: "Your Modal token ID.",
+				Help: "Find the token at modal.com/settings. When none is kept here, icebath reads ~/.modal.toml.", Default: "", Env: []string{"MODAL_TOKEN_ID"},
+				Secret: true},
+			{Key: TokenSecret, Title: "Token secret", About: "Your Modal token secret.",
+				Help: "Find the token at modal.com/settings. When none is kept here, icebath reads ~/.modal.toml.", Default: "",
+				Env: []string{"MODAL_TOKEN_SECRET"}, Secret: true},
+			{Key: Image, Title: "Image", About: "The image that Modal sandboxes start from.",
+				Help: "A registry image or a Modal image ID that starts with im-. " +
+					"Left at the default, icebath builds its own image on Modal.", Default: sandbox.Image, Env: []string{"TERMINAL_MODAL_IMAGE"}},
 		},
 	}})
 }

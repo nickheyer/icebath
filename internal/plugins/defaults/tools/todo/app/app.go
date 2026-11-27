@@ -48,29 +48,29 @@ func line(call toolsapp.Call) string {
 	if call.Result == "" {
 		switch {
 		case !written:
-			return "reading task list"
+			return "reading the task list"
 		case merge:
-			return fmt.Sprintf("updating %d task(s)", count)
+			return "updating " + render.Count(count, "task")
 		}
-		return fmt.Sprintf("planning %d task(s)", count)
+		return "planning " + render.Count(count, "task")
 	}
 	var result todotools.Result
 	json.Unmarshal([]byte(call.Result), &result)
 	total, done := result.Summary.Total, result.Summary.Completed
-	progress := fmt.Sprintf("%d/%d task(s)", done, total)
+	progress := fmt.Sprintf("%d of %s done", done, render.Count(total, "task"))
 	switch {
 	case !written && total > 0:
 		return progress
 	case !written:
-		return "reading tasks"
+		return "no tasks yet"
 	case merge && total > 0 && done > 0:
-		return fmt.Sprintf("update %d/%d ✓", done, total)
+		return "updated, " + progress
 	case merge:
-		return fmt.Sprintf("update %d task(s)", count)
+		return "updated " + render.Count(count, "task")
 	case total > 0 && done > 0:
 		return progress
 	}
-	return fmt.Sprintf("%d task(s)", count)
+	return render.Count(count, "task")
 }
 
 // The list as a checklist under a head counting the items still open, folded once every item is settled and the reply is over; a reply
@@ -87,17 +87,23 @@ func checklist(call toolsapp.Call, width int, look theme.Theme) *toolsapp.Shown 
 		}
 	}
 	settled := open == 0
-	head := render.Heading("Tasks", look) + render.Dim(fmt.Sprintf("  %d open of %d", open, len(result.Todos)), look)
+	head := render.Heading("Tasks", look) + render.Dim(fmt.Sprintf("  %d of %d open", open, len(result.Todos)), look)
 	if call.Ended && open > 0 {
-		still := "still pending/in_progress"
-		if open == 1 {
-			still = "still pending"
-		}
-		head += render.Dim(fmt.Sprintf(" · incomplete · %d %s", open, still), look)
+		head += render.Dim(" · the reply ended with "+render.Count(open, "task")+" not done", look)
 	}
 	shown := &toolsapp.Shown{Head: head, Open: !call.Ended || !settled}
 	if settled {
-		shown.Folded = render.Good(look.Glyphs.Check+" "+fmt.Sprintf("%d tasks done", len(result.Todos)), look)
+		dropped := 0
+		for _, item := range result.Todos {
+			if item.Status == "cancelled" {
+				dropped++
+			}
+		}
+		said := render.Count(len(result.Todos), "task") + " done"
+		if dropped > 0 {
+			said = fmt.Sprintf("%d of %s done, %d dropped", len(result.Todos)-dropped, render.Count(len(result.Todos), "task"), dropped)
+		}
+		shown.Folded = render.Good(look.Glyphs.Check+" "+said, look)
 	}
 	for _, row := range tree(result.Todos) {
 		indent := strings.Repeat("  ", min(row.depth, indents))

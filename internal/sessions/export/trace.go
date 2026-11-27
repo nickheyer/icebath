@@ -74,7 +74,7 @@ func Trace(t *sessionsv1.Transcript, mask bool) ([]byte, error) {
 				if strings.TrimSpace(arguments) != "" {
 					if err := json.Unmarshal([]byte(arguments), &input); err != nil {
 						if mask && strings.TrimSpace(call.GetArguments()) != "" && json.Valid([]byte(call.GetArguments())) {
-							return nil, errors.New("Redaction failed; refusing to export unredacted trace content.")
+							return nil, errors.New("Hiding the secrets failed, so the trace was not exported, to keep them out of it.")
 						}
 						input = map[string]any{"_raw": arguments}
 					}
@@ -135,22 +135,23 @@ func hfToken() string {
 func Upload(ctx context.Context, session string, trace []byte, public bool) string {
 	token := hfToken()
 	if token == "" {
-		return "Can't upload — no Hugging Face token is available. To set it up:\n\n1. Create a token with WRITE access at " +
-			"https://huggingface.co/settings/tokens\n   (New token -> type \"Write\" -> copy it).\n2. Add it to your environment as HF_TOKEN:\n     " +
-			"HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx\n3. Run `icebath sessions export --format trace --upload` again."
+		return "✗ Nothing was uploaded, because there is no Hugging Face token. To set one up:\n\n" +
+			"1. Make a token that may write at https://huggingface.co/settings/tokens. Choose New token, then the type Write, and copy it.\n" +
+			"2. Export it in your shell as HF_TOKEN:\n     export HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx\n" +
+			"3. Run icebath sessions export --format trace --upload again."
 	}
 	if len(trace) == 0 {
-		return "No transcript content to upload for this session."
+		return "This session has no messages to upload."
 	}
 	hub := &hfClient{endpoint: strings.TrimRight(cmp.Or(os.Getenv("HF_ENDPOINT"), "https://huggingface.co"), "/"), token: token}
 	var who struct {
 		Name string `json:"name"`
 	}
 	if err := hub.call(ctx, "GET", "/api/whoami-v2", nil, &who); err != nil {
-		return "Your Hugging Face token was rejected (whoami failed). Make sure it has WRITE access and isn't expired."
+		return "✗ Hugging Face refused your token. Check that it may write and has not expired."
 	}
 	if who.Name == "" {
-		return "Could not resolve your Hugging Face username from the token."
+		return "✗ Hugging Face did not say which user the token belongs to, so nothing was uploaded."
 	}
 	repo := who.Name + "/icebath-traces"
 	visibility := "private"
@@ -159,18 +160,19 @@ func Upload(ctx context.Context, session string, trace []byte, public bool) stri
 	}
 	if err := hub.createRepo(ctx, who.Name, visibility); err != nil {
 		if hub.call(ctx, "GET", "/api/datasets/"+repo, nil, nil) != nil {
-			return fmt.Sprintf("Could not create/access dataset %s: %v", repo, err)
+			return fmt.Sprintf("✗ The dataset %s could not be made or opened: %s", repo, strings.TrimSuffix(err.Error(), ".")+".")
 		}
 	}
 	path := "sessions/" + session + ".jsonl"
 	skipped, err := hub.upload(ctx, repo, path, session, trace)
 	if err != nil {
-		return "Upload to Hugging Face failed: " + err.Error()
+		return "✗ The upload to Hugging Face failed: " + strings.TrimSuffix(err.Error(), ".") + "."
 	}
 	if skipped {
-		return "No files have been modified since last commit. Skipping to prevent empty commit."
+		return "The trace on Hugging Face is the same as this one already, so nothing was uploaded."
 	}
-	return fmt.Sprintf("Uploaded -> %s/datasets/%s/blob/main/%s\nView in the trace viewer: %s/datasets/%s", hub.endpoint, repo, path, hub.endpoint, repo)
+	return fmt.Sprintf("✓ Uploaded the trace to %s/datasets/%s/blob/main/%s.\nSee it in the trace viewer at %s/datasets/%s.", hub.endpoint, repo, path,
+		hub.endpoint, repo)
 }
 
 type hfClient struct {

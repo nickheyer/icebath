@@ -10,8 +10,6 @@ const (
 	ArchiveMaxFile = Key + ".archive_max_file_mb"
 	// Days the archive of a removed tree is kept
 	ArchiveRetention = Key + ".archive_retention_days"
-	// Days the dependency installs of a checkout that is gone are kept
-	InstallStateRetention = Key + ".install_state_retention_days"
 	// GB every tree together may take before the idle ones are archived
 	MaxTotal = Key + ".max_total_gb"
 	// Every launch of the app runs its sessions in a git worktree of its own

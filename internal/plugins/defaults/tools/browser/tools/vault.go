@@ -338,8 +338,8 @@ func (v *vaultCall) unlock(name string) string {
 		return vaultJSON(vaultFail("error_type", "unlock_unavailable", "error", login.Title+" is locked and this session cannot prompt for the master "+
 			"password (headless/cron/API). Unlock it from an interactive Icebath session first."))
 	}
-	answers, ok := v.ask(tools.Question{ID: "master", Text: "Unlock " + login.Title + ": master password (used for this session only, never sent to the " +
-		"model)", Secret: true})
+	answers, ok := v.ask(tools.Question{ID: "master", Text: "The master password of " + login.Title + ", to unlock it for this session. The agent " +
+		"never sees it.", Secret: true})
 	master := answers["master"]
 	if !ok || master == "" {
 		return vaultJSON(vaultFail("error_type", "unlock_cancelled", "error", "The user declined to unlock "+login.Title+"."))
@@ -372,9 +372,10 @@ func (v *vaultCall) saveLogin(label string) string {
 	}
 	site := cmp.Or(strings.TrimSpace(label), host(origin))
 	answers, ok := v.ask(
-		tools.Question{ID: "identifier", Text: "Save a login for " + host(origin) + " — email, phone or username (leave empty to not save)"},
-		tools.Question{ID: "password", Text: "Password for " + host(origin) + " (saved in the vault for " + origin + ", never sent to the model)",
-			Secret: true})
+		tools.Question{ID: "identifier", Text: "The email, phone number or username you sign in to " + host(origin) + " with. Leave it empty to " +
+			"save nothing."},
+		tools.Question{ID: "password", Text: "Your password at " + host(origin) + ". It is saved in the vault for " + origin + ", and the agent " +
+			"never sees it.", Secret: true})
 	if !ok || answers["password"] == "" || answers["identifier"] == "" {
 		clear(answers)
 		return vaultJSON(vaultFail("error_type", "save_declined", "error", "The user chose not to save a login for this site. Do not ask again this turn."))
@@ -512,7 +513,7 @@ func (v *vaultCall) enterCode(handle string) string {
 		return vaultJSON(vaultFail("error_type", "prompt_unavailable", "error", site+" asks for a one-time code and this session cannot ask the user "+
 			"(headless/cron/API). Save an authenticator key for this login so codes can be generated automatically."))
 	}
-	answers, ok := v.ask(tools.Question{ID: "code", Text: site + " asks for a one-time code: enter it (never sent to the model)", Secret: true})
+	answers, ok := v.ask(tools.Question{ID: "code", Text: site + " asks for a one-time code. Enter it here, and the agent never sees it.", Secret: true})
 	code := strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(answers["code"]), " ", ""), "-", "")
 	clear(answers)
 	if !ok || code == "" {
@@ -677,9 +678,9 @@ func (v *vaultCall) confirmPayment(label, origin string) bool {
 	if v.call.Env.Gate == nil {
 		return false
 	}
-	return v.call.Env.Gate(v.ctx, tools.Gate{Key: "vault-payment", Description: "Fill payment card '" + label + "' on " + origin,
-		Target: "The agent wants to enter your saved card details into this checkout page. The card number and CVC never enter the conversation. " +
-			"Approve only if you intend to pay here.", Strict: true, Noun: "payment card fill",
+	return v.call.Env.Gate(v.ctx, tools.Gate{Key: "vault-payment", Description: "Fill your card " + label + " into " + origin,
+		Target: "The agent wants to fill your saved card into this checkout page, and it never sees the card number or the CVC. Allow it only if " +
+			"you mean to pay here.", Strict: true, Noun: "payment card fill",
 		Unanswered: "The user did not confirm filling this payment card."}) == nil
 }
 

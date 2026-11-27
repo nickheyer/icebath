@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -28,7 +30,12 @@ type Item struct {
 	Title  string
 	Detail string
 	Keys   string
-	Run    func() tea.Cmd
+	// Heading the row is listed under while nothing is typed, the rows of one heading coming together. Typed text finds the row by the
+	// heading too. No headings show when no row names one
+	Group string
+	// Second listing of a row, as under a heading of the rows used last: left out once text is typed, and out of the count
+	Again bool
+	Run   func() tea.Cmd
 	// Leaves the palette open when picked, for a row that changes what the palette shows
 	Stay bool
 }
@@ -63,6 +70,14 @@ type scored struct {
 	hits  []int
 }
 
+// One line of the sheet: a match, the heading of a group, or the gap above a heading
+type line struct {
+	// Match the line shows, -1 for a heading or a gap
+	match int
+	// Heading the line shows, empty for a match or a gap
+	head string
+}
+
 // Fuzzy picker typed into from the bar field with its matches hanging below, a line of text without items
 type Palette struct {
 	theme theme.Theme
@@ -71,7 +86,11 @@ type Palette struct {
 	input   *field.Field
 	matches []scored
 	sel     int
-	// First match row shown, kept so the list scrolls only when the selection leaves it or the wheel turns
+	// Lines of the sheet, the matches with the headings and gaps between their groups
+	lines []line
+	// Text the matches were last made for: other text puts the selection back on the first match
+	asked string
+	// First line shown, kept so the list scrolls only when the selection leaves it or the wheel turns
 	top  int
 	w    int
 	rows int
@@ -118,7 +137,7 @@ func NewPrompt(t theme.Theme, placeholder, value string, submit func(text string
 
 // Glides the highlight toward the selected row, jumping there when motion is off
 func (p *Palette) Animate(dt float64) bool {
-	p.hl.Set(float64(p.sel - p.top))
+	p.hl.Set(float64(p.lineOf(p.sel) - p.top))
 	if dt <= 0 {
 		changed := p.glide || p.hl.Pos != p.hl.Target
 		p.hl.Snap()
@@ -132,9 +151,30 @@ func (p *Palette) Animate(dt float64) bool {
 // Row the highlight is painted on
 func (p *Palette) highlightRow() int {
 	if !p.glide {
-		return p.sel - p.top
+		return p.lineOf(p.sel) - p.top
 	}
 	return int(math.Round(p.hl.Pos))
+}
+
+// Line the match is shown on, the match itself while no heading is
+func (p *Palette) lineOf(match int) int {
+	if len(p.lines) == len(p.matches) {
+		return match
+	}
+	for at, l := range p.lines {
+		if l.match == match {
+			return at
+		}
+	}
+	return 0
+}
+
+// Match on the line, false for a heading, a gap and a line past the last
+func (p *Palette) matchAt(at int) (int, bool) {
+	if at < 0 || at >= len(p.lines) || p.lines[at].match < 0 {
+		return 0, false
+	}
+	return p.lines[at].match, true
 }
 
 func (p *Palette) Title() string { return "" }
@@ -217,7 +257,16 @@ func (p *Palette) Status() string {
 	if len(p.items) == 0 || p.ask != nil {
 		return ""
 	}
-	above, below := p.top, max(len(p.matches)-p.top-p.limit(), 0)
+	above, below := 0, 0
+	for at, l := range p.lines {
+		switch {
+		case l.match < 0:
+		case at < p.top:
+			above++
+		case at >= p.top+p.limit():
+			below++
+		}
+	}
 	if above == 0 && below == 0 {
 		return ""
 	}
@@ -233,18 +282,78 @@ func (p *Palette) Matches() []Item {
 	return out
 }
 
-// Rows the sheet under the field wants, the matches and the notes under them, none for a prompt that lives in the field alone
+// Rows the sheet under the field wants, the matches, the detail of the lit row where the rows leave theirs out, and the notes under
+// them, none for a prompt that lives in the field alone
 func (p *Palette) Rows() int {
 	notes := len(p.notes())
 	if len(p.items) == 0 || p.ask != nil {
 		return notes
 	}
-	return max(len(p.matches), 1) + notes
+	return max(len(p.lines), 1) + p.under() + notes
 }
 
-// Matches out of the items
+// Tells the palette the columns its rows get, before its rows are counted
+func (p *Palette) Measure(w int) { p.w = w }
+
+// Widest the titles of the rows that carry a detail run, where the details start, held under the widest a name column grows
+func (p *Palette) names() int {
+	names := 0
+	for _, it := range p.items {
+		if it.Detail != "" {
+			names = max(names, ansi.StringWidth(it.Title))
+		}
+	}
+	return min(names, paletteNames)
+}
+
+// Columns a row takes to show its title, its detail past the name column and its keys whole
+func rowWidth(it Item, names int) int {
+	w := ansi.StringWidth(it.Title)
+	if it.Detail != "" {
+		w = max(w, names) + 2 + ansi.StringWidth(it.Detail)
+	}
+	if it.Keys != "" {
+		w += 2 + ansi.StringWidth(it.Keys)
+	}
+	return w + 2
+}
+
+// Columns the rows want so that every one of them shows whole, whatever is typed
+func (p *Palette) Wants() int {
+	names, want := p.names(), 0
+	for _, it := range p.items {
+		want = max(want, rowWidth(it, names))
+	}
+	return want
+}
+
+// Reports whether the rows leave their details out because one of them could not show its own whole: a detail is whole or gone, and
+// the one of the lit row is then said under the rows
+func (p *Palette) terse() bool {
+	return p.w > 0 && p.Wants() > p.w
+}
+
+// Lines under the rows the detail of the lit row is said on where the rows leave theirs out: as many as the longest one wraps to, so
+// the sheet keeps its height as the selection moves
+func (p *Palette) under() int {
+	if !p.terse() {
+		return 0
+	}
+	lines := 0
+	for _, it := range p.items {
+		if it.Detail != "" {
+			lines = max(lines, len(strings.Split(ansi.Wordwrap(it.Detail, max(p.w-2, 1), ""), "\n")))
+		}
+	}
+	return lines
+}
+
+// How many rows the typed text found, nothing while none is typed
 func (p *Palette) Tally() string {
-	return strconv.Itoa(len(p.matches)) + "/" + strconv.Itoa(len(p.items))
+	if strings.TrimSpace(p.Query()) == "" {
+		return ""
+	}
+	return strconv.Itoa(len(p.matches)) + " found"
 }
 
 // Query in w columns scrolled to keep the caret in view, the placeholder while empty and the question while one is asked, with the caret column
@@ -270,7 +379,7 @@ func (p *Palette) Input(w int, bg color.Color) (string, int) {
 }
 
 // Scores a query against a text and reports the matched positions, false when the text does not hold it. Each word of the query must run
-// through the text letter by letter, a letter that does not follow the one before it having to start a word, so "wfl" finds "Window: focus
+// through the text letter by letter, a letter that does not follow the one before it having to start a word, so "wfl" finds "Windows Focus
 // left" and a few letters scattered through a sentence find nothing
 func fuzzy(query, text string) (int, []int, bool) {
 	t := []rune(strings.ToLower(text))
@@ -323,7 +432,11 @@ func match(q, t []rune) (int, []int) {
 
 func (p *Palette) filter() {
 	p.matches = p.matches[:0]
+	typed := strings.TrimSpace(p.Query()) != ""
 	for _, it := range p.items {
+		if typed && it.Again {
+			continue
+		}
 		if p.Filter != nil {
 			if p.Filter(p.Query(), it) {
 				p.matches = append(p.matches, scored{item: it})
@@ -331,6 +444,17 @@ func (p *Palette) filter() {
 			continue
 		}
 		s, hits, ok := fuzzy(p.Query(), it.Title)
+		// Words of the heading find the row as well, under every row found by its title alone
+		if lead := []rune(it.Group + " "); !ok && it.Group != "" {
+			if led, at, found := fuzzy(p.Query(), string(lead)+it.Title); found {
+				s, ok = led-500, true
+				for _, h := range at {
+					if h >= len(lead) {
+						hits = append(hits, h-len(lead))
+					}
+				}
+			}
+		}
 		// A title that is the query, or starts with it, leads every looser match
 		switch title, q := strings.ToLower(it.Title), strings.ToLower(strings.TrimSpace(p.Query())); {
 		case q == "":
@@ -352,10 +476,31 @@ func (p *Palette) filter() {
 	if p.Query() != "" {
 		sort.SliceStable(p.matches, func(i, j int) bool { return p.matches[i].score > p.matches[j].score })
 	}
+	// The best match of other text is the first, wherever the selection was
+	if p.Query() != p.asked {
+		p.asked, p.sel, p.top = p.Query(), 0, 0
+	}
 	if p.sel >= len(p.matches) {
 		p.sel = max(0, len(p.matches)-1)
 	}
+	p.arrange()
 	p.reveal()
+}
+
+// Lays the matches out as lines, one each, with a heading over every group and a gap between groups while nothing is typed and a row
+// names a heading
+func (p *Palette) arrange() {
+	p.lines = p.lines[:0]
+	grouped := strings.TrimSpace(p.Query()) == "" && slices.ContainsFunc(p.matches, func(m scored) bool { return m.item.Group != "" })
+	for i, m := range p.matches {
+		if grouped && (i == 0 || m.item.Group != p.matches[i-1].item.Group) {
+			if i > 0 {
+				p.lines = append(p.lines, line{match: -1})
+			}
+			p.lines = append(p.lines, line{match: -1, head: m.item.Group})
+		}
+		p.lines = append(p.lines, line{match: i})
+	}
 }
 
 func (p *Palette) Update(msg tea.Msg) (Card, tea.Cmd) {
@@ -377,12 +522,12 @@ func (p *Palette) Update(msg tea.Msg) (Card, tea.Cmd) {
 			return p, nil
 		}
 		if msg.Button == tea.MouseLeft && p.onRow(msg.Y) {
-			p.sel = p.top + msg.Y
+			p.sel, _ = p.matchAt(p.top + msg.Y)
 			return p, p.pick()
 		}
 	case tea.MouseMotionMsg:
 		if !p.held() && msg.Button == tea.MouseNone && msg.X >= 0 && msg.X < p.w && p.onRow(msg.Y) {
-			p.sel = p.top + msg.Y
+			p.sel, _ = p.matchAt(p.top + msg.Y)
 		}
 	case tea.MouseWheelMsg:
 		if p.held() {
@@ -451,33 +596,56 @@ func (p *Palette) move(d int) {
 
 // Reports whether content row y shows a match
 func (p *Palette) onRow(y int) bool {
-	return y >= 0 && y < p.limit() && p.top+y < len(p.matches)
+	_, ok := p.matchAt(p.top + y)
+	return y >= 0 && y < p.limit() && ok
 }
 
-// Scrolls the list by d rows under a still pointer at row y, the highlight staying on the row under it
+// Scrolls the list by d rows under a still pointer at row y, the highlight staying on the row under it, else on the nearest match in view
 func (p *Palette) scroll(d, y int) {
 	if len(p.matches) == 0 {
 		return
 	}
 	limit := p.limit()
-	p.top = min(max(p.top+d, 0), max(len(p.matches)-limit, 0))
+	p.top = min(max(p.top+d, 0), max(len(p.lines)-limit, 0))
 	if p.onRow(y) {
-		p.sel = p.top + y
+		p.sel, _ = p.matchAt(p.top + y)
 		return
 	}
-	p.sel = min(max(p.sel, p.top), min(p.top+limit, len(p.matches))-1)
+	at, end := p.lineOf(p.sel), min(p.top+limit, len(p.lines))
+	switch {
+	case at < p.top:
+		for at = p.top; at < end; at++ {
+			if match, ok := p.matchAt(at); ok {
+				p.sel = match
+				return
+			}
+		}
+	case at >= end:
+		for at = end - 1; at >= p.top; at-- {
+			if match, ok := p.matchAt(at); ok {
+				p.sel = match
+				return
+			}
+		}
+	}
 }
 
-// Scrolls the least that keeps the selection in view within the rows the matches fill
+// Scrolls the least that keeps the selection in view within the lines the matches fill, the heading over the first row of a group
+// coming into view with it
 func (p *Palette) reveal() {
 	limit := p.limit()
-	if p.sel < p.top {
-		p.top = p.sel
+	at := p.lineOf(p.sel)
+	first := at
+	if at > 0 && p.lines[at-1].head != "" && limit > 1 {
+		first = at - 1
 	}
-	if p.sel >= p.top+limit {
-		p.top = p.sel - limit + 1
+	if first < p.top {
+		p.top = first
 	}
-	p.top = min(max(p.top, 0), max(len(p.matches)-limit, 0))
+	if at >= p.top+limit {
+		p.top = at - limit + 1
+	}
+	p.top = min(max(p.top, 0), max(len(p.lines)-limit, 0))
 }
 
 // Runs the selected item, or hands the text over on a prompt, dismissing itself unless the item showed another overlay
@@ -511,7 +679,11 @@ func (p *Palette) limit() int { return max(p.rows, 1) }
 func (p *Palette) View(w, h int) string {
 	p.w = w
 	notes := p.notes()
-	p.rows = h - len(notes)
+	terse, under := p.terse(), 0
+	if len(p.items) > 0 && p.ask == nil {
+		under = p.under()
+	}
+	p.rows = h - len(notes) - under
 	p.reveal()
 	t := p.theme
 	var lines []string
@@ -523,9 +695,35 @@ func (p *Palette) View(w, h int) string {
 		lines = append(lines, lipgloss.NewStyle().Background(t.Surface).Foreground(t.TextDim).Render("  "+lang.T(txt.KitWmNoMatch)))
 	default:
 		lit := p.top + p.highlightRow()
-		for i := p.top; i < len(p.matches) && i < p.top+p.limit(); i++ {
-			m := p.matches[i]
-			lines = append(lines, p.row(m, i == lit, w))
+		// The details start in one column, past the longest name of every row, so the column stays where it is as the rows scroll
+		names := p.names()
+		plain := lipgloss.NewStyle().Background(t.Surface)
+		for at := p.top; at < len(p.lines) && at < p.top+p.limit(); at++ {
+			switch l := p.lines[at]; {
+			case l.match >= 0:
+				lines = append(lines, p.row(p.matches[l.match], at == lit, w, names, terse))
+			case l.head != "":
+				head := ansi.Truncate(lang.Upper(l.head), max(w-2, 1), t.Glyphs.Ellipsis)
+				lines = append(lines, plain.Render(" ")+plain.Foreground(t.TextDim).Bold(true).Render(head)+
+					plain.Render(strings.Repeat(" ", max(w-1-ansi.StringWidth(head), 0))))
+			default:
+				lines = append(lines, plain.Render(strings.Repeat(" ", max(w, 0))))
+			}
+		}
+	}
+	// The detail the rows left out, of the lit row, on lines that are there whether or not it has one
+	if under > 0 {
+		var said []string
+		if it, ok := p.Lit(); ok && it.Detail != "" {
+			said = strings.Split(ansi.Wordwrap(it.Detail, max(w-2, 1), ""), "\n")
+		}
+		dim := lipgloss.NewStyle().Background(t.Surface).Foreground(t.TextDim)
+		for i := range under {
+			text := ""
+			if i < len(said) {
+				text = said[i]
+			}
+			lines = append(lines, dim.Render("  "+text+strings.Repeat(" ", max(w-2-ansi.StringWidth(text), 0))))
 		}
 	}
 	for _, n := range notes {
@@ -535,8 +733,12 @@ func (p *Palette) View(w, h int) string {
 	return strings.Join(lines, "\n")
 }
 
-// One match row with hits lit, the detail dimmed and the keys at the right edge
-func (p *Palette) row(m scored, selected bool, w int) string {
+// Widest the column of names grows before a longer name pushes its own detail right
+const paletteNames = 24
+
+// One match row with hits lit, the detail dimmed in a column that starts past names cells of name unless the rows leave theirs out, and
+// the keys at the right edge
+func (p *Palette) row(m scored, selected bool, w, names int, terse bool) string {
 	t := p.theme
 	bg := t.Surface
 	if selected {
@@ -570,8 +772,9 @@ func (p *Palette) row(m scored, selected bool, w int) string {
 		right = base.Foreground(key).Render(m.item.Keys)
 	}
 	detail := ""
-	if m.item.Detail != "" {
-		detail = base.Foreground(dim).Render("  " + m.item.Detail)
+	if m.item.Detail != "" && !terse {
+		gap := max(names-ansi.StringWidth(m.item.Title), 0) + 2
+		detail = base.Render(strings.Repeat(" ", gap)) + base.Foreground(dim).Render(m.item.Detail)
 	}
 	rw := ansi.StringWidth(right)
 	avail := w - 2 - rw
@@ -598,8 +801,10 @@ type Command struct {
 	Title string
 	// Title at the moment it is shown, for a title that follows the language of the application
 	Text func() string
-	// What it does in a few words, shown beside the title when the title alone does not say
+	// What it does in a few words, shown beside the title: the description of the key action of its id when empty
 	Detail string
+	// Heading the palette lists it under, the commands of one heading together in the order they come
+	Group string
 	// Reports whether the command applies right now, always when nil
 	When func() bool
 	// Listed under every other command, where the way out of the application belongs
@@ -618,6 +823,19 @@ func (c Command) TitleText() string {
 	return lang.OfID("palette.", c.ID, ".title", c.Title)
 }
 
+// Headings the palette lists the manager's own commands under, and the one over the commands used last. What the focused window
+// answers is listed under its kind, such as Chat
+const (
+	GroupRecent  = "Recent"
+	GroupWindows = "Windows"
+	GroupTabs    = "Tabs"
+	GroupLayout  = "Layout"
+	GroupSpaces  = "Spaces"
+)
+
+// Rows of the commands used last the palette lists first
+const recentShown = 5
+
 // Commands the manager answers on its own, before those the app registered
 func (m *Model) builtin() []Command {
 	hasTiles := func() bool { return m.Active() != nil && len(m.Active().tiles) > 1 }
@@ -632,47 +850,47 @@ func (m *Model) builtin() []Command {
 	}
 	out := []Command{
 		{ID: "palette", Run: m.OpenPalette},
-		{ID: "workspace.next", Title: "Space: next", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active + 1) % len(m.spaces)) }},
-		{ID: "workspace.prev", Title: "Space: previous", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active - 1 + len(m.spaces)) % len(m.spaces)) }},
-		{ID: "window.focus.left", Title: "Window: focus left", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Left) }},
-		{ID: "window.focus.right", Title: "Window: focus right", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Right) }},
-		{ID: "window.focus.up", Title: "Window: focus up", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Up) }},
-		{ID: "window.focus.down", Title: "Window: focus down", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Down) }},
-		{ID: "window.cycle", Title: "Window: focus next", When: hasFocus, Run: func() tea.Cmd { return m.Cycle(1) }},
-		{ID: "window.cycle.back", Title: "Window: focus previous", When: hasFocus, Run: func() tea.Cmd { return m.Cycle(-1) }},
-		{ID: "window.move.left", Title: "Window: move left", When: hasFocus, Run: func() tea.Cmd { return m.Move(Left) }},
-		{ID: "window.move.right", Title: "Window: move right", When: hasFocus, Run: func() tea.Cmd { return m.Move(Right) }},
-		{ID: "window.move.up", Title: "Window: move up", When: hasFocus, Run: func() tea.Cmd { return m.Move(Up) }},
-		{ID: "window.move.down", Title: "Window: move down", When: hasFocus, Run: func() tea.Cmd { return m.Move(Down) }},
-		{ID: "window.master", Title: "Window: make main", When: hasTiles, Run: m.SwapMaster},
-		{ID: "window.zoom", Title: "Window: fullscreen", When: hasFocus, Run: m.ToggleZoom},
-		{ID: "window.float", Title: "Window: float", When: hasFocus, Run: m.ToggleFloat},
-		{ID: "window.close", Title: "Window: close", When: func() bool { e := m.focused(); return e != nil && closable(e.card) }, Run: m.CloseFocused},
-		{ID: "window.attention", Title: "Window: go to waiting window", When: m.needsYou, Run: m.FocusAttention},
-		{ID: "tabs.join", Title: "Tab: merge into next window", When: func() bool {
+		{ID: "workspace.next", Group: GroupSpaces, Title: "Next space", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active + 1) % len(m.spaces)) }},
+		{ID: "workspace.prev", Group: GroupSpaces, Title: "Previous space", When: func() bool { return len(m.spaces) > 1 }, Run: func() tea.Cmd { return m.Switch((m.active - 1 + len(m.spaces)) % len(m.spaces)) }},
+		{ID: "window.focus.left", Group: GroupWindows, Title: "Focus left", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Left) }},
+		{ID: "window.focus.right", Group: GroupWindows, Title: "Focus right", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Right) }},
+		{ID: "window.focus.up", Group: GroupWindows, Title: "Focus up", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Up) }},
+		{ID: "window.focus.down", Group: GroupWindows, Title: "Focus down", When: hasFocus, Run: func() tea.Cmd { return m.FocusDir(Down) }},
+		{ID: "window.cycle", Group: GroupWindows, Title: "Focus next", When: hasFocus, Run: func() tea.Cmd { return m.Cycle(1) }},
+		{ID: "window.cycle.back", Group: GroupWindows, Title: "Focus previous", When: hasFocus, Run: func() tea.Cmd { return m.Cycle(-1) }},
+		{ID: "window.move.left", Group: GroupWindows, Title: "Move left", When: hasFocus, Run: func() tea.Cmd { return m.Move(Left) }},
+		{ID: "window.move.right", Group: GroupWindows, Title: "Move right", When: hasFocus, Run: func() tea.Cmd { return m.Move(Right) }},
+		{ID: "window.move.up", Group: GroupWindows, Title: "Move up", When: hasFocus, Run: func() tea.Cmd { return m.Move(Up) }},
+		{ID: "window.move.down", Group: GroupWindows, Title: "Move down", When: hasFocus, Run: func() tea.Cmd { return m.Move(Down) }},
+		{ID: "window.master", Group: GroupWindows, Title: "Make main", When: hasTiles, Run: m.SwapMaster},
+		{ID: "window.zoom", Group: GroupWindows, Title: "Fullscreen", When: hasFocus, Run: m.ToggleZoom},
+		{ID: "window.float", Group: GroupWindows, Title: "Float", When: hasFocus, Run: m.ToggleFloat},
+		{ID: "window.close", Group: GroupWindows, Title: "Close", When: func() bool { e := m.focused(); return e != nil && closable(e.card) }, Run: m.CloseFocused},
+		{ID: "window.attention", Group: GroupWindows, Title: "Go to waiting window", When: m.needsYou, Run: m.FocusAttention},
+		{ID: "tabs.join", Group: GroupTabs, Title: "Merge into next window", When: func() bool {
 			e := m.focused()
 			return e != nil && !e.floating && besideTile(m.Active(), e) != nil
 		}, Run: m.JoinTab},
-		{ID: "tabs.split", Title: "Tab: split into own window", When: hasGroup, Run: m.SplitTab},
-		{ID: "tabs.cycle", Title: "Tab: next", When: hasGroup, Run: func() tea.Cmd { return m.CycleTab(1) }},
-		{ID: "tabs.cycle.back", Title: "Tab: previous", When: hasGroup, Run: func() tea.Cmd { return m.CycleTab(-1) }},
+		{ID: "tabs.split", Group: GroupTabs, Title: "Split into own window", When: hasGroup, Run: m.SplitTab},
+		{ID: "tabs.cycle", Group: GroupTabs, Title: "Next tab", When: hasGroup, Run: func() tea.Cmd { return m.CycleTab(1) }},
+		{ID: "tabs.cycle.back", Group: GroupTabs, Title: "Previous tab", When: hasGroup, Run: func() tea.Cmd { return m.CycleTab(-1) }},
 		{ID: "panel.close", When: func() bool {
 			e := m.focused()
 			return e != nil && closable(e.card) && slices.Contains(contextsOf(e.card), keys.Panel)
 		}, Run: m.CloseFocused},
-		{ID: "window.grow", Title: "Window: grow", When: hasTiles, Run: func() tea.Cmd { return m.Resize(0.05) }},
-		{ID: "window.shrink", Title: "Window: shrink", When: hasTiles, Run: func() tea.Cmd { return m.Resize(-0.05) }},
-		{ID: "layout.reset", Title: "Layout: reset sizes", When: func() bool { return m.Active() != nil }, Run: m.ResetLayout},
-		{ID: "layout.toggle", Title: "Layout: toggle", When: func() bool { return m.Active() != nil }, Run: m.ToggleLayout},
-		{ID: "layout.dwindle", Title: "Layout: spiral", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Dwindle }, Run: func() tea.Cmd { return m.SetLayout(Dwindle) }},
-		{ID: "layout.main.more", Title: "Layout: more main windows", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master }, Run: func() tea.Cmd { return m.SetMainCount(1) }},
-		{ID: "layout.main.fewer", Title: "Layout: fewer main windows", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master && ws.MainCount() > 1 }, Run: func() tea.Cmd { return m.SetMainCount(-1) }},
-		{ID: "layout.split", Title: "Layout: flip split", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Dwindle }, Run: m.FlipSplit},
-		{ID: "layout.master", Title: "Layout: main column", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Master }, Run: func() tea.Cmd { return m.SetLayout(Master) }},
+		{ID: "window.grow", Group: GroupWindows, Title: "Grow", When: hasTiles, Run: func() tea.Cmd { return m.Resize(0.05) }},
+		{ID: "window.shrink", Group: GroupWindows, Title: "Shrink", When: hasTiles, Run: func() tea.Cmd { return m.Resize(-0.05) }},
+		{ID: "layout.reset", Group: GroupLayout, Title: "Reset sizes", When: func() bool { return m.Active() != nil }, Run: m.ResetLayout},
+		{ID: "layout.toggle", Group: GroupLayout, Title: "Switch layout", When: func() bool { return m.Active() != nil }, Run: m.ToggleLayout},
+		{ID: "layout.dwindle", Group: GroupLayout, Title: "Spiral", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Dwindle }, Run: func() tea.Cmd { return m.SetLayout(Dwindle) }},
+		{ID: "layout.main.more", Group: GroupLayout, Title: "More main windows", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master }, Run: func() tea.Cmd { return m.SetMainCount(1) }},
+		{ID: "layout.main.fewer", Group: GroupLayout, Title: "Fewer main windows", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Master && ws.MainCount() > 1 }, Run: func() tea.Cmd { return m.SetMainCount(-1) }},
+		{ID: "layout.split", Group: GroupLayout, Title: "Flip split", When: func() bool { ws := m.Active(); return ws != nil && ws.mode == Dwindle }, Run: m.FlipSplit},
+		{ID: "layout.master", Group: GroupLayout, Title: "Main column", When: func() bool { ws := m.Active(); return ws != nil && ws.mode != Master }, Run: func() tea.Cmd { return m.SetLayout(Master) }},
 	}
 	for i := 1; i <= 9; i++ {
 		n := i
-		out = append(out, Command{ID: "workspace." + strconv.Itoa(n), Title: "Space " + strconv.Itoa(n), When: func() bool { return n <= len(m.spaces) }, Run: func() tea.Cmd { return m.Switch(n - 1) }})
+		out = append(out, Command{ID: "workspace." + strconv.Itoa(n), Group: GroupSpaces, Title: "Space " + strconv.Itoa(n), When: func() bool { return n <= len(m.spaces) }, Run: func() tea.Cmd { return m.Switch(n - 1) }})
 	}
 	return out
 }
@@ -794,7 +1012,8 @@ func (m *Model) remember(id string) {
 	}
 }
 
-// Opens the palette over titled ready commands and the focused card actions, recent first
+// Opens the palette over titled ready commands and the focused card actions, each under its heading: the commands used last, the app's,
+// what the focused window answers under its kind, then the manager's own. A command the app lists last ends the rows of its heading
 func (m *Model) OpenPalette() tea.Cmd {
 	if _, open := m.Overlay().(*Palette); open {
 		return m.Dismiss()
@@ -808,7 +1027,11 @@ func (m *Model) OpenPalette() tea.Cmd {
 			}
 			listed[c.ID] = true
 			id, run := c.ID, c.Run
-			it := Item{ID: id, Title: c.TitleText(), Detail: c.Detail, Keys: m.keys.Display(id), Run: func() tea.Cmd { m.remember(id); return run() }}
+			detail := c.Detail
+			if a, ok := m.keys.Action(id); ok && detail == "" {
+				detail = a.DocText()
+			}
+			it := Item{ID: id, Title: c.TitleText(), Detail: detail, Group: c.Group, Keys: m.keys.Display(id), Run: func() tea.Cmd { m.remember(id); return run() }}
 			if c.Last {
 				last = append(last, it)
 				continue
@@ -820,6 +1043,17 @@ func (m *Model) OpenPalette() tea.Cmd {
 		list(&items, m.commandSource())
 	}
 	list(&kit, m.builtin())
+	// A command listed last closes the rows of its own heading, the rows of the app when it names none
+	for _, it := range last {
+		at := len(items)
+		for i := len(items) - 1; i >= 0; i-- {
+			if items[i].Group == it.Group {
+				at = i + 1
+				break
+			}
+		}
+		items = slices.Insert(items, at, it)
+	}
 	if e := m.focused(); e != nil {
 		card := shown(e.card)
 		kind := card.Title()
@@ -832,18 +1066,31 @@ func (m *Model) OpenPalette() tea.Cmd {
 			}
 			listed[a.ID] = true
 			id := a.ID
-			items = append(items, Item{ID: id, Title: kind + ": " + a.LabelText(), Keys: m.keys.Display(id), Run: func() tea.Cmd { m.remember(id); return m.send(e, ActionMsg{ID: id}) }})
+			items = append(items, Item{ID: id, Title: sentence(a.LabelText()), Detail: a.DocText(), Group: kind, Keys: m.keys.Display(id),
+				Run: func() tea.Cmd { m.remember(id); return m.send(e, ActionMsg{ID: id}) }})
 		}
 	}
-	items = append(append(items, kit...), last...)
-	rank := map[string]int{}
-	for i, id := range m.recent {
-		rank[id] = len(m.recent) - i
+	items = append(items, kit...)
+	var recent []Item
+	for _, id := range m.recent {
+		if at := slices.IndexFunc(items, func(it Item) bool { return it.ID == id }); at >= 0 && len(recent) < recentShown {
+			again := items[at]
+			again.Group, again.Again = GroupRecent, true
+			recent = append(recent, again)
+		}
 	}
-	slices.SortStableFunc(items, func(a, b Item) int { return rank[b.ID] - rank[a.ID] })
-	p := NewPalette(m.theme, items)
+	p := NewPalette(m.theme, append(recent, items...))
 	p.Placeholder = lang.T(txt.KitWmCommandPlaceholder)
 	return m.ShowOverlay(p)
+}
+
+// Label of a key action as the title of a row, its first letter a capital
+func sentence(label string) string {
+	if label == "" {
+		return ""
+	}
+	first, size := utf8.DecodeRuneInString(label)
+	return string(unicode.ToUpper(first)) + label[size:]
 }
 
 // Card that shows in the place of c: the active tab of a tab group, c itself otherwise

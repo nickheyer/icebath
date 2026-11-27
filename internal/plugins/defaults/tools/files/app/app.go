@@ -57,9 +57,9 @@ func readLine(call toolsapp.Call) string {
 		return path
 	}
 	if limit, ok := config.Whole(args["limit"]); ok && limit > 1 {
-		return fmt.Sprintf("%s L%d-%d", path, offset, offset+limit-1)
+		return fmt.Sprintf("%s, lines %d to %d", path, offset, offset+limit-1)
 	}
-	return fmt.Sprintf("%s L%d", path, offset)
+	return fmt.Sprintf("%s from line %d", path, offset)
 }
 
 func pathLine(call toolsapp.Call) string {
@@ -88,18 +88,17 @@ func patchLine(call toolsapp.Call) string {
 	case 1:
 		return files[0]
 	}
-	return fmt.Sprintf("%s (+%d more)", files[0], len(files)-1)
+	return files[0] + " and " + render.Count(len(files)-1, "more file")
 }
 
-// What was looked for, and how
+// What was looked for, and how: text inside files, or files by their names
 func searchLine(call toolsapp.Call) string {
 	args := arguments(call)
-	verb := "grep"
-	if target, _ := args["target"].(string); target == "files" || target == "find" {
-		verb = "find"
-	}
 	pattern, _ := args["pattern"].(string)
-	line := verb + " " + pattern
+	line := "Text “" + pattern + "”"
+	if target, _ := args["target"].(string); target == "files" || target == "find" {
+		line = "Files named “" + pattern + "”"
+	}
 	if path, _ := args["path"].(string); path != "" && path != "." {
 		line += " in " + path
 	}
@@ -131,7 +130,7 @@ func readResult(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 		return nil
 	}
 	if r.Status == "unchanged" {
-		return &toolsapp.Shown{Head: render.Dim("unchanged since the last read", look)}
+		return &toolsapp.Shown{Head: render.Dim("Unchanged since the last read", look)}
 	}
 	lines := rows(r.Content)
 	if len(lines) == 0 {
@@ -140,19 +139,19 @@ func readResult(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 		}
 		return nil
 	}
-	unit := "lines"
-	switch {
-	case r.HexView:
-		unit = "rows"
-	case r.Document:
-		unit = "lines of extracted text"
+	unit := "line"
+	if r.HexView {
+		unit = "row"
 	}
-	head := fmt.Sprintf("%d of %d %s", len(lines), r.TotalLines, unit)
-	if !r.Truncated || r.TotalLines <= len(lines) {
-		head = fmt.Sprintf("%d %s", len(lines), unit)
+	head := render.Count(len(lines), unit)
+	if r.Truncated && r.TotalLines > len(lines) {
+		head = fmt.Sprintf("%s of %d", head, r.TotalLines)
+	}
+	if r.Document {
+		head += " of text from the document"
 	}
 	if r.NextOffset > 0 {
-		head += fmt.Sprintf(" · continues at %d", r.NextOffset)
+		head += fmt.Sprintf(" · The rest from line %d", r.NextOffset)
 	}
 	return &toolsapp.Shown{Head: render.Dim(head, look), Rows: lines}
 }
@@ -167,9 +166,9 @@ func lintTag(raw json.RawMessage, look theme.Theme) string {
 	}
 	switch lint.Status {
 	case "ok":
-		return render.Good("syntax ok", look)
+		return render.Good("No syntax errors", look)
 	case "error":
-		return render.Bad("syntax errors", look)
+		return render.Bad("Syntax errors", look)
 	}
 	return ""
 }
@@ -188,7 +187,7 @@ func writeResult(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 	}
 	content, _ := arguments(call)["content"].(string)
 	lines := rows(content)
-	parts := []string{render.Dim(fmt.Sprintf("wrote %d lines, %s", len(lines), render.Bytes(int64(r.BytesWritten))), look)}
+	parts := []string{render.Dim("Wrote "+render.Count(len(lines), "line")+", "+config.Size(float64(r.BytesWritten)), look)}
 	if tag := lintTag(r.Lint, look); tag != "" {
 		parts = append(parts, tag)
 	}
@@ -223,7 +222,7 @@ func patchResult(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 		return nil
 	}
 	if r.NoChange {
-		return &toolsapp.Shown{Head: render.Dim("already applied, nothing changed", look)}
+		return &toolsapp.Shown{Head: render.Dim("The patch was already in place", look)}
 	}
 	added, removed := 0, 0
 	for _, line := range strings.Split(r.Diff, "\n") {
@@ -272,7 +271,8 @@ func sectionRows(section []string, look theme.Theme) []string {
 		case strings.HasPrefix(line, "+++ "):
 			to := strings.TrimSpace(line[4:])
 			if from == "" {
-				from = "a/?"
+				out = append(out, render.Heading(to, look))
+				continue
 			}
 			out = append(out, render.Heading(from+" → "+to, look))
 		case strings.HasPrefix(line, "@@"):
@@ -316,9 +316,9 @@ func diffRows(diff string, look theme.Theme) []string {
 		break
 	}
 	if omittedFiles > 0 || omittedLines > 0 {
-		summary := fmt.Sprintf("… omitted %d diff line(s)", omittedLines)
+		summary := render.Count(omittedLines, "more line") + " not shown"
 		if omittedFiles > 0 {
-			summary += fmt.Sprintf(" across %d additional file(s)/section(s)", omittedFiles)
+			summary = render.Count(omittedLines, "more line") + " in " + render.Count(omittedFiles, "more file") + " not shown"
 		}
 		out = append(out, render.Dim(summary, look))
 	}
@@ -341,10 +341,10 @@ func searchResult(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 	shown := &toolsapp.Shown{}
 	switch {
 	case r.Text != "":
-		shown.Head = fmt.Sprintf("%d match(es)", r.Total)
+		shown.Head = render.Count(r.Total, "match") + " found"
 		shown.Rows = rows(r.Text)
 	case len(r.Matches) > 0:
-		shown.Head = fmt.Sprintf("%d match(es)", r.Total)
+		shown.Head = render.Count(r.Total, "match") + " found"
 		for _, raw := range r.Matches {
 			var m struct {
 				Path    string `json:"path"`
@@ -355,15 +355,15 @@ func searchResult(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 			shown.Rows = append(shown.Rows, fmt.Sprintf("%s:%d: %s", m.Path, m.Line, strings.ReplaceAll(m.Content, "\t", "    ")))
 		}
 	case len(r.Files) > 0:
-		shown.Head = fmt.Sprintf("%d file(s)", r.Total)
+		shown.Head = render.Count(r.Total, "file") + " found"
 		shown.Rows = r.Files
 	case len(r.Counts) > 0:
-		shown.Head = fmt.Sprintf("%d match(es) in %d file(s)", r.Total, len(r.Counts))
+		shown.Head = render.Count(r.Total, "match") + " in " + render.Count(len(r.Counts), "file")
 		for _, path := range slices.Sorted(maps.Keys(r.Counts)) {
 			shown.Rows = append(shown.Rows, fmt.Sprintf("%s: %d", path, r.Counts[path]))
 		}
 	default:
-		shown.Head = "nothing found"
+		shown.Head = "Nothing found"
 	}
 	shown.Head = render.Dim(shown.Head, look)
 	var warning []string

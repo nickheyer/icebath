@@ -147,8 +147,8 @@ func (a *Agent) compress(ctx context.Context, r *run, settings *config.Config, e
 	if settings.GetBool(contextsconfig.CheckpointRequired) {
 		// No memory provider here saves a checkpoint of the chat before it is compressed, so compression the settings make wait for one fails
 		// closed
-		return out, errors.New("BLOCKED_MISSING_PREREQUISITE: required pre-compress checkpoint unavailable: no active provider implements checkpoint " +
-			"API v2. Recover by set " + contextsconfig.CheckpointRequired + ": false, or switch to a memory provider that implements checkpoint API v2")
+		return out, errors.New("Summarizing is stopped, because Require a checkpoint is on and nothing here saves a checkpoint of the session " +
+			"first. Turn off Require a checkpoint in /settings under Long sessions › Summaries.")
 	}
 	history, err := store.Messages(ctx, env.Session, sessions.Model)
 	if err != nil {
@@ -219,8 +219,7 @@ func (a *Agent) compress(ctx context.Context, r *run, settings *config.Config, e
 	if grown := contexts.Estimate(list) > contexts.Estimate(history); grown {
 		slog.Warn(fmt.Sprintf("Compression refused: compressed transcript would be larger than the original (session=%s, ~%s -> ~%s tokens); keeping the "+
 			"original transcript unchanged", env.Session, strs.Thousands(contexts.Estimate(history)), strs.Thousands(contexts.Estimate(list))))
-		a.tell(r, "⚠️ Compression refused: the generated summary would have GROWN the conversation instead of shrinking it. No messages were "+
-			"dropped — conversation continues unchanged.")
+		a.tell(r, "Nothing was summarized, because the summary came out longer than the messages it would replace. No message was lost.")
 		engine.Settled(contexts.Outcome{Refused: true})
 		a.telemetry(env, ask, result, "aborted", "would_grow", len(history), len(history))
 		out.reason = "refused"
@@ -252,7 +251,8 @@ func (a *Agent) compress(ctx context.Context, r *run, settings *config.Config, e
 	slog.Info(fmt.Sprintf("context compression done: session=%s messages=%d->%d rough_tokens=~%s awaiting_real_usage=true", next, len(history), len(list),
 		strs.Thousands(estimate)))
 	if count := engine.Status().Compressions; count >= 2 {
-		a.tell(r, fmt.Sprintf("⚠️  Session compressed %d times — accuracy may degrade. Consider /new to start fresh.", count))
+		a.tell(r, fmt.Sprintf("⚠ This session has been summarized %s, so the agent may remember early details less well. Consider /new to "+
+			"start a new session.", strs.Count(count, "time")))
 	}
 	return out, nil
 }
@@ -338,24 +338,24 @@ func (a *Agent) watched(ctx context.Context, r *run, settings *config.Config, en
 	r.mu.Lock()
 	r.cx.timedOut = true
 	r.mu.Unlock()
-	a.waitsOn(r, "context compression timed out")
+	a.waitsOn(r, "Summarizing older messages took too long.")
 	if total {
 		slog.Warn(fmt.Sprintf("Context compression reached its total ceiling after %.1fs (progress observed=%t); continuing without compression",
 			waited.Seconds(), observed))
 		engine.TimedOut("host compress_context total ceiling exhausted", "ceiling_exhausted", idle)
 		after := ""
 		if observed {
-			after = " after summary output was observed"
+			after = ", though the summary had begun"
 		}
-		a.tell(r, fmt.Sprintf("⚠ Context compression reached its total ceiling after %.1fs%s. No messages were dropped — continuing without compression. "+
-			"Run /compress to retry or /new for a clean session.", waited.Seconds(), after))
+		a.tell(r, fmt.Sprintf("⚠ Summarizing older messages hit its time limit of %s%s, so the session goes on without it and no message was "+
+			"lost. Type /compress to try again, or /new for a new session.", strs.Span(rounded(waited)), after))
 		return nil, nil
 	}
 	slog.Warn(fmt.Sprintf("Context compression made no progress for %.1fs (total wait %.1fs, ceiling %.1fs); continuing without compression", idle.Seconds(),
 		waited.Seconds(), ceiling.Seconds()))
 	engine.TimedOut("host compress_context timeout (no summary progress)", "stalled", idle)
-	a.tell(r, fmt.Sprintf("⚠ Context compression timed out after %.1fs with no output from the summary model. No messages were dropped — continuing "+
-		"without compression. Run /compress to retry, /new for a clean session, or check auxiliary.compression.", idle.Seconds()))
+	a.tell(r, fmt.Sprintf("⚠ The summary model gave no output for %s, so the session goes on without a summary and no message was lost. Type "+
+		"/compress to try again, /new for a new session, or check Summaries in /settings under Helper models.", strs.Span(rounded(idle))))
 	return nil, nil
 }
 
@@ -433,14 +433,14 @@ func (a *Agent) attempt(ctx context.Context, env *contexts.Env, engine contexts.
 func (a *Agent) rejected(r *run, engine contexts.Engine, input []*sessionsv1.Message, result *contexts.Result) string {
 	switch {
 	case result.Aborted:
-		failure := cmp.Or(result.Failure, "unknown error")
+		failure := cmp.Or(result.Failure, "No reason was given.")
 		r.mu.Lock()
 		repeat := r.cx.told == failure
 		r.cx.told = failure
 		r.mu.Unlock()
 		if !repeat {
-			a.tell(r, fmt.Sprintf("⚠ Compression aborted: %s. No messages were dropped — conversation continues unchanged. Run /compress to retry, or /new "+
-				"to start a fresh session.", failure))
+			a.tell(r, fmt.Sprintf("⚠ The summary failed, so the session goes on unchanged. %s\nType /compress to try again, or /new to start a "+
+				"new session.", sentence(failure)))
 		}
 		engine.Settled(contexts.Outcome{})
 		return "aborted"
@@ -450,7 +450,7 @@ func (a *Agent) rejected(r *run, engine contexts.Engine, input []*sessionsv1.Mes
 		return "unchanged"
 	case len(result.Messages) == 0:
 		slog.Error(fmt.Sprintf("context compression returned an empty transcript; refusing to rotate session=%s so the parent remains resumable", r.sessionID()))
-		a.tell(r, "⚠ Compression returned an empty transcript. No session split was performed; conversation continues unchanged.")
+		a.tell(r, "The summary came back empty, so the session goes on unchanged.")
 		engine.Settled(contexts.Outcome{})
 		return "empty"
 	}
@@ -462,12 +462,12 @@ func (a *Agent) fellBack(r *run, result *contexts.Result) {
 	var text string
 	switch {
 	case result.Failure != "":
-		text = fmt.Sprintf("⚠ Compression summary failed: %s. Inserted a fallback context marker.", result.Failure)
+		text = "⚠ The summary failed, so a short note stands in for the older messages. " + sentence(result.Failure)
 	case result.AuxModel != "":
 		slog.Warn(fmt.Sprintf("Configured compression model %s failed (%s); recovered using the main model.", result.AuxModel,
 			cmp.Or(result.AuxFailure, "unknown error")))
-		text = fmt.Sprintf("ℹ Configured compression model '%s' failed, so Icebath summarised with your main model instead. Check "+
-			"auxiliary.compression.model in your config.", result.AuxModel)
+		text = fmt.Sprintf("⚠ The summary model %s failed, so your main model made the summary instead. Check Model in /settings under Helper "+
+			"models › Summaries.", result.AuxModel)
 	default:
 		return
 	}
@@ -769,7 +769,8 @@ func (a *Agent) adopt(ctx context.Context, r *run, next string) error {
 		if acquired, err := store.AcquireTurn(ctx, next, a.holderOf(next), leaseTTL); err != nil {
 			return err
 		} else if !acquired {
-			return fmt.Errorf("Another Icebath process holds session %s that this conversation continued in.", next)
+			return fmt.Errorf("Another running icebath holds the session %s, which this one went on in after it was summarized. Close it there, "+
+				"then try again.", next)
 		}
 	}
 	yolo := a.approvals.Yolo(previous)

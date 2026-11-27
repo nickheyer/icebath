@@ -17,7 +17,7 @@ func (specs) Specs() []provider.Spec {
 		Name:             metaaiconfig.Name,
 		Shape:            shape,
 		DisplayName:      metaaiconfig.Title,
-		Description:      "Muse Spark models",
+		Description:      "Meta's Muse Spark models, with a Meta API key",
 		SignupURL:        "https://developer.meta.com/ai/",
 		BaseURL:          base,
 		BaseURLEnv:       metaaiconfig.BaseURLEnv,

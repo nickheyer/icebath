@@ -23,6 +23,7 @@ func (s *service) Backends(_ context.Context, request *terminalv1.BackendsReques
 			Selected:    report.Selected,
 			Unavailable: report.Unavailable,
 			Setup:       report.Setup,
+			Prepares:    report.Backend.Prepare != nil,
 		}
 		for _, check := range report.Checks {
 			backend.Checks = append(backend.Checks, &terminalv1.Check{Ok: check.OK, Label: check.Label, Detail: check.Detail})

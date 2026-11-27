@@ -30,10 +30,10 @@ const (
 	// Exit code with which a hook blocks the action it was asked about
 	BlockExit = 2
 	// Said when a hook blocks without saying why
-	defaultBlock = "Blocked by shell hook."
+	defaultBlock = "A shell hook blocked this call."
 	// Characters of a hook's error output kept for the log and a block's message
 	stderrLimit = 400
-	notDirect   = "cannot be run directly on Windows (there is no shebang support): start it with its interpreter, e.g. 'bash <path>'"
+	notDirect   = "can't run by itself on Windows. Start it with its interpreter, such as bash"
 )
 
 // Fields of an event written at the top of a hook's input rather than under extra
@@ -116,10 +116,10 @@ func (r *Registrant) spawn(ctx context.Context, cfg *config.Config, spec Spec, s
 	argv, err := terminal.Split(fsx.ExpandHome(spec.Command))
 	if err != nil {
 		slog.Debug("shell hook command unparsable: " + err.Error())
-		return &Run{Error: fmt.Sprintf("command '%s' cannot be parsed: its quotes or escapes are unbalanced", spec.Command)}, nil
+		return &Run{Error: fmt.Sprintf("The command %s can't be read, because its quotes or escapes are not closed.", spec.Command)}, nil
 	}
 	if len(argv) == 0 {
-		return &Run{Error: "empty command"}, nil
+		return &Run{Error: "The hook has no command."}, nil
 	}
 	return r.exec(ctx, cfg, argv, "", spec.Timeout, stdin)
 }
@@ -225,22 +225,23 @@ func environ(env map[string]string) []string {
 func startFailure(name string, err error) string {
 	switch {
 	case errors.Is(err, fs.ErrNotExist) || errors.Is(err, exec.ErrNotFound):
-		return "command not found"
+		return "The command " + name + " was not found."
 	case errors.Is(err, fs.ErrPermission):
-		return "command not executable"
+		return "The command " + name + " may not run. Make the file runnable with chmod +x."
 	case badFormat(err):
-		return "'" + name + "' " + notDirect
+		return name + " " + notDirect + " " + name + "."
 	}
 	var failure *fs.PathError
 	if errors.As(err, &failure) {
-		return fmt.Sprintf("%s: '%s'", failure.Err, failure.Path)
+		return fmt.Sprintf("The command could not start: %s at %s.", failure.Err, failure.Path)
 	}
 	return err.Error()
 }
 
 // Block naming the hook that failed closed and why
 func failedClosed(spec Spec, reason string) map[string]any {
-	return map[string]any{"action": hooks.Block, "message": fmt.Sprintf("hook %s failed closed: %s", spec.Command, reason)}
+	return map[string]any{"action": hooks.Block, "message": fmt.Sprintf("The hook %s blocks the call when it fails, and it failed. %s", spec.Command,
+		reason)}
 }
 
 // What a run contributes to the point it fired on: its answer, nothing when it failed, ran out of time or answered nothing, unless it fails
@@ -260,7 +261,7 @@ func evaluate(spec Spec, run *Run) map[string]any {
 		}
 		reason := run.Error
 		if reason == "" {
-			reason = fmt.Sprintf("timed out after %ds", spec.Timeout)
+			reason = "It did not finish within " + strs.Span(time.Duration(spec.Timeout)*time.Second) + "."
 		}
 		return failedClosed(spec, reason)
 	}
@@ -290,10 +291,10 @@ func evaluate(spec Spec, run *Run) map[string]any {
 	stdout := strings.TrimSpace(run.Stdout)
 	parsed := parse(spec.Event, stdout)
 	if parsed == nil && closed && code != 0 {
-		return failedClosed(spec, fmt.Sprintf("hook exited %d with no directive", code))
+		return failedClosed(spec, fmt.Sprintf("It ended with exit code %d and gave no answer.", code))
 	}
 	if parsed == nil && closed && stdout != "" && !object(stdout) {
-		return failedClosed(spec, "unparseable stdout (expected a JSON object)")
+		return failedClosed(spec, "Its answer is not a JSON object.")
 	}
 	return parsed
 }

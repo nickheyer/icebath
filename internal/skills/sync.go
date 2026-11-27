@@ -242,7 +242,7 @@ func (s *Scope) Sync(ctx context.Context) (*Synced, error) {
 		return result, nil
 	}
 	if result.OptedOut {
-		result.say("  (profile opted out of bundled skills via %s — seeding essential skills only)", optOutMarker)
+		result.say("  This profile does not take built-in skills, because %s is in its skills folder, so only the essential ones are copied.", optOutMarker)
 	}
 	if err := os.MkdirAll(s.Dir(), 0o755); err != nil {
 		return nil, err
@@ -365,13 +365,13 @@ func (s *Scope) follow(result *Synced, manifest map[string]string, index map[str
 			continue
 		}
 		if !pristine(dir, origin) {
-			result.say("  ⚠ %s: upstream moved this skill to %s, but your modified copy at %s was kept — it will not receive updates. Run `icebath skills reset %s --restore` to move to the new location.", name, destRel, rel, name)
+			result.say("  ⚠ %s moved to %s, but your edited copy in %s stays where it is and takes no updates. Run icebath skills reset %s --restore to move to the new place.", name, destRel, rel, name)
 			continue
 		}
 		if move(dir, dest) != nil {
 			return false
 		}
-		result.say("  → %s (moved %s → %s)", name, rel, destRel)
+		result.say("  Moved %s from %s to %s.", name, rel, destRel)
 		return true
 	}
 	return false
@@ -393,12 +393,12 @@ func recoverBackup(dest string) {
 func (s *Scope) deferTo(result *Synced, manifest map[string]string, name, dest, digest string) error {
 	result.Deferred = append(result.Deferred, name)
 	result.Skipped++
-	result.say("  ⇢ %s (deferred to external_dirs, not written to local tree)", name)
+	result.say("  Left %s to the extra skill folder that has it, so it was not copied here.", name)
 	if fsx.Exists(dest) && dirHash(dest) == digest {
 		if err := s.removeTree(dest); err != nil {
 			return err
 		}
-		result.say("  ✓ removed stale shadow of %s", name)
+		result.say("  ✓ Removed an old copy of %s that hid the one in the extra folder.", name)
 		delete(manifest, name)
 	}
 	return nil
@@ -411,17 +411,17 @@ func (s *Scope) install(result *Synced, manifest map[string]string, p packaged, 
 		if dirHash(dest) == digest {
 			manifest[p.name] = digest
 		} else {
-			result.say("  ⚠ %s: bundled version shipped but you already have a local skill by this name — yours was kept. Run `icebath skills reset %s` to replace it with the bundled version.", p.name, p.name)
+			result.say("  ⚠ %s is a new built-in skill, but you have a skill of that name already, so yours stays. Run icebath skills reset %s --restore to take the built-in one instead.", p.name, p.name)
 		}
 		return
 	}
 	if err := copyTree(p.tree, p.dir, dest, false, false); err != nil {
-		result.say("  ! Failed to copy %s: %s", p.name, pathError(err))
+		result.say("  ✗ %s could not be copied: %s.", p.name, pathError(err))
 		return
 	}
 	result.Copied = append(result.Copied, p.name)
 	manifest[p.name] = digest
-	result.say("  + %s", p.name)
+	result.say("  Copied %s.", p.name)
 }
 
 // Replaces a tracked copy with the shipped one when that changed and the copy did not
@@ -438,16 +438,16 @@ func (s *Scope) refresh(result *Synced, manifest map[string]string, p packaged, 
 	}
 	if !pristine(dest, origin) {
 		result.Modified = append(result.Modified, p.name)
-		result.say("  ~ %s (user-modified, skipping)", p.name)
+		result.say("  Left %s as it is, because you edited it.", p.name)
 		return
 	}
 	if err := s.replace(p, dest); err != nil {
-		result.say("  ! Failed to update %s: %s", p.name, pathError(err))
+		result.say("  ✗ %s could not be updated: %s.", p.name, pathError(err))
 		return
 	}
 	manifest[p.name] = digest
 	result.Updated = append(result.Updated, p.name)
-	result.say("  ↑ %s (updated)", p.name)
+	result.say("  Updated %s.", p.name)
 }
 
 // Replaces a folder with a fresh copy, the old one kept aside until the copy is whole and put back when it fails
@@ -533,7 +533,7 @@ func (s *Scope) describeCategories(shipped []packaged, essential bool) {
 func (s *Scope) removeTree(p string) error {
 	target, root := resolve(p), resolve(s.Dir())
 	if target == root || !within(target, root) {
-		return fmt.Errorf("refusing to remove %s: not strictly under %s", target, root)
+		return fmt.Errorf("icebath does not remove %s, because it is not inside %s.", target, root)
 	}
 	if err := os.RemoveAll(p); err == nil {
 		return nil
@@ -581,7 +581,7 @@ func (s *Scope) backfill(result *Synced) ([]string, error) {
 	}
 	lock, err := ReadLock(s.Dir())
 	if err != nil && result != nil {
-		result.say("  ! %s Official optional skills were not checked.", err)
+		result.say("  ✗ %s The optional skills were not checked.", strings.TrimSuffix(err.Error(), ".")+".")
 		return []string{}, nil
 	}
 	if err != nil {
@@ -628,7 +628,7 @@ func (s *Scope) backfill(result *Synced) ([]string, error) {
 		recorded[install] = true
 		backfilled = append(backfilled, lockName)
 		if result != nil {
-			result.say("  = %s (official optional provenance backfilled)", lockName)
+			result.say("  Recorded that %s came from the optional skills.", lockName)
 		}
 	}
 	if len(backfilled) > 0 {
@@ -678,9 +678,9 @@ func (s *Scope) Repair(name string, restore bool) (*Repaired, error) {
 		}
 		if len(targets) == 0 {
 			if len(all) == 0 {
-				return nil, errors.New("No official optional skills directory found.")
+				return nil, errors.New("The folder of optional skills is missing. Set Source folder in /settings under Skills › Optional skills.")
 			}
-			return nil, errors.New("Official optional skill not found: " + name)
+			return nil, errors.New("There is no optional skill named " + name + ".")
 		}
 	}
 	result := &Repaired{Restored: []string{}, BackedUp: []string{}}
@@ -760,17 +760,17 @@ func (s *Scope) Reset(ctx context.Context, name string, restore bool) (string, *
 	_, tracked := manifest[name]
 	p, shipped := s.seeded(name)
 	if !tracked && !shipped {
-		return "", nil, fmt.Errorf("'%s' is not a tracked bundled skill. Nothing to reset. (Hub-installed skills use `icebath skills uninstall`.)", name)
+		return "", nil, fmt.Errorf("%s is not a built-in skill, so there is nothing to reset. Remove a skill from the hub with icebath skills uninstall %s.", name, name)
 	}
 	deleted := false
 	if restore {
 		if !shipped {
-			return "", nil, fmt.Errorf("'%s' has no bundled source — manifest entry preserved but cannot restore from bundled (skill was removed upstream).", name)
+			return "", nil, fmt.Errorf("%s is no longer a built-in skill, so there is no built-in version to restore. Its record was kept.", name)
 		}
 		dest := filepath.Join(s.Dir(), filepath.FromSlash(p.dir))
 		if deleted = fsx.Exists(dest); deleted {
 			if err := s.removeTree(dest); err != nil {
-				return "", nil, fmt.Errorf("Could not delete user copy at %s: %s. Manifest entry preserved — nothing was changed.", dest, pathError(err))
+				return "", nil, fmt.Errorf("Your copy in %s could not be deleted: %s. Nothing changed.", dest, pathError(err))
 			}
 		}
 	}
@@ -786,11 +786,11 @@ func (s *Scope) Reset(ctx context.Context, name string, restore bool) (string, *
 	}
 	switch {
 	case !restore:
-		return fmt.Sprintf("Cleared manifest entry for '%s'. Future syncs will re-baseline against your current copy and accept upstream changes.", name), synced, nil
+		return fmt.Sprintf("✓ %s takes updates again, starting from your copy as it is now.", name), synced, nil
 	case deleted:
-		return fmt.Sprintf("Restored '%s' from bundled source.", name), synced, nil
+		return fmt.Sprintf("✓ Replaced your copy of %s with the built-in version.", name), synced, nil
 	}
-	return fmt.Sprintf("Restored '%s' (no prior user copy, re-copied from bundled).", name), synced, nil
+	return fmt.Sprintf("✓ Copied the built-in version of %s, since you had no copy of it.", name), synced, nil
 }
 
 // Built in skill an install identifier names: a bare name, or a path of this project's own bundled skills; none otherwise
@@ -821,10 +821,10 @@ type Ensured struct {
 func (s *Scope) Ensure(ctx context.Context, name string) (Ensured, error) {
 	p, ok := s.seeded(name)
 	if !ok {
-		return Ensured{}, fmt.Errorf("no bundled skill named %s", name)
+		return Ensured{}, fmt.Errorf("There is no built-in skill named %s.", name)
 	}
 	if s.HubInstalled(name) {
-		return Ensured{Action: "hub_shadowed", Message: fmt.Sprintf("'%s' is a built-in skill, but a skill installed from the hub uses the same name and shadows it. To get the built-in back: `icebath skills uninstall %s`, then `icebath skills install %s`.", name, name, name)}, nil
+		return Ensured{Action: "hub_shadowed", Message: fmt.Sprintf("%s is a built-in skill, but a skill from the hub has the same name and hides it. To get the built-in one back, run icebath skills uninstall %s, then icebath skills install %s.", name, name, name)}, nil
 	}
 	dest := filepath.Join(s.Dir(), filepath.FromSlash(p.dir))
 	skillMD := filepath.Join(dest, "SKILL.md")
@@ -835,15 +835,15 @@ func (s *Scope) Ensure(ctx context.Context, name string) (Ensured, error) {
 		return Ensured{Action: "present"}, nil
 	}
 	refuse := func(reason string) (Ensured, error) {
-		return Ensured{}, fmt.Errorf("Could not copy the built-in skill '%s' to %s: %s", name, dest, reason)
+		return Ensured{}, fmt.Errorf("The built-in skill %s could not be copied to %s: %s.", name, dest, strings.TrimSuffix(reason, "."))
 	}
 	for at := dest; within(at, s.Dir()) && at != filepath.Clean(s.Dir()); at = filepath.Dir(at) {
 		if redirect(at) {
-			return refuse("the install path passes through a symlink or junction")
+			return refuse("the way to it passes through a link")
 		}
 	}
 	if fsx.Lexists(skillMD) {
-		return refuse("the directory holds a different skill's SKILL.md")
+		return refuse("the folder holds the SKILL.md of another skill")
 	}
 	if fsx.Exists(dest) {
 		linked := false
@@ -852,7 +852,7 @@ func (s *Scope) Ensure(ctx context.Context, name string) (Ensured, error) {
 			return nil
 		})
 		if linked {
-			return refuse("the leftover directory contains a symlink or junction")
+			return refuse("the folder left there holds a link")
 		}
 	}
 	if err := copyTree(p.tree, p.dir, dest, true, true); err != nil {
@@ -906,11 +906,11 @@ type FileDiff struct {
 func (s *Scope) Diff(name string) ([]FileDiff, error) {
 	p, ok := s.seeded(name)
 	if !ok {
-		return nil, fmt.Errorf("'%s' is not a tracked bundled skill (no stock version to diff against). Hub-installed skills use `icebath skills inspect`.", name)
+		return nil, fmt.Errorf("%s is not a built-in skill, so there is no built-in version to compare it with. See a skill from the hub with icebath skills inspect %s.", name, name)
 	}
 	dest := filepath.Join(s.Dir(), filepath.FromSlash(p.dir))
 	if !fsx.Exists(dest) {
-		return nil, fmt.Errorf("No local copy of '%s' found at %s.", name, dest)
+		return nil, fmt.Errorf("You have no copy of %s in %s.", name, dest)
 	}
 	yours, stock := treeFiles(os.DirFS(dest), "."), treeFiles(p.tree, p.dir)
 	all := slices.Clone(yours)
@@ -964,17 +964,17 @@ func (s *Scope) OptOut(on bool) (string, error) {
 		err = os.Remove(marker)
 	}
 	if err != nil {
-		return "", fmt.Errorf("Could not update opt-out marker at %s: %s", marker, pathError(err))
+		return "", fmt.Errorf("The marker file %s could not be changed: %s.", marker, pathError(err))
 	}
 	switch {
 	case on && !had:
-		return "Opted out of bundled skills. Future syncs will not seed bundled skills into this profile.", nil
+		return "✓ icebath no longer copies built-in skills into this profile.", nil
 	case on:
-		return "Already opted out — marker was already present.", nil
+		return "icebath already does not copy built-in skills into this profile.", nil
 	case had:
-		return "Opted back in. The next sync (`icebath skills opt-in --sync`, or the next start) will re-seed bundled skills.", nil
+		return "✓ icebath copies built-in skills into this profile again, the next time it starts or when you run icebath skills opt-in --sync.", nil
 	}
-	return "Not opted out — no marker to remove.", nil
+	return "icebath already copies built-in skills into this profile.", nil
 }
 
 // One built in skill a removal kept, and why

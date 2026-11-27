@@ -398,6 +398,18 @@ func guidance(result string, v verdict) string {
 }
 
 // What the turn ends with when the guardrails stopped it
+// What the person is told of a loop that stopped the reply
+func haltNotice(v verdict) string {
+	why := "kept failing"
+	switch v.code {
+	case "identical_call_streak_halt":
+		why = "kept giving the same result"
+	case "identical_cycle_halt":
+		why = "was called over and over in the same cycle"
+	}
+	return fmt.Sprintf("The reply was stopped because the tool %s %s. Tool loops in /settings under Agent sets when this happens.", cmp.Or(v.tool, "in use"), why)
+}
+
 func haltReply(v verdict) string {
 	name := cmp.Or(v.tool, "the same tool")
 	return fmt.Sprintf("I stopped retrying because I kept running %s %d times without making progress. The last result above shows what "+
@@ -532,8 +544,7 @@ func untrusted(tool string, result string, warn func(string)) string {
 		}
 	}
 	if found := prompt.Threats(result, prompt.Context); len(found) > 0 && warn != nil {
-		warn(fmt.Sprintf("⚠ The result of %s holds text that looks like instructions to the agent (%s); it was handed over as data.", tool,
-			strings.Join(found, ", ")))
+		warn(fmt.Sprintf("⚠ The result of %s holds text that looks like instructions to the agent, so the agent was given it as data only.", tool))
 	}
 	if len(result) < wrapMinChars {
 		return result

@@ -62,12 +62,12 @@ var cudaMarks = []string{"libcublas", "libcudnn", "libcudart", "cannot be loaded
 const watchInterval = 30 * time.Second
 
 // What a transcription answers when faster-whisper is not installed
-var missing = "faster-whisper not installed; run `" + packages.InstallHint(config.Extra) + "`"
+var missing = "faster-whisper is not installed. Run " + packages.InstallHint(config.Extra) + " to install it."
 
 func Register(registry *speech.Registry) {
 	e := &engine{}
 	registry.Register(speech.Services{Recognizing: []speech.Recognizer{{
-		Name: config.Name, Title: "Local Whisper", About: "faster-whisper on-device, no API key", Local: true, Rank: 1,
+		Name: config.Name, Title: "Local Whisper", About: "Free and private on this computer, no API key needed", Local: true, Rank: 1,
 		Whisper: true, Fallback: "local_command", Label: "local faster-whisper",
 		Warning: "STT provider 'local' configured but unavailable (install faster-whisper or set " + speechconfig.LocalCommandEnv + ")",
 		Missing: func(_ context.Context, job *speech.Job) string {
@@ -81,7 +81,7 @@ func Register(registry *speech.Registry) {
 		},
 		Language:   func(job *speech.Job) string { return job.Text(config.Language, "") },
 		Transcribe: e.transcribe,
-		Setup:      speech.Setup{Extra: config.Extra, Badge: "★ recommended · free"},
+		Setup:      speech.Setup{Extra: config.Extra, Badge: "recommended · free"},
 		Choices:    []speech.Choices{speech.Fixed(config.Model, speech.WhisperModels...)},
 	}}})
 }

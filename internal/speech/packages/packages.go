@@ -41,7 +41,7 @@ var (
 func ffmpeg(pin packages.Pin, cfg *config.Config) packages.Package {
 	gaps := map[string]string{}
 	for target := range packages.Musl {
-		gaps[target] = "BtbN Linux builds link glibc dynamically"
+		gaps[target] = "The Linux builds of ffmpeg that icebath downloads need glibc, which musl systems such as Alpine lack."
 	}
 	return packages.Package{
 		Name: FFmpeg, Pin: pin, Gaps: gaps, Style: "minor",
@@ -54,7 +54,7 @@ func ffmpeg(pin packages.Pin, cfg *config.Config) packages.Package {
 			case target == packages.Bionic:
 				return []string{fmt.Sprintf("https://packages.termux.dev/apt/termux-main/pool/main/f/ffmpeg/ffmpeg_%s_aarch64.deb", version)}, nil
 			case packages.Musl[target]:
-				return nil, packages.Failure(FFmpeg, "unavailable on "+target+": "+gaps[target], "")
+				return nil, packages.Failure(FFmpeg, gaps[target], "Install ffmpeg from the packages of your system instead.")
 			}
 			index := martinRiedl(cfg)
 			if !strings.HasPrefix(target, "darwin") {
@@ -66,8 +66,8 @@ func ffmpeg(pin packages.Pin, cfg *config.Config) packages.Package {
 			if url := index.where[target][version]; url != "" {
 				return []string{url}, nil
 			}
-			return nil, packages.Failure(FFmpeg, fmt.Sprintf("no advertised %s artifact for %s", version, target),
-				"retry when the upstream index is available, or keep the existing pin")
+			return nil, packages.Failure(FFmpeg, fmt.Sprintf("The build index lists no ffmpeg %s for %s.", version, target),
+				"Try again once the build index answers, or keep the version pinned now.")
 		},
 		Latest: func(cfg *config.Config, target, _ string) ([]string, error) {
 			switch {

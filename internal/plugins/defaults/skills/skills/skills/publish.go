@@ -31,7 +31,7 @@ func (h *Hub) Publish(ctx context.Context, scope *skills.Scope, skillPath, targe
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
 	if errors.Is(err, fs.ErrNotExist) {
-		r.fail("No SKILL.md found at %s", dir)
+		r.fail("There is no SKILL.md in %s.", dir)
 		return false, nil
 	}
 	if err != nil {
@@ -46,30 +46,30 @@ func (h *Hub) Publish(ctx context.Context, scope *skills.Scope, skillPath, targe
 		name = fmt.Sprint(v)
 	}
 	if !config.Truthy(fm["description"]) {
-		r.fail("SKILL.md must have a 'description' in frontmatter.")
+		r.fail("The SKILL.md needs a description: line in its front matter.")
 		return false, nil
 	}
-	r.line(Heading, "Scanning '%s' before publish...", name)
+	r.line(Heading, "Scanning %s for risks before it is published…", name)
 	result, _, err := r.scan(ctx, dir, "self", "", "")
 	if err != nil {
 		return false, err
 	}
 	r.line(Plain, report(result))
 	if result.Verdict == "dangerous" {
-		r.line(Bad, "Cannot publish a skill with DANGEROUS verdict.")
+		r.line(Bad, "✗ The scan calls the skill dangerous, so it was not published.")
 		return false, nil
 	}
 	switch target {
 	case "github":
 		if repo == "" {
-			r.fail("--repo required for GitHub publish.\nUsage: icebath skills publish <path> --to github --repo owner/repo")
+			r.fail("Publishing to GitHub needs --repo, such as icebath skills publish <skill_path> --to github --repo owner/repo.")
 			return false, nil
 		}
 		if !r.gh.auth.signedIn(ctx) {
-			r.fail("GitHub authentication required.\nSet GITHUB_TOKEN (or the setting skills.hub.github_token) or run 'gh auth login'.")
+			r.fail("Publishing to GitHub needs a sign-in. Set GITHUB_TOKEN or GitHub token in /settings under Skills › Skills hub, or run gh auth login.")
 			return false, nil
 		}
-		r.line(Heading, "Publishing '%s' to %s...", name, repo)
+		r.line(Heading, "Publishing %s to %s…", name, repo)
 		message, ok := r.publish(ctx, dir, name, repo)
 		if !ok {
 			r.fail("%s", message)
@@ -78,10 +78,10 @@ func (h *Hub) Publish(ctx context.Context, scope *skills.Scope, skillPath, targe
 		r.line(Good, message)
 		return true, nil
 	case "clawhub":
-		r.line(Warn, "ClawHub publishing is not yet supported. Submit manually at https://clawhub.ai/submit")
+		r.line(Warn, "⚠ icebath can't publish to ClawHub yet. Submit the skill yourself at https://clawhub.ai/submit.")
 		return true, nil
 	}
-	r.line(Bad, "Unknown target: %s. Use 'github' or 'clawhub'.", target)
+	r.line(Bad, "✗ %s is not a registry icebath publishes to. Use github or clawhub.", target)
 	return false, nil
 }
 
@@ -121,7 +121,7 @@ func (r *run) githubCall(ctx context.Context, method, path string, timeout time.
 func (r *run) publish(ctx context.Context, dir, name, target string) (string, bool) {
 	status, body, err := r.githubCall(ctx, http.MethodPost, target+"/forks", 30*time.Second, nil)
 	if err != nil {
-		return "Network error forking repo: " + err.Error(), false
+		return "The repository could not be forked, because GitHub could not be reached: " + strings.TrimSuffix(err.Error(), ".") + ".", false
 	}
 	var fork struct {
 		FullName string `json:"full_name"`
@@ -129,12 +129,12 @@ func (r *run) publish(ctx context.Context, dir, name, target string) (string, bo
 	switch status {
 	case 200, 202:
 		if json.Unmarshal(body, &fork) != nil || fork.FullName == "" {
-			return "GitHub's answer to the fork names no repository", false
+			return "GitHub answered the fork without naming the new repository.", false
 		}
 	case 403:
-		return "GitHub token lacks permission to fork repos", false
+		return "Your GitHub token may not fork repositories. Give it that right, or use another token.", false
 	default:
-		return fmt.Sprintf("Failed to fork %s: %d", target, status), false
+		return fmt.Sprintf("%s could not be forked. GitHub answered with status %d.", target, status), false
 	}
 	branch := "main"
 	if status, body, err := r.githubCall(ctx, http.MethodGet, target, 15*time.Second, nil); err == nil && status == 200 {
@@ -155,7 +155,7 @@ func (r *run) publish(ctx context.Context, dir, name, target string) (string, bo
 		err = fmt.Errorf("GitHub answered %d", status)
 	}
 	if err != nil {
-		return "Failed to get base branch: " + err.Error(), false
+		return "The main branch of the fork could not be read: " + strings.TrimSuffix(err.Error(), ".") + ".", false
 	}
 	head := "add-skill-" + name
 	status, body, err = r.githubCall(ctx, http.MethodPost, fork.FullName+"/git/refs", 15*time.Second, map[string]string{"ref": "refs/heads/" + head, "sha": ref.Object.SHA})
@@ -163,7 +163,7 @@ func (r *run) publish(ctx context.Context, dir, name, target string) (string, bo
 		err = fmt.Errorf("GitHub answered %d %s", status, strs.Head(string(body), 200))
 	}
 	if err != nil {
-		return "Failed to create branch: " + err.Error(), false
+		return "The branch for the skill could not be made: " + strings.TrimSuffix(err.Error(), ".") + ".", false
 	}
 	for _, rel := range walkFiles(dir) {
 		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
@@ -175,23 +175,23 @@ func (r *run) publish(ctx context.Context, dir, name, target string) (string, bo
 			}
 		}
 		if err != nil {
-			return fmt.Sprintf("Failed to upload %s: %s", rel, err), false
+			return fmt.Sprintf("%s could not be uploaded: %s.", rel, strings.TrimSuffix(err.Error(), ".")), false
 		}
 	}
 	owner, _, _ := strings.Cut(fork.FullName, "/")
 	status, body, err = r.githubCall(ctx, http.MethodPost, target+"/pulls", 15*time.Second, map[string]string{
 		"title": "Add skill: " + name,
-		"body":  fmt.Sprintf("Submitting the `%s` skill via Icebath Skills Hub.\n\nThis skill was scanned by the Icebath Skills Guard before submission.", name),
+		"body":  fmt.Sprintf("Submitting the `%s` skill from the icebath skills hub.\n\nThe icebath skill scan checked this skill before it was submitted.", name),
 		"head":  owner + ":" + head, "base": branch})
 	if err != nil {
-		return "Network error creating PR: " + err.Error(), false
+		return "The pull request could not be made, because GitHub could not be reached: " + strings.TrimSuffix(err.Error(), ".") + ".", false
 	}
 	if status == 201 {
 		var pr struct {
 			HTMLURL string `json:"html_url"`
 		}
 		json.Unmarshal(body, &pr)
-		return "PR created: " + pr.HTMLURL, true
+		return "✓ Made the pull request " + pr.HTMLURL + ".", true
 	}
-	return fmt.Sprintf("Failed to create PR: %d %s", status, strs.Head(strings.ToValidUTF8(string(body), "?"), 200)), false
+	return fmt.Sprintf("The pull request could not be made. GitHub answered with status %d: %s", status, strs.Head(strings.ToValidUTF8(string(body), "?"), 200)), false
 }

@@ -26,8 +26,10 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 		processScreen(conn),
 		{
 			ID:    "terminal",
+			Group: tui.GroupApp,
+			Order: 20,
 			Title: "Terminal",
-			Short: "Open a shell in this directory",
+			Short: "Open a shell in this folder",
 			Slash: []string{"terminal"},
 			Open:  func(kit *tui.Kit, _ string) tea.Cmd { return kit.WM.OpenHere(kit.Terminal()) },
 			Follows: map[string]func(*tui.Kit, string) tea.Cmd{
@@ -45,8 +47,10 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 		},
 		{
 			ID:    "terminal.tab",
+			Group: tui.GroupApp,
+			Order: 30,
 			Title: "Terminal tab",
-			Short: "Open a shell as a tab of this window",
+			Short: "Open a shell in a new tab of this window",
 			Open:  func(kit *tui.Kit, _ string) tea.Cmd { return kit.WM.OpenTab(kit.Terminal()) },
 		},
 	}

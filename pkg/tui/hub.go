@@ -18,31 +18,44 @@ type Choice struct {
 	Detail string
 }
 
-// Opens a list of choices over the hub, or in a hub of its own when hub is nil, the current one marked. Enter or the button labeled verb
-// runs pick with the highlighted choice and closes the list
+// Opens a list of choices over the hub, or in a hub of its own when hub is nil, the one in use marked on a list that has one. Each choice
+// shows what it means beside it, or under the list where the width cannot hold every meaning whole. Enter or the button labeled verb runs
+// pick with the highlighted choice and closes the list
 func (k *Kit) Pick(hub *cards.Hub, title, verb string, choices []Choice, current string, pick func(choice Choice) tea.Cmd) tea.Cmd {
+	return k.PickFrom(hub, title, nil, verb, choices, current, pick)
+}
+
+// Pick with lines above the choices that say what is being chosen, for a title that does not
+func (k *Kit) PickFrom(hub *cards.Hub, title string, intro []string, verb string, choices []Choice, current string, pick func(choice Choice) tea.Cmd) tea.Cmd {
 	own := hub == nil
 	var list *cards.List
+	var said func() []string
+	if len(intro) > 0 {
+		said = func() []string { return intro }
+	}
 	list = cards.NewList(k.Env, cards.ListSpec{
 		Title:   title,
 		Key:     "pick:" + title,
 		Context: cards.HubContext,
 		Primary: "hub.use",
 		Pick:    true,
-		Columns: []render.Column{{}, {Max: 56}, {Flex: 1}},
-		Yield:   []int{2},
+		Intro:   said,
+		Bar:     len(choices) > 8,
+		Columns: []render.Column{{}, {}, {Flex: 1, Whole: true}},
 		Rows: func() [][]string {
 			rows := make([][]string, len(choices))
 			for i, choice := range choices {
-				mark := ""
-				if choice.ID == current && current != "" {
-					mark = k.Env.Theme.Glyphs.Live
-				}
-				rows[i] = []string{mark, choice.Title, render.Dim(choice.Detail, k.Env.Theme)}
+				rows[i] = []string{k.Mark(current != "", choice.ID == current), choice.Title, render.Dim(choice.Detail, k.Env.Theme)}
 			}
 			return rows
 		},
-		Empty: func() string { return "No choices" },
+		Detail: func(i int) []string {
+			if list.Shows(2) || choices[i].Detail == "" {
+				return nil
+			}
+			return []string{choices[i].Detail}
+		},
+		Empty: func() string { return "Nothing to choose from." },
 		Hints: func(_ *cards.List, i int) []wm.Hint {
 			if i < 0 {
 				return nil
@@ -58,6 +71,7 @@ func (k *Kit) Pick(hub *cards.Hub, title, verb string, choices []Choice, current
 			},
 		},
 	})
+	list.ToggleDetail()
 	var cmd tea.Cmd
 	if own {
 		hub = k.Hub(list.Key(), list)
@@ -71,6 +85,17 @@ func (k *Kit) Pick(hub *cards.Hub, title, verb string, choices []Choice, current
 		}
 	}
 	return cmd
+}
+
+// Mark before a choice of a list where one choice is in use: filled on that one, hollow on the rest, nothing where no choice is marked
+func (k *Kit) Mark(marked, on bool) string {
+	switch {
+	case !marked:
+		return ""
+	case on:
+		return k.Env.Theme.Glyphs.Live
+	}
+	return render.Dim(k.Env.Theme.Glyphs.Hollow, k.Env.Theme)
 }
 
 func (k *Kit) Ask(hub *cards.Hub, title string, field cards.Field, submit string, done func(text string) tea.Cmd) tea.Cmd {

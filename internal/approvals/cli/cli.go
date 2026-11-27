@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/internal/cli"
 	approvalsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/approvals/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/approvals/v1/approvalsv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Exit code a command ends with, which main hands to the shell without printing anything
@@ -38,9 +39,12 @@ func Register(host *cli.CLI) {
 func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	service := approvalsv1connect.NewApprovalsServiceClient(conn)
 	root := &cobra.Command{
-		Use:   "approvals",
-		Short: "Approval-prompt tools (mine history into allowlist proposals)",
-		Args:  cobra.NoArgs,
+		Use:     "approvals",
+		GroupID: cli.GroupSafety,
+		Short:   "Suggest and test the commands that run without asking",
+		Long: "The agent asks before it runs a risky command, unless the command is one of your allowed commands. suggest proposes allowed " +
+			"commands from the ones you approved before. test shows what would happen to a command, without running it.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmt.Fprint(cmd.OutOrStdout(), usage)
 			return exit(1)
@@ -56,15 +60,18 @@ func suggest(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 	var days, least, limit int
 	cmd := &cobra.Command{
 		Use:   "suggest",
-		Short: "Propose command_allowlist entries from past approvals",
-		Args:  cobra.NoArgs,
+		Short: "Suggest commands to allow from your past approvals",
+		Long: "Reads the risky commands you approved in past sessions and proposes the ones you approved often as allowed commands. Nothing " +
+			"changes until you run suggest again with --apply and the numbers of the proposals you want.",
+		Example: "  icebath approvals suggest\n  icebath approvals suggest --apply 1,3",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 			d := int32(days)
 			response, err := service.Suggest(cmd.Context(), &approvalsv1.SuggestRequest{Days: &d, MinCount: int32(least), Limit: int32(limit), Store: store})
 			if err != nil {
 				if failure, ok := errors.AsType[*connect.Error](err); ok && failure.Code() == connect.CodeNotFound {
-					fmt.Fprintf(out, "Session store not found: %s\n", failure.Message())
+					fmt.Fprintf(out, "✗ The session store could not be found. %s\n", failure.Message())
 					return exit(1)
 				}
 				return err
@@ -73,7 +80,7 @@ func suggest(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 			if apply != "" {
 				indices, err := selection(apply, len(proposals))
 				if err != nil {
-					fmt.Fprintf(out, "--apply error: %s\n", err)
+					fmt.Fprintf(out, "✗ %s\n", err)
 					return exit(1)
 				}
 				var patterns []string
@@ -88,11 +95,11 @@ func suggest(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 					fmt.Fprintf(out, "{\"applied\": %s, \"allowlist_size\": %d}\n", spacedList(patterns), allowed.GetSize())
 					return nil
 				}
-				fmt.Fprintln(out, "Added to command_allowlist:")
+				fmt.Fprintln(out, "✓ Added to Allowed commands in /settings under Approvals:")
 				for _, pattern := range patterns {
 					fmt.Fprintf(out, "  + %s\n", pattern)
 				}
-				fmt.Fprintf(out, "\ncommand_allowlist now has %d entries (approvals.allowlist of this profile).\n", allowed.GetSize())
+				fmt.Fprintf(out, "\nAllowed commands now holds %s.\n", strs.Count(int(allowed.GetSize()), "command"))
 				return nil
 			}
 			if asJSON {
@@ -102,12 +109,12 @@ func suggest(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&apply, "apply", "", "merge the numbered proposals into the allowlist, such as 1,3")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")
-	cmd.Flags().IntVar(&days, "days", 90, "days of history to read (0 for all of it)")
-	cmd.Flags().IntVar(&least, "min-count", 2, "approvals a pattern needs before it is proposed")
-	cmd.Flags().IntVar(&limit, "limit", 20, "most proposals to show")
-	cmd.Flags().StringVar(&store, "db", "", "session store to read, by name (default: this profile's)")
+	cmd.Flags().StringVar(&apply, "apply", "", "Numbers of the proposals to add to your allowed commands, such as 1,3")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print the result as JSON")
+	cmd.Flags().IntVar(&days, "days", 90, "How many days of history to read, 0 reads all of it")
+	cmd.Flags().IntVar(&least, "min-count", 2, "How many approvals a command needs before it is proposed")
+	cmd.Flags().IntVar(&limit, "limit", 20, "Largest number of proposals to show")
+	cmd.Flags().StringVar(&store, "db", "", "Session store to read, by name, instead of this profile's")
 	return cmd
 }
 
@@ -120,50 +127,50 @@ func selection(spec string, total int) ([]int, error) {
 		}
 		n, err := strconv.Atoi(part)
 		if err != nil {
-			return nil, fmt.Errorf("invalid selection '%s' — expected numbers like 1,3", part)
+			return nil, fmt.Errorf("“%s” is not a number. Give the numbers of the proposals, such as 1,3.", part)
 		}
 		if n < 1 || n > total {
-			return nil, fmt.Errorf("selection %d out of range (1..%d)", n, total)
+			return nil, fmt.Errorf("There is no proposal %d. Give numbers from 1 to %s.", n, strs.Number(float64(total)))
 		}
 		if !slices.Contains(indices, n-1) {
 			indices = append(indices, n-1)
 		}
 	}
 	if len(indices) == 0 {
-		return nil, errors.New("no valid selections in --apply")
+		return nil, errors.New("--apply names no proposal. Give their numbers, such as 1,3.")
 	}
 	return indices, nil
 }
 
 func window(days int) string {
 	if days > 0 {
-		return fmt.Sprintf("last %d days", days)
+		return "the last " + strs.Count(days, "day")
 	}
-	return "all history"
+	return "all of your history"
 }
 
 func render(out io.Writer, proposals []*approvalsv1.Proposal, days int) {
 	if len(proposals) == 0 {
-		fmt.Fprintf(out, "No allowlist candidates found in approval history (%s).\nEither nothing dangerous was approved often enough (see "+
-			"--min-count/--days), or the approved classes are excluded for safety.\n", window(days))
+		fmt.Fprintf(out, "There are no commands to propose. Commands you approved at least as often as --min-count in %s show here, unless they "+
+			"are of a kind that is never proposed, for safety.\nTo see more, lower --min-count or raise --days.\n", window(days))
 		return
 	}
-	fmt.Fprintf(out, "Proposed command_allowlist additions (from approval history, %s):\n\n", window(days))
+	fmt.Fprintf(out, "Commands you approved often in %s, which you can add to Allowed commands:\n\n", window(days))
 	for i, p := range proposals {
 		kind := ""
 		if p.GetKind() == "class" {
-			kind = " (class key)"
+			kind = ", which stands for a kind of command"
 		}
-		fmt.Fprintf(out, "  %d. %s    — approved %dx%s\n", i+1, p.GetPattern(), p.GetCount(), kind)
+		fmt.Fprintf(out, "  %d. %s, approved %s%s\n", i+1, p.GetPattern(), strs.Count(int(p.GetCount()), "time"), kind)
 		for _, class := range p.GetClasses() {
-			fmt.Fprintf(out, "       class: %s\n", class)
+			fmt.Fprintf(out, "       Kind: %s\n", class)
 		}
 		for _, example := range p.GetExamples() {
-			fmt.Fprintf(out, "       e.g. %s\n", example)
+			fmt.Fprintf(out, "       Such as: %s\n", example)
 		}
 	}
-	fmt.Fprint(out, "\nNothing has been changed. Apply selected entries with:\n  icebath approvals suggest --apply 1,3\nEntries are merged into "+
-		"approvals.allowlist of this profile.\n")
+	fmt.Fprint(out, "\nNothing has changed yet. Add the ones you want by their numbers:\n  icebath approvals suggest --apply 1,3\nThey join "+
+		"Allowed commands in /settings under Approvals of this profile.\n")
 }
 
 func listJSON(out io.Writer, store string, days int, proposals []*approvalsv1.Proposal) error {
@@ -232,19 +239,37 @@ func spacedList(items []string) string {
 	return "[" + strings.Join(parts, ", ") + "]"
 }
 
+// What a verdict means, in words
+func decision(verdict string) string {
+	switch verdict {
+	case "allow":
+		return "Runs without asking"
+	case "ask-approval":
+		return "Asks you first"
+	case "hardline-deny":
+		return "Always refused"
+	case "user-deny":
+		return "Refused by your Blocked commands"
+	}
+	return verdict
+}
+
 func test(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 	var backend string
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "test [--env-type TYPE] [--json] -- <command...>",
-		Short: "Dry-run the approval verdict for a command (never executes it)",
+		Short: "Show whether a command would run, ask first or be refused",
+		Long: "Shows what the approval rules decide for a command, without running it. Put the command after --. The exit status gives the " +
+			"answer: 0 means it runs, 2 means the agent asks first and 3 means it is refused.",
+		Example: "  icebath approvals test -- rm -rf build\n  icebath approvals test --json -- git push --force",
 		RunE: func(cmd *cobra.Command, words []string) error {
 			out := cmd.OutOrStdout()
 			if len(words) > 0 && words[0] == "--" {
 				words = words[1:]
 			}
 			if len(words) == 0 {
-				fmt.Fprintln(out, "usage: icebath approvals test [--env-type TYPE] [--json] -- <command...>")
+				fmt.Fprintln(out, "Name the command to test after --.\nUsage: icebath approvals test [--env-type TYPE] [--json] -- <command...>")
 				return exit(1)
 			}
 			v, err := service.Test(cmd.Context(), &approvalsv1.TestRequest{Command: strings.Join(words, " "), Backend: backend})
@@ -271,14 +296,14 @@ func test(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 					return err
 				}
 			} else {
-				fmt.Fprintf(out, "command : %s\nenv-type: %s\nverdict : %s  (exit %d)\n", v.GetCommand(), v.GetBackend(), v.GetVerdict(), v.GetExitCode())
+				fmt.Fprintf(out, "Command:  %s\nRuns in:  %s\nDecision: %s, exit status %d\n", v.GetCommand(), v.GetBackend(), decision(v.GetVerdict()), v.GetExitCode())
 				if v.GetRule() != "" {
-					fmt.Fprintf(out, "rule    : %s\n", v.GetRule())
+					fmt.Fprintf(out, "Rule:     %s\n", v.GetRule())
 				}
 				if v.GetDetail() != "" {
-					fmt.Fprintf(out, "detail  : %s\n", v.GetDetail())
+					fmt.Fprintf(out, "Why:      %s\n", v.GetDetail())
 				}
-				fmt.Fprintln(out, "normalized trace (variants the detectors evaluated):")
+				fmt.Fprintln(out, "Forms of the command the checks read:")
 				for _, variant := range v.GetVariants() {
 					fmt.Fprintf(out, "  - %s\n", variant)
 				}
@@ -289,7 +314,7 @@ func test(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&backend, "env-type", "", "terminal backend the command would run on (default: this profile's)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")
+	cmd.Flags().StringVar(&backend, "env-type", "", "Where the command would run, such as docker, instead of this profile's choice")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print the result as JSON")
 	return cmd
 }

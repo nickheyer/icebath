@@ -392,7 +392,7 @@ func (a *assembler) settled() []map[string]any {
 	return out
 }
 
-var errNoTerminal = errors.New("Codex Responses stream did not emit a terminal response")
+var errNoTerminal = errors.New("The reply stopped before it ended. Send your message again.")
 
 // Responses object the events made, an error when neither a terminal event nor any output came
 func (a *assembler) result() (map[string]any, error) {

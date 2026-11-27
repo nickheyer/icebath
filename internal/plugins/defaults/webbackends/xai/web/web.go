@@ -43,14 +43,14 @@ func Register(registry *web.Registry, providers *provider.Registry, creds *crede
 func (b backends) Backends() []web.Backend {
 	return []web.Backend{{
 		Name:     "xai",
-		Title:    "xAI Web Search (Grok)",
-		About:    "xAI Web Search — search the web via Grok's agentic web_search tool (Responses API). Requires xAI Grok OAuth or XAI_API_KEY (https://x.ai), connected with /providers.",
+		Title:    "xAI web search",
+		About:    "Web search through Grok with your xAI account",
 		Settings: []string{xaiconfig.Model, xaiconfig.Timeout, xaiconfig.AllowedDomains, xaiconfig.ExcludedDomains},
 		Plans: []web.Plan{{
-			Title:  "xAI Web Search (Grok)",
+			Title:  "Your xAI account",
 			Badge:  "paid",
-			About:  "Agentic web search via Grok's web_search tool — uses xAI Grok OAuth or XAI_API_KEY.",
-			Prompt: "Uses the xAI Grok OAuth sign in or the xAI API key: connect either with /providers",
+			About:  "Uses your Grok sign-in or xAI API key",
+			Prompt: "Grok sign-in or xAI API key, connected in /providers",
 			Link:   "https://console.x.ai/",
 		}},
 		Search:   b.search,

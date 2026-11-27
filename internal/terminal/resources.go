@@ -23,15 +23,15 @@ type Resources struct {
 func SandboxResources(cfg *config.Config) (Resources, error) {
 	cpu, err := cast.ToFloat64E(cfg.Get(terminalconfig.ContainerCPU))
 	if err != nil {
-		return Resources{}, fmt.Errorf("%s holds %q, which is not a number; fix it in /settings Terminal", terminalconfig.ContainerCPU, cfg.GetString(terminalconfig.ContainerCPU))
+		return Resources{}, fmt.Errorf("Sandbox CPUs is set to %q, which is not a number. Change it in /settings under Terminal.", cfg.GetString(terminalconfig.ContainerCPU))
 	}
 	resources := Resources{CPU: cpu, Persistent: cfg.GetBool(terminalconfig.ContainerPersistent)}
 	for _, whole := range []struct {
-		key  string
-		into *int
-	}{{terminalconfig.ContainerMemory, &resources.Memory}, {terminalconfig.ContainerDisk, &resources.Disk}} {
+		key, title string
+		into       *int
+	}{{terminalconfig.ContainerMemory, "Sandbox memory", &resources.Memory}, {terminalconfig.ContainerDisk, "Sandbox disk", &resources.Disk}} {
 		if *whole.into, err = cast.ToIntE(cfg.Get(whole.key)); err != nil {
-			return Resources{}, fmt.Errorf("%s holds %q, which is not a whole number; fix it in /settings Terminal", whole.key, cfg.GetString(whole.key))
+			return Resources{}, fmt.Errorf("%s is set to %q, which is not a whole number. Change it in /settings under Terminal.", whole.title, cfg.GetString(whole.key))
 		}
 	}
 	return resources, nil

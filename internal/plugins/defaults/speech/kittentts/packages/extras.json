@@ -22,7 +22,7 @@
      ]
     }
    ],
-   "feature": "KittenTTS local text to speech",
+   "feature": "KittenTTS, text to speech on this computer",
    "packages": [
     {
      "marker": "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')",

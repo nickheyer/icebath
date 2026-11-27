@@ -16,6 +16,7 @@ import (
 	openaicodexconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/openaicodex/config"
 	codexmodels "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/openaicodex/models"
 	"github.com/nickheyer/icebath/internal/provider"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -194,7 +195,7 @@ func timeout(account credentials.Account) time.Duration {
 // Renews Codex tokens with the refresh token; the old refresh token stays when the answer rotates none in
 func Refresh(ctx context.Context, refresh string, wait time.Duration) (Tokens, error) {
 	if strings.TrimSpace(refresh) == "" {
-		return Tokens{}, failed(fmt.Sprintf("Codex auth is missing refresh_token. Run `%s` to re-authenticate.", credentials.Relogin(openaicodexconfig.Name)),
+		return Tokens{}, failed(fmt.Sprintf("This ChatGPT sign-in keeps no way to renew itself. Run `%s` to sign in again.", credentials.Relogin(openaicodexconfig.Name)),
 			"codex_auth_missing_refresh_token", true)
 	}
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}, "client_id": {ClientID}}
@@ -204,10 +205,11 @@ func Refresh(ctx context.Context, refresh string, wait time.Duration) (Tokens, e
 	}
 	switch {
 	case reply.Status == 429:
-		message := "Codex provider quota exhausted (429). Credentials are still valid; retry after the usage limit resets."
+		message := "Your ChatGPT plan's usage limit is reached, but the sign-in still works. Try again after the limit resets."
 		failure := failed(message, RateLimited, false)
 		if wait, ok := reply.RetryAfter(); ok {
-			failure.Message = fmt.Sprintf("Codex provider quota exhausted (429); retry after %ds. Credentials are still valid.", int(wait.Seconds()))
+			failure.Message = "Your ChatGPT plan's usage limit is reached, but the sign-in still works. Try again in " +
+				strs.Span(max(wait.Round(time.Second), time.Second)) + "."
 			failure.RetryAfter = wait
 		}
 		return Tokens{}, failure
@@ -216,11 +218,11 @@ func Refresh(ctx context.Context, refresh string, wait time.Duration) (Tokens, e
 	}
 	payload, err := reply.JSON()
 	if err != nil {
-		return Tokens{}, failed("Codex token refresh returned invalid JSON.", "codex_refresh_invalid_json", false)
+		return Tokens{}, failed("OpenAI's answer to renewing the sign-in could not be read.", "codex_refresh_invalid_json", false)
 	}
 	access, _ := payload["access_token"].(string)
 	if access = strings.TrimSpace(access); access == "" {
-		return Tokens{}, failed("Codex token refresh response was missing access_token.", "codex_refresh_missing_access_token", true)
+		return Tokens{}, failed("OpenAI renewed the sign-in without sending a new token. Sign in again.", "codex_refresh_missing_access_token", true)
 	}
 	tokens := Tokens{Access: access, Refresh: strings.TrimSpace(refresh), Refreshed: time.Now().UTC().Format("2006-01-02T15:04:05.000000Z")}
 	if next, _ := payload["refresh_token"].(string); strings.TrimSpace(next) != "" {
@@ -231,26 +233,26 @@ func Refresh(ctx context.Context, refresh string, wait time.Duration) (Tokens, e
 
 // Failure of a refresh the token endpoint refused, telling a grant gone for good apart
 func refusal(reply *credentials.Reply) *credentials.AuthError {
-	code, message := "codex_refresh_failed", fmt.Sprintf("Codex token refresh failed with status %d.", reply.Status)
+	code, message := "codex_refresh_failed", fmt.Sprintf("OpenAI refused to renew the sign-in, with HTTP status %d.", reply.Status)
 	if payload, err := reply.JSON(); err == nil {
 		switch detail := payload["error"].(type) {
 		case map[string]any:
 			code = cmp.Or(credentials.Text(detail["code"]), credentials.Text(detail["type"]), code)
 			if text := credentials.Text(detail["message"]); text != "" {
-				message = "Codex token refresh failed: " + text
+				message = "OpenAI refused to renew the sign-in: " + strings.TrimSuffix(text, ".") + "."
 			}
 		case string:
 			if strings.TrimSpace(detail) != "" {
 				code = strings.TrimSpace(detail)
 				if text := cmp.Or(credentials.Text(payload["error_description"]), credentials.Text(payload["message"])); text != "" {
-					message = "Codex token refresh failed: " + text
+					message = "OpenAI refused to renew the sign-in: " + strings.TrimSuffix(text, ".") + "."
 				}
 			}
 		}
 	}
 	if code == "refresh_token_reused" {
-		message = "Codex refresh token was already consumed by another client (e.g. Codex CLI or VS Code extension). " +
-			"Run `codex` in your terminal to generate fresh tokens, then run `" + credentials.Relogin(openaicodexconfig.Name) + "` to re-authenticate."
+		message = "Another program, such as Codex CLI or the VS Code extension, already used this sign-in's renewal. Run `codex` to sign in " +
+			"there, then run `" + credentials.Relogin(openaicodexconfig.Name) + "` to sign in here again."
 	}
 	relogin := code == "invalid_grant" || code == "invalid_token" || code == "invalid_request" || code == "refresh_token_reused" ||
 		reply.Status == 401 || reply.Status == 403

@@ -208,15 +208,15 @@ func fill(template string, fields map[string]string) string {
 func summary(cfg *config.Config, outcome, noun string) string {
 	switch outcome {
 	case "denied":
-		return fmt.Sprintf("You denied this %s — it did not run.", noun)
+		return fmt.Sprintf("You denied this %s, so it did not run.", noun)
 	case "timeout":
-		return fmt.Sprintf("No answer within %s — the %s did not run.", window(timeout(cfg)), noun)
+		return fmt.Sprintf("No answer came within %s, so the %s did not run.", window(timeout(cfg)), noun)
 	case "notify_failed":
-		return fmt.Sprintf("The approval request could not be delivered — the %s did not run.", noun)
+		return fmt.Sprintf("The question could not reach you, so the %s did not run.", noun)
 	case "cancelled":
-		return fmt.Sprintf("The approval prompt was withdrawn or never reached you — the %s did not run.", noun)
+		return fmt.Sprintf("The question was withdrawn or never reached you, so the %s did not run.", noun)
 	case "blocked":
-		return fmt.Sprintf("This %s is not allowed in an unattended session — it did not run.", noun)
+		return fmt.Sprintf("This %s is not allowed where nobody can answer, so it did not run.", noun)
 	}
 	return fmt.Sprintf("This %s did not run.", noun)
 }
@@ -460,8 +460,8 @@ func (a *Approvals) Confirm(ctx context.Context, c Context, command, detail stri
 	if !Confirms(c.Config) || !a.present(c) {
 		return true, ""
 	}
-	p := Prompt{Title: "Confirm /" + command, Command: "/" + command, Description: detail, Keys: []string{"destructive_slash:" + command},
-		Choices: []Choice{{Once, "Approve once"}, {Always, "Always approve"}, {Deny, "Cancel"}}, quiet: true}
+	p := Prompt{Title: "Run /" + command + "?", Command: "/" + command, Description: detail, Keys: []string{"destructive_slash:" + command},
+		Choices: []Choice{{Once, "Yes"}, {Always, "Yes, stop asking"}, {Deny, "No"}}, quiet: true}
 	out := a.answered(ctx, c, p)
 	switch out.choice {
 	case Once:
@@ -469,14 +469,14 @@ func (a *Approvals) Confirm(ctx context.Context, c Context, command, detail stri
 	case Always:
 		if err := c.Config.Set(approvalsconfig.DestructiveConfirm, false); err != nil {
 			slog.Warn("Could not persist destructive_slash_confirm=false", "session", c.Session, "error", err)
-			return true, "\n\n⚠️ Could not save that preference, so /undo and the other commands that delete or reset things will ask again next time. " +
-				"To silence it permanently, turn Confirm destructive off in /settings under Approvals."
+			return true, "\n\n⚠ That choice could not be saved, so /" + command + " and the other commands that delete or reset things ask again next " +
+				"time. To stop the questions, turn off Confirm before deleting in /settings under Approvals."
 		}
 		slog.Info("User opted out of destructive slash confirm", "session", c.Session)
-		return true, "\n\nℹ️ Future /undo and the other commands that delete or reset things will run without confirmation. Re-enable via " +
-			"Confirm destructive in /settings under Approvals."
+		return true, "\n\n/" + command + " and the other commands that delete or reset things now run without asking. To be asked again, turn on " +
+			"Confirm before deleting in /settings under Approvals."
 	}
-	return false, "🟡 /" + command + " cancelled. Conversation unchanged."
+	return false, "Cancelled /" + command + ", so nothing changed."
 }
 
 // The answer to a prompt: the one the context gives in place of a user, else the user's own, waited for
@@ -544,33 +544,34 @@ func (a *Approvals) Evaluate(cfg *config.Config, session, command, backend strin
 	}
 	if isolated {
 		if pattern := r.userDeny(cfg, command); pattern != "" {
-			return result(UserDeny, pattern, "matches a user-defined approvals.deny rule (blocked even in an isolated container, under --yolo / mode=off)")
+			return result(UserDeny, pattern, "It matches one of your Blocked commands, which stay blocked even in an isolated sandbox, with --yolo, or when "+
+				"When to ask is Never ask.")
 		}
-		return result(Allowed, "", fmt.Sprintf("backend '%s' is an isolated container; the runtime skips all command guards for it except approvals.deny", backend))
+		return result(Allowed, "", fmt.Sprintf("It runs in the isolated %q sandbox, so only your Blocked commands are checked.", backend))
 	}
 	if description := r.hardline(command); description != "" {
-		return result(Hardline, description, "matches the hardline blocklist (never bypassable, blocked even under --yolo / approvals.mode=off)")
+		return result(Hardline, description, "It is on the list of commands that are always blocked, even with --yolo or when When to ask is Never ask.")
 	}
 	if description := r.sudoGuess(command, cfg.GetString(terminalconfig.SudoPassword) != ""); description != "" {
-		return result(Hardline, description, "sudo stdin guard (unconditional block)")
+		return result(Hardline, description, "It pipes a password into sudo, which is always blocked.")
 	}
 	if target := deletesRuntime(command); target != "" {
-		return result(Hardline, "recursive/any delete of "+target, "deletes icebath's own program (unconditional block)")
+		return result(Hardline, "deletes "+target, "It deletes icebath's own program, which is always blocked.")
 	}
 	if pattern := r.userDeny(cfg, command); pattern != "" {
-		return result(UserDeny, pattern, "matches a user-defined approvals.deny rule (blocked even under --yolo / mode=off)")
+		return result(UserDeny, pattern, "It matches one of your Blocked commands, which stay blocked even with --yolo or when When to ask is Never ask.")
 	}
 	if a.skips(session) || Mode(cfg) == approvalsconfig.Off {
-		return result(Allowed, "", "approval bypass active (--yolo or approvals.mode: off); only hardline/deny rules would block")
+		return result(Allowed, "", "Asking is off, by --yolo or by When to ask set to Never ask, so only the always-blocked commands and your Blocked "+
+			"commands would stop it.")
 	}
 	if allowlisted(cfg, command) {
-		return result(Allowed, "", "matches approvals.allowlist (permanently approved)")
+		return result(Allowed, "", "It matches one of your Allowed commands, so it runs without asking.")
 	}
 	if description := r.dangerous(command); description != "" {
-		return result(Asks, description, fmt.Sprintf("matches a dangerous-command pattern; the runtime would raise an interactive approval prompt "+
-			"(pattern key: '%s')", description))
+		return result(Asks, description, fmt.Sprintf("It looks risky, as %s, so the agent would ask you first.", description))
 	}
-	return result(Allowed, "", "no guard matched; would run without a prompt")
+	return result(Allowed, "", "No check matched, so it would run without asking.")
 }
 
 // Refusal of a script run inside the server whose text would stop, restart or uninstall the gateway or kill the program hosting it, which
@@ -595,7 +596,7 @@ func (a *Approvals) Lifecycle(cfg *config.Config, command, cwd string, read func
 	}
 	if withinBudget(command) && containsLaunchctlSubmit(command) {
 		return "Blocked: launchctl submit/bootstrap is restricted inside a supervised gateway regardless of the job label, to prevent indirect " +
-			"gateway restart loops. This guard does not inspect the job's KeepAlive settings or determine whether it is independent of Icebath. " +
+			"gateway restart loops. This guard does not inspect the job's KeepAlive settings or determine whether it is independent of icebath. " +
 			"Perform authorized LaunchAgent maintenance from a separate shell outside the gateway, not by switching launchctl verbs to bypass " +
 			"this rejection."
 	}

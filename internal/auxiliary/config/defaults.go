@@ -6,11 +6,15 @@ func Register(cfg *config.Config, tasks config.Registrant) {
 	cfg.Register(config.Sections{{
 		Key:   Key,
 		Title: "Helper models",
-		About: "Models side jobs run on, such as image analysis, and where they fall back to",
+		About: "Models for side jobs such as naming sessions",
+		Group: config.GroupModels,
+		Order: 30,
 		Settings: []config.Setting{
-			{Key: TransientRetries, Title: "Helper retries", About: "Retries of a helper call after a brief network error, 0 to 6", Default: 2},
-			{Key: OpenRouterModel, Title: "Fallback free model", About: "Free OpenRouter model a helper falls back to; empty uses a built-in free model", Default: ""},
-			{Key: FreeOnly, Title: "Free models only", About: "Only fall back to free OpenRouter models", Default: false},
+			{Key: OpenRouterModel, Title: "OpenRouter model", About: "The OpenRouter model that side jobs use when they name none.", Default: "",
+				Zero: "Built-in free model"},
+			{Key: FreeOnly, Title: "Free models only", About: "Use only free OpenRouter models for side jobs.", Default: false},
+			{Key: TransientRetries, Title: "Retries", About: "How many times a side job is tried again after a brief network error.", Default: 2,
+				Counts: "retries", Least: config.Num(0), Most: config.Num(6), Advanced: true},
 		},
 	}})
 	cfg.Register(tasks)

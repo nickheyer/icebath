@@ -12,8 +12,8 @@ var responsesPrefixes = []string{"gpt-5", "codex", "gpt-codex", "o1", "o3", "o4"
 
 // Ways of signing in to Azure Foundry
 var modes = []config.Option{
-	{Value: azurefoundryconfig.APIKey, Title: "Key", About: "An API key"},
-	{Value: azurefoundryconfig.EntraID, Title: "Entra ID", About: "Your Microsoft Entra sign-in"},
+	{Value: azurefoundryconfig.APIKey, Title: "API key", About: "Sign in with an API key"},
+	{Value: azurefoundryconfig.EntraID, Title: "Entra ID", About: "Sign in with Microsoft Entra ID"},
 }
 
 type specs struct{}
@@ -27,7 +27,7 @@ func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               azurefoundryconfig.Name,
 		DisplayName:        azurefoundryconfig.Title,
-		Description:        "OpenAI-compatible; set your endpoint as the base URL",
+		Description:        "Models in your Azure Foundry project, with an API key or Entra ID",
 		SignupURL:          "https://ai.azure.com/",
 		BaseURL:            base,
 		BaseURLEnv:         azurefoundryconfig.BaseURLEnv,
@@ -44,24 +44,25 @@ func (specs) Specs() []provider.Spec {
 		PerModelMode:       mode,
 		Resolve:            resolve,
 		Settings: []config.Setting{
-			{Key: azurefoundryconfig.AuthMode, Title: "Azure sign-in", About: "How icebath signs in to Azure Foundry", Default: azurefoundryconfig.APIKey,
+			{Key: azurefoundryconfig.AuthMode, Title: "Sign-in method", About: "How icebath signs in to Azure Foundry.", Default: azurefoundryconfig.APIKey,
 				Options: config.Options(modes...)},
-			{Key: azurefoundryconfig.EntraScope, Title: "Entra scope", About: "Scope of the Microsoft Entra ID tokens, https://ai.azure.com/.default when empty",
-				Default: ""},
+			{Key: azurefoundryconfig.EntraScope, Title: "Entra scope", About: "The scope of the tokens that Microsoft Entra ID gives icebath.",
+				Help: "Left empty, the scope is https://ai.azure.com/.default.", Default: "", Zero: "Azure AI scope", Advanced: true},
 		},
 		Account: []config.Setting{
-			{Key: azurefoundryconfig.AuthMode, Title: "Azure sign-in", About: "How this account signs in, the provider's way when empty", Default: "",
-				Options: config.Options(append([]config.Option{{Value: "", Title: "The provider's", About: "The sign-in the provider is set to"}}, modes...)...)},
-			{Key: azurefoundryconfig.TenantID, Title: "Tenant ID", About: "Microsoft Entra tenant of the account's service principal, AZURE_TENANT_ID when empty",
-				Default: ""},
-			{Key: azurefoundryconfig.ClientID, Title: "Client ID", About: "Application of the service principal or user-assigned managed identity, AZURE_CLIENT_ID when empty",
-				Default: ""},
-			{Key: azurefoundryconfig.ClientSecret, Title: "Client secret", About: "Secret of the service principal, AZURE_CLIENT_SECRET when empty",
-				Default: "", Secret: true},
-			{Key: azurefoundryconfig.CertificatePath, Title: "Certificate", About: "PEM or PFX certificate of the service principal, AZURE_CLIENT_CERTIFICATE_PATH when empty",
-				Default: ""},
-			{Key: azurefoundryconfig.CertificatePassword, Title: "Certificate password", About: "Password of the certificate, AZURE_CLIENT_CERTIFICATE_PASSWORD when empty",
-				Default: "", Secret: true},
+			{Key: azurefoundryconfig.AuthMode, Title: "Sign-in method", About: "How this account signs in to Azure Foundry.", Default: "",
+				Options: config.Options(append([]config.Option{{Value: "", Title: "Same as the provider", About: "The method the provider is set to"}},
+					modes...)...)},
+			{Key: azurefoundryconfig.TenantID, Title: "Tenant ID", About: "The Microsoft Entra tenant of the service principal.", Default: "",
+				Zero: "From AZURE_TENANT_ID"},
+			{Key: azurefoundryconfig.ClientID, Title: "Client ID", About: "The app ID of the service principal or managed identity.", Default: "",
+				Zero: "From AZURE_CLIENT_ID"},
+			{Key: azurefoundryconfig.ClientSecret, Title: "Client secret", About: "Your client secret for the service principal.",
+				Help: "Left empty, the variable AZURE_CLIENT_SECRET is used.", Default: "", Secret: true},
+			{Key: azurefoundryconfig.CertificatePath, Title: "Certificate", About: "The PEM or PFX certificate file of the service principal.", Default: "",
+				Zero: "From AZURE_CLIENT_CERTIFICATE_PATH"},
+			{Key: azurefoundryconfig.CertificatePassword, Title: "Certificate password", About: "Your password for the certificate file.",
+				Help: "Left empty, the variable AZURE_CLIENT_CERTIFICATE_PASSWORD is used.", Default: "", Secret: true},
 		},
 	}}
 }

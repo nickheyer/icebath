@@ -7,9 +7,11 @@ func Register(cfg *config.Config, profiles func() []config.Option) {
 		Key:    Key,
 		Global: true,
 		Title:  "Profiles",
-		About:  "Sets of providers, accounts and settings to switch between",
+		About:  "Separate sets of settings, providers and sessions",
+		Group:  config.GroupApp,
+		Order:  30,
 		Settings: []config.Setting{
-			{Key: Active, Title: "Profile", About: "Profile in use, and the one icebath starts with", Default: "default", Env: []string{PinnedEnv, ActiveEnv},
+			{Key: Active, Title: "In use", About: "Which profile icebath uses now and the next time it starts.", Default: "default", Env: []string{PinnedEnv, ActiveEnv},
 				Options: profiles, Internal: true},
 		},
 	}})

@@ -268,8 +268,8 @@ func SharedProfile(cfg *config.Config) string {
 	own, profile := Install(), cfg.ProfileDir(cfg.Profile())
 	for _, e := range live(cfg) {
 		if e.Install != "" && e.Install != own && e.Profile == profile {
-			return "Another icebath installation is using this profile. Both installations share its settings and data, so changes can " +
-				"conflict. You can continue, or close the other installation before making changes."
+			return "Another icebath installation is using this profile, and the two share its settings and data, so changes made in one can " +
+				"undo changes made in the other. Close the other installation before you change anything here."
 		}
 	}
 	return ""

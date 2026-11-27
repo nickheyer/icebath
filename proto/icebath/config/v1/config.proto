@@ -72,6 +72,59 @@ message Setting {
   string unit = 15;
   // What the setting left unset means, such as no limit, when it has no default
   string unset = 16;
+  // Up to two sentences more than the description
+  string help = 17;
+  // Changed by few people, and listed behind Advanced
+  bool advanced = 18;
+  // When a change takes hold
+  Apply apply = 19;
+  // Command that changes it as well, without its slash
+  string slash = 20;
+  // What is in effect while it holds zero_value, such as No limit, empty when that value means nothing of its own
+  string zero = 21;
+  // Value zero speaks of, as YAML
+  string zero_value = 22;
+  // What a number counts, in the plural
+  string counts = 23;
+  // Least and most a number or a length of time may be, as YAML numbers, a length of time counting its unit; empty for no bound
+  string least = 24;
+  string most = 25;
+  // Bounds in words, such as From 1 to 8, empty for none
+  string bounds = 26;
+  // Value and default in words, as a row shows them: what is in effect rather than the value that stands for it
+  string shown = 27;
+  string default_shown = 28;
+  // What one entry of a table holds, unset for a table whose entries are free
+  Entry entry = 29;
+  // Skill that asks for the value, for a setting a skill declares
+  string skill = 30;
+  // A field of an entry that the entry is nothing without
+  bool need = 31;
+  // What text must start with, one of them; any text when empty
+  repeated string starts = 32;
+}
+
+// When a change of a setting takes hold
+enum Apply {
+  // Nothing is said of it
+  APPLY_UNSPECIFIED = 0;
+  APPLY_NEXT_MESSAGE = 1;
+  APPLY_NEW_SESSIONS = 2;
+  APPLY_RESTART = 3;
+}
+
+// What one entry of a table setting holds
+message Entry {
+  // What one entry is, singular and lower case
+  string noun = 1;
+  // What the name of an entry is called where one is asked for
+  string name = 2;
+  // Fields of an entry, each keyed by its name inside the entry; a single field with an empty key for an entry that is one value
+  repeated Setting fields = 3;
+  // The names of the entries are names of variables, shown in capitals whatever case they are kept in
+  bool capitals = 4;
+  // The names an entry may have, each with what a person calls it; any name when empty
+  repeated Option names = 5;
 }
 
 message Section {
@@ -81,6 +134,14 @@ message Section {
   string description = 4;
   // Kept once for every profile rather than in the profile in use
   bool global = 5;
+  // Group of the first settings screen a section at the top is listed under
+  string group = 6;
+}
+
+// Heading the first settings screen lists sections under
+message Group {
+  string id = 1;
+  string title = 2;
 }
 
 message ListRequest {
@@ -95,6 +156,8 @@ message ListResponse {
   repeated Setting settings = 2;
   // Profile whose settings are listed, those every profile shares aside
   string profile = 3;
+  // Groups of the sections at the top, in the order they are listed
+  repeated Group groups = 4;
 }
 
 message GetRequest {

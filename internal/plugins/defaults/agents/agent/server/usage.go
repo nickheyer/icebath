@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -119,38 +120,38 @@ func (a *Agent) capture(r *run, route provider.Route, header http.Header) {
 }
 
 // Why a session falls back when its provider wants paying
-const billingReason = "billing or quota exhausted"
+const billingReason = "the account is out of credit or usage"
 
 // Failure of a route whose provider wants paying, saying where its account adds credit; for a subscription signed in with OAuth, where its
 // usage is seen, hedged when only the error's words said so, as a content filter's refusal can read the same
 func (a *Agent) billing(route provider.Route, err error) error {
 	failure, _ := errors.AsType[*provider.APIError](err)
 	link := a.providers.Billing(route)
-	label, model := cmp.Or(link.Label, cmp.Or(route.Provider, "the selected provider")), cmp.Or(route.Model, "the selected model")
+	label, model := cmp.Or(link.Label, cmp.Or(route.Provider, "The provider")), cmp.Or(route.Model, "the model")
+	elsewhere := "You can also switch to an API key or another provider with /model <model> --provider <name>."
 	var lines []string
 	switch {
 	case route.Auth == provider.AuthOAuth && link.Plan != "" && (failure == nil || failure.StatusCode != 402):
 		lines = []string{
-			label + " reported that your subscription usage may be exhausted for " + model + " (included quota + extra-usage credits) — but this " +
-				"specific error is not proof of a billing problem.",
-			"If " + link.Plan + " still shows quota remaining, this is probably NOT a billing problem: on a subscription (OAuth) token the provider " +
-				"returns this same message when its content filter rejects part of the request — typically a phrase in the system prompt.",
-			"If usage really is exhausted: wait for the billing cycle to reset, or add extra usage at " + link.Plan,
-			"You can also switch to an API key or another provider with /model <model> --provider <provider>.",
+			label + " says your plan's usage for " + model + " may be used up, extra usage included, but this error does not prove it.",
+			"If " + link.Plan + " still shows usage left, this is probably not about billing. With a subscription sign-in, the provider sends " +
+				"this same message when its content filter refuses part of the request, often a phrase in the system prompt.",
+			"If your usage is used up, wait for it to reset, or add extra usage at " + link.Plan + ".",
+			elsewhere,
 		}
 	case route.Auth == provider.AuthOAuth && link.Plan != "":
 		lines = []string{
-			label + " reported that your subscription usage is exhausted for " + model + " (included quota + extra-usage credits).",
-			"Options: wait for the billing cycle to reset, or add extra usage at " + link.Plan,
-			"You can also switch to an API key or another provider with /model <model> --provider <provider>.",
+			label + " says your plan's usage for " + model + " is used up, extra usage included.",
+			"Wait for it to reset, or add extra usage at " + link.Plan + ".",
+			elsewhere,
 		}
 	default:
-		lines = []string{label + " reported that billing, credits, or account entitlement is exhausted for " + model + ".",
-			"Add credits or update billing with that provider, then retry."}
+		lines = []string{label + " says the account has run out of credit, or is not allowed to use " + model + ".",
+			"Add credit or update billing with " + label + ", then send your message again."}
 		if link.URL != "" {
-			lines = append(lines, label+" billing: "+link.URL)
+			lines = append(lines, "Billing for "+label+": "+link.URL)
 		}
-		lines = append(lines, "You can switch providers temporarily with /model <model> --provider <provider>.")
+		lines = append(lines, "You can switch providers for now with /model <model> --provider <name>.")
 	}
 	return fmt.Errorf("%w\n\n%s", err, strings.Join(lines, "\n"))
 }
@@ -169,26 +170,28 @@ func (a *Agent) usageLines(r *run, session *sessionsv1.Session) string {
 		if total.GetReasoning() > 0 {
 			fmt.Fprintf(&out, ", %s reasoning", strs.Thousands(total.GetReasoning()))
 		}
-		fmt.Fprintf(&out, " over %d model calls\n", total.GetApiCalls())
+		fmt.Fprintf(&out, " over %s\n", strs.Count(int(total.GetApiCalls()), "model call"))
 		if cost := costLabel(total); cost != "" {
-			fmt.Fprintf(&out, "- **%s**\n", cost)
+			fmt.Fprintf(&out, "- **Cost** %s\n", cost)
 		}
 	}
 	if s.prompt > 0 {
-		fmt.Fprintf(&out, "- **Context** %s tokens at the last call", strs.Thousands(s.prompt))
+		line := fmt.Sprintf("- **Context** %s tokens at the last call", strs.Thousands(s.prompt))
 		if _, route, err := a.current(r); err == nil {
 			if window := int64(a.window(a.ctx, a.settings(r), route)); window > 0 {
-				fmt.Fprintf(&out, " of %s (%.0f%%)", strs.Thousands(window), 100*float64(s.prompt)/float64(window))
+				line = fmt.Sprintf("- **Context** %s of %s tokens at the last call, %.0f%% full", strs.Thousands(s.prompt), strs.Thousands(window),
+					100*float64(s.prompt)/float64(window))
 			}
 		}
-		out.WriteString("\n")
+		out.WriteString(line + "\n")
 	}
 	if len(s.latency) > 0 {
 		var sum time.Duration
 		for _, took := range s.latency {
 			sum += took
 		}
-		fmt.Fprintf(&out, "- **Model latency** %.1fs on average over the last %d calls\n", (sum / time.Duration(len(s.latency))).Seconds(), len(s.latency))
+		fmt.Fprintf(&out, "- **Model latency** %s on average over the last %s\n", strs.Span((sum / time.Duration(len(s.latency))).Round(100*time.Millisecond)),
+			strs.Count(len(s.latency), "call"))
 	}
 	return out.String()
 }
@@ -197,20 +200,21 @@ func (a *Agent) usageLines(r *run, session *sessionsv1.Session) string {
 func costLabel(total *sessionsv1.Usage) string {
 	switch {
 	case total.GetCostStatus() == "included" && total.GetEstimatedCost() == 0:
-		return "Cost: included"
+		return "Included in your plan"
 	case total.GetEstimatedCost() > 0:
 		prefix := ""
 		if total.GetActualCost() == 0 {
-			prefix = "~"
+			prefix = "about "
 		}
 		amount := total.GetEstimatedCost()
 		if total.GetActualCost() > 0 {
 			amount = total.GetActualCost()
 		}
 		if amount < 0.01 {
-			return fmt.Sprintf("Cost: %s$%.4f", prefix, amount)
+			return fmt.Sprintf("%s$%.4f", prefix, amount)
 		}
-		return fmt.Sprintf("Cost: %s$%.2f", prefix, amount)
+		cents := int64(math.Round(amount * 100))
+		return fmt.Sprintf("%s$%s.%02d", prefix, strs.Thousands(cents/100), cents%100)
 	}
 	return ""
 }
@@ -224,14 +228,14 @@ func (a *Agent) Usage(ctx context.Context, id, argument string) (string, error) 
 	}
 	words := strings.Fields(strings.ToLower(argument))
 	if len(words) > 0 && words[0] != "reset" {
-		return fmt.Sprintf("Unknown /usage subcommand: `%s`. Try `/usage` or `/usage reset [--force]`.", strings.TrimSpace(argument)), nil
+		return "", errors.New("Usage: /usage [reset [--force]]")
 	}
 	settings := a.settings(r)
 	_, route, routeErr := a.current(r)
 	if len(words) > 0 {
 		spec, _ := a.providers.Spec(route.Spec)
 		if routeErr != nil || spec.ResetUsage == nil {
-			return "Banked usage resets are only available on the openai-codex provider. Switch with `/model` first.", nil
+			return "", errors.New("Only ChatGPT or Codex subscriptions have banked usage resets. Switch to one with /model first.")
 		}
 		return spec.ResetUsage(ctx, route, slices.Contains(words[1:], "--force")), nil
 	}
@@ -258,7 +262,7 @@ func (a *Agent) Usage(ctx context.Context, id, argument string) (string, error) 
 		lines = append(append(lines, limited...), "")
 	}
 	if total.GetApiCalls() > 0 {
-		lines = append(lines, "📊 **Session Token Usage**", "Model: `"+cmp.Or(route.Model, session.GetModel())+"`", "Input tokens: "+strs.Thousands(total.GetInput()))
+		lines = append(lines, "**Tokens used in this session**", "Model: `"+cmp.Or(route.Model, session.GetModel())+"`", "Input tokens: "+strs.Thousands(total.GetInput()))
 		if total.GetCacheRead() > 0 {
 			lines = append(lines, "Cache read tokens: "+strs.Thousands(total.GetCacheRead()))
 		}
@@ -266,9 +270,9 @@ func (a *Agent) Usage(ctx context.Context, id, argument string) (string, error) 
 			lines = append(lines, "Cache write tokens: "+strs.Thousands(total.GetCacheWrite()))
 		}
 		all := total.GetInput() + total.GetCacheRead() + total.GetCacheWrite() + total.GetOutput()
-		lines = append(lines, "Output tokens: "+strs.Thousands(total.GetOutput()), "Total: "+strs.Thousands(all), fmt.Sprintf("API calls: %d", total.GetApiCalls()))
+		lines = append(lines, "Output tokens: "+strs.Thousands(total.GetOutput()), "Total tokens: "+strs.Thousands(all), "Model calls: "+strs.Thousands(total.GetApiCalls()))
 		if cost := costLabel(total); cost != "" {
-			lines = append(lines, cost)
+			lines = append(lines, "Cost: "+cost)
 		}
 		if routeErr == nil && last > 0 {
 			if window := int64(a.window(ctx, settings, route)); window > 0 {
@@ -278,10 +282,10 @@ func (a *Agent) Usage(ctx context.Context, id, argument string) (string, error) 
 					occupied, estimated := a.occupancy(ctx, r, history)
 					used = int64(occupied)
 					if estimated {
-						mark = "~"
+						mark = "about "
 					}
 				}
-				lines = append(lines, fmt.Sprintf("Context: %s%s / %s (%s%.0f%%)", mark, strs.Thousands(used), strs.Thousands(window), mark, 100*float64(used)/float64(window)))
+				lines = append(lines, fmt.Sprintf("Context: %s%s of %s tokens, %.0f%% full", mark, strs.Thousands(used), strs.Thousands(window), 100*float64(used)/float64(window)))
 			}
 		}
 	}
@@ -292,7 +296,7 @@ func (a *Agent) Usage(ctx context.Context, id, argument string) (string, error) 
 		lines = append(lines, account...)
 	}
 	if len(lines) == 0 {
-		return "No usage data available for this session.", nil
+		return "This session has used no tokens yet. Send a message, then look again.", nil
 	}
 	return strings.TrimRight(strings.Join(lines, "\n"), "\n"), nil
 }
@@ -305,19 +309,19 @@ func (a *Agent) modelInfo(settings *config.Config, route provider.Route) string 
 	var out strings.Builder
 	info, known := a.models.Host().Info(settings, route)
 	if window := a.window(a.ctx, settings, route); window > 0 {
-		fmt.Fprintf(&out, "\nContext: %s tokens", strs.Thousands(int64(window)))
+		fmt.Fprintf(&out, "\nContext window: %s tokens", strs.Thousands(int64(window)))
 		if pinned := settings.GetInt(agentconfig.ContextLength); pinned > 0 {
-			out.WriteString(" (set by " + agentconfig.ContextLength + ")")
+			out.WriteString(", as you set it in /settings under Agent › Context window")
 		}
 	}
 	if known && info.MaxOutput > 0 {
 		fmt.Fprintf(&out, "\nMax output: %s tokens", strs.Thousands(int64(info.MaxOutput)))
 	}
 	if known {
-		out.WriteString("\nCapabilities: " + info.Abilities())
+		out.WriteString("\nCan do: " + info.Abilities())
 	}
 	if route.Mode == provider.ModeAnthropicMessages || provider.BaseHostMatches(route.BaseURL, "openrouter.ai") && strings.Contains(strings.ToLower(route.Model), "claude") {
-		out.WriteString("\nPrompt caching: enabled")
+		out.WriteString("\nPrompt caching: On")
 	}
 	return out.String()
 }

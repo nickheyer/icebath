@@ -1,6 +1,7 @@
 package contexts
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +24,7 @@ func (t engineTools) Tools() []tools.Def {
 		for _, def := range kind.Tools {
 			check, name := def.Check, kind.Name
 			def.Toolset = Toolset
+			def.Group = cmp.Or(def.Group, "Long sessions")
 			def.Check = func(env *tools.Env) bool {
 				selected, _ := t.host.Selected(env.Config)
 				return selected.Name == name && env.Config.GetString(contextsconfig.Engine) != "" && (check == nil || check(env))

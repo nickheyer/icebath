@@ -34,7 +34,7 @@ const frame = 1280
 func Register(registry *speech.Registry) {
 	registry.Register(speech.Services{Waking: []speech.Engine{{
 		Name: config.Name, Aliases: []string{"sherpa-onnx", "kws", "open"}, Title: "Sherpa",
-		About: "Hears any wake phrase, those of every profile among them, on the native speech engine", Rank: 2, Open: true,
+		About: "Hears any phrase you choose, on this computer", Rank: 2, Open: true,
 		Supported: func(*speech.Speech) bool { return sherpa.Supported() },
 		Installed: func(*speech.Speech) bool { return sherpa.Supported() },
 		New:       open,
@@ -45,7 +45,7 @@ func Register(registry *speech.Registry) {
 func folder(ctx context.Context, wake *speech.Wake) (string, error) {
 	if own := wake.Setting(config.ModelDir); own != "" {
 		if !fsx.IsFile(filepath.Join(own, "tokens.txt")) {
-			return "", fmt.Errorf("sherpa KWS model not found at %s", own)
+			return "", fmt.Errorf("%s holds no Sherpa keyword model, because it has no tokens.txt. Fix Model folder in /settings under Wake word › Sherpa.", own)
 		}
 		return own, nil
 	}
@@ -63,7 +63,7 @@ func folder(ctx context.Context, wake *speech.Wake) (string, error) {
 	}
 	dir := filepath.Join(tree, modelDir)
 	if !fsx.IsFile(filepath.Join(dir, "tokens.txt")) {
-		return "", fmt.Errorf("sherpa KWS model archive lacks tokens.txt: %s", dir)
+		return "", fmt.Errorf("The Sherpa keyword model that icebath downloaded has no tokens.txt in %s.", dir)
 	}
 	return dir, nil
 }
@@ -87,7 +87,7 @@ func part(dir, name string) (string, error) {
 		}
 	}
 	if len(hits) == 0 {
-		return "", fmt.Errorf("sherpa KWS model file missing: %s/%s-*[!8].onnx", dir, name)
+		return "", fmt.Errorf("The Sherpa keyword model in %s has no %s file.", dir, name+"-*.onnx")
 	}
 	slices.SortFunc(hits, func(a, b string) int { return strings.Compare(fold(a), fold(b)) })
 	return hits[0], nil
@@ -148,7 +148,7 @@ func open(ctx context.Context, wake *speech.Wake) (speech.Hotword, error) {
 	}
 	pieces, err := sentencepiece.Load(filepath.Join(dir, "bpe.model"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("The spelling model of Sherpa in %s can't be read: %w", dir, err)
 	}
 	known, err := table(filepath.Join(dir, "tokens.txt"))
 	if err != nil {
@@ -167,7 +167,7 @@ func open(ctx context.Context, wake *speech.Wake) (speech.Hotword, error) {
 		spelled, err := pieces.Pieces(strings.ToUpper(phrase))
 		if err != nil {
 			temp.Close()
-			return nil, err
+			return nil, fmt.Errorf("Sherpa can't spell the phrase “%s”: %w", phrase, err)
 		}
 		if missing := slices.IndexFunc(spelled, func(p string) bool { return !known[p] }); missing >= 0 {
 			slog.Warn(fmt.Sprintf("Can't find token %s in token table, check your tokens.txt see if %s in it. skipping text : %s.", spelled[missing],

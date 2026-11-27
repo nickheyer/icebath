@@ -64,7 +64,7 @@ func (s *Services) Services() []generation.Service {
 		Ready: func(cfg *config.Config) bool { _, ok := s.route(cfg); return ok },
 		Setup: generation.Setup{Badge: "paid", Prompt: "OpenRouter API key", Link: "https://openrouter.ai/keys", Provider: openrouterprovider.Name},
 		Images: &generation.Images{
-			About: "Gemini Flash Image, gpt-image-2, Krea 2, Qwen Image 3 & more via OpenRouter; uses OPENROUTER_API_KEY",
+			About: "Many image models in one place, needs an OpenRouter API key",
 			Settings: []string{openrouterconfig.Model, openrouterconfig.AspectRatio, openrouterconfig.Surface, openrouterconfig.Timeout, openrouterconfig.Resolution,
 				openrouterconfig.Quality, openrouterconfig.Background, openrouterconfig.OutputFormat, openrouterconfig.OutputCompression, openrouterconfig.Seed,
 				openrouterconfig.Count},
@@ -75,8 +75,7 @@ func (s *Services) Services() []generation.Service {
 			Generate: s.draw,
 		},
 		Videos: &generation.Videos{
-			About: "Veo 3.1, Sora 2 Pro, Kling 3, Seedance 2, Wan 3, Hailuo 3, Grok Imagine & more — live catalog; text-to-video, image-to-video & " +
-				"reference-to-video; uses OPENROUTER_API_KEY",
+			About:    "Many video models in one place, needs an OpenRouter API key",
 			Models:   s.videoModels,
 			Default:  func(context.Context, *config.Config) string { return videoDefault },
 			Takes:    s.videoTakes,

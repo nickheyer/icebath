@@ -434,15 +434,19 @@ type AnthropicOAuthError struct {
 }
 
 func (e *AnthropicOAuthError) Error() string {
-	code := e.Code
-	if code == "" {
-		code = "error"
+	verb := map[string]string{"exchange": "finish", "refresh": "renew"}[e.What]
+	if verb == "" {
+		verb = e.What
 	}
-	detail := ""
+	message := fmt.Sprintf("Anthropic refused to %s the sign-in, with HTTP status %d", verb, e.Status)
+	if e.Code != "" {
+		message += " and the code " + e.Code
+	}
+	message += "."
 	if e.Description != "" {
-		detail = " (" + e.Description + ")"
+		message += " It said: " + strings.TrimSuffix(e.Description, ".") + "."
 	}
-	return fmt.Sprintf("Anthropic token %s failed: HTTP %d %s%s", e.What, e.Status, code, detail)
+	return message
 }
 
 // ReloginRequired is a 400 or 401 whose code says the grant is dead
@@ -504,7 +508,7 @@ func postAnthropicOAuthToken(env PoolEnv, data []byte, contentType string, timeo
 		return result, nil
 	}
 	if lastErr == nil {
-		lastErr = fmt.Errorf("Anthropic token %s failed", what)
+		lastErr = fmt.Errorf("Anthropic could not %s the sign-in.", map[string]string{"exchange": "finish", "refresh": "renew"}[what])
 	}
 	return nil, lastErr
 }
@@ -533,7 +537,7 @@ func oauthTokenState(result map[string]any, fallbackRefresh string) map[string]a
 // RefreshAnthropicOAuthPure refreshes an Anthropic OAuth token without touching local credential files
 func RefreshAnthropicOAuthPure(env PoolEnv, refreshToken string, useJSON bool) (map[string]any, error) {
 	if refreshToken == "" {
-		return nil, errors.New("refresh_token is required")
+		return nil, errors.New("This sign-in keeps no way to renew itself. Sign in again from /providers.")
 	}
 	payload := map[string]string{"grant_type": "refresh_token", "refresh_token": refreshToken, "client_id": anthropicOAuthClientID}
 	var data []byte
@@ -553,7 +557,7 @@ func RefreshAnthropicOAuthPure(env PoolEnv, refreshToken string, useJSON bool) (
 		return nil, err
 	}
 	if anyString(result["access_token"]) == "" {
-		return nil, errors.New("Anthropic refresh response was missing access_token")
+		return nil, errors.New("Anthropic renewed the sign-in without sending a new token. Sign in again from /providers.")
 	}
 	return oauthTokenState(result, refreshToken), nil
 }
@@ -773,7 +777,7 @@ func ResolveAnthropicToken(env PoolEnv) string {
 type claudeCLIMissingError struct{}
 
 func (claudeCLIMissingError) Error() string {
-	return "The 'claude' CLI is not installed. Install it with: npm install -g @anthropic-ai/claude-code"
+	return "The claude program is not installed, so its setup token can't be made here. Install it with `npm install -g @anthropic-ai/claude-code`."
 }
 
 func (claudeCLIMissingError) Is(target error) bool { return target == fs.ErrNotExist }
@@ -830,30 +834,24 @@ func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string
 		{"redirect_uri", anthropicOAuthRedirectURI}, {"scope", anthropicOAuthScopes}, {"code_challenge", challenge},
 		{"code_challenge_method", "S256"}, {"state", oauthState},
 	})
-	fmt.Fprintln(out, strings.Join([]string{
-		"", "Authorize Icebath with your Claude Pro/Max subscription.", "",
-		"╭─ Claude Pro/Max Authorization ────────────────────╮",
-		"│                                                   │",
-		"│  Open this link in your browser:                  │",
-		"╰───────────────────────────────────────────────────╯",
-		"", "  " + authURL, "",
-	}, "\n"))
+	fmt.Fprintln(out, strings.Join([]string{"", "Sign in to Claude with your Claude Pro or Max plan.", "",
+		"Open this address in your browser: " + authURL, ""}, "\n"))
 	if show != nil {
 		show(authURL)
 	}
 	if openBrowser && canOpenGraphicalBrowser() {
 		if err := browserutil.Open(context.Background(), authURL); err == nil {
-			fmt.Fprintln(out, "  (Browser opened automatically)")
+			fmt.Fprintln(out, "The address is open in your browser.")
 		}
 	}
-	fmt.Fprint(out, "\nAfter authorizing, you'll see a code. Paste it below.\n\n")
-	authCode, ok := prompt("Authorization code: ")
+	fmt.Fprint(out, "\nOnce you allow icebath, Claude shows a code. Paste that code here.\n\n")
+	authCode, ok := prompt("Code: ")
 	if !ok {
 		return nil
 	}
 	authCode = strings.TrimSpace(authCode)
 	if authCode == "" {
-		fmt.Fprintln(out, "No code entered.")
+		fmt.Fprintln(out, "No code was entered, so the sign-in stopped.")
 		return nil
 	}
 	splits := strings.Split(authCode, "#")
@@ -863,21 +861,22 @@ func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string
 	}
 	if receivedState != oauthState {
 		env.log().Warn("OAuth state mismatch - possible CSRF, aborting")
+		fmt.Fprintln(out, "That code did not come from this sign-in, so it was refused.")
 		return nil
 	}
 	exchangeBody, err := json.Marshal(map[string]string{"grant_type": "authorization_code", "client_id": anthropicOAuthClientID,
 		"code": code, "state": receivedState, "redirect_uri": anthropicOAuthRedirectURI, "code_verifier": verifier})
 	if err != nil {
-		fmt.Fprintf(out, "Token exchange failed: %v\n", err)
+		fmt.Fprintf(out, "The code could not be sent to Claude: %v\n", err)
 		return nil
 	}
 	result, err := postAnthropicOAuthToken(env, exchangeBody, "application/json", 15*time.Second, "exchange", anthropicOAuthTokenUserAgent)
 	if err != nil {
-		fmt.Fprintf(out, "Token exchange failed: %v\n", err)
+		fmt.Fprintln(out, err)
 		return nil
 	}
 	if anyString(result["access_token"]) == "" {
-		fmt.Fprintln(out, "No access token in response.")
+		fmt.Fprintln(out, "Claude finished the sign-in without sending a token.")
 		return nil
 	}
 	return oauthTokenState(result, "")

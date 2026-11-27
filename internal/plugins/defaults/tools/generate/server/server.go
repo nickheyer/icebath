@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"connectrpc.com/connect/v2"
 
@@ -44,11 +46,19 @@ func (s *service) List(_ context.Context, request *generatev1.ListRequest) (*gen
 	response := &generatev1.ListResponse{Chosen: generation.Chosen(cfg, k), Model: generation.Named(cfg, k), Enabled: cfg.GetBool(generationconfig.VideoEnabled)}
 	switch {
 	case failed != nil:
-		response.Reason = failed.Error()
+		// The error is written for the model: the screen says the same in a person's words
+		what, many := "image", "images"
+		if k == generation.Video {
+			what, many = "video", "videos"
+		}
+		response.Reason = fmt.Sprintf("No %s service is set up yet, so the agent can't make %s. Choose one below.", what, many)
+		if gone := new(generation.Unregistered); errors.As(failed, &gone) {
+			response.Reason = fmt.Sprintf("Your settings name the %s service %s, which this icebath does not have. Choose one below.", what, gone.Name)
+		}
 	case !active.Set(cfg):
-		response.Reason = active.Title + " is chosen but not set up: its key or sign-in is missing."
+		response.Reason = active.Title + " is chosen, but its API key or sign-in is missing."
 	case k == generation.Video && !response.Enabled && response.Chosen == "":
-		response.Reason = "Video generation is off: choose a video service, or turn on video_gen.enabled."
+		response.Reason = "Videos are off. Choose a video service, or turn on Make videos in /settings under Videos."
 	default:
 		response.Offered = true
 	}
@@ -75,7 +85,7 @@ func (s *service) Models(ctx context.Context, request *generatev1.ModelsRequest)
 	k := kind(request.GetKind())
 	svc, ok := s.services.Service(k, request.GetService())
 	if !ok {
-		return nil, connect.NewError(connect.CodeNotFound, "no generation service named "+request.GetService())
+		return nil, connect.NewError(connect.CodeNotFound, "No image or video service is called “"+request.GetService()+"”.")
 	}
 	var models []generation.Model
 	response := &generatev1.ModelsResponse{}

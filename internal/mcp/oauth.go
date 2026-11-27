@@ -65,7 +65,7 @@ func AuthFailure(err error) bool {
 type OAuthConfig struct {
 	ClientID     string
 	ClientSecret string
-	// Name the client registers under, Icebath Agent when empty
+	// Name the client registers under, which a person reads where the server asks them to allow it: icebath when empty
 	ClientName string
 	Scope      string
 	// Where the browser comes back: a whole URI, else the loopback host and port
@@ -102,19 +102,19 @@ func ParseOAuthConfig(block map[string]any) (OAuthConfig, error) {
 	if port := text("redirect_port"); port != "" {
 		n, err := strconv.Atoi(port)
 		if err != nil || n < 0 || n > 65535 {
-			return c, fmt.Errorf("oauth.redirect_port must be a port number, not %q", port)
+			return c, fmt.Errorf("The OAuth setting redirect_port must be a port number from 0 to 65,535, not “%s”.", port)
 		}
 		c.RedirectPort = n
 	}
 	if seconds := text("timeout"); seconds != "" {
 		f, err := strconv.ParseFloat(seconds, 64)
 		if err != nil || f <= 0 {
-			return c, fmt.Errorf("oauth.timeout must be a positive number of seconds, not %q", seconds)
+			return c, fmt.Errorf("The OAuth setting timeout must be a number of seconds above 0, not “%s”.", seconds)
 		}
 		c.Timeout = time.Duration(f * float64(time.Second))
 	}
 	if c.Flow != "browser" && c.Flow != "device" {
-		return c, errors.New("oauth.flow must be browser or device")
+		return c, errors.New("The OAuth setting flow must be browser or device.")
 	}
 	if c.AuthMethod == "" {
 		c.AuthMethod = "none"
@@ -385,21 +385,21 @@ func HumanizeRegistration(server, msg, serverURL string) (string, bool) {
 	lowered := strings.ToLower(msg)
 	registration := strings.Contains(lowered, "regist") || strings.Contains(lowered, "dcr") || strings.Contains(lowered, "dynamic client")
 	if strings.Contains(msg, "404") && (strings.Contains(lowered, "not found") || strings.Contains(lowered, "/register")) && registration {
-		return fmt.Sprintf("'%s' does not support automatic client registration — the registration request returned 404 (typical for Google's hosted "+
-			"Gmail/Drive MCP servers and other providers without RFC 7591 dynamic client registration). Create an OAuth client for this provider and "+
-			"add its client_id and client_secret to the server's oauth settings, then run:\n  icebath mcp login %s", server, server), true
+		return fmt.Sprintf("%s does not let icebath register itself, as its registration address answered 404, as Google's Gmail and Drive servers do. "+
+			"Create an OAuth client at the provider, put its client_id and client_secret in the oauth part of the server's settings, then run icebath "+
+			"mcp login %s.", server, server), true
 	}
 	if !(strings.Contains(msg, "403") || strings.Contains(lowered, "forbidden")) || !(registration || strings.Contains(msg, "403") && strings.Contains(lowered, "forbidden") || strings.TrimSpace(lowered) == "forbidden") {
 		return "", false
 	}
 	if figma(server, serverURL) {
-		return fmt.Sprintf("'%s' is Figma's remote MCP — DCR is allowlisted by exact client_name (\"%s\" and \"Codex\" work; most other names 403). "+
-			"Icebath defaults to client_name: %q automatically. If you set oauth.client_name yourself, change it to one of those, or clear it and run:\n"+
-			"  icebath mcp login %s", server, figmaClientName, figmaClientName, server), true
+		return fmt.Sprintf("%s is the Figma server, which lets only some client names register, such as “%s” and “Codex”, and refuses the rest. "+
+			"icebath uses “%s” unless you set client_name in the oauth part of the server's settings. Change your client_name to one of those, or "+
+			"clear it, then run icebath mcp login %s.", server, figmaClientName, figmaClientName, server), true
 	}
-	return fmt.Sprintf("'%s' only allows pre-approved OAuth clients — it rejected client registration (403), so no browser flow can start. Options: set "+
-		"oauth.client_name to a name the provider allowlists, add a pre-registered client (oauth client_id and client_secret), or use the provider's "+
-		"stdio / API-key / local server instead.", server), true
+	return fmt.Sprintf("%s accepts only OAuth clients it approved before and refused to register icebath with 403, so no sign-in can start. "+
+		"Set client_name in the oauth part of the server's settings to a name the provider accepts, add a client_id and client_secret you created at "+
+		"the provider, or use its local server or an API key instead.", server), true
 }
 
 // Issuers that advertise the iss parameter of RFC 9207 but leave it out of their redirects
@@ -866,7 +866,7 @@ func (p *Provider) authorize(ctx context.Context, status int, header http.Header
 		}
 	}
 	if p.config.Flow == "device" || slices.Contains(p.info.GrantTypes, deviceGrant) && !slices.Contains(p.info.GrantTypes, "authorization_code") {
-		return &NonInteractiveError{"MCP device authorization requires `icebath mcp login <server> --flow device`; background reconnects cannot start a device login"}
+		return &NonInteractiveError{"Signing in with a code on another device needs icebath mcp login <server> --flow device, as a reconnect in the background cannot start it."}
 	}
 	code, verifier, err := p.grant(ctx)
 	if err != nil {
@@ -887,7 +887,7 @@ func (p *Provider) authorize(ctx context.Context, status int, header http.Header
 	if resp.status < 200 || resp.status >= 300 {
 		p.inspect(resp)
 		excerpt := strings.Join(strings.Fields(regexp.MustCompile(`<[^>]+>`).ReplaceAllString(string(resp.body), " ")), " ")
-		return &OAuthTokenError{strings.TrimRight(fmt.Sprintf("Token exchange failed (%d): %s", resp.status, Redact(excerpt[:min(len(excerpt), 200)])), ": ")}
+		return &OAuthTokenError{strings.TrimRight(fmt.Sprintf("The server did not finish the sign-in, with HTTP status %d: %s", resp.status, Redact(excerpt[:min(len(excerpt), 200)])), ": ")}
 	}
 	t, err := tokenOf(resp.body)
 	if err != nil {
@@ -955,13 +955,13 @@ func (p *Provider) discover(ctx context.Context, header http.Header, failures *[
 			continue
 		}
 		if prm.Resource != "" && !under(p.resource(), prm.Resource) {
-			return &OAuthFlowError{fmt.Sprintf("Protected resource %s does not match expected %s", prm.Resource, p.resource())}
+			return &OAuthFlowError{fmt.Sprintf("The server says it is %s, but icebath expected %s, so the sign-in stopped.", prm.Resource, p.resource())}
 		}
 		p.prm, p.authURL = prm, prm.AuthorizationServers[0]
 		break
 	}
 	if p.prm == nil && failed != 0 {
-		return &OAuthFlowError{fmt.Sprintf("Protected resource metadata request failed: HTTP %d", failed)}
+		return &OAuthFlowError{fmt.Sprintf("The server did not say where to sign in, with HTTP status %d.", failed)}
 	}
 	expected := cmp.Or(p.authURL, root(p.url))
 	if p.info != nil && p.info.ClientID != p.cimd && p.info.Issuer != "" && !sameIssuer(p.info.Issuer, expected) {
@@ -994,7 +994,7 @@ func (p *Provider) discover(ctx context.Context, header http.Header, failures *[
 			expected = asm.Issuer
 		}
 		if !sameIssuer(asm.Issuer, expected) {
-			return &OAuthFlowError{fmt.Sprintf("Authorization server metadata issuer mismatch: %s != %s", asm.Issuer, expected)}
+			return &OAuthFlowError{fmt.Sprintf("The sign-in server says it is %s, but icebath expected %s, so the sign-in stopped.", asm.Issuer, expected)}
 		}
 		p.asm = asm
 		break
@@ -1055,15 +1055,14 @@ func (p *Provider) identify(ctx context.Context) error {
 	endpoint := root(p.url) + "/register"
 	if p.asm != nil {
 		if p.asm.RegistrationEndpoint == "" {
-			return &OAuthRegistrationError{fmt.Sprintf("MCP OAuth '%s': this provider does not support automatic client registration (its authorization server "+
-				"advertises no registration_endpoint), so a guessed POST to %s would fail (Google's hosted Gmail/Drive MCP servers and similar providers return "+
-				"404 for it). Create an OAuth client for this provider and add its client_id and client_secret to the server's oauth settings, then run "+
-				"`icebath mcp login %s`.", p.server, endpoint, p.server)}
+			return &OAuthRegistrationError{fmt.Sprintf("%s does not let icebath register itself, as it names no registration address, and a guess at %s "+
+				"would fail as it does for Google's Gmail and Drive servers. Create an OAuth client at the provider, put its client_id and client_secret in "+
+				"the oauth part of the server's settings, then run icebath mcp login %s.", p.server, endpoint, p.server)}
 		}
 		endpoint = p.asm.RegistrationEndpoint
 	}
 	method := p.config.AuthMethod
-	metadata := map[string]any{"client_name": cmp.Or(p.config.ClientName, "Icebath Agent"), "redirect_uris": []string{p.redirect},
+	metadata := map[string]any{"client_name": cmp.Or(p.config.ClientName, "icebath"), "redirect_uris": []string{p.redirect},
 		"grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"}, "token_endpoint_auth_method": method,
 		"application_type": p.config.ApplicationType}
 	if p.scope != "" {
@@ -1091,9 +1090,10 @@ func (p *Provider) identify(ctx context.Context) error {
 	if resp.status != http.StatusOK && resp.status != http.StatusCreated {
 		note := ""
 		if location := resp.header.Get("Location"); resp.status >= 300 && resp.status < 400 && location != "" {
-			note = " (redirected to " + location + ")"
+			note = ", sending it on to " + location
 		}
-		return &OAuthRegistrationError{fmt.Sprintf("Registration failed: %d%s %s", resp.status, note, strings.TrimSpace(string(resp.body)))}
+		return &OAuthRegistrationError{strings.TrimSpace(fmt.Sprintf("The server refused to register icebath, with HTTP status %d%s. %s", resp.status, note,
+			strings.TrimSpace(string(resp.body))))}
 	}
 	value, err := DecodeExact(resp.body)
 	m, ok := value.(map[string]any)
@@ -1108,10 +1108,10 @@ func (p *Provider) identify(ctx context.Context) error {
 	switch info.AuthMethod {
 	case "", "none", "client_secret_post", "client_secret_basic":
 	default:
-		return &OAuthRegistrationError{fmt.Sprintf("Authorization server registered the client with unsupported token_endpoint_auth_method %q", info.AuthMethod)}
+		return &OAuthRegistrationError{fmt.Sprintf("The server registered icebath with the sign-in method “%s”, which icebath does not support.", info.AuthMethod)}
 	}
 	if (info.AuthMethod == "client_secret_post" || info.AuthMethod == "client_secret_basic") && info.ClientSecret == "" {
-		return &OAuthRegistrationError{fmt.Sprintf("Authorization server registered the client for %q but issued no client_secret", info.AuthMethod)}
+		return &OAuthRegistrationError{fmt.Sprintf("The server registered icebath for the sign-in method “%s” but gave no client_secret.", info.AuthMethod)}
 	}
 	if issuer != "" && (p.asm.RegistrationEndpoint != "" || root(issuer) == root(p.url)) {
 		info.Issuer = issuer
@@ -1139,8 +1139,8 @@ func pkce() (string, string) {
 func (p *Provider) grant(ctx context.Context) (string, string, error) {
 	signer := SignerOf(ctx)
 	if signer == nil {
-		return "", "", &NonInteractiveError{fmt.Sprintf("MCP server '%s' needs a sign in, and no one can sign in here. Run `icebath mcp login %s`, or sign in "+
-			"from /mcp, then reload the servers with /reload-mcp.", p.server, p.server)}
+		return "", "", &NonInteractiveError{fmt.Sprintf("The MCP server %s needs you to sign in, and no one can sign in here. Run icebath mcp login %s, or "+
+			"sign in from /mcp, then connect the servers again with /reload-mcp.", p.server, p.server)}
 	}
 	endpoint := root(p.url) + "/authorize"
 	if p.asm != nil && p.asm.AuthorizationEndpoint != "" {
@@ -1176,7 +1176,7 @@ func (p *Provider) grant(ctx context.Context) (string, string, error) {
 	back, err := signer.Authorize(signCtx, link, p.redirect)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-			return "", "", &OAuthFlowError{fmt.Sprintf("OAuth sign in to '%s' timed out after %s waiting for the browser", p.server, p.config.Timeout)}
+			return "", "", &OAuthFlowError{fmt.Sprintf("The sign-in to %s stopped after waiting %s for the browser.", p.server, strs.Span(p.config.Timeout))}
 		}
 		return "", "", err
 	}
@@ -1185,7 +1185,7 @@ func (p *Provider) grant(ctx context.Context) (string, string, error) {
 	}
 	returned := back.Get("state")
 	if returned == "" || subtle.ConstantTimeCompare([]byte(returned), []byte(state)) != 1 {
-		return "", "", &OAuthFlowError{fmt.Sprintf("State parameter mismatch: %s != %s", cmp.Or(returned, "None"), state)}
+		return "", "", &OAuthFlowError{fmt.Sprintf("The browser came back from a different sign-in, with state %s instead of %s, so this one stopped.", cmp.Or(returned, "None"), state)}
 	}
 	iss := back.Get("iss")
 	if iss == "" && issOmitting[p.issuer()] && back.Get("code") != "" {
@@ -1209,7 +1209,7 @@ func (p *Provider) checkIss(iss string) error {
 			expected = p.asm.Issuer
 		}
 		if iss != expected {
-			return &OAuthFlowError{fmt.Sprintf("Authorization response iss mismatch: %s != %s", iss, expected)}
+			return &OAuthFlowError{fmt.Sprintf("The browser came back from the sign-in server %s instead of %s, so the sign-in stopped.", iss, expected)}
 		}
 		return nil
 	}
@@ -1250,13 +1250,13 @@ func (p *Provider) LoginDevice(ctx context.Context, show func(link, code string)
 		return err
 	}
 	if p.asm == nil {
-		return errors.New("No OAuth authorization server metadata found")
+		return errors.New("The server does not say where to sign in.")
 	}
 	if p.asm.DeviceEndpoint == "" {
-		return errors.New("Server does not advertise device authorization; use --flow browser if supported")
+		return errors.New("The server does not offer sign-in with a code on another device. Sign in with --flow browser instead.")
 	}
 	if p.asm.HasGrantTypes && !slices.Contains(p.asm.GrantTypes, deviceGrant) {
-		return errors.New("Server does not advertise the device_code grant")
+		return errors.New("The server does not offer sign-in with a code on another device.")
 	}
 	p.scope = cmp.Or(p.scopes(""), p.config.Scope)
 	if err := p.registerDevice(ctx); err != nil {
@@ -1283,14 +1283,14 @@ func (p *Provider) LoginDevice(ctx context.Context, show func(link, code string)
 		ExpiresIn       json.Number `json:"expires_in"`
 	}
 	if resp.status < 200 || resp.status >= 300 {
-		return fmt.Errorf("Device authorization failed (HTTP %d)", resp.status)
+		return fmt.Errorf("The server refused to start a sign-in with a code, with HTTP status %d.", resp.status)
 	}
 	if err := json.Unmarshal(resp.body, &started); err != nil {
-		return fmt.Errorf("Device authorization answer unusable: %w", err)
+		return fmt.Errorf("The server answered the sign-in with a code in a way icebath cannot read: %w", err)
 	}
 	for field, value := range map[string]string{"device_code": started.DeviceCode, "user_code": started.UserCode, "verification_uri": started.VerificationURI} {
 		if value == "" {
-			return errors.New("Device authorization is missing " + field)
+			return errors.New("The server's answer to the sign-in with a code lacks " + field + ".")
 		}
 	}
 	interval, err := started.Interval.Float64()
@@ -1298,11 +1298,11 @@ func (p *Provider) LoginDevice(ctx context.Context, show func(link, code string)
 		interval, err = 5, nil
 	}
 	if err != nil || interval <= 0 {
-		return errors.New("Device authorization has invalid interval")
+		return errors.New("The server's answer to the sign-in with a code has an unusable interval.")
 	}
 	expires, err := started.ExpiresIn.Float64()
 	if err != nil || expires <= 0 {
-		return errors.New("Device authorization has invalid expires_in")
+		return errors.New("The server's answer to the sign-in with a code has an unusable expires_in.")
 	}
 	show(cmp.Or(started.Complete, started.VerificationURI), started.UserCode)
 	deadline := time.Now().Add(min(time.Duration(expires*float64(time.Second)), p.config.Timeout))
@@ -1310,7 +1310,7 @@ func (p *Provider) LoginDevice(ctx context.Context, show func(link, code string)
 	poll := url.Values{"client_id": {p.info.ClientID}, "device_code": {started.DeviceCode}, "grant_type": {deviceGrant}, "resource": {resource}}
 	for {
 		if time.Until(deadline) <= wait {
-			return errors.New("Device authorization expired before approval; run login again")
+			return errors.New("The code expired before you approved it. Run icebath mcp login again.")
 		}
 		select {
 		case <-ctx.Done():
@@ -1344,9 +1344,10 @@ func (p *Provider) LoginDevice(ctx context.Context, show func(link, code string)
 		case "access_denied":
 			return &OAuthFlowError{"Device authorization was denied"}
 		case "expired_token":
-			return errors.New("Device authorization expired before approval; run login again")
+			return errors.New("The code expired before you approved it. Run icebath mcp login again.")
 		default:
-			return &OAuthTokenError{fmt.Sprintf("Device token request failed (HTTP %d): %s", answer.status, cmp.Or(refusal.Description, refusal.Error, Redact(string(answer.body))))}
+			return &OAuthTokenError{fmt.Sprintf("The server did not finish the sign-in with a code, with HTTP status %d: %s", answer.status, cmp.Or(refusal.Description,
+				refusal.Error, Redact(string(answer.body))))}
 		}
 	}
 }
@@ -1368,9 +1369,9 @@ func (p *Provider) registerDevice(ctx context.Context) error {
 		return p.store.SetClient(p.info)
 	}
 	if p.asm.RegistrationEndpoint == "" {
-		return errors.New("Server has no registration endpoint; configure oauth.client_id (and client_secret if required)")
+		return errors.New("The server does not let icebath register itself. Create an OAuth client at the server, then put its client_id, and client_secret if it has one, in the oauth part of the server's settings.")
 	}
-	metadata := map[string]any{"client_name": cmp.Or(p.config.ClientName, "Icebath Agent"), "grant_types": []string{deviceGrant, "refresh_token"},
+	metadata := map[string]any{"client_name": cmp.Or(p.config.ClientName, "icebath"), "grant_types": []string{deviceGrant, "refresh_token"},
 		"response_types": []string{}, "token_endpoint_auth_method": p.config.AuthMethod, "redirect_uris": []string{p.redirect}}
 	if p.scope != "" {
 		metadata["scope"] = p.scope
@@ -1386,12 +1387,12 @@ func (p *Provider) registerDevice(ctx context.Context) error {
 		return err
 	}
 	if resp.status < 200 || resp.status >= 300 {
-		return fmt.Errorf("Client registration failed (HTTP %d)", resp.status)
+		return fmt.Errorf("The server refused to register icebath, with HTTP status %d.", resp.status)
 	}
 	value, err := DecodeExact(resp.body)
 	m, ok := value.(map[string]any)
 	if err != nil || !ok {
-		return errors.New("Client registration answer is not a JSON object")
+		return errors.New("The server answered the registration of icebath in a way icebath cannot read.")
 	}
 	m["issuer"] = issuer
 	info, err := parseClientInfo(m)
@@ -1404,7 +1405,7 @@ func (p *Provider) registerDevice(ctx context.Context) error {
 	switch {
 	case info.AuthMethod != "" && info.AuthMethod != "none" && info.AuthMethod != "client_secret_post" && info.AuthMethod != "client_secret_basic",
 		info.AuthMethod != "" && info.AuthMethod != "none" && info.ClientSecret == "":
-		return errors.New("Device OAuth client has unsupported or incomplete token endpoint authentication")
+		return errors.New("The OAuth client for sign-in with a code signs in to the server in a way icebath does not support, or lacks part of it.")
 	}
 	p.info = info
 	return p.store.SetClient(info)

@@ -31,7 +31,7 @@ func row(item map[string]any, clip int) generation.Model {
 	}
 	out := generation.Model{ID: id, Title: id[strings.LastIndex(id, "/")+1:], Strengths: description}
 	if unit, ok := generation.Object(metadata["pricing"])["per_image_unit"].(float64); ok {
-		out.Price = fmt.Sprintf("$%.4f/image", unit)
+		out.Price = fmt.Sprintf("$%.4f an image", unit)
 	}
 	return out
 }

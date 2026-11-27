@@ -16,12 +16,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	sqliteconfig "github.com/nickheyer/icebath/internal/plugins/defaults/sessions/sqlite/config"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Assistant reply text that is only a bracketed tool name, left by a tool-call template of older local models
@@ -48,8 +50,39 @@ func (s *store) Maintain(ctx context.Context, r *sessionsv1.MaintainRequest, pro
 	return errors.New("Unknown maintenance task.")
 }
 
-func megabytes(n int64) float64 {
-	return float64(n) / (1 << 20)
+// Count of bytes in words
+func bytesOf(n int64) string {
+	return strs.Size(float64(n))
+}
+
+// Text that ends as a sentence: trimmed, with a period added when it ends in no mark of its own
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?") {
+		return text
+	}
+	return text + "."
+}
+
+// What a repair strategy did, in words
+func how(strategy string) string {
+	switch strategy {
+	case "reconcile_schema":
+		return "It added the tables and columns the database lacked."
+	case "rebuild_fts":
+		return "It rebuilt the search index."
+	case "reindex_btree":
+		return "It rebuilt the indexes of the database."
+	case "dedup_schema":
+		return "It removed doubled entries from the layout of the database."
+	case "drop_fts_rebuild":
+		return "It dropped the search index and built it again."
+	case "repaired_by_other_process":
+		return "Another icebath repaired it first."
+	case "already_healthy":
+		return "It was in good shape already."
+	}
+	return "It used the repair " + strategy + "."
 }
 
 func size(path string) int64 {
@@ -69,35 +102,35 @@ func (s *store) optimize(ctx context.Context, r *sessionsv1.MaintainRequest, pro
 		return errors.New(refused)
 	}
 	before := size(s.path)
-	progress("Optimizing session store (FTS merge + VACUUM)…")
+	progress("Tidying the search index and compacting the session database…")
 	merged := s.optimizeIndexes(ctx, db)
 	if err := s.vacuum(ctx); err != nil {
-		return fmt.Errorf("optimization failed: %w", err)
+		return fmt.Errorf("The session database could not be compacted: %s", sentence(err.Error()))
 	}
 	after := size(s.path)
 	var pages, pageSize int64
 	if db.QueryRowContext(ctx, "PRAGMA page_count").Scan(&pages) == nil && db.QueryRowContext(ctx, "PRAGMA page_size").Scan(&pageSize) == nil {
 		after = pages * pageSize
 	}
-	progress(fmt.Sprintf("Optimized %d FTS index(es).", merged))
-	change := fmt.Sprintf("reclaimed %.1f MB", megabytes(before-after))
+	progress("✓ Tidied " + strs.Count(merged, "search index") + ".")
+	change := "which freed " + bytesOf(before-after)
 	if after > before {
-		change = fmt.Sprintf("grew by %.1f MB", megabytes(after-before))
+		change = "which grew it by " + bytesOf(after-before)
 	}
-	progress(fmt.Sprintf("Database size: %.1f MB -> %.1f MB (%s)", megabytes(before), megabytes(after), change))
+	progress(fmt.Sprintf("The database went from %s to %s, %s.", bytesOf(before), bytesOf(after), change))
 	return nil
 }
 
 // Why the search indexes need a rebuild, empty when they are in step
 func (s *store) indexDrift(ctx context.Context, db *sql.DB) (string, error) {
 	if _, stale, err := meta(ctx, db, "fts_stale"); err != nil || stale {
-		return "the search index was detached after damage", err
+		return "the search index was set aside after damage", err
 	}
 	if _, _, running, err := progressOf(ctx, db, wordBackfill); err != nil || running {
-		return "a previous rebuild was interrupted", err
+		return "an earlier rebuild was interrupted", err
 	}
 	if _, _, running, err := progressOf(ctx, db, trigramBackfill); err != nil || running {
-		return "a previous rebuild of the CJK search index was interrupted", err
+		return "an earlier rebuild of the search index for East Asian text was interrupted", err
 	}
 	var messages, indexed int64
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages`).Scan(&messages); err != nil {
@@ -107,12 +140,12 @@ func (s *store) indexDrift(ctx context.Context, db *sql.DB) (string, error) {
 		return "the search index is missing", nil
 	}
 	if messages > 0 && indexed == 0 {
-		return "the search index is empty while messages are stored", nil
+		return "the search index is empty while messages are saved", nil
 	}
 	if s.config.GetBool(sqliteconfig.CJKFTS) {
 		var trigram int64
 		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages_fts_trigram_docsize`).Scan(&trigram); err != nil {
-			return "the CJK search index is missing", nil
+			return "the search index for East Asian text is missing", nil
 		}
 	}
 	return "", nil
@@ -137,7 +170,7 @@ func (s *store) optimizeStorage(ctx context.Context, r *sessionsv1.MaintainReque
 		return err
 	}
 	if drift == "" {
-		progress("Search index is already on the compact layout — nothing to do.")
+		progress("✓ The search index is in good shape, so there is nothing to do.")
 		return nil
 	}
 	if refused := refusal("optimize-storage", s.path, foreignHolders(s.path), r.GetForce()); refused != "" {
@@ -145,29 +178,29 @@ func (s *store) optimizeStorage(ctx context.Context, r *sessionsv1.MaintainReque
 	}
 	current := size(s.path)
 	need := current
-	label := " incl. VACUUM"
+	label := ", compacting included"
 	if r.GetNoVacuum() {
 		need, label = current*3/10, ""
 	}
 	if r.GetDryRun() {
-		progress("Search-index optimization for " + s.path + " (" + drift + ")")
-		progress(fmt.Sprintf("  Current database size: %.1f MB", megabytes(current)))
+		progress("The search index of " + s.path + " needs a rebuild, because " + drift + ".")
+		progress("  The database takes " + bytesOf(current) + " now.")
 		if free, ok := freeSpace(filepath.Dir(s.path)); ok {
-			progress(fmt.Sprintf("  Free disk: %.0f MB (need ~%.0f MB to complete%s)", megabytes(free), megabytes(need), label))
+			progress(fmt.Sprintf("  The disk has %s free, and the rebuild needs about %s%s.", bytesOf(free), bytesOf(need), label))
 			if free < need {
-				return errors.New("Not enough free disk to complete safely. Free up space, or run with --no-vacuum (rebuilds the index but doesn't " +
-					"reclaim space until a later VACUUM).")
+				return errors.New("The disk lacks the space to finish safely. Free some space, or add --no-vacuum, which rebuilds the index without " +
+					"compacting the database afterwards.")
 			}
 		}
 		if current > 500<<20 {
-			progress("  This is a large database; the rebuild may take a while…")
+			progress("  The database is large, so the rebuild may take a while.")
 		}
 		return nil
 	}
 	// One process rebuilds at a time: a server mending the index in the background holds the same lock
 	err = withFlock(s.path+".fts_rebuild.lock", 5*time.Second, func(locked bool) error {
 		if !locked {
-			return errors.New("Another icebath process is rebuilding the search index right now; run this again once it finishes.")
+			return errors.New("Another icebath is rebuilding the search index right now. Run this again once it finishes.")
 		}
 		stale, running, err := s.unmended(ctx, db)
 		if err != nil {
@@ -175,12 +208,12 @@ func (s *store) optimizeStorage(ctx context.Context, r *sessionsv1.MaintainReque
 		}
 		// A rebuild left unfinished goes on from where it stopped; anything else starts over
 		if stale || !running {
-			progress("  Rebuilding index: …")
+			progress("  Rebuilding the search index…")
 			if err := s.reindex(ctx); err != nil {
 				return err
 			}
 		} else {
-			progress("  Resuming the interrupted index rebuild: …")
+			progress("  Going on with the rebuild that was interrupted…")
 		}
 		last := time.Time{}
 		return s.fill(ctx, false, func(label string, indexed, total int64) {
@@ -191,21 +224,20 @@ func (s *store) optimizeStorage(ctx context.Context, r *sessionsv1.MaintainReque
 		})
 	})
 	if err != nil {
-		return fmt.Errorf("optimization failed: %w\nNo data was lost. Re-run to resume.", err)
+		return fmt.Errorf("The search index could not be rebuilt: %s\nNo data was lost. Run the command again to go on.", sentence(err.Error()))
 	}
 	if !r.GetNoVacuum() {
 		started := time.Now()
-		progress(fmt.Sprintf("  Compacting database (VACUUM): %.0f MB → ~%.0f MB", megabytes(current), megabytes(current)*0.7))
+		progress(fmt.Sprintf("  Compacting the database, from %s to about %s…", bytesOf(current), bytesOf(current*7/10)))
 		if err := s.vacuum(ctx); err != nil {
-			return fmt.Errorf("optimization failed: %w\nNo data was lost. Re-run to resume.", err)
+			return fmt.Errorf("The database could not be compacted: %s\nNo data was lost. Run the command again to go on.", sentence(err.Error()))
 		}
-		elapsed := time.Since(started)
-		progress(fmt.Sprintf("  Compacting database (VACUUM): %dm %02ds elapsed, %.0f MB", int(elapsed.Minutes()), int(elapsed.Seconds())%60, megabytes(size(s.path))))
+		progress(fmt.Sprintf("  Compacted the database to %s in %s.", bytesOf(size(s.path)), strs.Span(time.Since(started).Round(time.Second))))
 	}
-	progress("✓ Search index optimized.")
-	progress(fmt.Sprintf("  Database size: %.1f MB -> %.1f MB", megabytes(current), megabytes(size(s.path))))
+	progress("✓ Rebuilt the search index.")
+	progress(fmt.Sprintf("  The database went from %s to %s.", bytesOf(current), bytesOf(size(s.path))))
 	if r.GetNoVacuum() {
-		progress("  VACUUM was skipped; run `icebath sessions optimize` later to return the freed pages to the disk.")
+		progress("  The database was not compacted. Run icebath sessions optimize later to give the freed space back to the disk.")
 	}
 	return nil
 }
@@ -216,9 +248,9 @@ func (s *store) cleanMarkers(ctx context.Context, r *sessionsv1.MaintainRequest,
 		return err
 	}
 	if r.GetDryRun() {
-		progress("Dry run — scanning for stale tool-call marker rows (#78148)…")
+		progress("Looking for replies saved as a bare tool marker, without changing anything…")
 	} else {
-		progress("Scanning for stale tool-call marker rows (#78148)…")
+		progress("Looking for replies saved as a bare tool marker…")
 	}
 	find := func(q querier) ([]int64, error) {
 		rows, err := q.QueryContext(ctx, `SELECT id, COALESCE(content, '') FROM messages WHERE role = 'assistant' AND tool_calls IS NOT NULL AND tool_calls <> ''`)
@@ -244,11 +276,15 @@ func (s *store) cleanMarkers(ctx context.Context, r *sessionsv1.MaintainRequest,
 		return err
 	}
 	if len(ids) == 0 {
-		progress("✓ No affected rows found — nothing to clean.")
+		progress("✓ No reply is saved as a bare tool marker, so there is nothing to clean.")
 		return nil
 	}
 	if r.GetDryRun() {
-		progress(fmt.Sprintf("Would clear %d row(s): ids %v", len(ids), ids))
+		shown := make([]string, len(ids))
+		for i, id := range ids {
+			shown[i] = strconv.FormatInt(id, 10)
+		}
+		progress("Would clear the text of " + strs.Count(len(ids), "reply") + ", messages " + strings.Join(shown, ", ") + ".")
 		return nil
 	}
 	if r.GetBackup() {
@@ -256,7 +292,7 @@ func (s *store) cleanMarkers(ctx context.Context, r *sessionsv1.MaintainRequest,
 		if _, err := db.ExecContext(ctx, `VACUUM INTO ?`, backup); err != nil {
 			return err
 		}
-		progress("  backup: " + backup)
+		progress("  Backed up the database to " + backup + ".")
 	}
 	err = s.write(ctx, func(tx *sql.Tx) error {
 		found, err := find(tx)
@@ -274,7 +310,7 @@ func (s *store) cleanMarkers(ctx context.Context, r *sessionsv1.MaintainRequest,
 	if err != nil {
 		return err
 	}
-	progress(fmt.Sprintf("✓ Cleared %d row(s).", len(ids)))
+	progress("✓ Cleared the text of " + strs.Count(len(ids), "reply") + ".")
 	return nil
 }
 
@@ -343,21 +379,21 @@ func probe(ctx context.Context, path string) (bool, string) {
 		var one int
 		err := db.QueryRowContext(ctx, `SELECT 1 FROM `+table+` WHERE `+table+` MATCH '""' LIMIT 1`).Scan(&one)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) && !strings.Contains(err.Error(), "no such table") && !strings.Contains(err.Error(), "no such column") {
-			return false, fmt.Sprintf("fts5 read probe failed on %s: %v", table, err)
+			return false, fmt.Sprintf("reading the search index %s failed: %v", table, err)
 		}
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, "fts5 write probe failed: " + err.Error()
+		return false, "writing to the search index failed: " + err.Error()
 	}
 	defer tx.Rollback()
 	id := fmt.Sprintf("_icebath_fts_health_probe_%d", time.Now().UnixNano())
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sessions (id, profile, source, started_at) VALUES (?, '', '_health_probe', ?)`, id, now()); err != nil {
-		return false, "fts5 write probe failed: " + err.Error()
+		return false, "writing to the search index failed: " + err.Error()
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO messages (session_id, role, content, timestamp, message_uid) VALUES (?, 'user', '_fts_health_probe', ?, ?)`,
 		id, now(), id); err != nil {
-		return false, "fts5 write probe failed: " + err.Error()
+		return false, "writing to the search index failed: " + err.Error()
 	}
 	return true, ""
 }
@@ -385,11 +421,11 @@ func drift(ctx context.Context, path string) (string, error) {
 	for _, table := range tables {
 		columns, ok := have[table]
 		if !ok {
-			return "no such table: " + table, nil
+			return "the table " + table + " is missing", nil
 		}
 		for _, column := range want[table] {
 			if !strings.Contains(" "+strings.Join(columns, " ")+" ", " "+column+" ") {
-				return "no such column: " + table + "." + column, nil
+				return "the column " + column + " of the table " + table + " is missing", nil
 			}
 		}
 	}
@@ -399,59 +435,60 @@ func drift(ctx context.Context, path string) (string, error) {
 func (s *store) repair(ctx context.Context, r *sessionsv1.MaintainRequest, progress func(string)) error {
 	path := cmp.Or(r.GetPath(), s.config.GetString(sqliteconfig.Path))
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-		progress("No session database at " + path + " (nothing to repair).")
+		progress("There is no session database at " + path + ", so there is nothing to repair.")
 		return nil
 	}
+	checkOnly := "✗ " + path + " does not open cleanly. Run icebath sessions repair without --check-only to repair it."
 	healthy, reason := probe(ctx, path)
 	if healthy {
 		why, err := drift(ctx, path)
 		if err != nil {
-			return fmt.Errorf("✗ Could not check session schema: %w", err)
+			return fmt.Errorf("✗ icebath could not check the layout of the session database: %s", sentence(err.Error()))
 		}
 		if why == "" {
-			progress("✓ " + path + " opens cleanly — no repair needed.")
+			progress("✓ " + path + " opens cleanly, so it needs no repair.")
 			return nil
 		}
-		progress("✗ " + path + " does not open cleanly: " + why)
+		progress("✗ " + path + " does not open cleanly, because " + why + ".")
 		if r.GetCheckOnly() {
-			return errors.New(path + " does not open cleanly")
+			return errors.New(checkOnly)
 		}
-		progress("Repairing (a backup copy is made first)…")
+		progress("Repairing it, after making a backup…")
 		if err := s.reconcile(ctx, path); err != nil {
-			return fmt.Errorf("✗ Repair failed: %w", err)
+			return fmt.Errorf("✗ The repair failed: %s", sentence(err.Error()))
 		}
-		progress("  strategy: reconcile_schema")
+		progress("  " + how("reconcile_schema"))
 		progress(s.recovered(ctx, path))
 		return nil
 	}
-	progress("✗ " + path + " does not open cleanly: " + reason)
+	progress("✗ " + path + " does not open cleanly: " + sentence(reason))
 	if r.GetCheckOnly() {
-		return errors.New(path + " does not open cleanly")
+		return errors.New(checkOnly)
 	}
-	progress("Repairing (a backup copy is made first)…")
+	progress("Repairing it, after making a backup…")
 	if path == s.config.GetString(sqliteconfig.Path) {
 		// Copying the file opens it, and closing that would drop this process's locks on it
 		s.Close()
 	}
 	backup, strategy, err := s.surgery(ctx, path, r.GetBackup())
 	if backup != "" {
-		progress("  backup: " + backup)
+		progress("  Backed up the database to " + backup + ".")
 	}
 	if err != nil {
-		lines := []string{"✗ Repair failed: " + err.Error()}
+		lines := []string{"✗ The repair failed: " + sentence(err.Error())}
 		source := path
 		if backup != "" {
-			lines = append(lines, "  A backup is preserved at: "+backup)
+			lines = append(lines, "  The backup is kept at "+backup+".")
 			source = backup
 		}
-		lines = append(lines, "  Keep the database and the backup; do not delete them.", "",
-			"  Next step — offline recovery (never modifies the source):",
+		lines = append(lines, "  Keep both the database and the backup, and do not delete them.", "",
+			"  Next, check what can be rescued, which never changes the database:",
 			"    icebath sessions recover --source "+source+" \\", "        --inspect-only",
-			"  If that reports the data is recoverable, rebuild it into", "  a NEW database (the active one is left untouched):",
+			"  If it says the data can be rescued, rescue it into a new database,", "  which leaves the one in use as it is:",
 			"    icebath sessions recover --source "+source+" \\", "        --output recovered-state.db")
 		return errors.New(strings.Join(lines, "\n"))
 	}
-	progress("  strategy: " + strategy)
+	progress("  " + how(strategy))
 	progress(s.recovered(ctx, path))
 	return nil
 }
@@ -459,14 +496,14 @@ func (s *store) repair(ctx context.Context, r *sessionsv1.MaintainRequest, progr
 func (s *store) recovered(ctx context.Context, path string) string {
 	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
 	if err != nil {
-		return "✓ Repaired."
+		return "✓ Repaired the database."
 	}
 	defer db.Close()
 	var count int64
 	if db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions`).Scan(&count) != nil {
-		return "✓ Repaired."
+		return "✓ Repaired the database."
 	}
-	return fmt.Sprintf("✓ Repaired — %d sessions recovered.", count)
+	return "✓ Repaired the database, which holds " + strs.Count(int(count), "session") + "."
 }
 
 // Adds what the schema declares and the file lacks: its tables, indexes, triggers and columns
@@ -589,10 +626,10 @@ func (s *store) surgery(ctx context.Context, path string, keepBackup bool) (stri
 	print := fingerprint(path)
 	var record attempts
 	if data, err := os.ReadFile(ledger); err == nil && json.Unmarshal(data, &record) == nil && record.Fingerprint == print && record.Failed >= repairBudget {
-		return "", "", fmt.Errorf("automatic repair has already failed %d times on this exact file — the corruption is beyond the schema and search "+
-			"index repairs (likely b-tree page damage). Manual recovery required: restore a backup, or salvage with `icebath sessions recover --source %s "+
-			"--inspect-only`, then (if it reports recoverable) `icebath sessions recover --source %s --output recovered-state.db`. Delete %s to force "+
-			"another automatic attempt.", record.Failed, path, path, filepath.Base(ledger))
+		return "", "", fmt.Errorf("the automatic repair already failed %s on this file, so the damage is deeper than it can mend.\n"+
+			"  Bring back a backup, or rescue what you can with icebath sessions recover --source %s --inspect-only,\n"+
+			"  then, if it says the data can be rescued, icebath sessions recover --source %s --output recovered-state.db.\n"+
+			"  To try the automatic repair again anyway, delete %s.", strs.Count(record.Failed, "time"), path, path, filepath.Base(ledger))
 	}
 	var backup, strategy string
 	err := withFlock(path+".repair.lock", 120*time.Second, func(locked bool) error {
@@ -601,12 +638,12 @@ func (s *store) surgery(ctx context.Context, path string, keepBackup bool) (stri
 				strategy = "repaired_by_other_process"
 				return nil
 			}
-			return errors.New("could not obtain the session database repair lock (held by another process); skipped schema surgery to avoid racing a " +
-				"concurrent repairer")
+			return errors.New("another icebath is repairing the session database right now, so this repair stopped. Run it again once the other " +
+				"finishes")
 		}
 		if holders := foreignHolders(path); len(holders) > 0 {
-			return errors.New("a live writer still holds the session database; skipped schema surgery to avoid tearing b-tree pages under a concurrent " +
-				"writer. Stop every other icebath process and retry.")
+			return errors.New("another process is writing to the session database, and repairing it now could damage it. Stop every other " +
+				"icebath, then try again")
 		}
 		s.Close()
 		if healthy, _ := probe(ctx, path); healthy {
@@ -616,14 +653,14 @@ func (s *store) surgery(ctx context.Context, path string, keepBackup bool) (stri
 		if keepBackup {
 			var err error
 			if backup, err = copyBundle(path, fmt.Sprintf("%s.malformed-backup-%s", path, time.Now().Format("20060102_150405"))); err != nil {
-				return fmt.Errorf("pre-repair backup refused; aborting schema repair to avoid mutating the only copy of the damaged database: %w", err)
+				return fmt.Errorf("the backup could not be made, so the repair stopped rather than change the only copy of the database: %w", err)
 			}
 		}
 		scratch := path + ".repair-scratch"
 		removeBundle(scratch)
 		defer removeBundle(scratch)
 		if _, err := copyBundle(path, scratch); err != nil {
-			return fmt.Errorf("could not stage a complete repair snapshot of %s: %w", path, err)
+			return fmt.Errorf("a working copy of %s could not be made: %w", path, err)
 		}
 		var failure error
 		for _, attempt := range []struct {
@@ -687,7 +724,7 @@ func (s *store) surgery(ctx context.Context, path string, keepBackup bool) (stri
 			os.Remove(path + sidecar)
 		}
 		if err := os.Rename(scratch, path); err != nil {
-			return fmt.Errorf("repaired snapshot could not be promoted: %w", err)
+			return fmt.Errorf("the repaired copy could not take the place of the database: %w", err)
 		}
 		return nil
 	})
@@ -753,12 +790,12 @@ func (s *store) journalMode(ctx context.Context, r *sessionsv1.MaintainRequest, 
 	}
 	current := headerMode(path)
 	if current == target {
-		progress(fmt.Sprintf("✓ %s is already journal_mode=%s.", path, target))
+		progress(fmt.Sprintf("✓ The journal mode of %s is already %s.", path, target))
 		return nil
 	}
 	if target == sqliteconfig.WAL && crossVM(filepath.Dir(path)) {
-		return fmt.Errorf("✗ Refusing to change the journal mode of %s: it is on a cross-VM file system (virtiofs or 9p) where WAL shared memory "+
-			"silently corrupts", path)
+		return fmt.Errorf("✗ The journal mode of %s stays as it is, because the file is on a file system shared with a virtual machine, virtiofs "+
+			"or 9p, where wal damages data without warning.", path)
 	}
 	holders := foreignHolders(path)
 	if r.GetForce() {
@@ -771,15 +808,15 @@ func (s *store) journalMode(ctx context.Context, r *sessionsv1.MaintainRequest, 
 		holders = kept
 	}
 	if len(holders) > 0 {
-		lines := []string{fmt.Sprintf("✗ Refusing to change the journal mode of %s: another process is using it.", path)}
+		lines := []string{fmt.Sprintf("✗ The journal mode of %s stays as it is, because another process is using the file.", path)}
 		for _, h := range holders {
 			if h.pid <= 0 {
-				lines = append(lines, "  cannot prove the database is quiet ("+h.target+"); stop every icebath process and pass --force")
+				lines = append(lines, "  icebath can't tell whether the file is in use: "+sentence(h.target)+" Stop every icebath, then pass --force.")
 				continue
 			}
-			lines = append(lines, fmt.Sprintf("  PID %d (%s): %s", h.pid, commandLine(h.pid), h.target))
+			lines = append(lines, fmt.Sprintf("  Process %d, %s, holds %s.", h.pid, commandLine(h.pid), h.target))
 		}
-		return errors.New(strings.Join(append(lines, "Stop them first (quit the other icebath windows and servers), then re-run."), "\n"))
+		return errors.New(strings.Join(append(lines, "Stop them first by quitting the other icebath windows and servers, then run the command again."), "\n"))
 	}
 	db, err := sql.Open("sqlite", "file:"+path+"?"+url.Values{"_pragma": {"busy_timeout(0)"}}.Encode())
 	if err != nil {
@@ -798,12 +835,12 @@ func (s *store) journalMode(ctx context.Context, r *sessionsv1.MaintainRequest, 
 	}
 	after := headerMode(path)
 	if after != target {
-		return fmt.Errorf("✗ %s still reads journal_mode=%s after the switch", path, after)
+		return fmt.Errorf("✗ The journal mode of %s is still %s after the switch.", path, after)
 	}
-	progress(fmt.Sprintf("✓ %s: journal_mode %s → %s (header verified).", path, current, target))
+	progress(fmt.Sprintf("✓ The journal mode of %s changed from %s to %s, and the file confirms it.", path, current, target))
 	if path == s.config.GetString(sqliteconfig.Path) && s.config.GetString(sqliteconfig.JournalMode) != target {
-		progress(fmt.Sprintf("  Note: the journal mode setting is %s — the next open would switch the file back. Set it to %s in /settings under "+
-			"Sessions → SQLite to keep it.", s.config.GetString(sqliteconfig.JournalMode), target))
+		progress(fmt.Sprintf("  ⚠ Journal mode in /settings under Sessions › SQLite is %s, so icebath switches the file back the next time it "+
+			"opens it. Set it to %s to keep this.", s.config.GetString(sqliteconfig.JournalMode), target))
 	}
 	return nil
 }
@@ -812,12 +849,12 @@ func (s *store) journalMode(ctx context.Context, r *sessionsv1.MaintainRequest, 
 func headerMode(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
-		return "missing"
+		return "none, because the file is missing"
 	}
 	defer f.Close()
 	header := make([]byte, 20)
 	if n, _ := io.ReadFull(f, header); n < 20 || string(header[:16]) != "SQLite format 3\x00" {
-		return "not-a-database"
+		return "none, because the file is not a database"
 	}
 	switch {
 	case header[18] == 1 && header[19] == 1:
@@ -825,5 +862,5 @@ func headerMode(path string) string {
 	case header[18] == 2 && header[19] == 2:
 		return sqliteconfig.WAL
 	}
-	return fmt.Sprintf("unknown(%d/%d)", header[18], header[19])
+	return fmt.Sprintf("unknown, with the marks %d and %d", header[18], header[19])
 }

@@ -22,11 +22,13 @@ const (
 )
 
 type Command struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Aliases       []string               `protobuf:"bytes,2,rep,name=aliases,proto3" json:"aliases,omitempty"`
-	Usage         string                 `protobuf:"bytes,3,opt,name=usage,proto3" json:"usage,omitempty"`
-	Help          string                 `protobuf:"bytes,4,opt,name=help,proto3" json:"help,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Name    string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Aliases []string               `protobuf:"bytes,2,rep,name=aliases,proto3" json:"aliases,omitempty"`
+	Usage   string                 `protobuf:"bytes,3,opt,name=usage,proto3" json:"usage,omitempty"`
+	Help    string                 `protobuf:"bytes,4,opt,name=help,proto3" json:"help,omitempty"`
+	// Loads a skill or a bundle of skills, listed apart from icebath's own commands
+	Skill         bool `protobuf:"varint,5,opt,name=skill,proto3" json:"skill,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -87,6 +89,13 @@ func (x *Command) GetHelp() string {
 		return x.Help
 	}
 	return ""
+}
+
+func (x *Command) GetSkill() bool {
+	if x != nil {
+		return x.Skill
+	}
+	return false
 }
 
 type ListRequest struct {
@@ -173,12 +182,13 @@ var File_icebath_slash_v1_slash_proto protoreflect.FileDescriptor
 
 const file_icebath_slash_v1_slash_proto_rawDesc = "" +
 	"\n" +
-	"\x1cicebath/slash/v1/slash.proto\x12\x10icebath.slash.v1\"a\n" +
+	"\x1cicebath/slash/v1/slash.proto\x12\x10icebath.slash.v1\"w\n" +
 	"\aCommand\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aaliases\x18\x02 \x03(\tR\aaliases\x12\x14\n" +
 	"\x05usage\x18\x03 \x01(\tR\x05usage\x12\x12\n" +
-	"\x04help\x18\x04 \x01(\tR\x04help\"\r\n" +
+	"\x04help\x18\x04 \x01(\tR\x04help\x12\x14\n" +
+	"\x05skill\x18\x05 \x01(\bR\x05skill\"\r\n" +
 	"\vListRequest\"E\n" +
 	"\fListResponse\x125\n" +
 	"\bcommands\x18\x01 \x03(\v2\x19.icebath.slash.v1.CommandR\bcommands2U\n" +

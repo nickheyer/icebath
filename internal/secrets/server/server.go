@@ -68,7 +68,7 @@ func (s *service) Enable(_ context.Context, request *secretsv1.EnableRequest) (*
 		return nil, err
 	}
 	if _, ok := s.secrets.Source(request.GetName()); !ok {
-		return nil, connect.NewError(connect.CodeNotFound, "unknown secret store: "+request.GetName())
+		return nil, connect.NewError(connect.CodeNotFound, "icebath has no secret store named "+request.GetName()+". Run icebath secrets status to see the stores.")
 	}
 	if err := cfg.Set(secretsconfig.Of(request.GetName(), secretsconfig.Enabled), request.GetOn()); err != nil {
 		return nil, err

@@ -522,7 +522,7 @@ var builtins = []*server{
 	entry("lua-language-server", []string{".lua"}, "Lua — lua-language-server", entryOptions{
 		markers: []string{".luarc.json", ".luarc.jsonc", ".luacheckrc", ".stylua.toml", "stylua.toml", "selene.toml", "selene.yml"},
 		recipe:  "lua-language-server"}),
-	entry("laravel-lsp", []string{".blade.php"}, "Laravel Blade — laravel-lsp (manual: composer global require laravel/lsp)", entryOptions{
+	entry("laravel-lsp", []string{".blade.php"}, "Laravel Blade — laravel-lsp, installed with composer global require laravel/lsp", entryOptions{
 		markers: []string{"artisan", "composer.json", "composer.lock"}, args: []string{"lsp"}}),
 	entry("intelephense", []string{".php"}, "PHP — intelephense", entryOptions{markers: []string{"composer.json", "composer.lock", ".php-version"},
 		args: []string{"--stdio"}, recipe: "intelephense", init: map[string]any{"telemetry": map[string]any{"enabled": false}}}),
@@ -643,7 +643,7 @@ func (m *Manager) customs(entries []serverEntry) []*server {
 				}
 			}
 		}
-		about := e.id + " — custom (" + lspconfig.Servers + ")"
+		about := e.id + " — declared in /settings under Tools › Language servers › Servers"
 		if text, ok := e.raw["description"].(string); ok && text != "" {
 			about = text
 		}

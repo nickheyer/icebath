@@ -95,9 +95,9 @@ type Manifest struct {
 func described(value any) string {
 	switch value.(type) {
 	case nil:
-		return "null"
+		return "nothing"
 	case map[string]any:
-		return "a mapping"
+		return "a set of named values"
 	case []any:
 		return "a list"
 	case string:
@@ -118,21 +118,21 @@ func field(data map[string]any, key, fallback string) string {
 func parseManifest(doc any) (*Manifest, error) {
 	data, ok := doc.(map[string]any)
 	if !ok {
-		return nil, distError("%s must be a mapping, got %s", ManifestFile, described(doc))
+		return nil, distError("%s must hold a set of named values, and it holds %s.", ManifestFile, described(doc))
 	}
 	name := strings.TrimSpace(field(data, "name", ""))
 	if name == "" {
-		return nil, distError("%s missing 'name'", ManifestFile)
+		return nil, distError("%s has no name. Add a line such as name: research.", ManifestFile)
 	}
 	var env []any
 	if raw := data["env_requires"]; raw != nil && text(raw) != "" {
 		if env, ok = raw.([]any); !ok {
-			return nil, distError("env_requires must be a list")
+			return nil, distError("env_requires in %s must be a list.", ManifestFile)
 		}
 	}
 	owned, isList := data["distribution_owned"].([]any)
 	if raw := data["distribution_owned"]; raw != nil && text(raw) != "" && !isList {
-		return nil, distError("distribution_owned must be a list")
+		return nil, distError("distribution_owned in %s must be a list.", ManifestFile)
 	}
 	m := &Manifest{Name: name, Version: field(data, "version", "0.1.0"), Description: field(data, "description", ""),
 		Requires: field(data, requiresKey, field(data, retiredKey, "")), Author: field(data, "author", ""), License: field(data, "license", ""),
@@ -140,11 +140,11 @@ func parseManifest(doc any) (*Manifest, error) {
 	for _, entry := range env {
 		row, ok := entry.(map[string]any)
 		if !ok {
-			return nil, distError("env_requires entry must be a mapping, got %s", described(entry))
+			return nil, distError("Each entry of env_requires in %s must be a set of named values, and one is %s.", ManifestFile, described(entry))
 		}
 		variable := strings.TrimSpace(field(row, "name", ""))
 		if variable == "" {
-			return nil, distError("env_requires entry missing 'name'")
+			return nil, distError("An entry of env_requires in %s has no name.", ManifestFile)
 		}
 		required := true
 		if value, set := row["required"]; set {
@@ -203,11 +203,11 @@ func ReadManifest(dir string) (*Manifest, error) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, distError("Failed to parse %s: %v", path, err)
+		return nil, distError("%s can't be read: %s", path, sentence(err.Error()))
 	}
 	var doc any
 	if err := yaml.Unmarshal([]byte(strings.TrimPrefix(string(data), "\xef\xbb\xbf")), &doc); err != nil {
-		return nil, distError("Failed to parse %s: %v", path, err)
+		return nil, distError("%s can't be read: %s", path, sentence(err.Error()))
 	}
 	if doc == nil {
 		doc = map[string]any{}
@@ -242,7 +242,7 @@ func semver(v string) ([3]int64, error) {
 	for i := range out {
 		n, err := strconv.ParseInt(strings.TrimSpace(parts[i]), 10, 64)
 		if err != nil && !errors.Is(err, strconv.ErrRange) {
-			return out, distError("Unparseable version: %q", v)
+			return out, distError("%q is not a version number such as 1.2.0.", v)
 		}
 		out[i] = n
 	}
@@ -260,7 +260,8 @@ func checkRequires(spec, current string) error {
 	}
 	have, err := semver(current)
 	if err != nil {
-		return err
+		return distError("This distribution needs icebath %s%s, and the version of this icebath is unknown, so icebath can't tell whether it fits.",
+			op, target)
 	}
 	want, err := semver(target)
 	if err != nil {
@@ -268,7 +269,7 @@ func checkRequires(spec, current string) error {
 	}
 	order := slices.Compare(have[:], want[:])
 	if !map[string]bool{">=": order >= 0, "<=": order <= 0, "==": order == 0, "!=": order != 0, ">": order > 0, "<": order < 0}[op] {
-		return distError("This distribution requires Icebath %s%s, but you have %s.", op, target, current)
+		return distError("This distribution needs icebath %s%s, and you have %s.", op, target, current)
 	}
 	return nil
 }
@@ -284,7 +285,7 @@ func version() string {
 
 // Text of the .env.template a distribution's manifest makes when it ships none, its optional variables commented out
 func templateOf(m *Manifest) string {
-	lines := []string{"# Environment variables required by this Icebath distribution.", "# Copy to `.env` and fill in your own values before running.", ""}
+	lines := []string{"# Variables this icebath profile distribution needs.", "# Copy this file to .env and fill in your own values before you use the profile.", ""}
 	for _, r := range m.Env {
 		if r.Description != "" {
 			lines = append(lines, "# "+r.Description)
@@ -294,9 +295,9 @@ func templateOf(m *Manifest) string {
 			fallback = fmt.Sprint(r.Default)
 		}
 		if r.Required {
-			lines = append(lines, "# (required)", r.Name+"="+fallback, "")
+			lines = append(lines, "# Required", r.Name+"="+fallback, "")
 		} else {
-			lines = append(lines, "# (optional)", "# "+r.Name+"="+fallback, "")
+			lines = append(lines, "# Optional", "# "+r.Name+"="+fallback, "")
 		}
 	}
 	return strings.TrimRightFunc(strings.Join(lines, "\n"), unicode.IsSpace) + "\n"
@@ -344,18 +345,18 @@ func (p *Profiles) stage(ctx context.Context, source, workdir string) (string, s
 		}
 		result, err := git.Fetch(ctx, "", 10*time.Minute, address, p.config.Getenv, "clone", "--depth", "1", address, staged)
 		if errors.Is(err, exec.ErrNotFound) {
-			return "", "", distError("git is required for git-URL installs")
+			return "", "", distError("Installing from a git address needs git, which is not installed.")
 		}
 		if err != nil {
 			return "", "", err
 		}
 		if result.Code != 0 {
-			return "", "", distError("git clone failed: %s", strings.TrimSpace(result.Stderr))
+			return "", "", distError("git could not copy the repository: %s", sentence(result.Stderr))
 		}
 		if err := os.RemoveAll(filepath.Join(staged, ".git")); err != nil {
 			return "", "", err
 		}
-		missingText = fmt.Sprintf("No %s at the root of %q. This repository is not an Icebath profile distribution.", ManifestFile, src)
+		missingText = fmt.Sprintf("%q has no %s at its top, so it is not an icebath profile distribution.", src, ManifestFile)
 	case fsx.IsDir(fsx.ExpandHome(src)):
 		abs, err := filepath.Abs(fsx.ExpandHome(src))
 		if err != nil {
@@ -365,10 +366,10 @@ func (p *Profiles) stage(ctx context.Context, source, workdir string) (string, s
 			abs = resolved
 		}
 		staged, provenance = abs, abs
-		missingText = fmt.Sprintf("No %s in %q. A local-directory source must contain a distribution.yaml at its root.", ManifestFile,
-			filepath.Clean(fsx.ExpandHome(src)))
+		missingText = fmt.Sprintf("The folder %q has no %s at its top. A folder you install from must hold one.",
+			filepath.Clean(fsx.ExpandHome(src)), ManifestFile)
 	default:
-		return "", "", distError("Cannot resolve distribution source: %q. Expected a git URL (e.g. github.com/user/repo) or a local directory.", source)
+		return "", "", distError("%q is neither a git address nor a folder. Give a git address such as github.com/user/repo, or the path of a folder.", source)
 	}
 	if !fsx.IsFile(filepath.Join(staged, ManifestFile)) {
 		return "", "", &DistributionError{Msg: missingText}
@@ -384,7 +385,7 @@ func refuseLinks(staged string) error {
 		}
 		if entry.Type()&fs.ModeSymlink != 0 {
 			rel, _ := filepath.Rel(staged, at)
-			return distError("Profile distributions cannot contain symlinks: %s", rel)
+			return distError("A profile distribution can't hold links, and %s is one.", rel)
 		}
 		return nil
 	})
@@ -404,7 +405,7 @@ func (p *Profiles) Plan(ctx context.Context, source, workdir, name string) (*Pla
 		return nil, err
 	}
 	if manifest == nil {
-		return nil, distError("No %s found at the distribution root — this source is not an Icebath distribution.", ManifestFile)
+		return nil, distError("There is no %s at the top of this source, so it is not an icebath profile distribution.", ManifestFile)
 	}
 	if err := checkRequires(manifest.Requires, version()); err != nil {
 		return nil, err
@@ -417,8 +418,7 @@ func (p *Profiles) Plan(ctx context.Context, source, workdir, name string) (*Pla
 		return nil, err
 	}
 	if canon == Default {
-		return nil, distError("Cannot install a distribution as 'default' — that is the built-in profile (%s).  Pass --name <name> to install under a "+
-			"new profile.", p.Dir(Default))
+		return nil, distError("A distribution can't be installed as default, the built-in profile in %s. Pass --name with another name.", p.Dir(Default))
 	}
 	manifest.Name, manifest.Source = canon, provenance
 	manifest.InstalledAt = time.Now().UTC().Format("2006-01-02T15:04:05") + "+00:00"
@@ -549,7 +549,7 @@ func replaceEntry(src, dest string) error {
 // Refuses a path of the profile that is a link, which a distribution never writes through
 func refuseLink(at string) error {
 	if info, err := os.Lstat(at); err == nil && info.Mode()&fs.ModeSymlink != 0 {
-		return distError("%s is a symlink; refusing to replace it — remove the link (or replace it with a real directory) and re-run", at)
+		return distError("%s is a link, and icebath does not replace links. Remove the link or put a real folder there, then run the command again.", at)
 	}
 	return nil
 }
@@ -618,8 +618,8 @@ func child(rel []string, name string) []string {
 func refuseStoreReplace(dest string, rel []string) error {
 	if holdsStore(rel) && fsx.IsDir(dest) {
 		if info, err := os.Lstat(dest); err == nil && info.Mode()&fs.ModeSymlink == 0 {
-			return distError("%s is a directory that holds credential stores, and the distribution ships a file named %s; refusing to replace it", dest,
-				strings.Join(rel, "/"))
+			return distError("%s is a folder that holds sign-ins, and the distribution has a file named %s in its place. icebath does not replace that "+
+				"folder.", dest, strings.Join(rel, "/"))
 		}
 	}
 	return nil
@@ -782,13 +782,13 @@ func (p *Profiles) fileTooling(what string) error {
 	if err != nil || backend == "file" {
 		return err
 	}
-	return &ValueError{fmt.Sprintf("%s copies the local config.yaml, and the %q config backend has none. It is not available with this backend.", what,
-		backend)}
+	return &ValueError{fmt.Sprintf("%s copies the settings file config.yaml, and settings kept in the %q store have none. It does not work with that "+
+		"store.", what, backend)}
 }
 
 // Installs a distribution from a git address or a local folder into a new profile, or over one with force: its plan
 func (p *Profiles) Install(ctx context.Context, source, name string, force bool) (*Plan, error) {
-	if err := p.fileTooling("Profile distribution install"); err != nil {
+	if err := p.fileTooling("Installing a profile distribution"); err != nil {
 		return nil, err
 	}
 	work, err := os.MkdirTemp("", "icebath_dist_install_")
@@ -801,7 +801,7 @@ func (p *Profiles) Install(ctx context.Context, source, name string, force bool)
 		return nil, err
 	}
 	if plan.Existing && !force {
-		return nil, distError("Profile '%s' already exists at %s. Use `icebath profile update` to upgrade in place, or pass --force to overwrite.",
+		return nil, distError("A profile named %s already exists in %s. Run icebath profile update to update it, or pass --force to install over it.",
 			plan.Manifest.Name, plan.Target)
 	}
 	for _, dir := range layout {
@@ -839,13 +839,13 @@ func (p *Profiles) Update(ctx context.Context, name string, forceConfig bool) (*
 		return nil, err
 	}
 	if current == nil {
-		return nil, distError("Profile '%s' is not a distribution (no %s). Only profiles installed via `icebath profile install` can be updated.", canon,
-			ManifestFile)
+		return nil, distError("%s was not installed from a distribution, because it has no %s. Only a profile installed with icebath profile install can "+
+			"be updated.", canon, ManifestFile)
 	}
 	if current.Source == "" {
-		return nil, distError("Profile '%s' has no recorded source.  Re-install with `icebath profile install <source> --name %s --force`.", canon, canon)
+		return nil, distError("icebath does not know where %s was installed from. Install it again with icebath profile install <source> --name %s --force.", canon, canon)
 	}
-	if err := p.fileTooling("Profile distribution install"); err != nil {
+	if err := p.fileTooling("Updating a profile distribution"); err != nil {
 		return nil, err
 	}
 	work, err := os.MkdirTemp("", "icebath_dist_update_")

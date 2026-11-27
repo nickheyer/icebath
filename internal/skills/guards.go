@@ -11,7 +11,7 @@ import (
 
 // Refusal a locked skill's change gets, the same the file and terminal tools give
 func LockRefusal(name string) string {
-	return fmt.Sprintf("Skill '%s' is locked by the user, so the agent cannot change it: skill_manage, write_file, patch and terminal all refuse. Don't retry or work around it (no copying it under another name); tell the user what you would change. They can unlock it with `icebath curator unlock %s`.", name, name)
+	return fmt.Sprintf("Skill '%s' is locked by the user, so the agent cannot change it: skill_manage, write_file, patch and terminal all refuse. Don't retry or work around it (no copying it under another name); tell the user what you would change. They can unlock it by removing \"locked\": true from the entry of '%s' in skills/.usage.json in their profile folder.", name, name)
 }
 
 // Guards every change runs first: the user's content lock, and for a delete the background review's ownership guard
@@ -43,7 +43,7 @@ func (s *Scope) lockGuard(ctx context.Context, name, action string) Result {
 			if reviewing(ctx) == nil {
 				return nil
 			}
-			return failure(fmt.Sprintf("Refusing %s for skill '%s': its lock state could not be verified because the skills/.usage.json sidecar is unreadable. Leave the skill alone and tell the user; they can repair the sidecar or run `icebath curator unlock %s`.", action, name, name), Result{"_locked": true})
+			return failure(fmt.Sprintf("Refusing %s for skill '%s': its lock state could not be verified because the skills/.usage.json sidecar is unreadable. Leave the skill alone and tell the user; they can repair the sidecar, or remove \"locked\": true from the entry of '%s' in it.", action, name, name), Result{"_locked": true})
 		}
 		if locked {
 			return failure(fmt.Sprintf("Refusing %s: %s", action, LockRefusal(candidate)), Result{"_locked": true})
@@ -59,7 +59,7 @@ func (s *Scope) reviewDeleteGuard(ctx context.Context, name, dir string) Result 
 	}
 	const refuse = "Refusing background curator delete for"
 	if record, err := s.Record(name); err == nil && record.Pinned {
-		return failure(fmt.Sprintf("%s pinned skill '%s': pinned skills are off-limits to autonomous maintenance. Ask the user to run `icebath curator unpin %s` if they want it changed.", refuse, name, name), nil)
+		return failure(fmt.Sprintf("%s pinned skill '%s': pinned skills are off-limits to autonomous maintenance. Ask the user to set \"pinned\" to false in the entry of '%s' in skills/.usage.json if they want it changed.", refuse, name, name), nil)
 	}
 	if s.ExternalPath(dir) {
 		return failure(fmt.Sprintf("%s skill '%s': the skill lives in skills.external_dirs, which are externally owned and read-only to autonomous curation.", refuse, name), nil)
@@ -87,7 +87,7 @@ func (s *Scope) reviewDeleteGuard(ctx context.Context, name, dir string) Result 
 				detail = "created_by=None"
 			}
 		}
-		return failure(fmt.Sprintf("%s skill '%s': the skill is not curator-managed (%s). Only curator-managed skills may be archived autonomously. Run `icebath curator adopt %s` to opt it in.", refuse, name, detail, name), nil)
+		return failure(fmt.Sprintf("%s skill '%s': the skill is not curator-managed (%s). Only curator-managed skills may be archived autonomously. Setting \"created_by\" to \"agent\" in the entry of '%s' in skills/.usage.json opts it in.", refuse, name, detail, name), nil)
 	}
 	return nil
 }

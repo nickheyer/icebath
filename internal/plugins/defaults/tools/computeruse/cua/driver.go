@@ -275,24 +275,24 @@ func launchArgs(invocation any) ([]string, bool) {
 // Why a manifest breaks the contract, empty when it keeps it
 func manifestReason(manifest map[string]any) string {
 	if manifest == nil {
-		return "driver manifest is missing or invalid"
+		return "it did not say what it can do"
 	}
 	version, _ := manifest["binary_version"].(string)
 	m := semver.FindStringSubmatch(strings.TrimSpace(version))
 	if m == nil {
-		return "driver manifest does not report a semantic version"
+		return "it did not report its version"
 	}
 	for i := range 3 {
 		n, _ := strconv.Atoi(m[i+1])
 		if n != contractMin[i] {
 			if n < contractMin[i] {
-				return "Icebath computer use requires cua-driver 0.20.0 or newer"
+				return "computer use needs cua-driver 0.20.0 or newer"
 			}
 			break
 		}
 	}
 	if args, ok := launchArgs(manifest["mcp_invocation"]); !ok || len(args) == 0 {
-		return "driver manifest does not provide an MCP launch command"
+		return "it did not say how to start it"
 	}
 	advertised := map[string]map[string]bool{}
 	subcommands, _ := manifest["subcommands"].([]any)
@@ -322,14 +322,14 @@ func manifestReason(manifest map[string]any) string {
 		}
 	}
 	if len(missing) > 0 {
-		return "driver manifest is missing: " + strings.Join(missing, ", ")
+		return "it lacks options icebath needs: " + strings.Join(missing, ", ")
 	}
 	return ""
 }
 
 // Reads the driver's manifest and checks it against the contract
 func (d *Driver) check(ctx context.Context, cfg *config.Config, binary string) Contract {
-	c := Contract{Binary: binary, Reason: "cua-driver is not installed"}
+	c := Contract{Binary: binary, Reason: "it is not installed"}
 	if binary == "" {
 		return c
 	}
@@ -340,10 +340,10 @@ func (d *Driver) check(ctx context.Context, cfg *config.Config, binary string) C
 	out, err := d.run(ctx, cfg, binary, timeout, "manifest")
 	switch {
 	case err != nil:
-		c.Reason = "manifest check failed: " + err.Error()
+		c.Reason = "it did not answer when asked what it can do: " + err.Error()
 		return c
 	case out.code != 0:
-		lines := strings.Split(strings.TrimSpace(cmp.Or(out.stderr, out.stdout, "manifest command failed")), "\n")
+		lines := strings.Split(strings.TrimSpace(cmp.Or(out.stderr, out.stdout, "it failed when asked what it can do")), "\n")
 		c.Reason = strs.Head(lines[len(lines)-1], 200)
 		return c
 	}
@@ -407,6 +407,19 @@ func (p Printer) Info(text string)    { fmt.Fprintln(p.Out, p.paint("  "+text, "
 func (p Printer) Success(text string) { fmt.Fprintln(p.Out, p.paint("✓ "+text, "\033[32m")) }
 func (p Printer) Warning(text string) { fmt.Fprintln(p.Out, p.paint("⚠ "+text, "\033[33m")) }
 
+// Text as a sentence: capital first letter, a period at the end
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	text = strings.ToUpper(text[:1]) + text[1:]
+	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
+		text += "."
+	}
+	return text
+}
+
 // Prints the warning and its hints, answering false as a failed step does
 func (p Printer) fail(message string, hints ...string) bool {
 	p.Warning(message)
@@ -421,7 +434,7 @@ func (p Printer) tail(out *completed) {
 	lines := strings.Split(strings.TrimSpace(cmp.Or(out.stderr, out.stdout)), "\n")
 	for _, line := range lines[max(0, len(lines)-3):] {
 		if line != "" {
-			p.Info("      " + strs.Head(line, 200))
+			p.Info("  " + strs.Head(line, 200))
 		}
 	}
 }
@@ -437,22 +450,22 @@ func (d *Driver) Install(ctx context.Context, cfg *config.Config, p Printer, pro
 	fresh := binary == ""
 	if override != "" {
 		if binary == "" {
-			return p.fail("    "+cuconfig.DriverCommandEnv+" does not resolve to an executable: "+override,
-				"    Fix or unset the override before running computer-use install."), nil
+			return p.fail("The variable "+cuconfig.DriverCommandEnv+" names "+override+", which is not a program that can run.",
+				"Fix or unset "+cuconfig.DriverCommandEnv+", then run icebath computer-use install again."), nil
 		}
 	} else {
 		if progress {
-			p.Info("    Preparing the pinned cua-driver with Icebath PM...")
+			p.Info("Getting the version of cua-driver that icebath installs.")
 		}
 		if _, err := d.packages.Ensure(ctx, cfg, cupackages.CuaDriver, packages.Ensuring{Explicit: true}); err != nil {
-			return p.fail("    cua-driver preparation failed: " + err.Error()), nil
+			return p.fail("Could not install cua-driver. " + sentence(err.Error())), nil
 		}
 		if binary, err = d.Command(""); err != nil {
 			return false, err
 		}
 	}
 	if binary == "" {
-		return p.fail("    PM did not select a usable cua-driver executable."), nil
+		return p.fail("The installed cua-driver has no program that can run."), nil
 	}
 	d.forget()
 	c, err := d.Contract(ctx, cfg, binary)
@@ -460,35 +473,39 @@ func (d *Driver) Install(ctx context.Context, cfg *config.Config, p Printer, pro
 		return false, err
 	}
 	if !c.Ready {
-		hint := "    Run: icebath computer-use doctor"
+		hint := "See why with icebath computer-use doctor."
 		if override != "" {
-			hint = "    Update the binary selected by " + cuconfig.DriverCommandEnv + ", or unset the override."
+			hint = "Update the program that " + cuconfig.DriverCommandEnv + " names, or unset " + cuconfig.DriverCommandEnv + "."
 		}
-		return p.fail("    cua-driver runtime contract is unusable: "+cmp.Or(c.Reason, "unknown error")+".", hint), nil
+		return p.fail("cua-driver cannot be used yet: "+cmp.Or(c.Reason, "it does not offer everything icebath needs")+".", hint), nil
 	}
 	if windows && !d.repairAutostart(ctx, cfg, p, binary, progress) {
-		return p.fail("    cua-driver is compatible, but Windows autostart setup failed."), nil
+		return p.fail("cua-driver works, but it could not be set up to start when you sign in to Windows."), nil
 	}
 	if darwin {
 		app := appPath(binary)
 		if app == "" {
-			return p.fail("    macOS computer use requires the signed CuaDriver.app, not a bare binary.",
-				"    The PM cua-driver package must include its signed macOS app bundle."), nil
+			return p.fail("Computer use on macOS needs the signed CuaDriver app, not the bare program.",
+				"The cua-driver that icebath installs must include its signed macOS app."), nil
 		}
 		if err := d.verifyApp(ctx, cfg, app); err != nil {
-			return p.fail("    cua-driver macOS app registration failed: " + err.Error()), nil
+			return p.fail("Could not register the CuaDriver app with macOS. " + sentence(err.Error())), nil
 		}
 		out, err := run(ctx, []string{lsregister, "-f", app}, 15*time.Second, nil, nil)
 		if err != nil {
-			return p.fail("    cua-driver macOS app registration failed: " + err.Error()), nil
+			return p.fail("Could not register the CuaDriver app with macOS. " + sentence(err.Error())), nil
 		}
 		if out.code != 0 {
 			p.tail(out)
-			return p.fail("    cua-driver macOS app registration failed."), nil
+			return p.fail("Could not register the CuaDriver app with macOS. The lines above say why."), nil
 		}
 	}
 	if progress {
-		p.Success("    cua-driver ready: " + cmp.Or(c.Version, "unknown version") + ".")
+		if c.Version != "" {
+			p.Success("cua-driver " + c.Version + " is ready.")
+		} else {
+			p.Success("cua-driver is ready.")
+		}
 		platformNotes(p, fresh)
 	}
 	return true, nil
@@ -500,18 +517,18 @@ const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks
 func platformNotes(p Printer, fresh bool) {
 	switch {
 	case windows:
-		p.Info("    cua-driver may spawn a UIAccess worker (cua-driver-uia.exe);")
-		p.Info("    Windows/SmartScreen may prompt the first time it runs.")
+		p.Info("cua-driver may start a helper program, cua-driver-uia.exe.")
+		p.Info("Windows SmartScreen may ask about it the first time it runs.")
 	case linux:
-		p.Warning("    Linux support is alpha.")
+		p.Warning("Computer use on Linux is new and may not always work.")
 	default:
 		if fresh {
-			p.Info("    IMPORTANT — grant macOS permissions now:")
+			p.Warning("Grant computer use its macOS permissions now:")
 		} else {
-			p.Info("    Grant macOS permissions if not done yet:")
+			p.Info("Grant computer use its macOS permissions, if you have not yet:")
 		}
-		p.Info("      System Settings > Privacy & Security > Accessibility")
-		p.Info("      System Settings > Privacy & Security > Screen Recording")
+		p.Info("  System Settings › Privacy & Security › Accessibility")
+		p.Info("  System Settings › Privacy & Security › Screen Recording")
 	}
 }
 

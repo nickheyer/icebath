@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -67,7 +66,7 @@ type Report struct {
 func ptr[T any](v T) *T { return &v }
 
 func notFound(id string) *Report {
-	return &Report{Status: "not_found", Error: "No process with ID " + id}
+	return &Report{Status: "not_found", Error: "There is no background process with the ID " + id + "."}
 }
 
 // Status of the job, its exit when it ended, read under its lock
@@ -271,13 +270,13 @@ func (r *Jobs) Kill(ctx context.Context, cfg *config.Config, session, id, source
 		if survivors := r.survivors(j); len(survivors) > 0 {
 			alive := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(survivors)), ", "), "[]")
 			slog.Warn(fmt.Sprintf("Kill incomplete for %s: %d process(es) still alive (%s) — session kept running", j.ID, len(survivors), alive))
-			return &Report{Status: "error", Error: fmt.Sprintf("Kill incomplete: %d process(es) still alive (%s); session running", len(survivors), alive),
+			return &Report{Status: "error", Error: fmt.Sprintf("The background process %s was not fully stopped and keeps running. Process IDs still alive: %s.", j.ID, alive),
 				SessionID: j.ID, Survivors: survivors, ProcessRunning: true}
 		}
 	}
 	if !stopped {
 		slog.Warn(fmt.Sprintf("Kill incomplete for %s: systemd scope %s did not stop", j.ID, j.unit))
-		return &Report{Status: "error", Error: fmt.Sprintf("Kill incomplete: systemd scope %s did not stop", j.unit), SessionID: j.ID,
+		return &Report{Status: "error", Error: fmt.Sprintf("The background process %s was not fully stopped, because its systemd scope %s did not stop.", j.ID, j.unit), SessionID: j.ID,
 			ScopeStopFailed: j.unit, ProcessRunning: !j.Exited()}
 	}
 	j.mu.Lock()
@@ -321,7 +320,7 @@ func (r *Jobs) signal(j *Job, id string, consume bool) *Report {
 		}
 		r.terminate(j.Config, j.Pid, 0, false)
 	default:
-		return &Report{Status: "error", Error: "Recovered process cannot be killed after restart because its original runtime handle is no longer available"}
+		return &Report{Status: "error", Error: "This background process came back after icebath restarted, and icebath can no longer reach it to stop it."}
 	}
 	return nil
 }
@@ -629,18 +628,6 @@ func (r *Jobs) Close() {
 	if killed := r.KillAll(context.Background(), "", "shutdown", false); killed > 0 {
 		slog.Info(fmt.Sprintf("Shutdown: killed %d background process(es)", killed))
 	}
-}
-
-// Seconds as 45s, 3m 2s or 2h 5m
-func ShortUptime(seconds int) string {
-	s := max(seconds, 0)
-	switch {
-	case s < 60:
-		return strconv.Itoa(s) + "s"
-	case s < 3600:
-		return fmt.Sprintf("%dm %ds", s/60, s%60)
-	}
-	return fmt.Sprintf("%dh %dm", s/3600, s/60%60)
 }
 
 // A command's stdin pipe carries only the text it was started with, closed once that was written

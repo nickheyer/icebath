@@ -50,19 +50,25 @@ func toolName(server, tool string) string {
 // Utility tool every server may get for a capability it advertises
 type utility struct {
 	key, family, description string
-	properties               map[string]any
-	required                 []string
+	// Name the chat shows and what it lets the agent do, for a person, the server's name in place of %s
+	title, about string
+	properties   map[string]any
+	required     []string
 }
 
 var utilities = []utility{
-	{key: "list_resources", family: "resources", description: "List available resources from MCP server '%s'", properties: map[string]any{}},
-	{key: "read_resource", family: "resources", description: "Read a resource by URI from MCP server '%s'",
+	{key: "list_resources", family: "resources", description: "List available resources from MCP server '%s'", title: "List resources",
+		about: "List what the %s server offers to read", properties: map[string]any{}},
+	{key: "read_resource", family: "resources", description: "Read a resource by URI from MCP server '%s'", title: "Read resource",
+		about:      "Read something that the %s server offers",
 		properties: map[string]any{"uri": map[string]any{"type": "string", "description": "URI of the resource to read"}}, required: []string{"uri"}},
-	{key: "list_prompts", family: "prompts", description: "List available prompts from MCP server '%s'", properties: map[string]any{}},
-	{key: "get_prompt", family: "prompts", description: "Get a prompt by name from MCP server '%s'", properties: map[string]any{
-		"name":      map[string]any{"type": "string", "description": "Name of the prompt to retrieve"},
-		"arguments": map[string]any{"type": "object", "description": "Optional arguments to pass to the prompt", "properties": map[string]any{}, "additionalProperties": true},
-	}, required: []string{"name"}},
+	{key: "list_prompts", family: "prompts", description: "List available prompts from MCP server '%s'", title: "List prompts",
+		about: "List the ready-made prompts of the %s server", properties: map[string]any{}},
+	{key: "get_prompt", family: "prompts", description: "Get a prompt by name from MCP server '%s'", title: "Get prompt",
+		about: "Get a ready-made prompt from the %s server", properties: map[string]any{
+			"name":      map[string]any{"type": "string", "description": "Name of the prompt to retrieve"},
+			"arguments": map[string]any{"type": "object", "description": "Optional arguments to pass to the prompt", "properties": map[string]any{}, "additionalProperties": true},
+		}, required: []string{"name"}},
 }
 
 // Utility tools a server gets: those its settings leave on and, once it answered the handshake, it advertises
@@ -226,7 +232,9 @@ func (p *pool) toolDef(srv *server, s *spec, t *mcp.Tool) tools.Def {
 	def := tools.Def{
 		Name:    toolName(s.Name, t.Name),
 		Toolset: "mcp-" + s.Name,
-		Title:   s.Name + " · " + t.Label(),
+		Title:   s.Name + " · " + toolTitle(t),
+		About:   toolAbout(s, t),
+		Group:   s.Name,
 		Icon:    tools.IconServer,
 		Schema:  map[string]any{"description": stripTags(description), "parameters": normalize(t.InputSchema)},
 		Handler: func(ctx context.Context, call *tools.Call) string { return p.call(ctx, call, srv.name, t) },
@@ -254,7 +262,9 @@ func (p *pool) utilityDef(srv *server, s *spec, u utility) tools.Def {
 	return tools.Def{
 		Name:    toolName(s.Name, u.key),
 		Toolset: "mcp-" + s.Name,
-		Title:   s.Name + " · " + strings.ReplaceAll(u.key, "_", " "),
+		Title:   s.Name + " · " + u.title,
+		About:   fmt.Sprintf(u.about, s.Name),
+		Group:   s.Name,
 		Icon:    tools.IconServer,
 		Subject: strs.First(u.required),
 		Schema:  map[string]any{"description": fmt.Sprintf(u.description, s.Name), "parameters": parameters},
@@ -266,6 +276,30 @@ func (p *pool) utilityDef(srv *server, s *spec, u utility) tools.Def {
 		Parallel:  s.Parallel,
 		Timeout:   p.timeout(s),
 	}
+}
+
+// Name of a server's tool a person reads: the title the server gives it, else its name with its underscores and dashes as spaces and a
+// capital first letter
+func toolTitle(t *mcp.Tool) string {
+	if label := t.Label(); label != t.Name {
+		return label
+	}
+	text := strings.Join(strings.Fields(strings.NewReplacer("_", " ", "-", " ").Replace(t.Name)), " ")
+	if text == "" {
+		return t.Name
+	}
+	runes := []rune(text)
+	return strings.ToUpper(string(runes[:1])) + string(runes[1:])
+}
+
+// What a server's tool lets the agent do, as the server itself says it: the first line of its description without hidden tags, its
+// trailing period dropped; for a tool the server describes not at all, its name and the server's
+func toolAbout(s *spec, t *mcp.Tool) string {
+	first, _, _ := strings.Cut(strings.TrimSpace(stripTags(t.Description)), "\n")
+	if first = strings.TrimSuffix(strings.Join(strings.Fields(first), " "), "."); first != "" {
+		return first
+	}
+	return "Use " + toolTitle(t) + " on the " + s.Name + " server"
 }
 
 // Whether a server's tools are offered to a session: one of this profile, the server serving or able to start on use

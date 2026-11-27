@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -53,9 +54,11 @@ type StallError struct {
 
 func (e *StallError) Error() string {
 	if e.Limit > 0 {
-		return fmt.Sprintf("Non-streaming API call timed out after %ds with no response (threshold: %ds)", int(e.Silence.Seconds()), int(e.Limit.Seconds()))
+		return fmt.Sprintf("The provider sent nothing for %s, past the silence limit of %s, so the request was stopped. Raise Silent request limit "+
+			"in /settings under Connections if it needs longer.", strs.Span(seconds(e.Silence)), strs.Span(seconds(e.Limit)))
 	}
-	return fmt.Sprintf("Stream timed out: no chunks received for %.0fs (stale stream threshold, model: %s). Connection killed.", e.Silence.Seconds(), e.Model)
+	return fmt.Sprintf("%s sent nothing for %s, so icebath closed the connection. Raise Model silence limit in /settings under Connections if "+
+		"it needs longer.", cmp.Or(e.Model, "The model"), strs.Span(seconds(e.Silence)))
 }
 
 func (e *StallError) Timeout() bool { return true }
@@ -67,8 +70,8 @@ type LifetimeError struct {
 }
 
 func (e *LifetimeError) Error() string {
-	return fmt.Sprintf("Response still streaming after %.0fs, cut by transports.stream_max_lifetime (%gs). Raise transports.stream_max_lifetime, "+
-		"or set it to 0 to turn the cap off, if this model legitimately streams this long.", e.Elapsed.Seconds(), e.Cap.Seconds())
+	return fmt.Sprintf("The reply was still coming after %s, past the stream time limit of %s, so it was cut. If this model needs that long, "+
+		"raise Stream time limit in /settings under Connections, or set it to 0 for no limit.", strs.Span(seconds(e.Elapsed)), strs.Span(seconds(e.Cap)))
 }
 
 func (e *LifetimeError) Timeout() bool { return true }
@@ -79,7 +82,7 @@ type QuietError struct {
 }
 
 func (e *QuietError) Error() string {
-	return fmt.Sprintf("Read timed out after %.0fs waiting for the provider stream.", e.After.Seconds())
+	return fmt.Sprintf("The provider's reply sent nothing for %s, so reading it stopped.", strs.Span(seconds(e.After)))
 }
 
 func (e *QuietError) Timeout() bool { return true }
@@ -160,10 +163,10 @@ func window(d time.Duration) string {
 func (w *Watch) stalled(silence time.Duration) {
 	slog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.",
 		silence.Seconds(), w.Timeouts.Stale.Seconds(), w.model(), strs.Thousands(w.Tokens)))
-	w.emit(provider.EventStatus, fmt.Sprintf("⚠️ No response from provider for %ds (model: %s, context: ~%s tokens). Reconnecting...",
-		int(silence.Seconds()), w.model(), strs.Thousands(w.Tokens)))
-	w.emit(provider.EventWait, fmt.Sprintf("⚠ no output from provider for %ds — reconnecting...", int(silence.Seconds())))
-	w.emit(provider.EventActivity, fmt.Sprintf("stale stream detected after %ds, reconnecting", int(silence.Seconds())))
+	w.emit(provider.EventStatus, fmt.Sprintf("%s sent nothing for %s, with about %s tokens of session to read. Connecting again.", w.model(),
+		strs.Span(seconds(silence)), strs.Thousands(w.Tokens)))
+	w.emit(provider.EventWait, fmt.Sprintf("Nothing from the provider for %s. Connecting again.", strs.Span(seconds(silence))))
+	w.emit(provider.EventActivity, fmt.Sprintf("connecting again after %s of silence", strs.Span(seconds(silence))))
 }
 
 // Error of an attempt cut by the watch, the cause of one it didn't cut; the context's own when the caller cancelled
@@ -248,7 +251,7 @@ func (w *Watch) Run(ctx context.Context, next func() (*Frame, error), handle fun
 			beat = now
 			silence := now.Sub(last)
 			if silence < waitShown {
-				w.emit(provider.EventActivity, fmt.Sprintf("waiting for stream response (%ds, no chunks yet)", int(silence.Seconds())))
+				w.emit(provider.EventActivity, fmt.Sprintf("waiting for the reply, nothing yet after %s", strs.Span(seconds(silence))))
 				continue
 			}
 			phase := "first_chunk"
@@ -260,7 +263,7 @@ func (w *Watch) Run(ctx context.Context, next func() (*Frame, error), handle fun
 				deadline = &Deadline{Label: "stream stale", Remaining: w.Timeouts.Stale - silence}
 			}
 			if !notice.emits(phase, deadline) {
-				w.emit(provider.EventActivity, fmt.Sprintf("waiting for stream response (%ds, %s)", int(silence.Seconds()), phase))
+				w.emit(provider.EventActivity, "waiting for the reply, "+fmt.Sprintf(waitPhases[phase], strs.Span(seconds(silence))))
 				continue
 			}
 			noticeAt = beat
@@ -282,8 +285,8 @@ func (w *Watch) Run(ctx context.Context, next func() (*Frame, error), handle fun
 			elapsed := now.Sub(started)
 			slog.Warn(fmt.Sprintf("Stream still running after %.0fs (stream_max_lifetime %.0fs) — killing connection. model=%s", elapsed.Seconds(),
 				w.Timeouts.Lifetime.Seconds(), w.model()))
-			w.emit(provider.EventStatus, fmt.Sprintf("⚠️ Response still streaming after %ds (stream_max_lifetime %ds, model: %s). Aborting...",
-				int(elapsed.Seconds()), int(w.Timeouts.Lifetime.Seconds()), w.model()))
+			w.emit(provider.EventStatus, fmt.Sprintf("⚠ The reply from %s was still coming after %s, past the stream time limit of %s, so it is cut.",
+				w.model(), strs.Span(seconds(elapsed)), strs.Span(seconds(w.Timeouts.Lifetime))))
 			w.fire("lifetime", elapsed.Seconds())
 			return w.Failed(ctx, nil)
 		case r := <-frames:
@@ -349,23 +352,23 @@ func (n *wait) emits(phase string, deadline *Deadline) bool {
 }
 
 var waitPhases = map[string]string{
-	"first_event":  "%ds waiting for the first provider event",
-	"reconnect":    "%ds waiting for the first provider event after reconnect",
-	"pre_progress": "provider stream open; %ds without substantive model progress",
-	"post_event":   "provider stream active; %ds without stream events",
-	"first_chunk":  "%ds waiting for the first stream chunk",
-	"post_chunk":   "stream open; %ds without stream output",
+	"first_event":  "%s with no answer yet",
+	"reconnect":    "%s with no answer since connecting again",
+	"pre_progress": "%s with the reply open but no progress",
+	"post_event":   "%s with the reply open but quiet",
+	"first_chunk":  "%s with no text yet",
+	"post_chunk":   "%s since its last text",
 }
 
 // Line naming what a silent request waits on and the watchdog that would drop it
 func WaitText(model string, silence time.Duration, phase string, deadline *Deadline) string {
-	lead := "waiting on"
+	lead := "Waiting for"
 	if deadline != nil && deadline.Remaining <= nearDeadline {
-		lead = "still waiting on"
+		lead = "Still waiting for"
 	}
-	text := fmt.Sprintf("⏳ %s %s — ", lead, model) + fmt.Sprintf(waitPhases[phase], int(silence.Seconds()))
+	text := fmt.Sprintf("%s %s, ", lead, model) + fmt.Sprintf(waitPhases[phase], strs.Span(seconds(silence))) + "."
 	if deadline != nil {
-		text += fmt.Sprintf(" (auto-reconnect: %s watchdog in %ds)", deadline.Label, max(0, int(deadline.Remaining.Seconds())))
+		text += fmt.Sprintf(" icebath connects again in %s.", strs.Span(seconds(max(0, deadline.Remaining))))
 	}
 	return text
 }
@@ -384,7 +387,7 @@ func Await[T any](ctx context.Context, w *Watch, call func(context.Context) (T, 
 	w.mu.Lock()
 	w.started, w.cancel = time.Now(), cancel
 	w.mu.Unlock()
-	w.emit(provider.EventActivity, "waiting for non-streaming API response")
+	w.emit(provider.EventActivity, "waiting for the provider to answer")
 	go func() {
 		value, err := call(ctx)
 		done <- result{value, err}
@@ -406,11 +409,11 @@ func Await[T any](ctx context.Context, w *Watch, call func(context.Context) (T, 
 				}
 				switch {
 				case silence < waitShown:
-					w.emit(provider.EventActivity, "waiting for provider response")
+					w.emit(provider.EventActivity, "waiting for the provider to answer")
 				case notice.emits("first_event", deadline):
 					w.emit(provider.EventWait, WaitText(w.model(), silence, "first_event", deadline))
 				default:
-					w.emit(provider.EventActivity, fmt.Sprintf("waiting for provider response (%ds, first_event)", int(silence.Seconds())))
+					w.emit(provider.EventActivity, fmt.Sprintf("waiting for the provider to answer, nothing yet after %s", strs.Span(seconds(silence))))
 				}
 			}
 			if w.Timeouts.Stale == Forever || silence <= w.Timeouts.Stale {
@@ -418,8 +421,8 @@ func Await[T any](ctx context.Context, w *Watch, call func(context.Context) (T, 
 			}
 			slog.Warn(fmt.Sprintf("Non-streaming API call stale for %.0fs (threshold %.0fs). model=%s context=~%s tokens. Killing connection.",
 				silence.Seconds(), w.Timeouts.Stale.Seconds(), w.model(), strs.Thousands(w.Tokens)))
-			w.emit(provider.EventStatus, fmt.Sprintf("⚠️ No response from provider for %ds (non-streaming, model: %s). Aborting call.", int(silence.Seconds()), w.model()))
-			w.emit(provider.EventActivity, fmt.Sprintf("stale non-streaming call killed after %ds", int(silence.Seconds())))
+			w.emit(provider.EventStatus, fmt.Sprintf("%s sent nothing for %s, so the request is stopped.", w.model(), strs.Span(seconds(silence))))
+			w.emit(provider.EventActivity, fmt.Sprintf("stopped a request silent for %s", strs.Span(seconds(silence))))
 			cancel()
 			select {
 			case r := <-done:
@@ -431,4 +434,9 @@ func Await[T any](ctx context.Context, w *Watch, call func(context.Context) (T, 
 			return zero, &TimeoutError{Phase: PhaseRead, Err: &StallError{Silence: silence, Model: w.model(), Limit: w.Timeouts.Stale}}
 		}
 	}
+}
+
+// Length of time rounded to whole seconds, at least one, as a person reads a wait
+func seconds(d time.Duration) time.Duration {
+	return max(d.Round(time.Second), time.Second)
 }

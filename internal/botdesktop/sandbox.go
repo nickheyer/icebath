@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/internal/terminal/sandbox"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Account the desktop and browser run as inside a sandbox image that has it
@@ -213,13 +214,23 @@ func tail(b []byte, n int) string {
 }
 
 // How a plugin's sandbox gets the desktop stack, empty for a backend icebath ships
-func imageAdvice(backend string) string {
-	switch backend {
-	case "", "local", "docker", "singularity", "modal", "daytona", "ssh", "vercel_sandbox":
-		return ""
+func (d *Desktop) imageAdvice(cfg *config.Config, backend string) string {
+	setting := map[string]string{"docker": "Container image in /settings under Terminal › Docker", "modal": "Image in /settings under Terminal › Modal",
+		"daytona": "Image in /settings under Terminal › Daytona", "vercel_sandbox": "Image in /settings under Terminal › Vercel Sandbox",
+		"singularity": "Apptainer image in /settings under Terminal › Singularity/Apptainer to docker://" + sandbox.Image}[backend]
+	switch {
+	case backend == "ssh":
+		return "Install TigerVNC and the core of Xfce on the computer that SSH reaches."
+	case backend == "singularity":
+		return "Set " + setting + ", the sandbox icebath builds, which has the desktop."
+	case setting != "":
+		return "Set " + setting + " to " + sandbox.Image + ", the sandbox icebath builds, which has the desktop."
 	}
-	return "give the " + backend + " plugin's sandbox the desktop stack through the plugin's own image setting (the " + sandbox.Image +
-		" image icebath builds has it)"
+	title := backend
+	if found, ok := d.terminal.Named(cfg, backend); ok {
+		title = found.Title
+	}
+	return "Give the sandbox of " + title + " an image that has the desktop, such as " + sandbox.Image + ", the image icebath builds."
 }
 
 // Brings the screen up inside the sandbox, a live one kept, answering the variables it published or why it could not
@@ -240,10 +251,8 @@ func (d *Desktop) sandboxStart(cfg *config.Config, env terminal.Environment, pro
 		return nil, err
 	}
 	if len(missing) > 0 {
-		advice := cmp.Or(imageAdvice(env.Backend()), "use "+sandbox.Image+" (the sandbox icebath builds, desktop stack included) as "+
-			"terminal.docker_image / modal_image")
-		return nil, fmt.Errorf("Bot Desktop needs %s inside the terminal backend's sandbox. The configured image does not have them; %s, or set "+
-			"bot_desktop.placement: gateway.", strings.Join(missing, ", "), advice)
+		return nil, fmt.Errorf("The agent desktop needs %s inside the sandbox where the agent's commands run, and its image does not have them. %s "+
+			"Or set Location in /settings under Agent desktop to This computer.", strings.Join(missing, ", "), d.imageAdvice(cfg, env.Backend()))
 	}
 	q := terminal.Quote(dir)
 	seed := "set -e; rm -rf " + q + "; mkdir -p " + q + "; cd " + q + ";" +
@@ -255,7 +264,7 @@ func (d *Desktop) sandboxStart(cfg *config.Config, env terminal.Environment, pro
 		return nil, err
 	}
 	if out.Code != 0 {
-		return nil, errors.New("could not seed the sandbox desktop dir: " + tail(out.Stderr, 500))
+		return nil, errors.New("The folder of the agent desktop in the sandbox could not be set up: " + tail(out.Stderr, 500))
 	}
 	vars := map[string]string{
 		"ICEBATH_BD_PROFILE": profile, "ICEBATH_BD_DISPLAY_NUM": "20", "ICEBATH_BD_SOCKET": dir + "/rfb.sock", "ICEBATH_BD_XAUTH": dir + "/Xauthority",
@@ -270,7 +279,7 @@ func (d *Desktop) sandboxStart(cfg *config.Config, env terminal.Environment, pro
 		return nil, err
 	}
 	if out.Code != 0 {
-		return nil, errors.New("sandbox desktop launcher did not start: " + tail(out.Stderr, 500))
+		return nil, errors.New("The agent desktop in the sandbox did not start: " + tail(out.Stderr, 500))
 	}
 	deadline := time.Now().Add(wait)
 	for time.Now().Before(deadline) {
@@ -291,7 +300,7 @@ func (d *Desktop) sandboxStart(cfg *config.Config, env terminal.Environment, pro
 	if _, err := d.sandboxStop(cfg, env, profile); err != nil {
 		return nil, err
 	}
-	return nil, fmt.Errorf("sandbox desktop did not publish its display within %.0fs:\n%s", wait.Seconds(), text(log.Stdout))
+	return nil, fmt.Errorf("The agent desktop in the sandbox did not come up within %s. The end of its log:\n%s", strs.Span(wait.Round(time.Second)), text(log.Stdout))
 }
 
 // Host side record of the sandbox the screen lives in: its display, folder and profile, and the container that holds it
@@ -439,7 +448,7 @@ func (d *Desktop) DisplayCommand(env terminal.Environment, vars map[string]strin
 	}
 	full := terminal.RemoteCommand(env, argv, vars, user, true)
 	if full == nil {
-		return nil, fmt.Errorf("%s cannot %s", env.Backend(), what)
+		return nil, fmt.Errorf("The %q sandbox cannot %s.", env.Backend(), what)
 	}
 	return full, nil
 }

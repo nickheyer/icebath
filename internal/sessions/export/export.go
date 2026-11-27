@@ -325,7 +325,7 @@ func Markdown(transcripts []*sessionsv1.Transcript) []byte {
 	var lines []string
 	level := "#"
 	if len(transcripts) > 1 {
-		lines, level = append(lines, "# Icebath sessions export", ""), "##"
+		lines, level = append(lines, "# icebath sessions export", ""), "##"
 	}
 	for _, t := range transcripts {
 		s := t.GetSession()
@@ -548,21 +548,21 @@ func Memory(segments []*sessionsv1.Transcript, format string, at time.Time) ([]b
 // Whether a written Markdown or QMD export is whole: its digest matches its body, and it names the session and count it should
 func Verify(data []byte, id string, count int) string {
 	if !utf8.Valid(data) {
-		return "file is not UTF-8"
+		return "the file is not text"
 	}
 	text := strings.TrimPrefix(string(data), "\ufeff")
 	match := digestLine.FindStringSubmatch(text)
 	if match == nil {
-		return "sha256 marker missing"
+		return "the file has no SHA-256 line"
 	}
 	sum := sha256.Sum256([]byte(strings.Replace(text, match[0], "- SHA256 of exported body: `pending`", 1)))
 	switch {
 	case hex.EncodeToString(sum[:]) != match[1]:
-		return "sha256 mismatch"
+		return "the SHA-256 in the file does not match its content"
 	case !strings.Contains(text, fmt.Sprintf("- Exported messages: `%d`", count)):
-		return "message count mismatch"
+		return "the file holds another number of messages than the session"
 	case !strings.Contains(text, "- Session id: `"+id+"`"):
-		return "session id mismatch"
+		return "the file names another session"
 	}
 	return "ok"
 }

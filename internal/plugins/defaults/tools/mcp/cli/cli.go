@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	mcpv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/mcp/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/mcp/v1/mcpv1connect"
 	"github.com/nickheyer/icebath/pkg/strs"
+	"github.com/nickheyer/icebath/pkg/tui"
 )
 
 // Failure of a command with the exit status it ends with, its lines already printed
@@ -30,21 +32,39 @@ func (e exit) Error() string { return "" }
 
 func (e exit) ExitCode() int { return int(e) }
 
-// Command lines `icebath mcp` lists after its picker
-var usage = []string{
-	"icebath mcp                                    Open the catalog picker (default)",
-	"icebath mcp catalog                            List the bundled catalog MCPs",
-	"icebath mcp install <name>                     Install a catalog MCP",
-	"icebath mcp add <name> --url <endpoint>        Add a custom MCP server",
-	"icebath mcp add <name> --command <cmd>         Add a stdio server",
-	"icebath mcp add <name> --preset <preset>       Add from a known preset",
-	"icebath mcp remove <name>                      Remove a server",
-	"icebath mcp list                               List configured servers",
-	"icebath mcp test <name>                        Test connection",
-	"icebath mcp configure <name>                   Toggle tools",
-	"icebath mcp login <name>                       Re-authenticate OAuth",
-	"icebath mcp reauth <name> | --all              Re-auth one or all OAuth servers",
+// Prints the commands of `icebath mcp` as each declares its use, with what each does
+func (r *run) commands(root *cobra.Command) {
+	var rows [][2]string
+	width := 0
+	for _, sub := range root.Commands() {
+		if !sub.IsAvailableCommand() || sub.Name() == "help" {
+			continue
+		}
+		use := root.CommandPath() + " " + sub.Use
+		rows = append(rows, [2]string{use, sub.Short})
+		width = max(width, cli.Width(use))
+	}
+	r.Say("  Commands:", cli.Cyan)
+	for _, row := range rows {
+		r.Info(cli.Pad(row[0], width) + "  " + row[1])
+	}
 }
+
+// Reason a server gave as a sentence: capital first letter, a period at the end
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	text = strings.ToUpper(text[:1]) + text[1:]
+	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
+		text += "."
+	}
+	return text
+}
+
+// Why a call to the service failed, as a sentence
+func reason(err error) string { return sentence(tui.Reason(err)) }
 
 // Servers a name can stand for in place of a command or URL
 var presets = map[string]struct {
@@ -74,33 +94,37 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 		}
 	}
 	root := &cobra.Command{
-		Use:   "mcp",
-		Short: "Manage MCP servers: the catalog, installs, custom servers, sign ins and tools",
-		Args:  cobra.NoArgs,
-		RunE: with(func(r *run, _ []string) error {
+		Use:     "mcp",
+		GroupID: cli.GroupAbilities,
+		Short:   "Add, remove and test MCP servers",
+		Long: "MCP servers give the agent more tools, such as access to GitHub or a database. icebath comes with a catalog of known servers " +
+			"you can install, and you can add your own. With no subcommand, mcp opens the catalog picker and then lists these commands.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			r := &run{Console: cli.NewConsole(cmd), service: service}
 			if err := r.picker(); err != nil {
 				return err
 			}
-			r.Say("  Commands:", cli.Cyan)
-			for _, line := range usage {
-				r.Info(line)
-			}
+			r.commands(cmd)
 			r.Blank()
 			return nil
-		}),
+		},
 	}
 	var flow string
 	login := &cobra.Command{
-		Use:   "login <name>",
-		Short: "Sign in to an OAuth MCP server again",
-		Args:  cobra.ExactArgs(1),
-		RunE:  with(func(r *run, args []string) error { return r.login(args[0], flow) }),
+		Use:     "login <name>",
+		Short:   "Sign in to an MCP server again",
+		Long:    "Signs in again to an MCP server that uses OAuth, in the browser or with a device code.",
+		Example: "  icebath mcp login linear\n  icebath mcp login linear --flow device",
+		Args:    cobra.ExactArgs(1),
+		RunE:    with(func(r *run, args []string) error { return r.login(args[0], flow) }),
 	}
-	login.Flags().StringVar(&flow, "flow", "", "browser or device, the server's oauth.flow setting when empty")
+	login.Flags().StringVar(&flow, "flow", "", "How to sign in: browser or device, instead of the server's own setting")
 	var all bool
 	reauth := &cobra.Command{
 		Use:   "reauth [name]",
-		Short: "Sign in to one OAuth MCP server again, or every one with --all",
+		Short: "Sign in again to one MCP server, or all with --all",
+		Long:  "Signs in again to the MCP server you name, or with --all to every server that uses OAuth, one at a time.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: with(func(r *run, args []string) error {
 			name := ""
@@ -110,20 +134,30 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 			return r.reauth(name, all)
 		}),
 	}
-	reauth.Flags().BoolVar(&all, "all", false, "sign in to every OAuth server, one at a time")
+	reauth.Flags().BoolVar(&all, "all", false, "Sign in to every server that uses OAuth, one at a time")
 	root.AddCommand(
-		&cobra.Command{Use: "picker", Short: "Open the catalog picker", Args: cobra.NoArgs, RunE: with(func(r *run, _ []string) error { return r.picker() })},
-		&cobra.Command{Use: "catalog", Short: "List the bundled catalog MCPs", Args: cobra.NoArgs, RunE: with(func(r *run, _ []string) error { return r.catalog() })},
-		&cobra.Command{Use: "install <name>", Short: "Install a catalog MCP", Args: cobra.ExactArgs(1),
+		&cobra.Command{Use: "picker", Short: "Choose servers to install from the catalog",
+			Long: "Opens a list of the servers in the catalog in this terminal, where you pick the ones to install.", Args: cobra.NoArgs,
+			RunE: with(func(r *run, _ []string) error { return r.picker() })},
+		&cobra.Command{Use: "catalog", Short: "List the MCP servers in the catalog",
+			Long: "Lists the known MCP servers that come with icebath, ready to install by name.", Args: cobra.NoArgs,
+			RunE: with(func(r *run, _ []string) error { return r.catalog() })},
+		&cobra.Command{Use: "install <name>", Short: "Install an MCP server from the catalog",
+			Long: "Installs a server from the catalog by the name that mcp catalog lists.", Example: "  icebath mcp install linear",
+			Args: cobra.ExactArgs(1),
 			RunE: with(func(r *run, args []string) error { return r.installName(args[0]) })},
 		add(with),
-		&cobra.Command{Use: "remove <name>", Aliases: []string{"rm"}, Short: "Remove an MCP server", Args: cobra.ExactArgs(1),
+		&cobra.Command{Use: "remove <name>", Aliases: []string{"rm"}, Short: "Remove an MCP server",
+			Long: "Removes the MCP server and its settings from this profile.", Args: cobra.ExactArgs(1),
 			RunE: with(func(r *run, args []string) error { return r.remove(args[0]) })},
-		&cobra.Command{Use: "list", Aliases: []string{"ls"}, Short: "List the configured MCP servers", Args: cobra.NoArgs,
+		&cobra.Command{Use: "list", Aliases: []string{"ls"}, Short: "List your MCP servers",
+			Long: "Lists the MCP servers of this profile with how each one runs and whether it is on.", Args: cobra.NoArgs,
 			RunE: with(func(r *run, _ []string) error { return r.list() })},
-		&cobra.Command{Use: "test <name>", Short: "Connect to an MCP server and list its tools", Args: cobra.ExactArgs(1),
+		&cobra.Command{Use: "test <name>", Short: "Connect to an MCP server and list its tools",
+			Long: "Connects to the MCP server and lists the tools it offers, to check that it works.", Args: cobra.ExactArgs(1),
 			RunE: with(func(r *run, args []string) error { return r.test(args[0]) })},
-		&cobra.Command{Use: "configure <name>", Aliases: []string{"config"}, Short: "Pick the tools of an MCP server", Args: cobra.ExactArgs(1),
+		&cobra.Command{Use: "configure <name>", Aliases: []string{"config"}, Short: "Choose which tools of an MCP server the agent gets",
+			Long: "Opens a list of the server's tools in this terminal, where you turn each tool on or off for the agent.", Args: cobra.ExactArgs(1),
 			RunE: with(func(r *run, args []string) error { return r.configure(args[0]) })},
 		login,
 		reauth,
@@ -136,25 +170,27 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 func add(with func(do func(r *run, args []string) error) func(*cobra.Command, []string) error) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <name> (--url <endpoint> | --command <cmd> [--args <arg>...] | --preset <name>)",
-		Short: "Add a custom MCP server",
+		Short: "Add an MCP server of your own",
+		Long: "Adds a server that is not in the catalog. Give the address of an HTTP server with --url, the command that runs a local server " +
+			"with --command, or a known server with --preset. Put the arguments of the command after --args or --.",
 		Example: `  icebath mcp add ink --url "https://mcp.ml.ink/mcp"
   icebath mcp add github --command npx --args @modelcontextprotocol/server-github`,
 		DisableFlagParsing: true,
 	}
 	flags := cmd.Flags()
-	flags.String("url", "", "address of an HTTP server")
-	flags.String("command", "", "command of a stdio server")
-	flags.String("auth", "", "how an HTTP server signs in: oauth or header")
-	flags.String("preset", "", "known server to add: "+strings.Join(slices.Sorted(func(yield func(string) bool) {
+	flags.String("url", "", "Address of an HTTP server")
+	flags.String("command", "", "Command that runs a local server")
+	flags.String("auth", "", "How you sign in to an HTTP server: oauth or header")
+	flags.String("preset", "", "Known server to add: "+strings.Join(slices.Sorted(func(yield func(string) bool) {
 		for name := range presets {
 			if !yield(name) {
 				return
 			}
 		}
 	}), ", "))
-	flags.StringArray("env", nil, "KEY=VALUE for a stdio server, repeatable")
-	flags.Float64("connect-timeout", 0, "seconds a connect may take")
-	flags.BoolP("help", "h", false, "help for add")
+	flags.StringArray("env", nil, "Variable to set for a local server, as KEY=VALUE, repeatable")
+	flags.Float64("connect-timeout", 0, "Time limit in seconds to connect")
+	flags.BoolP("help", "h", false, "Show this help")
 	cmd.RunE = func(cmd *cobra.Command, argv []string) error {
 		var rest []string
 		for i, arg := range argv {
@@ -171,10 +207,10 @@ func add(with func(do func(r *run, args []string) error) func(*cobra.Command, []
 		}
 		positionals := flags.Args()
 		if len(positionals) == 0 {
-			return errors.New("the following arguments are required: name")
+			return errors.New("Name the server to add, such as icebath mcp add github --command npx.")
 		}
 		if len(positionals) > 1 {
-			return errors.New("unrecognized arguments: " + strings.Join(positionals[1:], " "))
+			return errors.New("Give one name only, not also " + strings.Join(positionals[1:], " ") + ". Put the arguments of the command after --args.")
 		}
 		a := addArgs{name: positionals[0], args: rest}
 		a.url, _ = flags.GetString("url")
@@ -208,7 +244,7 @@ func (r *run) servers() ([]*mcpv1.Server, error) {
 }
 
 // Server of the name, or the not found lines listing the names there are
-func (r *run) lookup(name, label string) (*mcpv1.Server, error) {
+func (r *run) lookup(name string) (*mcpv1.Server, error) {
 	servers, err := r.servers()
 	if err != nil {
 		return nil, err
@@ -220,9 +256,11 @@ func (r *run) lookup(name, label string) (*mcpv1.Server, error) {
 		}
 		names = append(names, server.GetName())
 	}
-	r.Failure(fmt.Sprintf("Server '%s' not found in config.", name))
+	r.Failure("No MCP server is called “" + name + "”.")
 	if len(names) > 0 {
-		r.Info(label + ": " + strings.Join(names, ", "))
+		r.Info("Your servers: " + strings.Join(names, ", "))
+	} else {
+		r.Info("You have no MCP servers yet. Add one with icebath mcp install <name> or icebath mcp add.")
 	}
 	return nil, nil
 }
@@ -248,66 +286,62 @@ func (r *run) list() error {
 	}
 	if len(servers) == 0 {
 		r.Blank()
-		r.Info("No MCP servers configured.")
+		r.Info("You have no MCP servers yet.")
 		r.Blank()
-		r.Info("Add one with:")
+		r.Info("Add one from the catalog with icebath mcp install <name>, or one of your own with:")
 		r.Info("  icebath mcp add <name> --url <endpoint>")
-		r.Info("  icebath mcp add <name> --command <cmd> --args <args...>")
+		r.Info("  icebath mcp add <name> --command <cmd> --args <arg>...")
 		r.Blank()
 		return nil
 	}
 	r.Blank()
-	r.Say("  MCP Servers:", cli.Cyan, cli.Bold)
+	r.Say("  Your MCP servers:", cli.Cyan, cli.Bold)
 	r.Blank()
-	fmt.Fprintf(r.Out(), "  %s %s %s %s\n", cli.Pad("Name", 16), cli.Pad("Transport", 30), cli.Pad("Tools", 12), cli.Pad("Status", 10))
-	fmt.Fprintf(r.Out(), "  %s %s %s %s\n", strings.Repeat("─", 16), strings.Repeat("─", 30), strings.Repeat("─", 12), strings.Repeat("─", 10))
+	var rows [][]string
 	for _, server := range servers {
-		transport := "?"
+		runs := "Not set"
 		if server.GetUrl() != "" {
-			transport = server.GetUrl()
+			runs = server.GetUrl()
 		} else if server.GetCommand() != "" {
-			transport = strings.Join(append([]string{server.GetCommand()}, server.GetArgs()[:min(2, len(server.GetArgs()))]...), " ")
+			runs = strings.Join(append([]string{server.GetCommand()}, server.GetArgs()[:min(2, len(server.GetArgs()))]...), " ")
 		}
-		if r := []rune(transport); len(r) > 28 {
-			transport = string(r[:25]) + "..."
+		if r := []rune(runs); len(r) > 40 {
+			runs = string(r[:39]) + "…"
 		}
-		filter := "all"
+		filter := "All"
 		switch {
 		case server.GetIncluded():
-			filter = fmt.Sprintf("%d selected", len(server.GetInclude()))
+			filter = strs.Number(float64(len(server.GetInclude()))) + " chosen"
 		case len(server.GetExclude()) > 0:
-			filter = fmt.Sprintf("-%d excluded", len(server.GetExclude()))
+			filter = strs.Number(float64(len(server.GetExclude()))) + " left out"
 		}
-		status := r.Paint("✗ disabled", cli.Dim)
-		if server.GetEnabled() {
-			status = r.Paint("✓ enabled", cli.Green)
-		}
-		fmt.Fprintf(r.Out(), "  %s %s %s %s\n", cli.Pad(server.GetName(), 16), cli.Pad(transport, 30), cli.Pad(filter, 12), status)
+		rows = append(rows, []string{server.GetName(), runs, filter, r.OnOff(server.GetEnabled())})
 	}
+	r.Table([]string{"Name", "Address or command", "Tools", "State"}, rows)
 	r.Blank()
 	return nil
 }
 
 func (r *run) remove(name string) error {
-	server, err := r.lookup(name, "Available servers")
+	server, err := r.lookup(name)
 	if err != nil || server == nil {
 		return err
 	}
 	if plugin := server.GetPlugin(); plugin != "" {
-		r.Failure(fmt.Sprintf("'%s' comes from the plugin %s; disable it instead.", name, plugin))
+		r.Failure(fmt.Sprintf("%s comes from the plugin %s, so it cannot be removed here. Turn it off instead.", name, plugin))
 		return exit(1)
 	}
-	if !r.Ask(fmt.Sprintf("Remove server '%s'?", name), true) {
-		r.Info("Cancelled.")
+	if !r.Ask(fmt.Sprintf("Remove the MCP server %s? Its settings and sign-in are deleted.", name), true) {
+		r.Info("Nothing was removed.")
 		return nil
 	}
 	if _, err := r.service.Remove(r.Context(), &mcpv1.RemoveRequest{Name: name}); err != nil {
-		r.Failure(err.Error())
+		r.Failure(reason(err))
 		return exit(1)
 	}
-	r.Success(fmt.Sprintf("Removed '%s' from config", name))
+	r.Success(fmt.Sprintf("Removed the MCP server %s.", name))
 	if server.GetOauth() {
-		r.Success("Cleaned up OAuth tokens")
+		r.Success("Deleted its sign-in.")
 	}
 	return nil
 }
@@ -331,7 +365,7 @@ func (r *run) printTools(tools []*mcpv1.ToolSummary, width, descMax int) {
 }
 
 func (r *run) test(name string) error {
-	server, err := r.lookup(name, "Available")
+	server, err := r.lookup(name)
 	if err != nil {
 		return err
 	}
@@ -340,16 +374,16 @@ func (r *run) test(name string) error {
 	}
 	settings := settingsOf(server)
 	r.Blank()
-	r.Say(fmt.Sprintf("  Testing '%s'...", name), cli.Cyan)
+	r.Say(fmt.Sprintf("  Connecting to %s…", name), cli.Cyan)
 	if server.GetUrl() != "" {
-		r.Info("Transport: HTTP → " + server.GetUrl())
+		r.Info("Address: " + server.GetUrl())
 	} else {
-		r.Info("Transport: stdio → " + cmp.Or(server.GetCommand(), "?"))
+		r.Info("Command: " + cmp.Or(server.GetCommand(), "Not set"))
 	}
 	headers, _ := settings["headers"].(map[string]any)
 	switch {
 	case server.GetAuth() == "oauth":
-		r.Info("Auth: OAuth 2.0")
+		r.Info("Sign-in: OAuth")
 	case len(headers) > 0:
 		for _, key := range slices.Sorted(func(yield func(string) bool) {
 			for k := range headers {
@@ -361,11 +395,11 @@ func (r *run) test(name string) error {
 			value, isText := headers[key].(string)
 			lower := strings.ToLower(key)
 			if isText && (strings.Contains(lower, "key") || strings.Contains(lower, "auth")) {
-				fmt.Fprintf(r.Out(), "    %s: %s\n", key, redactHeader(value))
+				r.Info("Header " + key + ": " + redactHeader(value))
 			}
 		}
 	default:
-		r.Info("Auth: none")
+		r.Info("Sign-in: None")
 	}
 	start := time.Now()
 	probe, err := r.service.Probe(r.Context(), &mcpv1.ProbeRequest{Name: name})
@@ -373,12 +407,13 @@ func (r *run) test(name string) error {
 		return err
 	}
 	if !probe.GetOk() {
-		r.Failure(fmt.Sprintf("Connection failed (%.1fs): %s", time.Since(start).Seconds(), probe.GetError()))
+		r.Failure(fmt.Sprintf("Could not connect to %s after %s. %s", name, strs.Span(time.Since(start).Round(100*time.Millisecond)),
+			sentence(probe.GetError())))
 		r.Info(probe.GetNextStep())
 		return exit(1)
 	}
-	r.Success(fmt.Sprintf("Connected (%.0fms)", float64(time.Since(start))/float64(time.Millisecond)))
-	r.Success(fmt.Sprintf("Tools discovered: %d", len(probe.GetTools())))
+	r.Success(fmt.Sprintf("Connected to %s in %s.", name, strs.Span(time.Since(start).Round(time.Millisecond))))
+	r.Success(fmt.Sprintf("It offers %s.", strs.Count(len(probe.GetTools()), "tool")))
 	if len(probe.GetTools()) > 0 {
 		r.Blank()
 		r.printTools(probe.GetTools(), 36, 55)
@@ -397,13 +432,13 @@ func parseEnv(raw []string) ([]any, error) {
 		}
 		key, value, ok := strings.Cut(text, "=")
 		if !ok {
-			return nil, fmt.Errorf("Invalid --env value '%s' (expected KEY=VALUE)", text)
+			return nil, fmt.Errorf("“%s” is not a variable. Give --env as NAME=value.", text)
 		}
 		if key = strings.TrimSpace(key); key == "" {
-			return nil, fmt.Errorf("Invalid --env value '%s' (missing variable name)", text)
+			return nil, fmt.Errorf("“%s” has no variable name. Give --env as NAME=value.", text)
 		}
 		if !envNameRE.MatchString(key) {
-			return nil, fmt.Errorf("Invalid --env variable name '%s'", key)
+			return nil, fmt.Errorf("“%s” cannot name a variable. Use letters, digits and underscores, and do not start with a digit.", key)
 		}
 		out = append(out, key+"="+value)
 	}
@@ -428,7 +463,7 @@ func (r *run) checked(name string, settings map[string]any) (bool, error) {
 		r.Warning(issue)
 	}
 	if len(response.GetIssues()) > 0 {
-		r.Warning(fmt.Sprintf("Server '%s' was NOT saved due to suspicious configuration.", name))
+		r.Failure(fmt.Sprintf("The MCP server %s was not saved, because its settings look like an attack.", name))
 		return false, nil
 	}
 	return true, nil
@@ -437,7 +472,7 @@ func (r *run) checked(name string, settings map[string]any) (bool, error) {
 func (r *run) save(name string, settings map[string]any) bool {
 	response, err := r.service.Save(r.Context(), &mcpv1.SaveRequest{Name: name, Settings: encode(settings)})
 	if err != nil {
-		r.Failure(err.Error())
+		r.Failure(reason(err))
 		return false
 	}
 	for _, issue := range response.GetIssues() {
@@ -455,7 +490,7 @@ func (r *run) add(a addArgs) error {
 		preset, ok := presets[a.preset]
 		switch {
 		case !ok:
-			err = fmt.Errorf("Unknown MCP preset: %s", a.preset)
+			err = fmt.Errorf("No preset is called “%s”. Choose one of %s.", a.preset, strings.Join(slices.Sorted(maps.Keys(presets)), ", "))
 		case url == "" && command == "":
 			url, command, args = preset.url, preset.command, preset.args
 		}
@@ -465,12 +500,12 @@ func (r *run) add(a addArgs) error {
 		return exit(1)
 	}
 	if url != "" && len(env) > 0 {
-		r.Failure("--env is only supported for stdio MCP servers (--command or stdio presets)")
+		r.Failure("--env works only for a server that runs on this computer, given with --command or a preset.")
 		return exit(1)
 	}
 	if url == "" && command == "" {
-		r.Failure("Must specify --url <endpoint>, --command <cmd>, or --preset <name>")
-		r.Info("Examples:")
+		r.Failure("Give the server with --url <endpoint>, --command <cmd> or --preset <name>.")
+		r.Info("For example:")
 		r.Info(`  icebath mcp add ink --url "https://mcp.ml.ink/mcp"`)
 		r.Info("  icebath mcp add github --command npx --args @modelcontextprotocol/server-github")
 		r.Info("  icebath mcp add myserver --preset codex")
@@ -481,8 +516,8 @@ func (r *run) add(a addArgs) error {
 		return err
 	}
 	if slices.ContainsFunc(servers, func(s *mcpv1.Server) bool { return s.GetName() == name }) &&
-		!r.Ask(fmt.Sprintf("Server '%s' already exists. Overwrite?", name), false) {
-		r.Info("Cancelled.")
+		!r.Ask(fmt.Sprintf("The MCP server %s already exists. Replace its settings?", name), false) {
+		r.Info("Nothing was changed.")
 		return nil
 	}
 	if url != "" {
@@ -508,7 +543,7 @@ func (r *run) add(a addArgs) error {
 		}
 	}
 	r.Blank()
-	r.Say(fmt.Sprintf("  Connecting to '%s'...", name), cli.Cyan)
+	r.Say(fmt.Sprintf("  Connecting to %s…", name), cli.Cyan)
 	request := &mcpv1.ProbeRequest{Name: name, Settings: encode(settings)}
 	if a.connectTimeout != nil {
 		request.ConnectTimeout = *a.connectTimeout
@@ -518,22 +553,22 @@ func (r *run) add(a addArgs) error {
 		return err
 	}
 	if !probe.GetOk() {
-		r.Failure("Failed to connect: " + probe.GetError())
+		r.Failure(fmt.Sprintf("Could not connect to %s. %s", name, sentence(probe.GetError())))
 		r.Info(probe.GetNextStep())
-		if r.Ask("Save config anyway (you can test later)?", false) {
+		if r.Ask("Save the server anyway, turned off? You can test it later.", false) {
 			settings["enabled"] = false
 			if r.save(name, settings) {
-				r.Success(fmt.Sprintf("Saved '%s' to config (disabled)", name))
-				r.Info("Fix the issue, then: icebath mcp test " + name)
+				r.Success(fmt.Sprintf("Saved %s, turned off.", name))
+				r.Info("Once it is fixed, run icebath mcp test " + name + ".")
 			}
 		}
 		return nil
 	}
 	found := probe.GetTools()
 	if len(found) == 0 {
-		r.Warning("Server connected but reported no tools.")
-		if r.Ask("Save config anyway?", true) && r.save(name, settings) {
-			r.Success(fmt.Sprintf("Saved '%s' to config", name))
+		r.Warning("The server connected but offers no tools.")
+		if r.Ask("Save the server anyway?", true) && r.save(name, settings) {
+			r.Success(fmt.Sprintf("Saved %s.", name))
 		}
 		return nil
 	}
@@ -544,7 +579,7 @@ func (r *run) add(a addArgs) error {
 	settings["enabled"] = true
 	if r.save(name, settings) {
 		r.Blank()
-		r.Success(fmt.Sprintf("Saved '%s' to %s (%d/%d tools enabled)", name, mcpconfig.Servers+"."+name, count, len(found)))
+		r.Success(fmt.Sprintf("Saved %s, with %s of its %s on.", name, strs.Number(float64(count)), strs.Count(len(found), "tool")))
 		r.Info("Start a new session to use these tools, or run /reload-mcp to load them into open sessions.")
 	}
 	return nil
@@ -555,21 +590,21 @@ func (r *run) httpAuth(name, url, auth string, settings map[string]any) (bool, e
 	r.Blank()
 	if auth == "oauth" {
 		settings["auth"] = "oauth"
-		r.Info(fmt.Sprintf("Starting OAuth flow for '%s'...", name))
+		r.Info(fmt.Sprintf("Signing in to %s with OAuth…", name))
 		if r.signin(name, "", settings) {
-			r.Success("OAuth configured")
+			r.Success("Signed in with OAuth.")
 			return true, nil
 		}
 		delete(settings, "auth")
-		r.Info("This server may not support OAuth.")
-		if !r.Ask("Continue without authentication?", true) {
-			r.Info("Cancelled.")
+		r.Info("This server may not sign in with OAuth.")
+		if !r.Ask("Add the server without a sign-in?", true) {
+			r.Info("Nothing was added.")
 			return false, nil
 		}
 		return true, nil
 	}
-	r.Info("Connecting to " + url)
-	if !r.Ask("Does this server require authentication?", true) || auth != "header" && auth != "" {
+	r.Info("Address: " + url)
+	if !r.Ask("Does this server need an API key or token?", true) || auth != "header" && auth != "" {
 		return true, nil
 	}
 	key := mcp.KeyEnv(name)
@@ -578,42 +613,43 @@ func (r *run) httpAuth(name, url, auth string, settings map[string]any) (bool, e
 		return false, err
 	}
 	if has.GetSet() {
-		r.Success(key + ": already configured")
+		r.Success("The value " + key + " is already set.")
 		settings["headers"] = map[string]any{"Authorization": "Bearer ${" + key + "}"}
 		return true, nil
 	}
-	token := r.Prompt("API key / Bearer token", "", true)
+	token := r.Prompt("API key or token", "", true)
 	if token == "" {
 		return true, nil
 	}
 	saved, err := r.service.SaveBearer(r.Context(), &mcpv1.SaveBearerRequest{Name: name, Token: token})
 	if err != nil {
-		r.Failure(err.Error())
+		r.Failure(reason(err))
 		return false, nil
 	}
 	var headers map[string]any
 	json.Unmarshal([]byte(saved.GetHeaders()), &headers)
 	settings["headers"] = headers
-	r.Success("Saved to the profile's MCP values as " + saved.GetKey())
+	r.Success("Saved it in /settings under Tools › MCP servers › Values as " + saved.GetKey() + ".")
 	return true, nil
 }
 
 // Asks whether to keep every tool, none, or a pick; the count kept, false when cancelled
 func (r *run) chooseTools(name string, found []*mcpv1.ToolSummary, settings map[string]any) (int, bool) {
 	r.Blank()
-	r.Success(fmt.Sprintf("Connected! Found %d tool(s) from '%s':", len(found), name))
+	r.Success(fmt.Sprintf("Connected to %s, which offers %s:", name, strs.Count(len(found), "tool")))
 	r.Blank()
 	r.printTools(found, 40, 60)
 	r.Blank()
-	choice, ok := r.Input(r.Paint(fmt.Sprintf("  Enable all %d tools? [Y/n/select]: ", len(found)), cli.Yellow))
+	choice, ok := r.Input(r.Paint(fmt.Sprintf("  Turn on all %s? Type n for none or select to choose them [Y/n/select]: ",
+		strs.Count(len(found), "tool")), cli.Yellow))
 	if !ok {
 		r.Blank()
-		r.Info("Cancelled.")
+		r.Info("Nothing was saved.")
 		return 0, false
 	}
 	switch strings.ToLower(strings.TrimSpace(choice)) {
 	case "n", "no":
-		r.Info("Cancelled — server not saved.")
+		r.Info("The server was not saved.")
 		return 0, false
 	case "s", "select":
 	default:
@@ -622,11 +658,11 @@ func (r *run) chooseTools(name string, found []*mcpv1.ToolSummary, settings map[
 	labels := make([]string, len(found))
 	every := map[int]bool{}
 	for i, t := range found {
-		labels[i], every[i] = t.GetName()+"  —  "+t.GetDescription(), true
+		labels[i], every[i] = t.GetName()+"  "+t.GetDescription(), true
 	}
-	chosen := cli.Picked(r.Checklist(fmt.Sprintf("Select tools for '%s'", name), labels, every))
+	chosen := cli.Picked(r.Checklist("Tools of "+name+" for the agent", labels, every))
 	if len(chosen) == 0 {
-		r.Info("No tools selected — server not saved.")
+		r.Info("No tool was chosen, so the server was not saved.")
 		return 0, false
 	}
 	var names []any
@@ -646,7 +682,7 @@ func (r *run) signin(name, flow string, settings map[string]any) bool {
 	}
 	stream, err := r.service.Login(r.Context(), request)
 	if err != nil {
-		r.Failure("Authentication failed: " + err.Error())
+		r.Failure("Could not sign in. " + reason(err))
 		return false
 	}
 	defer stream.Close()
@@ -675,7 +711,7 @@ func (r *run) signin(name, flow string, settings map[string]any) bool {
 		select {
 		case <-r.Context().Done():
 			r.Blank()
-			r.Failure("Authentication failed: interrupted")
+			r.Failure("The sign-in stopped, as you interrupted it.")
 			return false
 		case got := <-lines:
 			r.Took()
@@ -684,16 +720,16 @@ func (r *run) signin(name, flow string, settings map[string]any) bool {
 				continue
 			}
 			if _, err := r.service.Callback(r.Context(), &mcpv1.CallbackRequest{Id: id, Pasted: strings.TrimSpace(got.Text)}); err != nil {
-				r.Failure(err.Error())
+				r.Failure(reason(err))
 				lines = r.Await(r.Paint("  Paste the address: ", cli.Yellow))
 			}
 		case event, open := <-events:
 			if !open {
 				select {
 				case err := <-failed:
-					r.Failure("Authentication failed: " + err.Error())
+					r.Failure("Could not sign in. " + reason(err))
 				default:
-					r.Failure("Authentication failed: the sign in ended without an outcome")
+					r.Failure("The sign-in ended without saying whether it worked.")
 				}
 				return false
 			}
@@ -712,7 +748,7 @@ func (r *run) signin(name, flow string, settings map[string]any) bool {
 			r.Info("Approve icebath in the browser:")
 			r.Say("    "+event.GetLink(), cli.Cyan)
 			if err := browser.Open(r.Context(), event.GetLink()); err != nil {
-				r.Info("The browser didn't open; open the link yourself.")
+				r.Info("The browser did not open, so open the link yourself.")
 			}
 			if r.Interactive() {
 				r.Info("If the browser can't reach icebath, paste the address it ended on here.")
@@ -726,25 +762,25 @@ func (r *run) signin(name, flow string, settings map[string]any) bool {
 func (r *run) signedIn(name string, event *mcpv1.LoginEvent) bool {
 	switch {
 	case event.GetNoToken():
-		r.Warning("Server responded, but no OAuth token was obtained — authentication did not complete.")
+		r.Warning("The server answered but gave no sign-in token, so the sign-in did not finish.")
 		r.Blank()
-		r.Info("Some providers (e.g. Google Drive, Atlassian) do not support automatic client registration. For those you must create an OAuth " +
-			"client yourself and add its credentials to the server's settings:")
+		r.Info("Providers such as Google Drive and Atlassian do not let icebath register itself. Create an OAuth client there and add it to the " +
+			"settings of the server, like this:")
 		r.Blank()
 		for _, line := range []string{mcpconfig.Servers + "." + name + ":", "  auth: oauth", "  oauth:", `    client_id: "<your-oauth-client-id>"`,
 			`    client_secret: "<your-oauth-client-secret>"`} {
 			r.Say("    "+line, cli.Dim)
 		}
 		r.Blank()
-		r.Info("Then re-run `icebath mcp login " + name + "`.")
+		r.Info("Then run icebath mcp login " + name + " again.")
 		return false
 	case event.GetError() != "":
-		r.Failure("Authentication failed: " + event.GetError())
+		r.Failure("Could not sign in. " + sentence(event.GetError()))
 		return false
 	case event.GetTools() > 0:
-		r.Success(fmt.Sprintf("Authenticated — %d tool(s) available", event.GetTools()))
+		r.Success("Signed in. The server offers " + strs.Count(int(event.GetTools()), "tool") + ".")
 	default:
-		r.Success("Authenticated (server reported no tools)")
+		r.Success("Signed in, but the server offers no tools.")
 	}
 	return true
 }
@@ -753,25 +789,25 @@ func (r *run) signedIn(name string, event *mcpv1.LoginEvent) bool {
 func (r *run) reauthServer(server *mcpv1.Server, flow string) bool {
 	name := server.GetName()
 	if server.GetUrl() == "" {
-		r.Failure(fmt.Sprintf("Server '%s' has no URL — not an OAuth-capable server", name))
+		r.Failure(fmt.Sprintf("The MCP server %s runs on this computer and has no address, so it has no sign-in.", name))
 		return false
 	}
 	if server.GetAuth() != "oauth" {
-		r.Failure(fmt.Sprintf("Server '%s' is not configured for OAuth (auth=%s)", name, cmp.Or(server.GetAuth(), "None")))
-		r.Info("Use `icebath mcp remove` + `icebath mcp add` to reconfigure auth.")
+		r.Failure(fmt.Sprintf("The MCP server %s does not sign in with OAuth, as its Sign-in is %s.", name, cmp.Or(server.GetAuth(), "Headers only")))
+		r.Info("Set its Sign-in to OAuth in /settings under Tools › MCP servers › Your servers.")
 		return false
 	}
 	if flow != "" && flow != "browser" && flow != "device" {
-		r.Failure("oauth.flow must be browser or device")
+		r.Failure("--flow must be browser or device.")
 		return false
 	}
 	r.Blank()
-	r.Info(fmt.Sprintf("Starting OAuth flow for '%s'...", name))
+	r.Info(fmt.Sprintf("Signing in to %s with OAuth…", name))
 	return r.signin(name, flow, nil)
 }
 
 func (r *run) login(name, flow string) error {
-	server, err := r.lookup(name, "Available servers")
+	server, err := r.lookup(name)
 	if err != nil || server == nil {
 		return err
 	}
@@ -794,26 +830,26 @@ func (r *run) reauth(name string, all bool) error {
 			}
 		}
 		if len(oauth) == 0 {
-			r.Info("No OAuth-based MCP servers found in config.")
+			r.Info("None of your MCP servers signs in with OAuth.")
 			return nil
 		}
 		r.Blank()
-		r.Info(fmt.Sprintf("Re-authenticating %d OAuth server(s) one at a time...", len(oauth)))
+		r.Info("Signing in again to " + strs.Count(len(oauth), "server") + ", one at a time.")
 		succeeded := 0
 		for _, server := range oauth {
 			r.Blank()
-			r.Say("  ── "+server.GetName()+" ──", cli.Cyan, cli.Bold)
+			r.Say("  "+server.GetName(), cli.Cyan, cli.Bold)
 			if r.reauthServer(server, "") {
 				succeeded++
 			}
 		}
 		r.Blank()
-		r.Success(fmt.Sprintf("Re-authenticated %d/%d server(s)", succeeded, len(oauth)))
+		r.Success("Signed in again to " + strs.Number(float64(succeeded)) + " of " + strs.Count(len(oauth), "server") + ".")
 		return nil
 	}
 	if name == "" {
-		r.Failure("Specify a server name, or use --all to re-auth every OAuth server.")
-		r.Info("Usage: icebath mcp reauth <name>   |   icebath mcp reauth --all")
+		r.Failure("Name a server, or pass --all to sign in again to every server that uses OAuth.")
+		r.Info("Usage: icebath mcp reauth [name]")
 		return exit(1)
 	}
 	return r.login(name, "")
@@ -913,10 +949,11 @@ func (r *run) rebuildExclude(name string, exclude, tools []string, chosen map[in
 		slices.Sort(shadowed)
 		more := ""
 		if len(shadowed) > 5 {
-			more = " ..."
+			more = " and " + strs.Number(float64(len(shadowed)-5)) + " more"
 		}
-		r.Warning(fmt.Sprintf("%d re-enabled tool(s) still match glob exclude pattern(s) %s and stay excluded: %s%s. Remove the pattern from %s.%s.tools.exclude "+
-			"to enable them.", len(shadowed), strings.Join(globs, ", "), strings.Join(shadowed[:min(5, len(shadowed))], ", "), more, mcpconfig.Servers, name))
+		r.Warning(fmt.Sprintf("%s you turned back on still match %s, so they stay off: %s%s. Remove the pattern from the Tool filter of %s in "+
+			"/settings under Tools › MCP servers › Your servers to turn them on.", strs.Count(len(shadowed), "tool"), strings.Join(globs, ", "),
+			strings.Join(shadowed[:min(5, len(shadowed))], ", "), more, name))
 	}
 	return append(globs, slices.Sorted(func(yield func(string) bool) {
 		for literal := range literals {
@@ -930,32 +967,32 @@ func (r *run) rebuildExclude(name string, exclude, tools []string, chosen map[in
 // Picks the tools of a server from a checklist over the tools it lists
 func (r *run) configure(name string) error {
 	if !r.Interactive() {
-		return errors.New("'icebath mcp configure' requires an interactive terminal.")
+		return errors.New("Choosing the tools of a server needs a terminal you can type in.")
 	}
-	server, err := r.lookup(name, "Available")
+	server, err := r.lookup(name)
 	if err != nil || server == nil {
 		return err
 	}
 	r.Blank()
-	r.Say(fmt.Sprintf("  Connecting to '%s' to discover tools...", name), cli.Cyan)
+	r.Say(fmt.Sprintf("  Connecting to %s to list its tools…", name), cli.Cyan)
 	probe, err := r.service.Probe(r.Context(), &mcpv1.ProbeRequest{Name: name})
 	if err != nil {
 		return err
 	}
 	if !probe.GetOk() {
-		r.Failure("Failed to connect: " + probe.GetError())
+		r.Failure(fmt.Sprintf("Could not connect to %s. %s", name, sentence(probe.GetError())))
 		return exit(1)
 	}
 	found := probe.GetTools()
 	if len(found) == 0 {
-		r.Warning("Server reports no tools.")
+		r.Warning("The server offers no tools.")
 		return nil
 	}
 	names := make([]string, len(found))
 	labels := make([]string, len(found))
 	pre := map[int]bool{}
 	for i, t := range found {
-		names[i], labels[i] = t.GetName(), t.GetName()+"  —  "+t.GetDescription()
+		names[i], labels[i] = t.GetName(), t.GetName()+"  "+t.GetDescription()
 		switch {
 		case server.GetIncluded():
 			pre[i] = matches(t.GetName(), server.GetInclude())
@@ -965,11 +1002,11 @@ func (r *run) configure(name string) error {
 			pre[i] = true
 		}
 	}
-	r.Info(fmt.Sprintf("Currently %d/%d tools enabled for '%s'.", len(cli.Picked(pre)), len(found), name))
+	r.Info(fmt.Sprintf("On now for %s: %s of %s.", name, strs.Number(float64(len(cli.Picked(pre)))), strs.Count(len(found), "tool")))
 	r.Blank()
-	chosen := r.Checklist(fmt.Sprintf("Select tools for '%s'", name), labels, pre)
+	chosen := r.Checklist("Tools of "+name+" for the agent", labels, pre)
 	if slices.Equal(cli.Picked(chosen), cli.Picked(pre)) {
-		r.Info("No changes made.")
+		r.Info("Nothing was changed.")
 		return nil
 	}
 	count := len(cli.Picked(chosen))
@@ -988,21 +1025,21 @@ func (r *run) configure(name string) error {
 		}
 	}
 	if _, err := r.service.SetFilter(r.Context(), request); err != nil {
-		r.Failure(err.Error())
+		r.Failure(reason(err))
 		return exit(1)
 	}
-	r.Success(fmt.Sprintf("Updated config: %d/%d tools enabled", count, len(found)))
-	r.Info("Run /reload-mcp for changes to take effect.")
+	r.Success(fmt.Sprintf("Saved, with %s of %s on.", strs.Number(float64(count)), strs.Count(len(found), "tool")))
+	r.Info("The change takes effect in new sessions, or after /reload-mcp in an open one.")
 	return nil
 }
 
 // Statuses the picker shows each entry by
 const (
-	statusAvailable      = "available"
-	statusDisabled       = "installed (disabled)"
-	statusEnabled        = "enabled"
-	statusCustomEnabled  = "custom — enabled"
-	statusCustomDisabled = "custom — disabled"
+	statusAvailable      = "Not installed"
+	statusDisabled       = "Installed, off"
+	statusEnabled        = "Installed, on"
+	statusCustomEnabled  = "Your own, on"
+	statusCustomDisabled = "Your own, off"
 )
 
 // Row of the picker: a catalog entry, or a custom server when entry is nil
@@ -1053,7 +1090,7 @@ func (r *run) rows() ([]pickerRow, []*mcpv1.Entry, error) {
 		if server.GetEnabled() {
 			status = statusCustomEnabled
 		}
-		rows = append(rows, pickerRow{name: server.GetName(), description: cmp.Or(server.GetUrl(), server.GetCommand(), "(no transport)"), status: status,
+		rows = append(rows, pickerRow{name: server.GetName(), description: cmp.Or(server.GetUrl(), server.GetCommand(), "No address or command"), status: status,
 			server: server})
 	}
 	return rows, future, nil
@@ -1066,23 +1103,23 @@ func formatRow(row pickerRow) string {
 func (r *run) printRows(rows []pickerRow, future []*mcpv1.Entry) {
 	r.Blank()
 	if len(rows) == 0 {
-		r.Say("  No MCPs in the catalog or configured.", cli.Dim)
+		r.Say("  The catalog is empty and you have no MCP servers yet. Add one with icebath mcp add.", cli.Dim)
 		r.Blank()
 		return
 	}
-	r.Say("  MCP Catalog + configured servers:", cli.Cyan, cli.Bold)
+	r.Say("  The catalog and your MCP servers:", cli.Cyan, cli.Bold)
 	r.Blank()
-	fmt.Fprintf(r.Out(), "  %s %s Description\n", cli.Pad("Name", 18), cli.Pad("Status", 24))
-	fmt.Fprintf(r.Out(), "  %s %s %s\n", strings.Repeat("-", 18), strings.Repeat("-", 24), strings.Repeat("-", 11))
+	var table [][]string
 	for _, row := range rows {
-		fmt.Fprintf(r.Out(), "  %s\n", formatRow(row))
+		table = append(table, []string{row.name, row.status, row.description})
 	}
+	r.Table([]string{"Name", "State", "About"}, table)
 	r.Blank()
-	r.Say("  Install: icebath mcp install <name>    Picker: icebath mcp", cli.Dim)
+	r.Say("  Install one with icebath mcp install <name>, or pick from a list with icebath mcp picker.", cli.Dim)
 	if len(future) > 0 {
 		r.Blank()
 		for _, entry := range future {
-			r.Say(fmt.Sprintf("  ⚠ '%s' requires a newer icebath — update icebath to install this entry.", entry.GetName()), cli.Yellow)
+			r.Warning(fmt.Sprintf("“%s” needs a newer icebath. Update icebath to install it.", entry.GetName()))
 		}
 		r.Blank()
 	}
@@ -1113,7 +1150,7 @@ func (r *run) picker() error {
 		for i, row := range rows {
 			labels[i] = formatRow(row)
 		}
-		i, ok := r.Choose("MCP Catalog  —  pick an entry to act on it", labels)
+		i, ok := r.Choose("Pick a server to install or change", labels)
 		if !ok {
 			return nil
 		}
@@ -1140,25 +1177,25 @@ func (r *run) act(row pickerRow) error {
 			return r.enable(row.name, true)
 		}
 		r.Blank()
-		r.Say(fmt.Sprintf("  '%s' is already enabled.", row.name), cli.Dim)
-		return r.submenu(fmt.Sprintf("Action for '%s'", row.name), []menuItem{
-			{"Configure tools (probe server + re-pick)", configure},
-			{"Disable (keep config, stop loading on next session)", func() error { return r.enable(row.name, false) }},
-			{"Uninstall (remove config and any cloned files)", func() error { return r.uninstall(row.name) }},
-			{"Reinstall (re-clone, re-prompt for credentials)", func() error {
+		r.Say(fmt.Sprintf("  %s is installed and on.", row.name), cli.Dim)
+		return r.submenu("What to do with "+row.name, []menuItem{
+			{"Choose its tools again", configure},
+			{"Turn it off, keeping its settings", func() error { return r.enable(row.name, false) }},
+			{"Uninstall it, deleting its settings and downloaded files", func() error { return r.uninstall(row.name) }},
+			{"Install it again, downloading it and asking for its keys again", func() error {
 				_, err := r.install(row.entry, "reinstall")
 				return err
 			}},
 		})
 	}
-	toggle := "Disable"
+	toggle := "Turn it off"
 	if !row.server.GetEnabled() {
-		toggle = "Enable"
+		toggle = "Turn it on"
 	}
-	return r.submenu(fmt.Sprintf("Action for '%s' (custom)", row.name), []menuItem{
-		{"Configure tools (probe server + re-pick)", configure},
+	return r.submenu("What to do with "+row.name+", a server of your own", []menuItem{
+		{"Choose its tools again", configure},
 		{toggle, func() error { return r.enable(row.name, !row.server.GetEnabled()) }},
-		{"Remove from config", func() error { return r.removeCustom(row.server) }},
+		{"Remove it", func() error { return r.removeCustom(row.server) }},
 	})
 }
 
@@ -1181,36 +1218,36 @@ func (r *run) submenu(title string, items []menuItem) error {
 func (r *run) enable(name string, enabled bool) error {
 	if _, err := r.service.Enable(r.Context(), &mcpv1.EnableRequest{Name: name, Enabled: enabled}); err != nil {
 		if connect.CodeOf(err) == connect.CodeNotFound {
-			r.Say(fmt.Sprintf("  '%s' is not installed.", name), cli.Red)
+			r.Failure(name + " is not installed.")
 			return nil
 		}
 		return err
 	}
-	state := "disabled"
+	state := "off"
 	if enabled {
-		state = "enabled"
+		state = "on"
 	}
-	r.Say(fmt.Sprintf("  ✓ '%s' %s. Start a new icebath session for changes to take effect.", name, state))
+	r.Success(fmt.Sprintf("%s is now %s. The change takes effect in new sessions.", name, state))
 	return nil
 }
 
 func (r *run) removeCustom(server *mcpv1.Server) error {
 	if plugin := server.GetPlugin(); plugin != "" {
-		r.Say(fmt.Sprintf("  '%s' comes from the plugin %s; disable it instead.", server.GetName(), plugin), cli.Red)
+		r.Failure(fmt.Sprintf("%s comes from the plugin %s, so it cannot be removed here. Turn it off instead.", server.GetName(), plugin))
 		return nil
 	}
-	if !r.Ask(fmt.Sprintf("Remove '%s' from the MCP servers?", server.GetName()), false) {
+	if !r.Ask(fmt.Sprintf("Remove the MCP server %s? Its settings are deleted.", server.GetName()), false) {
 		return nil
 	}
 	if _, err := r.service.Remove(r.Context(), &mcpv1.RemoveRequest{Name: server.GetName()}); err != nil {
 		return err
 	}
-	r.Say(fmt.Sprintf("  ✓ Removed '%s'", server.GetName()))
+	r.Success("Removed " + server.GetName() + ".")
 	return nil
 }
 
 func (r *run) uninstall(name string) error {
-	if !r.Ask(fmt.Sprintf("Uninstall '%s'?", name), false) {
+	if !r.Ask(fmt.Sprintf("Uninstall %s? Its settings and downloaded files are deleted.", name), false) {
 		return nil
 	}
 	response, err := r.service.Remove(r.Context(), &mcpv1.RemoveRequest{Name: name, Purge: true})
@@ -1218,9 +1255,9 @@ func (r *run) uninstall(name string) error {
 		return err
 	}
 	if response.GetRemoved() {
-		r.Say(fmt.Sprintf("  ✓ Uninstalled '%s'. Credentials in the profile's MCP values preserved — delete them if no longer needed.", name))
+		r.Success("Uninstalled " + name + ". Its keys stay in /settings under Tools › MCP servers › Values, so delete them there if you no longer need them.")
 	} else {
-		r.Say(fmt.Sprintf("  '%s' was not installed", name), cli.Dim)
+		r.Say("  "+name+" was not installed.", cli.Dim)
 	}
 	return nil
 }
@@ -1235,7 +1272,7 @@ func (r *run) installName(name string) error {
 			continue
 		}
 		if entry.GetProblem() != "" {
-			r.Say("  ✗ install failed: "+entry.GetProblem(), cli.Red)
+			r.Failure("Could not install " + entry.GetName() + ". " + sentence(entry.GetProblem()))
 			return exit(1)
 		}
 		ok, err := r.install(entry, "install")
@@ -1247,7 +1284,7 @@ func (r *run) installName(name string) error {
 		}
 		return nil
 	}
-	r.Say(fmt.Sprintf("  ✗ '%s' is not in the catalog. Run `icebath mcp catalog` to see available entries.", name), cli.Red)
+	r.Failure("“" + name + "” is not in the catalog. Run icebath mcp catalog to see what it holds.")
 	return exit(1)
 }
 
@@ -1261,7 +1298,11 @@ func (f installFailure) Error() string { return string(f) }
 func (r *run) install(entry *mcpv1.Entry, verb string) (bool, error) {
 	err := r.installEntry(entry)
 	if failure, ok := errors.AsType[installFailure](err); ok {
-		r.Say(fmt.Sprintf("  ✗ %s failed: %s", verb, string(failure)), cli.Red)
+		what := "install"
+		if verb == "reinstall" {
+			what = "install again"
+		}
+		r.Failure("Could not " + what + " " + entry.GetName() + ". " + sentence(string(failure)))
 		return false, nil
 	}
 	return err == nil, err
@@ -1270,7 +1311,7 @@ func (r *run) install(entry *mcpv1.Entry, verb string) (bool, error) {
 func (r *run) installEntry(entry *mcpv1.Entry) error {
 	name := entry.GetName()
 	r.Blank()
-	r.Say(fmt.Sprintf("  Installing MCP '%s'", name), cli.Cyan, cli.Bold)
+	r.Say("  Installing the MCP server "+name, cli.Cyan, cli.Bold)
 	if entry.GetDescription() != "" {
 		r.Say("  "+entry.GetDescription(), cli.Dim)
 	}
@@ -1307,7 +1348,7 @@ func (r *run) installEntry(entry *mcpv1.Entry) error {
 	values := map[string]string{}
 	if requires := entry.GetRequires(); len(requires) > 0 {
 		r.Blank()
-		r.Say("  Configure credentials:", cli.Cyan)
+		r.Say("  Keys and settings it needs:", cli.Cyan)
 		for _, spec := range requires {
 			if spec.GetSecret() {
 				has, err := r.service.HasValue(r.Context(), &mcpv1.HasValueRequest{Name: spec.GetName()})
@@ -1315,7 +1356,7 @@ func (r *run) installEntry(entry *mcpv1.Entry) error {
 					return err
 				}
 				if has.GetSet() {
-					r.Say(fmt.Sprintf("  ✓ %s already set", spec.GetName()))
+					r.Success(spec.GetName() + " is already set.")
 					continue
 				}
 			}
@@ -1329,20 +1370,21 @@ func (r *run) installEntry(entry *mcpv1.Entry) error {
 				}
 				values[spec.GetName()] = value
 			case spec.GetRequired():
-				return installFailure(spec.GetName() + " is required but no value was provided")
+				return installFailure(spec.GetName() + " is needed, and no value was given.")
 			}
 		}
 	}
 	native := entry.GetAuth() == "oauth" && entry.GetProvider() == ""
 	switch {
 	case entry.GetAuth() == "oauth" && !native:
-		r.Say(fmt.Sprintf("  This MCP uses %s OAuth. Sign in to %s in icebath if you have not already.", entry.GetProvider(), entry.GetProvider()), cli.Yellow)
+		r.Say(fmt.Sprintf("  This server signs in with your %s account. Connect %s in /providers if you have not yet.", entry.GetProvider(), entry.GetProvider()),
+			cli.Yellow)
 	case native:
-		client := "native OAuth 2.1"
+		client := "OAuth"
 		if entry.GetHasOauthClient() {
-			client = "your pre-registered OAuth client"
+			client = "your own OAuth client"
 		}
-		r.Say(fmt.Sprintf("  This MCP uses %s; you sign in once it is installed (browser flow).", client), cli.Dim)
+		r.Say(fmt.Sprintf("  This server signs in with %s in the browser, once it is installed.", client), cli.Dim)
 	}
 	config, err := r.service.InstallConfig(r.Context(), &mcpv1.InstallConfigRequest{Entry: name, InstallDir: dir, Values: values})
 	if err != nil {
@@ -1356,18 +1398,18 @@ func (r *run) installEntry(entry *mcpv1.Entry) error {
 		for _, issue := range saved.GetIssues() {
 			r.Warning(issue)
 		}
-		return installFailure(fmt.Sprintf("catalog entry '%s' rejected: suspicious command/args configuration", name))
+		return installFailure(fmt.Sprintf("The settings of the catalog entry %s look like an attack, so it was not installed.", name))
 	}
 	if native && r.Interactive() {
 		r.Blank()
-		r.Info(fmt.Sprintf("Starting OAuth flow for '%s'...", name))
+		r.Info(fmt.Sprintf("Signing in to %s with OAuth…", name))
 		r.signin(name, "", nil)
 	}
 	if err := r.selectTools(entry, prior); err != nil {
 		return err
 	}
 	r.Blank()
-	r.Say(fmt.Sprintf("  ✓ Installed '%s' (enabled). Start a new icebath session to load its tools.", name))
+	r.Success("Installed " + name + " and turned it on. Its tools appear in new sessions.")
 	if note := strings.TrimSpace(entry.GetPostInstall()); note != "" {
 		r.Blank()
 		for _, line := range strings.Split(note, "\n") {
@@ -1383,7 +1425,7 @@ func (r *run) installEntry(entry *mcpv1.Entry) error {
 func (r *run) selectTools(entry *mcpv1.Entry, prior *mcpv1.Server) error {
 	r.Blank()
 	name := entry.GetName()
-	hint := fmt.Sprintf("`icebath mcp configure %s`", name)
+	hint := "icebath mcp configure " + name
 	var priorInclude, priorExclude []string
 	if prior != nil {
 		if prior.GetIncluded() {
@@ -1397,38 +1439,37 @@ func (r *run) selectTools(entry *mcpv1.Entry, prior *mcpv1.Server) error {
 		return err
 	}
 	if len(entry.GetDefaultExcluded()) > 0 && priorInclude == nil {
-		edit := fmt.Sprintf("Edit %s.%s.tools.exclude or run %s to change.", mcpconfig.Servers, name, hint)
+		edit := "To change it, edit the Tool filter of " + name + " in /settings under Tools › MCP servers › Your servers, or run " + hint + "."
 		if priorExclude != nil {
-			r.Say(fmt.Sprintf("  Kept your existing exclude list (%d entries). %s", len(priorExclude), edit))
+			r.Say("  Kept your list of " + strs.Count(len(priorExclude), "tool") + " to leave out. " + edit)
 		} else {
-			r.Say(fmt.Sprintf("  Applied manifest exclude list (%d entries); everything else stays enabled. %s", len(entry.GetDefaultExcluded()), edit))
+			r.Say("  Left out the " + strs.Count(len(entry.GetDefaultExcluded()), "tool") + " that the catalog leaves out, and turned on the rest. " + edit)
 		}
 		return nil
 	}
-	r.Say(fmt.Sprintf("  Probing '%s' for available tools...", name), cli.Cyan)
+	r.Say(fmt.Sprintf("  Asking %s for its tools…", name), cli.Cyan)
 	probe, err := r.service.Probe(r.Context(), &mcpv1.ProbeRequest{Name: name})
 	if err != nil {
 		return err
 	}
 	if !probe.GetOk() {
-		r.Say("  Probe failed: "+probe.GetError(), cli.Yellow)
-		refine := fmt.Sprintf("Run %s after the server is reachable to refine.", hint)
+		r.Warning("Could not reach " + name + ". " + sentence(probe.GetError()))
+		refine := "Once the server can be reached, run " + hint + " to choose."
 		switch {
 		case priorInclude != nil:
-			r.Say(fmt.Sprintf("  Couldn't probe server. Kept your previous tool selection (%d tools). %s", len(priorInclude), refine), cli.Yellow)
+			r.Say("  Kept your earlier choice of "+strs.Count(len(priorInclude), "tool")+". "+refine, cli.Yellow)
 		case priorExclude != nil:
-			r.Say(fmt.Sprintf("  Couldn't probe server. Kept your existing exclude list (%d entries).", len(priorExclude)), cli.Yellow)
+			r.Say("  Kept your list of "+strs.Count(len(priorExclude), "tool")+" to leave out.", cli.Yellow)
 		case len(entry.GetDefaultEnabled()) > 0:
-			r.Say(fmt.Sprintf("  Couldn't probe server. Applied manifest default (%d tools). %s", len(entry.GetDefaultEnabled()), refine), cli.Yellow)
+			r.Say("  Turned on the "+strs.Count(len(entry.GetDefaultEnabled()), "tool")+" that the catalog suggests. "+refine, cli.Yellow)
 		default:
-			r.Say(fmt.Sprintf("  Couldn't probe server; installed with no tool filter (all tools enabled when reachable). Run %s after first connect "+
-				"to prune.", hint), cli.Yellow)
+			r.Say("  Installed with every tool on. Once it connects, run "+hint+" to turn some off.", cli.Yellow)
 		}
 		return nil
 	}
 	found := probe.GetTools()
 	if len(found) == 0 {
-		r.Say("  Server reported no tools.", cli.Yellow)
+		r.Warning("The server offers no tools.")
 		return nil
 	}
 	names := make([]string, len(found))
@@ -1458,21 +1499,21 @@ func (r *run) selectTools(entry *mcpv1.Entry, prior *mcpv1.Server) error {
 	labels := make([]string, len(found))
 	for i, t := range found {
 		pre[i] = slices.Contains(preferred, t.GetName())
-		labels[i] = fmt.Sprintf("%s  —  %s", t.GetName(), strs.Clip(t.GetDescription(), 60))
+		labels[i] = t.GetName() + "  " + strs.Clip(t.GetDescription(), 60)
 	}
-	r.Say(fmt.Sprintf("  Found %d tool(s). Pre-checked: %d.", len(found), len(cli.Picked(pre))))
-	chosen := cli.Picked(r.Checklist(fmt.Sprintf("Select tools for '%s'", name), labels, pre))
+	r.Say("  It offers " + strs.Count(len(found), "tool") + ", and " + strs.Number(float64(len(cli.Picked(pre)))) + " are checked to start with.")
+	chosen := cli.Picked(r.Checklist("Tools of "+name+" for the agent", labels, pre))
 	switch len(chosen) {
 	case 0:
 		if err := setFilter("include", []string{}); err != nil {
 			return err
 		}
-		r.Say(fmt.Sprintf("  No tools selected. Run %s to change.", hint), cli.Yellow)
+		r.Warning("No tool is on. Run " + hint + " to change that.")
 	case len(found):
 		if err := setFilter("include", nil); err != nil {
 			return err
 		}
-		r.Say(fmt.Sprintf("  ✓ All %d tools enabled (no filter — new tools the server adds later will be auto-enabled).", len(found)))
+		r.Success("All " + strs.Count(len(found), "tool") + " are on. Tools the server adds later are turned on too.")
 	default:
 		picked := make([]string, len(chosen))
 		for i, j := range chosen {
@@ -1481,7 +1522,7 @@ func (r *run) selectTools(entry *mcpv1.Entry, prior *mcpv1.Server) error {
 		if err := setFilter("include", picked); err != nil {
 			return err
 		}
-		r.Say(fmt.Sprintf("  ✓ %d/%d tools enabled.", len(picked), len(found)))
+		r.Success(strs.Number(float64(len(picked))) + " of " + strs.Count(len(found), "tool") + " are on.")
 	}
 	return nil
 }

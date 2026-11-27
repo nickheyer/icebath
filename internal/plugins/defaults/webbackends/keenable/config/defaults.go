@@ -10,9 +10,12 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: webconfig.Key,
 		Title:  "Keenable",
-		About:  "Keenable's independent web index for AI apps: fast search and page fetch, free without a key",
+		About:  "Fast search and page reading from Keenable's own index",
+		Order:  90,
 		Settings: []config.Setting{
-			{Key: APIKey, Title: "Keenable key", About: "Keenable API key for fast independent-index web search and page fetch, from https://keenable.ai. Optional: the keyless free tier works without it", Default: "", Env: []string{APIKeyEnv}, Secret: true},
+			{Key: APIKey, Title: "API key", About: "Your Keenable API key.",
+				Help: "The free plan works without a key, and a key raises the limits. Get one at keenable.ai.", Default: "",
+				Env: []string{APIKeyEnv}, Secret: true},
 		},
 	}})
 }

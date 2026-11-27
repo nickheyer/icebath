@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/approvals"
 	"github.com/nickheyer/icebath/internal/slash"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type Agent interface {
@@ -52,35 +53,34 @@ func Register(registry *slash.Registry, agent Agent) {
 
 func (c commands) Commands() []slash.Command {
 	return []slash.Command{
-		{Name: "help", Usage: "[skills|filter]", Help: "List commands; /help skills lists skill commands, /help <text> filters", Run: c.help},
-		{Name: "title", Usage: "[title]", Help: "Show or set the session title", Run: c.title},
-		{Name: "retry", Help: "Regenerate the last reply", Run: c.retry},
-		{Name: "undo", Usage: "[n]", Help: "Remove the last message, or last n, and the replies, to edit and resend", Run: c.undo},
-		{Name: "approve", Usage: "[session|always] [all]", Help: "Approve a pending dangerous command once, for this session or always; all answers every one waiting", Run: c.approve},
-		{Name: "deny", Usage: "[all] [reason]", Help: "Deny a pending dangerous command (optionally with a reason); all denies every one waiting", Run: c.deny},
-		{Name: "yolo", Help: "Approvals off for this session, or on again; /approvals sets the lasting mode", Run: c.yolo},
-		{Name: "status", Help: "Show session info", Run: c.status},
+		{Name: "help", Usage: "[skills|filter]", Help: "List the commands, or only the matching ones", Run: c.help},
+		{Name: "title", Usage: "[title]", Help: "Show or set the title of the session", Run: c.title},
+		{Name: "retry", Help: "Send your last message again for a new reply", Run: c.retry},
+		{Name: "undo", Usage: "[n]", Help: "Take back your last n messages and their replies", Run: c.undo},
+		{Name: "approve", Usage: "[session|always] [all]", Help: "Allow the risky command that is waiting", Run: c.approve},
+		{Name: "deny", Usage: "[all] [reason]", Help: "Refuse the risky command that is waiting", Run: c.deny},
+		{Name: "yolo", Help: "Skip approvals in this session, or ask again", Run: c.yolo},
+		{Name: "status", Help: "Show the state of this session", Run: c.status},
 		{Name: "reasoning", Usage: "[level|reset] [--global]", Help: "Show or set the reasoning effort", Run: c.reasoning},
-		{Name: "approvals", Usage: "[manual|smart|off] [--session]", Help: "Whether the agent asks before risky commands, for good or --session", Run: c.approvals},
+		{Name: "approvals", Usage: "[manual|smart|off] [--session]", Help: "Choose when the agent asks before risky commands", Run: c.approvals},
 		{Name: "diff", Usage: "[staged|all|session] [--stat] [path...]",
-			Help: "Show git changes in the working directory; session shows everything changed since the oldest checkpoint", Run: c.diff},
+			Help: "Show the git changes in this folder", Run: c.diff},
 		{Name: "version", Aliases: []string{"v"}, Help: "Show the icebath version", Run: c.version},
-		{Name: "profile", Usage: "[name]", Help: "Show the profile this session runs on, or switch it to another", Run: c.profile},
+		{Name: "profile", Usage: "[name]", Help: "Show or switch the profile of this session", Run: c.profile},
 		{Name: "model", Usage: "[model|reset] [--provider name] [--reasoning level] [--login name] [--global|--session] [--refresh]",
-			Help: "Show or switch the model; --login holds the session to one login of the provider, or @rotate to its rotation", Run: c.model},
-		{Name: "personality", Usage: "[name|none]", Help: "List the personalities, or set the one every session of this profile speaks with", Run: c.personality},
-		{Name: "usage", Usage: "[reset [--force]]", Help: "Show token usage and rate limits; reset redeems a banked Codex limit reset", Run: c.usage},
+			Help: "Show or switch the model", Run: c.model},
+		{Name: "personality", Usage: "[name|none]", Help: "Choose the personality the agent speaks with", Run: c.personality},
+		{Name: "usage", Usage: "[reset [--force]]", Help: "Show tokens used and the limits of your account", Run: c.usage},
 		{Name: "compress", Aliases: []string{"compact"}, Usage: "[here [N] | focus topic] [--preview] [--aggressive]",
-			Help: "Compress conversation context (add 'here [N]' to keep recent N turns; --aggressive keeps only the last exchange under the shortest " +
-				"summary; --preview shows what would happen)", Run: c.compress},
+			Help: "Summarize older messages to make room", Run: c.compress},
 		{Name: "context", Aliases: []string{"ctx"}, Usage: "[all]",
-			Help: "Show detailed context window view with usage gauge, category breakdown, compression stats, and throughput", Run: c.context},
+			Help: "Show what fills the model's context window", Run: c.context},
 		{Name: "agents", Aliases: []string{"tasks"}, Usage: "[pause|resume|status]",
-			Help: "Show active agents and running tasks; pause or resume new subagents, or show how delegation stands", Run: c.agents},
-		{Name: "delegation", Usage: "[backend]", Help: "List the delegation backends, or set the one delegate_task runs subagents on", Run: c.delegation},
-		{Name: "review", Usage: "[review instructions]", Help: "Spawn an independent subagent to review the work just discussed (PR, code, docs)", Run: c.review},
-		{Name: "steer", Aliases: []string{"s"}, Usage: "<prompt>", Help: "Inject a message after the next tool call without interrupting", Run: c.steer},
-		{Name: "busy", Usage: "[queue|steer|interrupt|status]", Help: "Control what enter does while a turn runs", Run: c.busy},
+			Help: "Show running subagents, or pause new ones", Run: c.agents},
+		{Name: "delegation", Usage: "[name]", Help: "Choose where subagents run", Run: c.delegation},
+		{Name: "review", Usage: "[instructions]", Help: "Have a subagent review the work just discussed", Run: c.review},
+		{Name: "steer", Aliases: []string{"s"}, Usage: "<message>", Help: "Tell the agent something after its next tool call", Run: c.steer},
+		{Name: "busy", Usage: "[queue|steer|interrupt|status]", Help: "Choose what enter does while the agent replies", Run: c.busy},
 	}
 }
 
@@ -137,9 +137,9 @@ func (c commands) help(_ context.Context, call *slash.Call) (string, error) {
 	switch {
 	case strings.EqualFold(filter, "skills"):
 		if len(skills) == 0 {
-			return "No skill commands are installed.", nil
+			return "No skill brings a command yet. Skills you add in /skills can bring their own.", nil
 		}
-		fmt.Fprintf(&out, "⚡ **Skill Commands** (%d active):\n\n", len(skills))
+		fmt.Fprintf(&out, "**%s**\n\n", strs.Count(len(skills), "skill command"))
 		for _, command := range skills {
 			out.WriteString(line(command))
 		}
@@ -151,7 +151,7 @@ func (c commands) help(_ context.Context, call *slash.Call) (string, error) {
 			}
 		}
 		if out.Len() == 0 {
-			return "No commands match " + filter, nil
+			return "No command matches “" + filter + "”. Type /help to list them all.", nil
 		}
 		return out.String(), nil
 	}
@@ -159,12 +159,12 @@ func (c commands) help(_ context.Context, call *slash.Call) (string, error) {
 		out.WriteString(line(command))
 	}
 	if len(skills) > 0 {
-		fmt.Fprintf(&out, "\n⚡ **Skill Commands** (%d active):\n\n", len(skills))
+		fmt.Fprintf(&out, "\n**%s**\n\n", strs.Count(len(skills), "skill command"))
 		for _, command := range skills[:min(listedSkills, len(skills))] {
 			out.WriteString(line(command))
 		}
 		if len(skills) > listedSkills {
-			fmt.Fprintf(&out, "\n... and %d more. Use `/help skills` for the full list.\n", len(skills)-listedSkills)
+			fmt.Fprintf(&out, "\n%s more. Type /help skills to see them all.\n", strs.Number(float64(len(skills)-listedSkills)))
 		}
 	}
 	return out.String(), nil
@@ -186,9 +186,9 @@ func (c commands) undo(ctx context.Context, call *slash.Call) (string, error) {
 			return "", errors.New("Usage: /undo [n]")
 		}
 	}
-	detail := "This removes the last user/assistant exchange from history."
+	detail := "This takes back your last message and the agent's reply to it."
 	if count != 1 {
-		detail = fmt.Sprintf("This removes the last %d user turns from history.", count)
+		detail = fmt.Sprintf("This takes back your last %s and the agent's replies to them.", strs.Count(count, "message"))
 	}
 	ok, note, err := c.agent.Confirm(ctx, call.SessionID, "undo", detail)
 	switch {
@@ -201,9 +201,9 @@ func (c commands) undo(ctx context.Context, call *slash.Call) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	removed := "Removed the last message."
+	removed := "Took back your last message and the reply to it."
 	if count != 1 {
-		removed = fmt.Sprintf("Removed the last %d messages.", count)
+		removed = fmt.Sprintf("Took back your last %s and the replies to them.", strs.Count(count, "message"))
 	}
 	if hint != "" {
 		removed += "\n\n" + hint
@@ -229,11 +229,12 @@ func (c commands) approve(_ context.Context, call *slash.Call) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	scope := map[string]string{approvals.Once: "", approvals.Session: " (pattern approved for this session)", approvals.Always: " (pattern approved permanently)"}[answer.Choice]
+	scope := map[string]string{approvals.Once: " The agent goes on.", approvals.Session: " Commands like it run without asking for the rest of this session.",
+		approvals.Always: " Commands like it run without asking from now on."}[answer.Choice]
 	if count == 1 {
-		return "✅ Command approved" + scope + ". The agent is resuming...", nil
+		return "✓ Command approved." + scope, nil
 	}
-	return fmt.Sprintf("✅ Commands approved%s (%d commands). The agent is resuming...", scope, count), nil
+	return "✓ " + strs.Count(count, "command") + " approved." + scope, nil
 }
 
 func (c commands) deny(_ context.Context, call *slash.Call) (string, error) {
@@ -248,13 +249,13 @@ func (c commands) deny(_ context.Context, call *slash.Call) (string, error) {
 	case err != nil:
 		return "", err
 	case count == 1 && reason != "":
-		return fmt.Sprintf("❌ Command denied. Reason relayed to the agent: \"%s\"", reason), nil
+		return "✗ Command refused. The agent was told why: “" + reason + "”.", nil
 	case reason != "":
-		return fmt.Sprintf("❌ Commands denied (%d commands). Reason relayed to the agent: \"%s\"", count, reason), nil
+		return "✗ " + strs.Count(count, "command") + " refused. The agent was told why: “" + reason + "”.", nil
 	case count == 1:
-		return "❌ Command denied.", nil
+		return "✗ Command refused.", nil
 	}
-	return fmt.Sprintf("❌ Commands denied (%d commands).", count), nil
+	return "✗ " + strs.Count(count, "command") + " refused.", nil
 }
 
 func (c commands) yolo(_ context.Context, call *slash.Call) (string, error) {
@@ -283,11 +284,11 @@ func (c commands) diff(ctx context.Context, call *slash.Call) (string, error) {
 }
 
 func (c commands) version(context.Context, *slash.Call) (string, error) {
-	version := "(devel)"
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+	version := "development build"
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
 		version = info.Main.Version
 	}
-	return "icebath " + version + " " + runtime.Version() + " " + runtime.GOOS + "/" + runtime.GOARCH, nil
+	return "icebath " + version + " · " + runtime.Version() + " · " + runtime.GOOS + "/" + runtime.GOARCH, nil
 }
 
 func (c commands) model(ctx context.Context, call *slash.Call) (string, error) {

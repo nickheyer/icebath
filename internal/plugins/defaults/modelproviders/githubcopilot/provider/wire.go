@@ -18,11 +18,9 @@ var (
 
 // What GitHub Models' free tier can't serve
 var freeTierHint = []string{
-	"   💡 GitHub Models free tier (models.inference.ai.azure.com) caps every",
-	"      request at ~8K tokens. Icebath's system prompt + tool schemas baseline",
-	"      exceeds that floor, so this endpoint cannot run an agentic loop.",
-	"      Use the `copilot` provider with a Copilot subscription token (`icebath",
-	"      auth add copilot`), or pick any other provider.",
+	"The free tier of GitHub Models at models.inference.ai.azure.com takes about 8,000 tokens a request, fewer than the agent's instructions " +
+		"and tools need, so it can't run the agent.",
+	"Use the copilot provider with a Copilot plan through `icebath auth add copilot`, or pick another provider.",
 }
 
 // OpenRouter style and dashed ids mapped onto the ids Copilot serves them under
@@ -191,9 +189,9 @@ func rejectionHint(status int, base, _ string) []string {
 func refreshNotice(reason string) string {
 	switch reason {
 	case "stale":
-		return "Copilot credential re-exchanged after model_not_available 400. Retrying request..."
+		return "GitHub refused the model with the Copilot token in use, so icebath got a new one. Trying again."
 	case "unauthorized":
-		return "Copilot credentials refreshed after 401. Retrying request..."
+		return "GitHub refused the Copilot token, so icebath renewed it. Trying again."
 	}
 	return ""
 }

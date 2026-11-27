@@ -64,7 +64,7 @@ func (m manager) bw() (string, error) {
 	if found := binary(m.cfg); found != "" {
 		return found, nil
 	}
-	return "", errors.New("Bitwarden CLI (bw) not found — install it or set vault.bitwarden.binary_path")
+	return "", errors.New("bw, the Bitwarden command line tool, is not installed. Install it, or set bw program in /settings under Autofill vault › Bitwarden.")
 }
 
 func (m manager) env(session string) map[string]string {
@@ -89,7 +89,7 @@ func (m manager) Unlock(ctx context.Context, master string) (string, error) {
 	env := m.env("")
 	env[masterEnv] = master
 	out, err := secrets.Run(ctx, []string{bw, "unlock", "--raw", "--nointeraction", "--passwordenv", masterEnv}, env, timeout, "bw",
-		fmt.Sprintf("bw unlock timed out after %.0fs", timeout.Seconds()), nil)
+		fmt.Sprintf("bw did not answer within %s while unlocking.", strs.Span(timeout)), nil)
 	if err != nil {
 		return "", err
 	}
@@ -97,12 +97,12 @@ func (m manager) Unlock(ctx context.Context, master string) (string, error) {
 	if out.Code != 0 || token == "" {
 		detail := strs.Head(strings.TrimSpace(term.StripANSI(out.Stderr)), 200)
 		if strings.Contains(strings.ToLower(detail), "not logged in") {
-			detail = "not logged in — run `bw login` once in a terminal first"
+			detail = "bw is not signed in. Run bw login in a terminal once, then unlock again."
 		}
 		if detail == "" {
-			detail = "no session key"
+			detail = "bw gave no session key."
 		}
-		return "", fmt.Errorf("Bitwarden unlock failed: %s", detail)
+		return "", fmt.Errorf("Bitwarden did not unlock: %s", secrets.Sentence(detail))
 	}
 	return token, nil
 }
@@ -116,7 +116,8 @@ func (m manager) run(ctx context.Context, session string, args ...string) (strin
 	if err != nil {
 		return "", err
 	}
-	out, err := secrets.Run(ctx, append(append([]string{bw}, args...), "--nointeraction"), m.env(session), timeout, "bw", "bw timed out", nil)
+	out, err := secrets.Run(ctx, append(append([]string{bw}, args...), "--nointeraction"), m.env(session), timeout, "bw",
+		"bw did not answer within "+strs.Span(timeout)+".", nil)
 	if err != nil {
 		return "", err
 	}
@@ -125,7 +126,7 @@ func (m manager) run(ctx context.Context, session string, args ...string) (strin
 		if lowered := strings.ToLower(detail); strings.Contains(lowered, "locked") || strings.Contains(lowered, "session") {
 			return "", vault.ErrLocked
 		}
-		return "", fmt.Errorf("bw failed: %s", strs.Head(detail, 200))
+		return "", fmt.Errorf("bw stopped with an error: %s", secrets.Sentence(strs.Head(strings.TrimSpace(detail), 200)))
 	}
 	return out.Stdout, nil
 }
@@ -153,7 +154,7 @@ func (m manager) Items(ctx context.Context, session string) ([]vault.Item, error
 		text = "[]"
 	}
 	if err := json.Unmarshal([]byte(text), &listed); err != nil {
-		return nil, fmt.Errorf("bw listed something other than items: %v", err)
+		return nil, fmt.Errorf("bw printed a list of items icebath can't read: %v.", err)
 	}
 	out := []vault.Item{}
 	for _, entry := range listed {

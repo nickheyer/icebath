@@ -64,7 +64,7 @@ func failure(err error) error {
 
 func (s *service) Create(ctx context.Context, request *sessionsv1.CreateRequest) (*sessionsv1.CreateResponse, error) {
 	if !filepath.IsAbs(request.GetDirectory()) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, "Directory must be an absolute path")
+		return nil, connect.NewError(connect.CodeInvalidArgument, "The folder of a new session must be a full path, such as /home/you/project.")
 	}
 	store, err := s.store()
 	if err != nil {
@@ -72,7 +72,7 @@ func (s *service) Create(ctx context.Context, request *sessionsv1.CreateRequest)
 	}
 	profile := cmp.Or(request.GetProfile(), s.config.Profile())
 	if !s.config.Exists(profile) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, "No profile named "+profile)
+		return nil, connect.NewError(connect.CodeInvalidArgument, "There is no profile named "+profile+". Run icebath profile list to see your profiles.")
 	}
 	session, err := store.Create(ctx, &sessionsv1.Session{Directory: request.GetDirectory(), Profile: profile, Source: request.GetSource(),
 		Title: request.GetTitle(), ParentId: request.GetParentId()})
@@ -316,7 +316,7 @@ func (s *service) RefreshPrompts(ctx context.Context, request *sessionsv1.Refres
 	if id != "" {
 		session, err := store.Resolve(ctx, s.config.Profile(), id)
 		if err != nil {
-			return nil, connect.NewError(connect.CodeNotFound, "No session matches "+id+".")
+			return nil, connect.NewError(connect.CodeNotFound, "There is no session "+id+". Run icebath sessions list to find its id.")
 		}
 		id = session.GetId()
 	}
@@ -338,7 +338,7 @@ func (s *service) RepairPrompts(ctx context.Context, request *sessionsv1.RepairP
 	if id := request.GetSessionId(); id != "" {
 		session, err := store.Resolve(ctx, s.config.Profile(), id)
 		if err != nil {
-			return nil, connect.NewError(connect.CodeNotFound, "No session matches "+id+".")
+			return nil, connect.NewError(connect.CodeNotFound, "There is no session "+id+". Run icebath sessions list to find its id.")
 		}
 		request.SessionId = session.GetId()
 	}
@@ -391,7 +391,7 @@ func (s *service) Lost(ctx context.Context, request *sessionsv1.LostRequest) (*s
 	}
 	session, err := store.Resolve(ctx, s.config.Profile(), request.GetSession())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, "No session found matching '"+request.GetSession()+"'. Use 'icebath sessions list' to see available sessions.")
+		return nil, connect.NewError(connect.CodeNotFound, "No session matches “"+request.GetSession()+"”. Run icebath sessions list to see your sessions.")
 	}
 	pending, err := store.Pending(ctx, session.GetId())
 	if err != nil {
@@ -413,7 +413,7 @@ func (s *service) Discard(ctx context.Context, request *sessionsv1.DiscardReques
 	}
 	session, err := store.Resolve(ctx, s.config.Profile(), request.GetSession())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, "No session found matching '"+request.GetSession()+"'. Use 'icebath sessions list' to see available sessions.")
+		return nil, connect.NewError(connect.CodeNotFound, "No session matches “"+request.GetSession()+"”. Run icebath sessions list to see your sessions.")
 	}
 	discarded, err := store.Discard(ctx, session.GetId(), request.GetAdmissions())
 	if err != nil {

@@ -103,8 +103,8 @@ func (source) Renew(ctx context.Context, account credentials.Account) (bool, err
 	state, err := RefreshAnthropicOAuthPure(env, refresh, true)
 	if err != nil {
 		if IsTerminalAnthropicRefreshError(err) {
-			return true, credentials.Failed(anthropicconfig.Name, "invalid_grant", "Anthropic OAuth refresh token is terminally invalid ("+err.Error()+
-				"); the credential leaves rotation. Re-run `"+credentials.Relogin(account.Provider.ID)+"` to sign in again.", true, err)
+			return true, credentials.Failed(anthropicconfig.Name, "invalid_grant", "The Claude sign-in of this account no longer works, so it leaves "+
+				"the rotation. Run `"+credentials.Relogin(account.Provider.ID)+"` to sign in again.", true, err)
 		}
 		return true, err
 	}
@@ -119,4 +119,4 @@ func (source) Renew(ctx context.Context, account credentials.Account) (bool, err
 }
 
 // Error of a sign-in that ended without a token
-var errNoToken = errors.New("Sign-in didn't finish. Close this and try again.")
+var errNoToken = errors.New("The sign-in did not finish, so no account was added. Start the sign-in again.")

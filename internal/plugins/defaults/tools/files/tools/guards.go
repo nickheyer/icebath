@@ -504,9 +504,13 @@ func (o *ops) approveInstructions(raws, resolved []string) string {
 		return ""
 	}
 	targets := strings.Join(labels, ", ")
-	description := "Write to protected agent-instruction file(s): " + targets + ". These files steer future agent behavior; approval is always " +
-		"required (not bypassed by auto-approve)."
-	if err := o.call.Env.Gate(o.ctx, tools.Gate{Key: instructionsRisk, Description: description, Target: "<write to " + targets + ">",
+	description := "The agent wants to write to the instruction file " + targets + ", which steers what agents do. You are always asked " +
+		"before such a write, whatever your approval settings."
+	if len(labels) > 1 {
+		description = "The agent wants to write to the instruction files " + targets + ", which steer what agents do. You are always asked " +
+			"before such a write, whatever your approval settings."
+	}
+	if err := o.call.Env.Gate(o.ctx, tools.Gate{Key: instructionsRisk, Description: description, Target: "Write to " + targets,
 		Strict: true}); err != nil {
 		return blocked("protected agent-instruction file(s)", targets, err, " The user has NOT consented to this write. Do NOT retry it or attempt the "+
 			"same edit via another path (terminal, execute_code, etc.).")
@@ -529,7 +533,7 @@ func (o *ops) approveSSHConfig(raws, resolved []string) string {
 		return ""
 	}
 	joined := strings.Join(targets, ", ")
-	if err := o.call.Env.Approve(o.ctx, "write to "+joined, sshConfigRisk); err != nil {
+	if err := o.call.Env.Approve(o.ctx, "Write to "+joined, sshConfigRisk); err != nil {
 		return blocked("SSH config file(s)", joined, err, " Do NOT retry it via another path (terminal, execute_code) without the user's explicit consent.")
 	}
 	return ""

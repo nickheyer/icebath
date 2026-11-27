@@ -14,6 +14,7 @@ import (
 	launchconfig "github.com/nickheyer/icebath/internal/launch/config"
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
 	"github.com/nickheyer/icebath/internal/provider"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -101,28 +102,31 @@ func fallbackReason(err error, exhausted bool) string {
 	forced := failure.Fallback != nil
 	switch {
 	case forced && failure.Kind == provider.ErrRateLimit:
-		return "rate limit"
+		return limitedReason
 	case forced && failure.Kind != provider.ErrQuota:
-		return "plugin classification: " + failure.Reason
+		return "a plugin called for it"
 	case failure.StatusCode == 402 || failure.Kind == provider.ErrQuota || billingWords.MatchString(failure.Message):
 		return billingReason
 	case failure.Kind == provider.ErrAuth:
-		return "authentication failed"
+		return "the provider did not accept the account"
 	case failure.Kind == provider.ErrModelNotFound:
-		return "model not found"
+		return "the provider does not have the model"
 	case !exhausted:
 		return ""
 	case failure.Kind == provider.ErrRateLimit:
-		return "rate limit"
+		return limitedReason
 	case failure.Kind == provider.ErrServer:
-		return "provider server error"
+		return "the provider had a failure of its own"
 	case failure.Kind == provider.ErrNetwork:
-		return "request timeout"
+		return "the provider did not answer in time"
 	case failure.Kind == provider.ErrEmptyResponse, failure.Kind == provider.ErrUnknown:
-		return "provider failure"
+		return "the provider failed"
 	}
 	return ""
 }
+
+// Why a session falls back when its provider limits its requests
+const limitedReason = "the provider is limiting requests"
 
 // Moves the session onto the next usable entry of its fallback chain after the failure, telling its windows; false when the chain is spent.
 // A rate limited main model waits out its reset, or a doubling wait, before it is tried again
@@ -134,7 +138,7 @@ func (a *Agent) failover(r *run, settings *config.Config, failed provider.Route,
 		f = &failover{}
 		r.failover = f
 	}
-	limited := reason == "rate limit"
+	limited := reason == limitedReason
 	if f.active.Model == "" {
 		f.primary = failed
 	}
@@ -153,7 +157,7 @@ func (a *Agent) failover(r *run, settings *config.Config, failed provider.Route,
 		}
 		f.backoff++
 		f.until = time.Now().Add(wait)
-		cooled = fmt.Sprintf(" Primary retry eligible in ~%d s; recovery is not guaranteed.", int(math.Ceil(wait.Seconds())))
+		cooled = fmt.Sprintf(" Your main model is tried again in about %s, if it works by then.", strs.Span(rounded(time.Duration(math.Ceil(wait.Seconds()))*time.Second)))
 	}
 	for f.next < len(chain) {
 		next := chain[f.next]
@@ -166,8 +170,8 @@ func (a *Agent) failover(r *run, settings *config.Config, failed provider.Route,
 			continue
 		}
 		f.active, f.instance = next, instance
-		a.notify(r, fmt.Sprintf("⚠️ Model fallback: %s via %s unavailable (%s); using %s via %s.%s", failed.Model, failed.Provider, reason, next.Model,
-			next.Provider, cooled))
+		a.notify(r, fmt.Sprintf("⚠ Using the fallback model %s on %s, because %s can't be used on %s: %s.%s", next.Model, next.Provider, failed.Model,
+			failed.Provider, reason, cooled))
 		r.mu.Unlock()
 		a.changed(r)
 		return true
@@ -208,7 +212,7 @@ func (a *Agent) restore(r *run) {
 		return
 	}
 	r.mu.Lock()
-	a.notify(r, fmt.Sprintf("✅ Primary model restored: %s via %s; fallback %s via %s is no longer active.", primary.Model, primary.Provider,
+	a.notify(r, fmt.Sprintf("✓ Back on your main model %s on %s, instead of the fallback %s on %s.", primary.Model, primary.Provider,
 		f.active.Model, f.active.Provider))
 	r.mu.Unlock()
 	a.changed(r)

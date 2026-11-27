@@ -22,13 +22,13 @@ func Register(registry *web.Registry) {
 func (backends) Backends() []web.Backend {
 	return []web.Backend{{
 		Name:     "ddgs",
-		Title:    "DuckDuckGo (ddgs)",
-		About:    "DuckDuckGo web search through the ddgs client built into icebath — no API key required.",
+		Title:    "DuckDuckGo",
+		About:    "Free search across several search engines, with no key",
 		Settings: []string{ddgsconfig.Region, ddgsconfig.SafeSearch, ddgsconfig.TimeLimit, ddgsconfig.Proxy},
 		Plans: []web.Plan{{
-			Title: "DuckDuckGo (ddgs)",
+			Title: "Free, no key",
 			Badge: "free · no key · search only",
-			About: "Search via the built-in DuckDuckGo client — no API key (pair with any extract provider)",
+			About: "Search only, so pair DuckDuckGo with a service that reads pages",
 		}},
 		Search: search,
 		// Off until a web backend setting names it

@@ -18,7 +18,7 @@ func readMFA(ctx context.Context, prompt string) (string, error) {
 	}
 	tty, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
-		return "", errors.New("There is no terminal to read the MFA code from. Sign in with `aws sts get-session-token` or a profile without mfa_serial.")
+		return "", errors.New("This AWS profile needs an MFA code, and there is no terminal to type it in. Sign in with `aws sts get-session-token`, or use a profile without mfa_serial.")
 	}
 	defer tty.Close()
 	if _, err := tty.WriteString(prompt); err != nil {

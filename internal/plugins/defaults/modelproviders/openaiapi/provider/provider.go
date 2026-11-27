@@ -17,6 +17,8 @@ func (specs) Specs() []provider.Spec {
 		Name:               openaiapiconfig.Name,
 		ReservedTools:      []string{"tool_search"},
 		DisplayName:        openaiapiconfig.Title,
+		Rank:               2,
+		Description:        "GPT models, with an OpenAI API key paid by use",
 		BaseURL:            base,
 		BaseURLEnv:         openaiapiconfig.BaseURLEnv,
 		ModelsURL:          provider.ModelsURL(base),

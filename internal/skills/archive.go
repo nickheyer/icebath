@@ -58,7 +58,7 @@ func decodeArchive(data []byte) (*tree, error) {
 			return nil, err
 		}
 		if header.Typeflag != tar.TypeReg || !fs.ValidPath(header.Name) || header.Name == "." {
-			return nil, fmt.Errorf("archive entry %q is not a file inside the tree", header.Name)
+			return nil, fmt.Errorf("The archive holds %q, which is not a file inside its folder.", header.Name)
 		}
 		body, err := io.ReadAll(reader)
 		if err != nil {

@@ -71,7 +71,7 @@ func saveBlocked(cfg *config.Config, command string) string {
 		return ""
 	}
 	path := filepath.Join(dir, "blocked-"+strconv.FormatInt(time.Now().Unix(), 10)+"-"+hex.EncodeToString(suffix[:])+".sh")
-	body := "#!/usr/bin/env bash\n# Auto-saved by Icebath: this command exceeded the inline command\n# parser limit and was blocked from direct " +
+	body := "#!/usr/bin/env bash\n# Auto-saved by icebath: this command exceeded the inline command\n# parser limit and was blocked from direct " +
 		"execution. Review it,\n# then run it via: bash " + path + "\n" + command
 	if !strings.HasSuffix(command, "\n") {
 		body += "\n"

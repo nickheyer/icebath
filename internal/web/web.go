@@ -440,7 +440,11 @@ type Web struct {
 func New(cfg *config.Config) *Web {
 	w := &Web{}
 	webconfig.Register(cfg, func(capability string) []config.Option {
-		options := []config.Option{{Value: "", Title: "Automatic", About: "The first service with a key, else a free one"}}
+		// Left empty, the main setting picks a service by the keys set and a pinned one follows the main setting
+		options := []config.Option{{Value: "", Title: "Automatic", About: "The first service you have a key for, else a free one"}}
+		if capability != "" {
+			options = []config.Option{{Value: "", Title: "Main service", About: "The service that answers both searches and page reads"}}
+		}
 		for _, backend := range w.Backends() {
 			if capability == "" || backend.serves(Capability(capability)) {
 				options = append(options, config.Option{Value: backend.Name, Title: backend.Title, About: backend.About})

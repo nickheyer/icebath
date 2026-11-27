@@ -6,23 +6,34 @@ import "github.com/nickheyer/icebath/internal/config"
 func Register(cfg *config.Config, images, videos func() []config.Option) {
 	cfg.Register(config.Sections{{
 		Key:   ImageKey,
-		Title: "Image generation",
-		About: "Pictures the agent draws with image_generate: the service that draws them and its model",
+		Title: "Images",
+		About: "Which service makes images for the agent",
+		Group: config.GroupMedia,
+		Order: 10,
 		Settings: []config.Setting{
-			{Key: ImageProvider, Title: "Image generation", About: "Which service draws pictures when the agent makes an image. Automatic takes the first service with a key", Default: "", Options: images},
-			{Key: ImageModel, Title: "Image model", About: "Model the image service draws with. Empty uses the service's default", Default: ""},
-			{Key: ImageParallel, Title: "Pictures at once", About: "Pictures drawn at the same time when the agent asks for several, 1 to 8", Default: 4},
-			{Key: ImageDebug, Title: "Image debug log", About: "Record every image_generate call to a JSON file in the profile's logs folder", Default: false, Env: []string{"IMAGE_TOOLS_DEBUG"}},
+			{Key: ImageProvider, Title: "Service", About: "Which service makes images when the agent asks for one.", Default: "", Options: images,
+				Slash: "imagegen"},
+			{Key: ImageModel, Title: "Model", About: "The model the image service makes images with.", Default: "", Zero: "The service's default",
+				Slash: "imagegen"},
+			{Key: ImageParallel, Title: "Most at once", About: "How many images are made at the same time when the agent asks for several.", Default: 4,
+				Counts: "images", Least: config.Num(MinParallel), Most: config.Num(MaxParallel), Advanced: true},
+			{Key: ImageDebug, Title: "Debug log", About: "Record each image request in a JSON file in the logs folder of the profile.", Default: false,
+				Env: []string{"IMAGE_TOOLS_DEBUG"}, Advanced: true},
 		},
 	}})
 	cfg.Register(config.Sections{{
 		Key:   VideoKey,
-		Title: "Video generation",
-		About: "Videos the agent makes with video_generate: whether it may, the service that makes them and its model",
+		Title: "Videos",
+		About: "Which service makes videos for the agent",
+		Group: config.GroupMedia,
+		Order: 20,
 		Settings: []config.Setting{
-			{Key: VideoEnabled, Title: "Video generation", About: "Offer the agent video_generate, which makes videos from text, a still image or reference images, on the first available service. Choosing a video service offers it as well", Default: false},
-			{Key: VideoProvider, Title: "Video service", About: "Plugin that makes videos when the agent asks for one. Automatic takes the first available service", Default: "", Options: videos},
-			{Key: VideoModel, Title: "Video model", About: "Model the video service makes videos with. Empty uses the service's default", Default: ""},
+			{Key: VideoEnabled, Title: "Make videos", About: "Let the agent make videos from text, a still image or reference images.",
+				Help: "Picking a service under Service does the same.", Default: false, Slash: "videogen"},
+			{Key: VideoProvider, Title: "Service", About: "Which service makes videos when the agent asks for one.", Default: "", Options: videos,
+				Slash: "videogen"},
+			{Key: VideoModel, Title: "Model", About: "The model the video service makes videos with.", Default: "", Zero: "The service's default",
+				Slash: "videogen"},
 		},
 	}})
 }

@@ -57,7 +57,7 @@ func repairLibatomic(ctx context.Context, h *Packages, r Reporter, entry, target
 	}
 	retried := h.verify(p, entry, target)
 	if strings.Contains(retried, "libatomic.so.1") {
-		return retried, "the libatomic package installed, but Node still cannot load libatomic.so.1; check the loader path"
+		return retried, "The libatomic package is installed, but Node still cannot load libatomic.so.1. Check where the loader looks for libraries."
 	}
 	return retried, ""
 }
@@ -72,19 +72,19 @@ func installLibatomic(ctx context.Context, r Reporter) (bool, string) {
 		}
 	}
 	if install == nil {
-		return false, "official Node needs libatomic.so.1; install the distro package that provides it and rerun"
+		return false, "Node needs libatomic.so.1. Install the package of your Linux distribution that provides it, then run the command again."
 	}
 	argv, shown, remedy := slices.Clone(install), shellJoin(install), shellJoin(install)
 	if os.Geteuid() != 0 {
 		sudo := Which("sudo", os.Getenv("PATH"))
 		if sudo == "" {
-			return false, fmt.Sprintf("install the missing runtime library with as root: %s and rerun", shellJoin(install))
+			return false, fmt.Sprintf("Install the missing library as root with `%s`, then run the command again.", shellJoin(install))
 		}
 		argv = append([]string{sudo, "-n"}, install...)
 		shown, remedy = shellJoin(append([]string{"sudo", "-n"}, install...)), shellJoin(append([]string{"sudo"}, install...))
 	}
-	remedy = fmt.Sprintf("install the missing runtime library with %s and rerun", remedy)
-	r.Line(fmt.Sprintf("→ Node needs libatomic.so.1; trying non-interactive %s", shown))
+	remedy = fmt.Sprintf("Install the missing library with `%s`, then run the command again.", remedy)
+	r.Line(fmt.Sprintf("Node needs libatomic.so.1, so icebath runs `%s` without asking for a password…", shown))
 	attempt := func(args []string) bool {
 		out, err := run(ctx, command{argv: args, timeout: 300 * time.Second})
 		return err == nil && out.code == 0
@@ -166,7 +166,7 @@ func (h *Packages) NodeModules(ctx context.Context, cfg *config.Config, dir stri
 		return ""
 	}
 	if !explicit && !h.LazyAllowed(cfg) {
-		return "lazy installs are disabled — run `icebath plugins install` and approve Node dependencies"
+		return "Downloads when needed are off, so the Node packages of this folder were not installed. Turn on Download when needed in /settings under Downloads."
 	}
 	verb := "install"
 	if fsx.IsFile(filepath.Join(dir, "package-lock.json")) {
@@ -174,17 +174,17 @@ func (h *Packages) NodeModules(ctx context.Context, cfg *config.Config, dir stri
 	}
 	runner, err := h.Ensure(ctx, cfg, NPM, Ensuring{Explicit: explicit})
 	if err != nil {
-		return fmt.Sprintf("npm %s failed to run: %s", verb, err)
+		return fmt.Sprintf("`npm %s` could not run: %s", verb, err)
 	}
 	npm := Which("npm", runner.Env[pathKey(runner.Env)])
 	if npm == "" {
-		return "npm is missing from the prepared PM environment"
+		return "npm is missing from the programs the package manager installed. Run `icebath pm install npm`."
 	}
 	if message := npmRun(ctx, runner, npm, dir, verb, "--no-audit", "--no-fund"); message != "" {
 		return message
 	}
 	if err := h.RecordTree(dir); err != nil {
-		return fmt.Sprintf("npm %s finished but its folder could not be recorded: %s", verb, err)
+		return fmt.Sprintf("`npm %s` finished, but its folder could not be recorded: %s", verb, err)
 	}
 	return ""
 }
@@ -200,17 +200,17 @@ func npmRun(ctx context.Context, runner *Runner, npm, dir, verb string, args ...
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Sprintf("npm %s failed to run: %s timed out after 900 seconds", verb, strings.Join(cmd.Args, " "))
+		return fmt.Sprintf("`%s` did not finish within 15 minutes.", strings.Join(cmd.Args, " "))
 	}
 	exit, ok := err.(*exec.ExitError)
 	if err != nil && !ok {
-		return fmt.Sprintf("npm %s failed to run: %s", verb, err)
+		return fmt.Sprintf("`npm %s` could not run: %s", verb, err)
 	}
 	if err == nil {
 		return ""
 	}
 	tail := strings.TrimSpace(strings.ToValidUTF8(cmp.Or(stderr.String(), stdout.String()), "�"))
-	return fmt.Sprintf("npm %s exited %d: %s", verb, exit.ExitCode(), strs.Tail(tail, 300))
+	return fmt.Sprintf("`npm %s` ended with exit code %d: %s", verb, exit.ExitCode(), strs.Tail(tail, 300))
 }
 
 // Folders whose Node dependencies the package manager installed

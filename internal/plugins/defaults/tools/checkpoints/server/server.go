@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/internal/terminal"
 	checkpointsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/checkpoints/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/checkpoints/v1/checkpointsv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type service struct {
@@ -42,7 +42,7 @@ func (s *service) scope(ctx context.Context, id string) (*checkpoints.Scope, err
 // Checkpoints as a session sees them: its profile's, of the project its folder lies in
 func Scope(ctx context.Context, cfg *config.Config, stores *sessions.Registry, host *terminal.Terminal, id string) (*checkpoints.Scope, error) {
 	if id == "" {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, "no active session — nothing to rollback")
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "No session is open, so there are no checkpoints to restore.")
 	}
 	store, err := stores.Store(cfg.GetString(sessionsconfig.Store))
 	if err != nil {
@@ -193,7 +193,7 @@ func (s *service) Prune(_ context.Context, request *checkpointsv1.PruneRequest) 
 func (s *service) Clear(context.Context, *checkpointsv1.ClearRequest) (*checkpointsv1.ClearResponse, error) {
 	freed, err := checkpoints.Open(s.config).Clear()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, "Could not clear checkpoint base: "+err.Error())
+		return nil, connect.NewError(connect.CodeInternal, "Could not delete the checkpoints: "+err.Error()+".")
 	}
 	return &checkpointsv1.ClearResponse{Freed: freed}, nil
 }
@@ -203,35 +203,41 @@ func (s *service) ClearLegacy(context.Context, *checkpointsv1.ClearLegacyRequest
 	return &checkpointsv1.ClearLegacyResponse{Deleted: int32(cleared.Deleted), Freed: cleared.Freed, Errors: int32(cleared.Errors)}, nil
 }
 
-// Paths a line of a restore names, the rest counted
+// Paths a line of a restore names, five at most and the rest counted
 func named(paths []string) string {
-	more := ""
-	if len(paths) > 5 {
-		more = fmt.Sprintf(" (+%d)", len(paths)-5)
+	shown := paths[:min(5, len(paths))]
+	if rest := len(paths) - len(shown); rest > 0 {
+		return strings.Join(shown, ", ") + " and " + strs.Number(float64(rest)) + " more"
 	}
-	return strings.Join(paths[:min(5, len(paths))], ", ") + more
+	if len(shown) < 2 {
+		return strings.Join(shown, "")
+	}
+	return strings.Join(shown[:len(shown)-1], ", ") + " and " + shown[len(shown)-1]
 }
 
 // What a restore did as the user reads it, line by line
 func Report(restored *checkpointsv1.RestoreResponse) []string {
 	if restored.GetSafe() && len(restored.GetRestored()) == 0 && len(restored.GetKeptEdits()) > 0 {
-		return []string{"↷ Nothing to restore: every file changed since the checkpoint was edited by hand (" + named(restored.GetKeptEdits()) + ").",
-			"Use /rollback <N> --all to restore those too."}
+		return []string{"Nothing was restored, because you changed every one of those files yourself since the checkpoint: " +
+			named(restored.GetKeptEdits()) + ".", "Run /rollback <N> --all to restore them anyway."}
 	}
-	target := "files"
+	target := "your files"
 	if restored.GetFile() != "" {
 		target = filepath.ToSlash(restored.GetFile())
 	}
-	lines := []string{fmt.Sprintf("✅ Restored %s to checkpoint %s: %s", target, restored.GetRestoredTo(), restored.GetReason()),
-		"A pre-rollback snapshot was saved automatically."}
+	head := "✓ Restored " + target + " to checkpoint " + restored.GetRestoredTo()
+	if reason := strings.TrimSpace(restored.GetReason()); reason != "" {
+		head += ", “" + reason + "”"
+	}
+	lines := []string{head + ".", "A checkpoint of how they were just before was saved first, so you can undo this."}
 	if edits := restored.GetKeptEdits(); len(edits) > 0 {
-		lines = append(lines, "↷ Kept your hand-edits: "+named(edits), "Use /rollback <N> --all to restore those too.")
+		lines = append(lines, "Kept the changes you made yourself to "+named(edits)+".", "Run /rollback <N> --all to restore those files too.")
 	}
 	if oversize := restored.GetKeptOversize(); len(oversize) > 0 {
-		lines = append(lines, "↷ Kept (too large for checkpoints, no stored copy to revert to): "+named(oversize))
+		lines = append(lines, "Kept "+named(oversize)+" as they are, because they are too large for checkpoints and no copy of them was saved.")
 	}
 	if failed := restored.GetFailedDeletes(); len(failed) > 0 {
-		lines = append(lines, "⚠️ Could not remove (left in place): "+named(failed))
+		lines = append(lines, "⚠ Could not delete "+named(failed)+", so they are still there.")
 	}
 	return lines
 }

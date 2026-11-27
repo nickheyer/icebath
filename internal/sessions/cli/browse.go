@@ -18,13 +18,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
-// Short tag of how a session's last turn went
-var statusTags = map[string]string{"complete": "done", "interrupted": "intr", "error": "err", "empty": "empty"}
+// How the last reply of a session went, in a word
+var statusTags = map[string]string{"complete": "Done", "interrupted": "Stopped", "error": "Failed", "empty": "Empty"}
 
 func addBrowse(parent *cobra.Command, at func(*cobra.Command) *run) {
 	var sourceFlag string
 	var limit int
-	command := &cobra.Command{Use: "browse", Short: "Interactive session picker — browse, search, and resume sessions", Args: cobra.NoArgs,
+	command := &cobra.Command{Use: "browse", Short: "Pick a session from a list and resume it",
+		Long: "Opens a list of your sessions in this terminal, where you search them, pick one and resume it in the app. Without a " +
+			"terminal, browse asks for a number instead.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			r := at(cmd)
 			if limit == 0 {
@@ -40,7 +43,7 @@ func addBrowse(parent *cobra.Command, at func(*cobra.Command) *run) {
 			}
 			rows := response.GetSessions()
 			if len(rows) == 0 {
-				r.print("No sessions found.")
+				r.print("You have no sessions yet. Run icebath to start one.")
 				return nil
 			}
 			var chosen string
@@ -60,14 +63,14 @@ func addBrowse(parent *cobra.Command, at func(*cobra.Command) *run) {
 				chosen = r.fallback(rows)
 			}
 			if chosen == "" {
-				r.print("Cancelled.")
+				r.print("No session was opened.")
 				return nil
 			}
-			r.print("Resuming session: " + chosen)
+			r.print("Opening the session " + chosen + "…")
 			return openApp(r.ctx(), r.conn, r.app, chosen, time.Now())
 		}}
-	command.Flags().StringVar(&sourceFlag, "source", "", "Filter by source (cli, telegram, discord, etc.)")
-	command.Flags().IntVar(&limit, "limit", 500, "Max sessions to load (default: 500)")
+	command.Flags().StringVar(&sourceFlag, "source", "", "Only sessions from this source, such as cli or telegram")
+	command.Flags().IntVar(&limit, "limit", 500, "Largest number of sessions to load")
 	parent.AddCommand(command)
 }
 
@@ -77,23 +80,21 @@ func label(s *sessionsv1.Session) string {
 }
 
 func messageCount(s *sessionsv1.Session) string {
-	return fmt.Sprint(s.GetMessages())
+	return strs.Number(float64(s.GetMessages()))
 }
 
 // Numbered list read from the prompt, for a terminal that can't show the picker
 func (r *run) fallback(rows []*sessionsv1.Session) string {
-	r.print("\n  Browse sessions  (enter number to resume, q to cancel)\n")
+	r.print("\n  Your sessions. Type a number to open one, or q to cancel.\n")
+	var table [][]string
 	for i, s := range rows {
-		label := label(s)
-		if len([]rune(label)) > 50 {
-			label = strs.Head(label, 47) + "..."
-		}
-		r.printf("  %3d. %s  %s  %5s  %s  %s", i+1, cli.Pad(label, 50), cli.Pad(cmp.Or(statusTags[s.GetStatus()], "-"), 5), messageCount(s), cli.Pad(ago(updated(s)), 10),
-			strs.Head(s.GetSource(), 6))
+		table = append(table, []string{strs.Number(float64(i + 1)), clip(label(s), 50), statusTags[s.GetStatus()], messageCount(s), ago(updated(s)),
+			s.GetSource()})
 	}
+	cli.NewConsole(r.cmd).Table([]string{"Number", "Title", "Status", "Messages", "Last used", "Source"}, table)
 	reader := bufio.NewReader(r.cmd.InOrStdin())
 	for {
-		fmt.Fprintf(r.cmd.OutOrStdout(), "\n  Select [1-%d]: ", len(rows))
+		fmt.Fprintf(r.cmd.OutOrStdout(), "\n  Session to open, from 1 to %s: ", strs.Number(float64(len(rows))))
 		line, err := reader.ReadString('\n')
 		line = strings.TrimSpace(line)
 		if err != nil || line == "" || line == "q" || line == "quit" || line == "exit" {
@@ -101,11 +102,11 @@ func (r *run) fallback(rows []*sessionsv1.Session) string {
 		}
 		var n int
 		if _, err := fmt.Sscanf(line, "%d", &n); err != nil {
-			r.print("  Invalid input. Enter a number or q to cancel.")
+			r.print("  Type a number, or q to cancel.")
 			continue
 		}
 		if n < 1 || n > len(rows) {
-			r.printf("  Invalid selection. Enter 1-%d or q to cancel.", len(rows))
+			r.printf("  Pick a number from 1 to %s, or q to cancel.", strs.Number(float64(len(rows))))
 			continue
 		}
 		return rows[n-1].GetId()
@@ -151,13 +152,13 @@ func (p *picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key == "y" || key == "Y" {
 				id := p.rows[p.cursor].GetId()
 				if err := p.delete(id); err != nil {
-					p.flash = "Delete failed."
-					if strings.Contains(err.Error(), "active turn lease") {
-						p.flash = "Session is active (a live turn owns it); try again when it finishes."
+					p.flash = "The session could not be deleted."
+					if strings.Contains(err.Error(), "in the middle of a reply") {
+						p.flash = "The session is in the middle of a reply. Try again when it finishes."
 					}
 					break
 				}
-				p.flash = "Deleted."
+				p.flash = "Deleted the session."
 				for i, s := range p.all {
 					if s.GetId() == id {
 						p.all = append(p.all[:i], p.all[i+1:]...)
@@ -215,19 +216,20 @@ func (p *picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (p *picker) View() tea.View {
 	if p.width < 40 || p.height < 5 {
-		view := tea.NewView("Terminal too small")
+		view := tea.NewView("The terminal is too small to show the list. Make it larger.")
 		view.AltScreen = true
 		return view
 	}
 
 	var lines []string
 	if p.filtering {
-		lines = append(lines, cli.Painted("  Browse sessions — filter: "+p.filter+"█", cli.Bold, cli.Cyan))
+		lines = append(lines, cli.Painted("  Your sessions, searching for: "+p.filter+"█", cli.Bold, cli.Cyan))
 	} else {
-		lines = append(lines, cli.Painted("  Browse sessions — ↑↓ navigate  Enter select  Type to filter  Esc quit", cli.Bold, cli.Yellow))
+		lines = append(lines, cli.Painted("  Your sessions. Type to search.", cli.Bold, cli.Yellow))
 	}
-	name := max(20, p.width-62)
-	lines = append(lines, cli.Painted("   "+cli.Pad("Title / Preview", name)+"  "+cli.Pad("Stat", 5)+"  "+padLeft("Msgs", 5)+"  "+cli.Pad("Active", 10)+"  "+cli.Pad("Src", 5)+" ID", cli.Dim), "")
+	name := max(20, p.width-66)
+	lines = append(lines, cli.Painted("   "+cli.Pad("Title", name)+"  "+cli.Pad("Status", 7)+"  "+padLeft("Messages", 8)+"  "+cli.Pad("Last used", 14)+"  "+
+		cli.Pad("Source", 6)+" ID", cli.Dim), "")
 	visible := p.height - 5
 	if p.cursor < p.top {
 		p.top = p.cursor
@@ -236,37 +238,35 @@ func (p *picker) View() tea.View {
 		p.top = p.cursor - visible + 1
 	}
 	if len(p.rows) == 0 {
-		lines = append(lines, "  No sessions match the filter.")
+		lines = append(lines, "  No session matches “"+p.filter+"”. Esc clears the search.")
 	}
-	colors := map[string]string{"done": cli.Green, "intr": cli.Yellow, "err": cli.Red, "empty": cli.Gray}
+	colors := map[string]string{"Done": cli.Green, "Stopped": cli.Yellow, "Failed": cli.Red, "Empty": cli.Gray}
 	for i := p.top; i < min(len(p.rows), p.top+visible); i++ {
 		s := p.rows[i]
-		tag := cmp.Or(statusTags[s.GetStatus()], "-")
-		cells := cli.Pad(strs.Head(label(s), name), name) + "  "
-		tail := "  " + padLeft(messageCount(s), 5) + "  " + cli.Pad(ago(updated(s)), 10) + "  " + cli.Pad(strs.Head(s.GetSource(), 6), 5) + " " + strs.Head(s.GetId(), 18)
+		tag := statusTags[s.GetStatus()]
+		cells := cli.Pad(clip(label(s), name), name) + "  "
+		tail := "  " + padLeft(messageCount(s), 8) + "  " + cli.Pad(ago(updated(s)), 14) + "  " + cli.Pad(clip(s.GetSource(), 6), 6) + " " + strs.Head(s.GetId(), 18)
 		if i == p.cursor {
-			lines = append(lines, cli.Painted(" → "+cells+cli.Pad(tag, 5)+tail, cli.Bold, cli.Green))
+			lines = append(lines, cli.Painted(" ▍ "+cells+cli.Pad(tag, 7)+tail, cli.Bold, cli.Green))
 		} else {
-			lines = append(lines, "   "+cells+cli.Painted(cli.Pad(tag, 5), cmp.Or(colors[tag], cli.Reset))+tail)
+			lines = append(lines, "   "+cells+cli.Painted(cli.Pad(tag, 7), cmp.Or(colors[tag], cli.Reset))+tail)
 		}
 	}
 	for len(lines) < p.height-1 {
 		lines = append(lines, "")
 	}
-	footer := fmt.Sprintf("  %d/%d sessions", min(p.cursor+1, len(p.rows)), len(p.rows))
+	footer := "  " + strs.Number(float64(min(p.cursor+1, len(p.rows)))) + " of " + strs.Count(len(p.rows), "session")
 	if len(p.rows) != len(p.all) {
-		footer += fmt.Sprintf(" (filtered from %d)", len(p.all))
+		footer += ", out of " + strs.Number(float64(len(p.all)))
 	}
 	if !p.filtering {
-		footer += "   d delete"
+		footer += "   Open enter  Move ↑↓  Delete d  Close esc"
+	} else {
+		footer += "   Open enter  Move ↑↓  Clear search esc"
 	}
 	switch {
 	case p.confirming:
-		target := label(p.rows[p.cursor])
-		if len([]rune(target)) > 40 {
-			target = strs.Head(target, 37) + "..."
-		}
-		footer = cli.Painted(fmt.Sprintf("  Delete session '%s'? [y/N]", target), cli.Bold, cli.Red)
+		footer = cli.Painted(fmt.Sprintf("  Delete “%s”? Its history can't be brought back. [y/N]", clip(label(p.rows[p.cursor]), 40)), cli.Bold, cli.Red)
 	case p.flash != "":
 		footer = "  " + p.flash
 	}

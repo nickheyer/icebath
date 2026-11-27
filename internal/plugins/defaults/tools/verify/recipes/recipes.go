@@ -403,7 +403,7 @@ func detectNode(root string, pkg *nodePackage) (*Recipe, error) {
 		}
 		script, ok := pkg.Scripts.values[name].(string)
 		if !ok {
-			return nil, fmt.Errorf("the %s script of package.json is no text", name)
+			return nil, fmt.Errorf("The %s script of package.json is not text.", name)
 		}
 		r.Start = runners(name)[0]
 		if r.Port = portOf(script); r.Port == 0 {

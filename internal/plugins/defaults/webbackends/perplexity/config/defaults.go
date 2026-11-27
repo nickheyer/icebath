@@ -10,10 +10,13 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: webconfig.Key,
 		Title:  "Perplexity",
-		About:  "Perplexity's Search API: ranked web results, and the parts of pages relevant to them",
+		About:  "Ranked web results with the parts of pages that matter",
+		Order:  60,
 		Settings: []config.Setting{
-			{Key: APIKey, Title: "Perplexity key", About: "Perplexity API key for the Search API web backend (ranked results and query-relevant page snippets), from https://www.perplexity.ai/account/api", Default: "", Env: []string{"PERPLEXITY_API_KEY"}, Secret: true},
-			{Key: BaseURL, Title: "Perplexity address", About: "Address of the Perplexity API the calls go to", Default: DefaultBaseURL, Env: []string{"PERPLEXITY_BASE_URL"}},
+			{Key: APIKey, Title: "API key", About: "Your Perplexity API key.", Help: "Get one at perplexity.ai/account/api.", Default: "",
+				Env: []string{"PERPLEXITY_API_KEY"}, Secret: true},
+			{Key: BaseURL, Title: "Base URL", About: "The address of the Perplexity API.", Help: "Change the address only to go through a proxy.",
+				Default: DefaultBaseURL, Zero: "The standard address", Env: []string{"PERPLEXITY_BASE_URL"}, Advanced: true},
 		},
 	}})
 }

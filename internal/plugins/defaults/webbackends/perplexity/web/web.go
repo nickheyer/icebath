@@ -40,12 +40,12 @@ func (backends) Backends() []web.Backend {
 	return []web.Backend{{
 		Name:     "perplexity",
 		Title:    "Perplexity",
-		About:    "Perplexity Search API web search and query-relevant page snippets. Requires PERPLEXITY_API_KEY — get one at https://www.perplexity.ai/account/api.",
+		About:    "Ranked web results with the parts of pages that matter",
 		Settings: []string{perplexityconfig.APIKey, perplexityconfig.BaseURL},
 		Plans: []web.Plan{{
-			Title:  "Perplexity",
+			Title:  "Paid plan",
 			Badge:  "paid",
-			About:  "Perplexity Search API — ranked, date-stamped web results plus query-relevant page snippets for extract.",
+			About:  "Ranked, dated results and the parts of pages that matter",
 			Tier:   webconfig.Paid,
 			Key:    perplexityconfig.APIKey,
 			Prompt: "Perplexity API key",
@@ -76,7 +76,7 @@ func post(ctx context.Context, cfg *config.Config, endpoint string, payload, v a
 		Header: map[string]string{
 			"Authorization":      "Bearer " + key,
 			"HTTP-Referer":       "https://github.com/nickheyer/icebath",
-			"X-Title":            "Icebath Agent",
+			"X-Title":            "icebath",
 			"User-Agent":         provider.UserAgent("IcebathAgent"),
 			"X-Pplx-Integration": "icebath-agent",
 		},

@@ -36,7 +36,7 @@ const (
 )
 
 // The chain walked to its end with no source answering
-var ErrNoCredentials = errors.New("Unable to locate credentials")
+var ErrNoCredentials = errors.New("No AWS sign-in was found. Run `aws sso login` or `aws configure`, or set AWS_PROFILE.")
 
 // Failure of one source of the chain, naming it
 type Error struct {
@@ -46,11 +46,21 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
-	if e.Source != "" && !strings.Contains(e.Message, e.Source) {
-		return e.Message + " (" + e.Source + ")"
+	message := strings.TrimSpace(e.Message)
+	if message != "" && !strings.ContainsAny(message[len(message)-1:], ".!?") {
+		message += "."
 	}
-	return e.Message
+	if where := sourceWords[e.Source]; where != "" && !strings.Contains(message, where) {
+		return message + " The AWS credentials came " + where + "."
+	}
+	return message
 }
+
+// Where each source of the chain takes AWS credentials from, said after "came"
+var sourceWords = map[string]string{"env": "from environment variables", "custom-process": "from credential_process", "sso": "from AWS SSO",
+	"container-role": "from the container's role", "iam-role": "from the instance's role", "assume-role": "from an assumed role",
+	"assume-role-with-web-identity": "from a web identity role", "shared-credentials-file": "from the AWS credentials file",
+	"config-file": "from the AWS config file"}
 
 func (e *Error) Unwrap() error { return e.Err }
 
@@ -63,7 +73,7 @@ type ServiceError struct {
 }
 
 func (e *ServiceError) Error() string {
-	return fmt.Sprintf("An error occurred (%s) when calling the %s operation: %s", e.Code, e.Operation, e.Message)
+	return fmt.Sprintf("AWS refused %s with %s: %s", e.Operation, e.Code, strings.TrimSuffix(strings.TrimSpace(e.Message), ".")+".")
 }
 
 // Source of keys, renewing them as they near expiry
@@ -100,7 +110,7 @@ func (r *refreshing) Retrieve(ctx context.Context) (Keys, error) {
 	}
 	fresh, err := r.fetch(ctx)
 	if err == nil && !fresh.Valid() {
-		err = &Error{Source: fresh.Source, Message: "refreshed credentials are missing the access key id or secret access key"}
+		err = &Error{Source: fresh.Source, Message: "The renewed AWS credentials lack the access key ID or the secret access key."}
 	}
 	if err != nil {
 		if r.have && r.keys.Expires.Sub(now) > mandatory {
@@ -110,7 +120,7 @@ func (r *refreshing) Retrieve(ctx context.Context) (Keys, error) {
 	}
 	r.keys, r.have = fresh, true
 	if !fresh.Expires.IsZero() && !fresh.Expires.After(time.Now()) {
-		return Keys{}, &Error{Source: fresh.Source, Message: "Credentials were refreshed, but the refreshed credentials are still expired."}
+		return Keys{}, &Error{Source: fresh.Source, Message: "The AWS credentials were renewed, but the renewed ones have already expired."}
 	}
 	return r.keys, nil
 }
@@ -222,7 +232,7 @@ func (s *session) profile(name string) (map[string]string, error) {
 	if name == "default" {
 		return map[string]string{}, nil
 	}
-	return nil, &Error{Message: fmt.Sprintf("The config profile (%s) could not be found", name)}
+	return nil, &Error{Message: fmt.Sprintf("Your AWS config has no profile named %s.", name)}
 }
 
 // A setting from its variable, else from the profile in use
@@ -391,7 +401,7 @@ func readINI(path string) (*ini, error) {
 			return doc, nil
 		}
 	}
-	return nil, &Error{Message: fmt.Sprintf("Unable to parse config file: %s", path), Err: err}
+	return nil, &Error{Message: fmt.Sprintf("The AWS config file %s can't be read.", path), Err: err}
 }
 
 var option = regexp.MustCompile(`^(.*?)\s*([=:])\s*(.*)$`)
@@ -431,7 +441,7 @@ func parseINI(text string) (*ini, error) {
 					continue
 				}
 				if _, dup := sections[name]; dup {
-					return nil, fmt.Errorf("While reading config: section %q already exists", name)
+					return nil, fmt.Errorf("Your AWS config file has the section %q twice. Remove one of them.", name)
 				}
 				current = &section{values: map[string][]string{}}
 				sections[name] = current
@@ -440,7 +450,7 @@ func parseINI(text string) (*ini, error) {
 			}
 		}
 		if current == nil {
-			return nil, fmt.Errorf("File contains no section headers. line %d: %q", n+1, line)
+			return nil, fmt.Errorf("Line %d of your AWS config file comes before any section: %q. Put it under a section such as [default].", n+1, line)
 		}
 		m := option.FindStringSubmatch(stripped)
 		if m == nil || strings.TrimSpace(m[1]) == "" {
@@ -450,13 +460,13 @@ func parseINI(text string) (*ini, error) {
 		}
 		name := strings.ToLower(strings.TrimRight(m[1], " \t"))
 		if _, dup := current.values[name]; dup {
-			return nil, fmt.Errorf("While reading config: option %q in section already exists", name)
+			return nil, fmt.Errorf("A section of your AWS config file sets %q twice. Remove one of them.", name)
 		}
 		current.values[name] = []string{strings.TrimSpace(m[3])}
 		key = name
 	}
 	if len(bad) > 0 {
-		return nil, fmt.Errorf("Source contains parsing errors: %s", strings.Join(bad, " "))
+		return nil, fmt.Errorf("Your AWS config file has lines that can't be read: %s.", strings.Join(bad, " "))
 	}
 	doc := &ini{order: order, flat: map[string]map[string]string{}, nested: map[string]map[string]map[string]string{}}
 	for _, name := range order {
@@ -478,7 +488,7 @@ func parseINI(text string) (*ini, error) {
 					}
 					k, v, ok := strings.Cut(line, "=")
 					if !ok {
-						return nil, fmt.Errorf("not enough values to unpack in nested config line %q", line)
+						return nil, fmt.Errorf("The nested line %q of your AWS config file has no value. Write it as name = value.", line)
 					}
 					sub[strings.TrimSpace(k)] = strings.TrimSpace(v)
 				}
@@ -531,7 +541,7 @@ func split(command string) ([]string, error) {
 		}
 	}
 	if quoted {
-		return nil, fmt.Errorf("No closing quotation in string: %s", command)
+		return nil, fmt.Errorf("A quote is not closed in the AWS credential command: %s", command)
 	}
 	flush()
 	if started {
@@ -551,7 +561,7 @@ func parseTime(v string) (time.Time, error) {
 			return t.UTC(), nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("unparseable timestamp %q", v)
+	return time.Time{}, fmt.Errorf("The time %q in AWS credentials can't be read.", v)
 }
 
 // One source of the chain, a nil provider when it doesn't apply
@@ -620,10 +630,10 @@ func fromEnv(s *session) (Provider, error) {
 	read := func(context.Context) (Keys, error) {
 		keys := Keys{AccessKeyID: s.env("AWS_ACCESS_KEY_ID"), SecretAccessKey: s.env("AWS_SECRET_ACCESS_KEY"), Source: "env"}
 		if keys.AccessKeyID == "" {
-			return Keys{}, &Error{Source: "env", Message: "Partial credentials found in env, missing: AWS_ACCESS_KEY_ID"}
+			return Keys{}, &Error{Source: "env", Message: "AWS_SECRET_ACCESS_KEY is set without AWS_ACCESS_KEY_ID. Set both, or neither."}
 		}
 		if keys.SecretAccessKey == "" {
-			return Keys{}, &Error{Source: "env", Message: "Partial credentials found in env, missing: AWS_SECRET_ACCESS_KEY"}
+			return Keys{}, &Error{Source: "env", Message: "AWS_ACCESS_KEY_ID is set without AWS_SECRET_ACCESS_KEY. Set both, or neither."}
 		}
 		for _, name := range []string{"AWS_SECURITY_TOKEN", "AWS_SESSION_TOKEN"} {
 			if v, ok := s.opts.Lookup(name); ok {
@@ -658,7 +668,7 @@ func section(values map[string]string, source string) (Provider, error) {
 	}
 	secret := values["aws_secret_access_key"]
 	if secret == "" {
-		return nil, &Error{Source: source, Message: "Partial credentials found in " + source + ", missing: aws_secret_access_key"}
+		return nil, &Error{Source: source, Message: "The AWS profile in " + source + " has aws_access_key_id without aws_secret_access_key. Set both."}
 	}
 	token := values["aws_session_token"]
 	if token == "" {
@@ -699,7 +709,7 @@ func run(ctx context.Context, command string) (Keys, error) {
 		return Keys{}, &Error{Source: "custom-process", Message: err.Error()}
 	}
 	if len(argv) == 0 {
-		return Keys{}, &Error{Source: "custom-process", Message: "credential_process is empty"}
+		return Keys{}, &Error{Source: "custom-process", Message: "credential_process is set but empty in your AWS config."}
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.WaitDelay = time.Second
@@ -719,15 +729,15 @@ func run(ctx context.Context, command string) (Keys, error) {
 		return Keys{}, &Error{Source: "custom-process", Message: err.Error(), Err: err}
 	}
 	if version, ok := raw["Version"].(float64); !ok || version != 1 {
-		shown := "<Version key not provided>"
+		shown := "none"
 		if v, ok := raw["Version"]; ok {
 			shown = fmt.Sprint(v)
 		}
-		return Keys{}, &Error{Source: "custom-process", Message: fmt.Sprintf("Unsupported version '%s' for credential process provider, supported versions: 1", shown)}
+		return Keys{}, &Error{Source: "custom-process", Message: fmt.Sprintf("The AWS credential_process gave version %s, but only version 1 is understood.", shown)}
 	}
 	for _, key := range []string{"AccessKeyId", "SecretAccessKey"} {
 		if _, ok := raw[key]; !ok {
-			return Keys{}, &Error{Source: "custom-process", Message: fmt.Sprintf("Missing required key in response: '%s'", key)}
+			return Keys{}, &Error{Source: "custom-process", Message: fmt.Sprintf("The AWS credential_process gave no %s.", key)}
 		}
 	}
 	text := func(key string) string { v, _ := raw[key].(string); return v }
@@ -822,7 +832,7 @@ func fromSTS(c stsKeys, source string) (Keys, error) {
 		keys.Expires = t
 	}
 	if !keys.Valid() {
-		return Keys{}, &Error{Source: source, Message: "STS response carried no credentials"}
+		return Keys{}, &Error{Source: source, Message: "AWS STS answered without credentials."}
 	}
 	return keys, nil
 }
@@ -863,14 +873,14 @@ func (r *roles) assume(ctx context.Context, profile string) (Provider, error) {
 	credentialSource, hasCredential := p["credential_source"]
 	switch {
 	case hasSource && hasCredential:
-		return nil, &Error{Message: fmt.Sprintf("The profile %q contains both source_profile and credential_source.", profile)}
+		return nil, &Error{Message: fmt.Sprintf("The AWS profile %q sets both source_profile and credential_source. Keep only one.", profile)}
 	case !hasSource && !hasCredential:
-		return nil, &Error{Source: "assume-role", Message: "Partial credentials found in assume-role, missing: source_profile or credential_source"}
+		return nil, &Error{Source: "assume-role", Message: "The AWS profile sets role_arn without source_profile or credential_source. Add one of them."}
 	case hasCredential:
 		switch strings.ToLower(credentialSource) {
 		case "environment", "ec2instancemetadata", "ecscontainer":
 		default:
-			return nil, &Error{Message: fmt.Sprintf("The credential_source %q is not a valid option.", credentialSource)}
+			return nil, &Error{Message: fmt.Sprintf("The AWS credential_source %q is not one that AWS knows.", credentialSource)}
 		}
 	default:
 		if err := r.check(profile, sourceProfile); err != nil {
@@ -904,7 +914,7 @@ func (r *roles) assume(ctx context.Context, profile string) (Provider, error) {
 	calls := 0
 	return renewing(func(ctx context.Context) (Keys, error) {
 		if mfa && calls > 0 {
-			return Keys{}, &Error{Message: "Cannot refresh credentials: MFA token required."}
+			return Keys{}, &Error{Message: "The AWS credentials can't be renewed without an MFA code."}
 		}
 		calls++
 		keys, err := source.Retrieve(ctx)
@@ -917,7 +927,7 @@ func (r *roles) assume(ctx context.Context, profile string) (Provider, error) {
 		}
 		q.Set("RoleSessionName", cmp.Or(p["role_session_name"], sessionName()))
 		if mfa {
-			code, err := r.s.opts.MFA(ctx, fmt.Sprintf("Enter MFA code for %s: ", serial))
+			code, err := r.s.opts.MFA(ctx, fmt.Sprintf("MFA code for %s: ", serial))
 			if err != nil {
 				return Keys{}, err
 			}
@@ -942,12 +952,12 @@ func (r *roles) check(parent, source string) error {
 	f, _ := r.s.shared()
 	p, ok := f.merged[source]
 	if !ok {
-		return &Error{Message: fmt.Sprintf("The source_profile %q referenced in the profile %q does not exist.", source, parent)}
+		return &Error{Message: fmt.Sprintf("The AWS profile %q names the source_profile %q, which does not exist.", parent, source)}
 	}
 	for _, seen := range r.visited {
 		if seen == source && (source != parent || !pair(p)) {
-			return &Error{Message: fmt.Sprintf("Infinite loop in credential configuration detected. Attempting to load from profile %s which has already "+
-				"been visited. Visited profiles: %s", source, strings.Join(r.visited, ", "))}
+			return &Error{Message: fmt.Sprintf("Your AWS profiles name each other in a loop: %s leads back to %s. Make one of them take "+
+				"credentials of its own.", strings.Join(r.visited, ", "), source)}
 		}
 	}
 	return nil
@@ -967,7 +977,7 @@ func (r *roles) from(ctx context.Context, profile string) (Provider, error) {
 				return found, nil
 			}
 		}
-		return nil, &Error{Message: fmt.Sprintf("The source profile %q must have credentials.", profile)}
+		return nil, &Error{Message: fmt.Sprintf("The AWS source profile %q has no credentials of its own. Add them to it.", profile)}
 	}
 	return r.assume(ctx, profile)
 }
@@ -987,7 +997,7 @@ func (r *roles) credentialSource(ctx context.Context, name, profile string) (Pro
 		return nil, err
 	}
 	if found == nil {
-		return nil, &Error{Source: name, Message: "No credentials found in credential_source referenced in profile " + profile}
+		return nil, &Error{Source: name, Message: "The credential_source of the AWS profile " + profile + " gave no credentials."}
 	}
 	return found, nil
 }
@@ -1012,8 +1022,8 @@ func webIdentity(s *session, profile string, noEnv bool) (Provider, error) {
 	}
 	role := get("role_arn", "AWS_ROLE_ARN")
 	if role == "" {
-		return nil, &Error{Message: "The provided profile or the current environment is configured to assume role with web identity but has no role ARN " +
-			"configured. Ensure that the profile has the role_arn configuration set or the AWS_ROLE_ARN env var is set."}
+		return nil, &Error{Message: "The AWS profile or environment takes a role with a web identity but names no role. Set role_arn in the " +
+			"profile, or set AWS_ROLE_ARN."}
 	}
 	name := get("role_session_name", "AWS_ROLE_SESSION_NAME")
 	return renewing(func(ctx context.Context) (Keys, error) {
@@ -1047,7 +1057,7 @@ type LoginNeeded struct {
 }
 
 func (e *LoginNeeded) Error() string {
-	return fmt.Sprintf("The SSO token of profile %s needs `aws sso login --profile %s`.", e.Profile, e.Profile)
+	return fmt.Sprintf("The AWS SSO sign-in of the profile %s has expired. Run `aws sso login --profile %s`.", e.Profile, e.Profile)
 }
 
 func (e *LoginNeeded) Unwrap() error { return e.Err }
@@ -1069,11 +1079,11 @@ func sso(s *session, profile string) (Provider, error) {
 	if name, ok := p["sso_session"]; ok {
 		session, ok := f.sso[name]
 		if !ok {
-			return nil, &Error{Message: fmt.Sprintf("The specified sso-session does not exist: %q", name)}
+			return nil, &Error{Message: fmt.Sprintf("Your AWS config has no sso-session named %q.", name)}
 		}
 		for k, v := range session {
 			if prior, ok := resolved[k]; ok && prior != v {
-				return nil, &Error{Message: fmt.Sprintf("The value for %s is inconsistent between profile (%s) and sso-session (%s)", k, prior, v)}
+				return nil, &Error{Message: fmt.Sprintf("Your AWS profile sets %s to %s, but its sso-session sets it to %s. Make them the same.", k, prior, v)}
 			}
 			resolved[k] = v
 		}
@@ -1087,7 +1097,7 @@ func sso(s *session, profile string) (Provider, error) {
 		}
 	}
 	if len(missing) > 0 {
-		return nil, &Error{Message: fmt.Sprintf("The profile %q is configured to use SSO but is missing required configuration: %s", profile, strings.Join(missing, ", "))}
+		return nil, &Error{Message: fmt.Sprintf("The AWS profile %q uses SSO but lacks %s.", profile, strings.Join(missing, ", "))}
 	}
 	tokens := &ssoTokens{s: s, profile: profile, start: resolved["sso_start_url"], region: resolved["sso_region"], session: resolved["session_name"]}
 	return renewing(func(ctx context.Context) (Keys, error) {
@@ -1126,23 +1136,23 @@ func (t *ssoTokens) token(ctx context.Context) (string, error) {
 	path := cacheFile(t.start, t.session)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", &Error{Message: fmt.Sprintf("Error loading SSO Token: Token for %s does not exist", cmp.Or(t.session, t.start)), Err: &LoginNeeded{Profile: t.profile, Err: err}}
+		return "", &Error{Message: fmt.Sprintf("There is no AWS SSO sign-in for %s. Run `aws sso login`.", cmp.Or(t.session, t.start)), Err: &LoginNeeded{Profile: t.profile, Err: err}}
 	}
 	var raw map[string]any
 	var tok ssoToken
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return "", &Error{Message: "Error loading SSO Token: " + err.Error(), Err: &LoginNeeded{Profile: t.profile, Err: err}}
+		return "", &Error{Message: "The AWS SSO sign-in can't be read. Run `aws sso login`. " + err.Error(), Err: &LoginNeeded{Profile: t.profile, Err: err}}
 	}
 	json.Unmarshal(data, &tok)
 	if tok.AccessToken == "" || tok.ExpiresAt == "" {
-		return "", &Error{Message: fmt.Sprintf("Error loading SSO Token: Token for %s is invalid", t.start), Err: &LoginNeeded{Profile: t.profile}}
+		return "", &Error{Message: fmt.Sprintf("The AWS SSO sign-in for %s can't be read. Run `aws sso login`.", t.start), Err: &LoginNeeded{Profile: t.profile}}
 	}
 	if t.session == "" {
 		return tok.AccessToken, nil
 	}
 	expires, err := parseTime(tok.ExpiresAt)
 	if err != nil {
-		return "", &Error{Message: "Error loading SSO Token: " + err.Error(), Err: &LoginNeeded{Profile: t.profile, Err: err}}
+		return "", &Error{Message: "The AWS SSO sign-in can't be read. Run `aws sso login`. " + err.Error(), Err: &LoginNeeded{Profile: t.profile, Err: err}}
 	}
 	if time.Until(expires) < advisory {
 		if fresh, ok := t.refresh(ctx, tok); ok {
@@ -1161,7 +1171,7 @@ func (t *ssoTokens) token(ctx context.Context) (string, error) {
 		}
 	}
 	if !expires.After(time.Now()) {
-		return "", &Error{Source: "sso", Message: "Token has expired and refresh failed", Err: &LoginNeeded{Profile: t.profile}}
+		return "", &Error{Source: "sso", Message: "The AWS SSO sign-in has expired and could not be renewed. Run `aws sso login`.", Err: &LoginNeeded{Profile: t.profile}}
 	}
 	return tok.AccessToken, nil
 }
@@ -1214,8 +1224,8 @@ func (s *session) roleKeys(ctx context.Context, profile, region, account, role, 
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode == http.StatusUnauthorized {
-		return Keys{}, &Error{Source: "sso", Message: "The SSO session associated with this profile has expired or is otherwise invalid. To refresh this SSO session " +
-			"run aws sso login with the corresponding profile.", Err: &LoginNeeded{Profile: profile}}
+		return Keys{}, &Error{Source: "sso", Message: "The AWS SSO sign-in of this profile has expired or no longer works. Run `aws sso login " +
+			"--profile " + profile + "`.", Err: &LoginNeeded{Profile: profile}}
 	}
 	if resp.StatusCode != http.StatusOK {
 		var refused struct {
@@ -1260,8 +1270,8 @@ func container(ctx context.Context, s *session) (Provider, error) {
 		}
 		h := u.Hostname()
 		if ip := net.ParseIP(h); !(ip != nil && ip.IsLoopback()) && !containerHosts[h] {
-			return nil, &Error{Source: "container-role", Message: fmt.Sprintf("Unsupported host '%s'.  Can only retrieve metadata from a loopback address or one "+
-				"of these hosts: 169.254.170.2, 169.254.170.23, fd00:ec2::23, localhost", h)}
+			return nil, &Error{Source: "container-role", Message: fmt.Sprintf("AWS credentials are read only from this computer or from "+
+				"169.254.170.2, 169.254.170.23, fd00:ec2::23 or localhost, not from %s.", h)}
 		}
 	}
 	fetch := func(ctx context.Context) (Keys, error) {
@@ -1278,7 +1288,7 @@ func container(ctx context.Context, s *session) (Provider, error) {
 		}
 		if token != "" || s.has("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE") || s.has("AWS_CONTAINER_AUTHORIZATION_TOKEN") {
 			if strings.ContainsAny(token, "\r\n") {
-				return Keys{}, &Error{Source: "container-role", Message: "Auth token value is not a legal header value"}
+				return Keys{}, &Error{Source: "container-role", Message: "The container's AWS token can't be sent, because it holds characters a request can't carry."}
 			}
 			headers["Authorization"] = token
 		}
@@ -1318,12 +1328,12 @@ func containerOnce(ctx context.Context, client *http.Client, full string, header
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return Keys{}, fmt.Errorf("Error retrieving metadata: %w", err)
+		return Keys{}, fmt.Errorf("AWS credentials could not be read from the container's metadata service: %w", err)
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		return Keys{}, fmt.Errorf("Received non 200 response %d from container metadata: %s", resp.StatusCode, string(data))
+		return Keys{}, fmt.Errorf("The container's metadata service answered with HTTP status %d instead of AWS credentials: %s", resp.StatusCode, string(data))
 	}
 	var out struct {
 		AccessKeyID     string `json:"AccessKeyId"`
@@ -1332,7 +1342,7 @@ func containerOnce(ctx context.Context, client *http.Client, full string, header
 		Expiration      string `json:"Expiration"`
 	}
 	if err := json.Unmarshal(data, &out); err != nil {
-		return Keys{}, errors.New("Unable to parse JSON returned from container metadata services")
+		return Keys{}, errors.New("The container's metadata service gave AWS credentials that can't be read.")
 	}
 	keys := Keys{AccessKeyID: out.AccessKeyID, SecretAccessKey: out.SecretAccessKey, SessionToken: out.Token, Source: "container-role"}
 	if out.Expiration != "" {
@@ -1384,7 +1394,7 @@ func instance(ctx context.Context, s *session) (Provider, error) {
 	return renewing(func(ctx context.Context) (Keys, error) {
 		keys, ok := cfg.fetch(ctx, s.http)
 		if !ok {
-			return Keys{}, &Error{Source: "iam-role", Message: "instance metadata returned no credentials"}
+			return Keys{}, &Error{Source: "iam-role", Message: "The instance metadata service gave no AWS credentials."}
 		}
 		return keys, nil
 	}, &keys), nil
@@ -1418,7 +1428,7 @@ func (c imds) token(ctx context.Context, client *http.Client) (string, bool, err
 		case http.StatusNotFound, http.StatusForbidden, http.StatusMethodNotAllowed:
 			return "", false, nil
 		case http.StatusBadRequest:
-			return "", false, errors.New("Bad IMDS request")
+			return "", false, errors.New("The instance metadata service refused the request for AWS credentials.")
 		}
 	}
 	return "", false, nil
@@ -1508,7 +1518,7 @@ func Detect(ctx context.Context, lookup func(string) (string, bool), instanceMet
 		}
 	}
 	chain := NewChain(Options{NoIMDS: !instanceMetadata, Lookup: lookup, MFA: func(context.Context, string) (string, error) {
-		return "", errors.New("An MFA code isn't asked for while looking for AWS credentials.")
+		return "", errors.New("This AWS profile needs an MFA code, which icebath doesn't ask for while it looks for credentials. Sign in with `aws sts get-session-token` first.")
 	}})
 	if keys, err := chain.Retrieve(ctx); err == nil && keys.AccessKeyID != "" {
 		return "iam-role"
@@ -1537,7 +1547,7 @@ func Identity(ctx context.Context, keys Keys, region string) (string, error) {
 		return "", err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("sts GetCallerIdentity returned HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("AWS could not say who these credentials belong to, and answered with HTTP status %d.", resp.StatusCode)
 	}
 	var parsed struct {
 		Arn string `xml:"GetCallerIdentityResult>Arn"`

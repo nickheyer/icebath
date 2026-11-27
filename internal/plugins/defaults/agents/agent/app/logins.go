@@ -17,18 +17,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// One thing the prompt of a login that ran out offers, and what it does
+// One thing the question of an account that ran out offers: its words, what it does, the word on its button and the doing
 type loginAction struct {
-	label, does string
-	run         func() tea.Cmd
+	label, does, verb string
+	run               func() tea.Cmd
 }
 
-// Prompt shown once the login the session is held to ran out: switch to a login ready now, wait for its reset, retry at once, move the
-// session or the provider to its rotation, or add a login
+// Question shown once the account the session is held to reached its limit: switch to an account ready now, wait for its reset, retry at
+// once, let the session or the provider take turns between accounts, or add an account
 func (c *chat) exhausted(event *agentv1.LoginExhausted) tea.Cmd {
 	kit := c.kit
+	t := kit.Env.Theme
 	id := cmp.Or(event.GetSessionId(), c.id)
-	name := event.GetLogin().GetName()
+	name, at := event.GetLogin().GetName(), event.GetProvider()
 	when := ""
 	if event.GetResets() != nil {
 		when = event.GetResets().AsTime().Local().Format("15:04")
@@ -36,13 +37,13 @@ func (c *chat) exhausted(event *agentv1.LoginExhausted) tea.Cmd {
 	var hub *cards.Hub
 	settle := func(done string) tea.Cmd { return tea.Batch(kit.WM.DismissCard(hub), wm.Notify(done, wm.Success)) }
 	setLogin := func(request *agentv1.SetLoginRequest, done string) tea.Cmd {
-		hub.Busy("Pinning the login…")
+		hub.Busy("Switching accounts…")
 		return tui.Async(func() func() tea.Cmd {
 			response, err := c.desk.agents.SetLogin(kit.Env.Ctx, request)
 			return func() tea.Cmd {
 				switch {
 				case err != nil:
-					return hub.Fail(err.Error())
+					return hub.Fail("The account was not switched. " + tui.Reason(err))
 				case response.GetWarning() != "":
 					return hub.Fail(response.GetWarning())
 				}
@@ -52,13 +53,13 @@ func (c *chat) exhausted(event *agentv1.LoginExhausted) tea.Cmd {
 	}
 	wait := func(now bool, done string) tea.Cmd {
 		return tui.Async(func() func() tea.Cmd {
-			response, err := c.desk.agents.WaitLogin(kit.Env.Ctx, &agentv1.WaitLoginRequest{SessionId: id, Provider: event.GetProvider(), Now: now})
+			response, err := c.desk.agents.WaitLogin(kit.Env.Ctx, &agentv1.WaitLoginRequest{SessionId: id, Provider: at, Now: now})
 			return func() tea.Cmd {
 				switch {
 				case err != nil:
-					return hub.Fail(err.Error())
+					return hub.Fail("Your last message was not sent again. " + tui.Reason(err))
 				case response.GetState() == "idle":
-					return hub.Fail("The provider gave no reset time; retry now or switch.")
+					return hub.Fail("The provider did not say when the account resets. Retry now, or switch to another account.")
 				}
 				return settle(done)
 			}
@@ -66,69 +67,82 @@ func (c *chat) exhausted(event *agentv1.LoginExhausted) tea.Cmd {
 	}
 	var acts []loginAction
 	for _, ready := range event.GetReady() {
-		login, label := ready.GetId(), cmp.Or(ready.GetName(), ready.GetId())
-		acts = append(acts, loginAction{label: "Switch to " + label, does: "pin that login for this session and send the last message again", run: func() tea.Cmd {
-			return setLogin(&agentv1.SetLoginRequest{SessionId: id, Provider: event.GetProvider(), Login: login, Retry: true},
-				"This session now uses "+label+"; the last message is sent again.")
+		login, other := ready.GetId(), cmp.Or(ready.GetName(), ready.GetId())
+		acts = append(acts, loginAction{"Switch to " + other, "Use this account for the session and send your last message again", "switch", func() tea.Cmd {
+			return setLogin(&agentv1.SetLoginRequest{SessionId: id, Provider: at, Login: login, Retry: true},
+				"This session now uses the account "+other+". Your last message is sent again.")
 		}})
 	}
 	if when != "" {
-		acts = append(acts, loginAction{label: "Wait until " + when, does: "send the last message again by itself once the login resets", run: func() tea.Cmd {
-			return wait(false, "The last message is sent again at "+when+".")
+		acts = append(acts, loginAction{"Wait until " + when, "Send your last message again by itself once the account resets", "wait", func() tea.Cmd {
+			return wait(false, "Your last message is sent again at "+when+".")
 		}})
 	}
-	acts = append(acts, loginAction{label: "Retry now", does: "send the last message again with this login", run: func() tea.Cmd {
-		return wait(true, "Retrying the last message now.")
+	acts = append(acts, loginAction{"Retry now", "Send your last message again with this account", "retry", func() tea.Cmd {
+		return wait(true, "Your last message is being sent again.")
 	}})
 	if event.GetRotation() {
 		acts = append(acts,
-			loginAction{label: "Use the rotation for this session", does: "this session moves on to the next login of the rotation", run: func() tea.Cmd {
-				return setLogin(&agentv1.SetLoginRequest{SessionId: id, Provider: event.GetProvider(), OnExhausted: providerconfig.Rotate, Retry: true},
-					"This session now uses the rotation.")
+			loginAction{"Take turns for this session", "Move this session on to the next of your accounts that take turns", "take turns", func() tea.Cmd {
+				return setLogin(&agentv1.SetLoginRequest{SessionId: id, Provider: at, OnExhausted: providerconfig.Rotate, Retry: true},
+					"This session now takes turns between your accounts.")
 			}},
-			loginAction{label: "Always rotate for " + event.GetProvider(), does: "from now on, move to the next login of the rotation without asking", run: func() tea.Cmd {
+			loginAction{"Always move on at " + at, "Set When accounts run out to Move on, so icebath switches without asking", "move on", func() tea.Cmd {
 				return tui.Async(func() func() tea.Cmd {
 					_, err := c.desk.settings.Set(kit.Env.Ctx, &configv1.SetRequest{Profile: c.on(), Value: providerconfig.Rotate,
-						Key: providerconfig.Key + "." + event.GetProvider() + "." + providerconfig.OnExhausted})
+						Key: providerconfig.Key + "." + at + "." + providerconfig.OnExhausted})
 					return func() tea.Cmd {
 						if err != nil {
-							return hub.Fail(err.Error())
+							return hub.Fail("When accounts run out was not changed. " + tui.Reason(err))
 						}
-						return wait(true, "This session now uses the rotation.")
+						return wait(true, "When accounts run out is now Move on for "+at+". Your last message is sent again.")
 					}
 				})
 			}})
 	}
-	acts = append(acts, loginAction{label: "Add a login", does: "sign in to another account of " + event.GetProvider(), run: func() tea.Cmd {
-		return tea.Batch(kit.WM.DismissCard(hub), kit.Open(providerapp.Screen, profile.Join(c.on(), providerapp.LoginsOf+event.GetProvider())))
+	acts = append(acts, loginAction{"Add an account", "Sign in to another account at " + at, "add", func() tea.Cmd {
+		return tea.Batch(kit.WM.DismissCard(hub), kit.Open(providerapp.Screen, profile.Join(c.on(), providerapp.LoginsOf+at)))
 	}})
-	banner := []string{"The login " + name + " of " + event.GetProvider() + " has run out."}
+	intro := []string{"Your account " + name + " at " + at + " reached its limit."}
 	if reason := strings.TrimSpace(event.GetReason()); reason != "" {
-		banner = append(banner, reason)
+		intro = append(intro, reason)
 	}
 	if when != "" {
-		banner = append(banner, "It resets at "+when+".")
+		intro = append(intro, "It resets at "+when+".")
 	}
-	list := cards.NewList(kit.Env, cards.ListSpec{
-		Title:   name + " ran out",
-		Glyph:   kit.Env.Theme.Glyphs.Ext,
+	var list *cards.List
+	list = cards.NewList(kit.Env, cards.ListSpec{
+		Title:   "Account limit reached",
+		Glyph:   t.Glyphs.Ext,
 		Key:     "tui:login:exhausted",
 		Context: cards.HubContext,
 		Primary: "hub.use",
-		Columns: []render.Column{{Title: "Action"}, {Title: "What it does", Flex: 1}},
+		Intro:   func() []string { return []string{strings.Join(intro, " "), "What should happen now?"} },
+		Columns: []render.Column{{}, {Flex: 1, Whole: true}},
 		Rows: func() [][]string {
 			rows := make([][]string, len(acts))
 			for i, act := range acts {
-				rows[i] = []string{act.label, render.Dim(act.does, kit.Env.Theme)}
+				rows[i] = []string{act.label, render.Dim(act.does, t)}
 			}
 			return rows
 		},
-		Banner: func() string { return strings.Join(banner, " · ") },
-		Hints:  func(*cards.List, int) []wm.Hint { return []wm.Hint{{Action: "hub.use", Label: "do it"}} },
+		Detail: func(i int) []string {
+			if list.Shows(1) {
+				return nil
+			}
+			return []string{acts[i].does + "."}
+		},
+		Hints: func(_ *cards.List, i int) []wm.Hint {
+			if i < 0 {
+				return nil
+			}
+			return []wm.Hint{{Action: "hub.use", Label: acts[i].verb}}
+		},
 		Actions: map[string]func(*cards.List, int) tea.Cmd{
 			"hub.use": func(_ *cards.List, i int) tea.Cmd { return acts[i].run() },
 		},
 	})
+	list.ToggleDetail()
 	hub = kit.Hub("tui:login:exhausted", list)
 	hub.Stick()
 	return kit.WM.ShowOverlay(hub)

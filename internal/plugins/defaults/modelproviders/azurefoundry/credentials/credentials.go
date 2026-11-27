@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/internal/provider"
 	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	browserutil "github.com/nickheyer/icebath/pkg/browser"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -27,7 +28,7 @@ const (
 	// How long a credential that couldn't be built is believed before it is built again
 	failedFor = time.Minute
 	// Hint of a token the chain can't mint
-	entraHint = "Run `az login`, attach a managed identity to this VM, or set AZURE_TENANT_ID/AZURE_CLIENT_ID/AZURE_CLIENT_SECRET."
+	entraHint = "Run `az login`, give this virtual machine a managed identity, or set AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET."
 )
 
 // Variables the Azure credentials read
@@ -275,20 +276,20 @@ func (s *source) Why(account credentials.Account) (string, bool) {
 		return "", false
 	}
 	if Mode(account) != azurefoundryconfig.EntraID {
-		return fmt.Sprintf("Azure Foundry requires an API key. Add one with `icebath auth add %s`, set %s in the profile's .env, or connect it with "+
-			"/providers. To use keyless Microsoft Entra ID auth instead, set providers.%s.%s to %s (or pick 'Microsoft Entra ID' when connecting it).",
-			account.Provider.ID, azurefoundryconfig.APIKeyEnv, account.Provider.ID, azurefoundryconfig.AuthMode, azurefoundryconfig.EntraID), true
+		return fmt.Sprintf("Azure Foundry needs an API key. Add one with `icebath auth add %s`, set %s in your keys file, or connect it in "+
+			"/providers.\nTo sign in with Microsoft Entra ID instead, pick Microsoft Entra ID when you connect it.", account.Provider.ID,
+			azurefoundryconfig.APIKeyEnv), true
 	}
 	m := s.minter(account)
 	if m.failed != nil {
 		return m.failed.Error(), true
 	}
 	if !m.mu.TryLock() {
-		return "A Microsoft Entra ID token is still being minted.", true
+		return "Microsoft Entra ID is still giving a token. Try again in a moment.", true
 	}
 	defer m.mu.Unlock()
 	if m.err != nil {
-		return m.err.Error() + "\nHint: " + entraHint, true
+		return m.err.Error() + "\n" + entraHint, true
 	}
 	return "", false
 }
@@ -300,8 +301,8 @@ func (s *source) Report(ctx context.Context, account credentials.Account) ([]cre
 	}
 	m := s.minter(account)
 	e, _ := env(account)
-	details := []credentials.Detail{{Name: "Auth", Value: "Microsoft Entra ID"},
-		{Name: "Endpoint", Value: cmp.Or(strings.TrimSpace(account.Provider.Settings.GetString(providerconfig.BaseURL)), "(not configured)")},
+	details := []credentials.Detail{{Name: "Sign-in", Value: "Microsoft Entra ID"},
+		{Name: "Address", Value: cmp.Or(strings.TrimSpace(account.Provider.Settings.GetString(providerconfig.BaseURL)), "Not set")},
 		{Name: "Scope", Value: m.scope}}
 	if tenant := strings.TrimSpace(e.get("AZURE_TENANT_ID")); tenant != "" {
 		details = append(details, credentials.Detail{Name: "Tenant", Value: tenant})
@@ -309,23 +310,23 @@ func (s *source) Report(ctx context.Context, account credentials.Account) ([]cre
 	t, late, err := probe(ctx, m, probeWait)
 	switch {
 	case late:
-		return append(details, credentials.Detail{Name: "Status", Value: fmt.Sprintf("⚠ Token probe timed out after %.0fs", probeWait.Seconds())},
-			credentials.Detail{Name: "Hint", Value: probeHint}), true
+		return append(details, credentials.Detail{Name: "State", Value: "⚠ Microsoft Entra ID gave no token within " + strs.Span(probeWait) + "."},
+			credentials.Detail{Name: "What to do", Value: probeHint}), true
 	case err != nil:
-		return append(details, credentials.Detail{Name: "Status", Value: "⚠ " + err.Error()}), true
+		return append(details, credentials.Detail{Name: "State", Value: "⚠ " + err.Error()}), true
 	}
-	via := "default chain"
+	via := "the usual Azure sign-ins"
 	if found := sources(e); len(found) > 0 {
 		via = strings.Join(found, ", ")
 	}
 	if m.own {
 		via = "the account's service principal"
 	}
-	details = append(details, credentials.Detail{Name: "Status", Value: "✓ token acquired (" + via + ")"},
-		credentials.Detail{Name: "Credential", Value: m.answered()},
-		credentials.Detail{Name: "Expires", Value: time.Unix(t.expiresOn, 0).Local().Format(time.RFC3339)})
+	details = append(details, credentials.Detail{Name: "State", Value: "✓ Gives a token through " + via},
+		credentials.Detail{Name: "Signed in by", Value: SignedInBy(m.answered())},
+		credentials.Detail{Name: "Expires", Value: time.Unix(t.expiresOn, 0).Local().Format("2006-01-02 15:04")})
 	if who := identity(t.value); who != "" {
-		details = append(details, credentials.Detail{Name: "Identity", Value: who})
+		details = append(details, credentials.Detail{Name: "Signed in as", Value: who})
 	}
 	return details, true
 }

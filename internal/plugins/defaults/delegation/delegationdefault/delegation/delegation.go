@@ -20,8 +20,8 @@ func Register(registry *delegation.Registry) {
 func (backend) Backends() []delegation.Backend {
 	return []delegation.Backend{{
 		Name:    delegation.Default,
-		Title:   "Default",
-		Summary: "Every subagent uses delegation.model / delegation.provider, else the parent's model.",
+		Title:   "Built-in",
+		Summary: "Run subagents on the subagent settings, else on the agent's model",
 		Route:   route,
 	}}
 }

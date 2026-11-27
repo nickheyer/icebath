@@ -30,14 +30,13 @@ func RegisterHubKeys(km *keys.Map) {
 		}
 	}
 	for _, a := range []keys.Action{
-		{ID: "hub.use", Context: HubContext, Label: "open", Doc: "open or use the selected row", Default: []string{"enter"}, Quiet: true},
-		{ID: "hub.add", Context: HubContext, Label: "add", Doc: "add a new item", Default: []string{"alt+n"}, Quiet: true},
-		{ID: "hub.edit", Context: HubContext, Label: "edit", Doc: "edit the selected row", Default: []string{"ctrl+e"}, Quiet: true},
-		{ID: "hub.rename", Context: HubContext, Label: "rename", Doc: "rename the selected row", Default: []string{"f2"}, Quiet: true},
-		{ID: "hub.remove", Context: HubContext, Label: "remove", Doc: "remove the selected row", Default: []string{"ctrl+d"}, Quiet: true},
-		{ID: "hub.reset", Context: HubContext, Label: "reset", Doc: "reset the selected row to its default", Quiet: true},
-		{ID: "hub.back", Context: HubViewContext, Label: "back", Doc: "go back, or close the dialog", Default: []string{"esc"}, Quiet: true},
-		{ID: "hub.refresh", Context: HubViewContext, Label: "refresh", Doc: "reload the rows", Default: []string{"ctrl+r"}, Quiet: true},
+		{ID: "hub.use", Context: HubContext, Label: "open", Doc: "Open or use the selected row", Default: []string{"enter"}, Quiet: true},
+		{ID: "hub.add", Context: HubContext, Label: "add", Doc: "Add a new item", Default: []string{"alt+n"}, Quiet: true},
+		{ID: "hub.edit", Context: HubContext, Label: "edit", Doc: "Edit the selected row", Default: []string{"ctrl+e"}, Quiet: true},
+		{ID: "hub.rename", Context: HubContext, Label: "rename", Doc: "Rename the selected row", Default: []string{"f2"}, Quiet: true},
+		{ID: "hub.remove", Context: HubContext, Label: "remove", Doc: "Remove the selected row", Default: []string{"ctrl+d"}, Quiet: true},
+		{ID: "hub.back", Context: HubViewContext, Label: "back", Doc: "Go back, or close the dialog", Default: []string{"esc"}, Quiet: true},
+		{ID: "hub.refresh", Context: HubViewContext, Label: "refresh", Doc: "Reload the rows", Default: []string{"ctrl+r"}, Quiet: true},
 	} {
 		km.Register(a)
 	}
@@ -141,6 +140,20 @@ func (h *Hub) Push(c wm.Card) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// View of a hub that is told when it leaves the hub for good, by its way back, by the code that closes it or with the hub itself, so
+// it stops what it started
+type Closer interface {
+	Closed() tea.Cmd
+}
+
+// Tells a view that leaves the hub so, when it asks to be told
+func closed(c wm.Card) tea.Cmd {
+	if closer, ok := c.(Closer); ok {
+		return closer.Closed()
+	}
+	return nil
+}
+
 // Closes the view on top and gives the keys back to the one under it, the root staying
 func (h *Hub) Pop() tea.Cmd {
 	if len(h.stack) == 1 {
@@ -148,7 +161,7 @@ func (h *Hub) Pop() tea.Cmd {
 	}
 	top := h.Top()
 	h.stack = h.stack[:len(h.stack)-1]
-	return tea.Batch(h.send(top, wm.FocusMsg{}), h.send(h.Top(), wm.FocusMsg{Focused: true}))
+	return tea.Batch(h.send(top, wm.FocusMsg{}), closed(top), h.send(h.Top(), wm.FocusMsg{Focused: true}))
 }
 
 // Closes every view down to c, c staying on top, nothing when c is not stacked
@@ -168,7 +181,7 @@ func (h *Hub) PopTo(c wm.Card) tea.Cmd {
 func (h *Hub) Swap(c wm.Card) tea.Cmd {
 	top := h.Top()
 	h.stack[len(h.stack)-1] = c
-	return tea.Batch(h.send(top, wm.FocusMsg{}), c.Init(), h.send(c, wm.FocusMsg{Focused: true}))
+	return tea.Batch(h.send(top, wm.FocusMsg{}), closed(top), c.Init(), h.send(c, wm.FocusMsg{Focused: true}))
 }
 
 // Closes c wherever it is stacked, the root staying
@@ -181,7 +194,7 @@ func (h *Hub) Close(c wm.Card) tea.Cmd {
 		return h.Pop()
 	}
 	h.stack = slices.Delete(h.stack, i, i+1)
-	return h.send(c, wm.FocusMsg{})
+	return tea.Batch(h.send(c, wm.FocusMsg{}), closed(c))
 }
 
 // Shows a note under the view, a report clearing itself after a while
@@ -222,17 +235,40 @@ func (h *Hub) send(c wm.Card, msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-// Title of the first view, and from a view opened over it the mark that steps back and the trail to that view
+// Fewest cells the trail of a hub keeps before its middle folds, and what the frame around the title takes of the width
+const trailLeast, trailChrome = 24, 28
+
+// Title of the first view, and from a view opened over it the mark that steps back and the whole trail to that view, each view named
+// once. A trail too long for the width folds its middle and keeps the first and the last name
 func (h *Hub) Title() string {
-	root := h.Root().Title()
+	g := h.env.Theme.Glyphs
+	var names []string
+	for _, view := range h.stack {
+		if title := view.Title(); title != "" && (len(names) == 0 || names[len(names)-1] != title) {
+			names = append(names, title)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
 	if len(h.stack) == 1 {
-		return root
+		return names[0]
 	}
-	back := h.env.Theme.Glyphs.Back + " " + root
-	if title := h.Top().Title(); title != "" && title != root {
-		return back + " " + h.env.Theme.Glyphs.Forward + " " + title
+	sep := " " + g.Forward + " "
+	trail := func() string { return g.Back + " " + strings.Join(names, sep) }
+	// Before the first paint the width is not known and nothing folds
+	room := max(h.w-trailChrome, trailLeast)
+	for h.w > 0 && len(names) > 2 && ansi.StringWidth(trail()) > room {
+		if names[1] != g.Ellipsis {
+			names[1] = g.Ellipsis
+			continue
+		}
+		if len(names) == 3 {
+			break
+		}
+		names = slices.Delete(names, 2, 3)
 	}
-	return back
+	return trail()
 }
 
 func (h *Hub) Glyph() string {
@@ -327,12 +363,36 @@ func takesTyping(ctxs []string) bool {
 	return false
 }
 
-// Buttons of the view on top
+// Buttons of the view on top, the way out last: cancel on a form, back from a view opened over another and close from the first. A view
+// that asks a question or records a key names its own way out
 func (h *Hub) Hints() []wm.Hint {
+	var hints []wm.Hint
 	if c, ok := h.Top().(wm.Hinter); ok {
-		return c.Hints()
+		hints = c.Hints()
 	}
-	return nil
+	out, label := "hub.back", "back"
+	if len(h.stack) == 1 {
+		label = "close"
+	}
+	switch top := h.Top().(type) {
+	case *Form:
+		out, label = "form.cancel", "cancel"
+	case *List:
+		if top.capture != nil || top.ask != nil || top.edit != nil {
+			return hints
+		}
+		// Esc in a filter clears what was typed before it leaves
+		if top.pick || top.bar.Active() {
+			out = "search.close"
+			if top.Query() != "" || !top.pick {
+				label = "clear search"
+			}
+		}
+	}
+	if slices.ContainsFunc(hints, func(hint wm.Hint) bool { return hint.Action == out }) {
+		return hints
+	}
+	return append(slices.Clone(hints), wm.Hint{Action: out, Label: label})
 }
 
 func (h *Hub) Status() string {
@@ -398,6 +458,9 @@ func (h *Hub) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		h.shown = msg.Focused
 		cmds := []tea.Cmd{h.send(h.Top(), msg)}
 		if !msg.Focused {
+			for _, view := range h.stack {
+				cmds = append(cmds, closed(view))
+			}
 			for _, fn := range h.onClose {
 				cmds = append(cmds, fn())
 			}
@@ -412,8 +475,13 @@ func (h *Hub) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 				return h, h.back()
 			}
 		case "search.close":
-			// Esc on a list to pick from goes back, closing the hub from its first view
+			// Esc on a list to pick from clears what was typed first, then goes back, closing the hub from its first view
 			if l, ok := h.Top().(*List); ok && l.pick {
+				if l.Query() != "" {
+					l.bar.Close()
+					l.refresh()
+					return h, nil
+				}
 				if len(h.stack) > 1 {
 					return h, h.Pop()
 				}
@@ -431,12 +499,9 @@ func (h *Hub) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	return h, h.send(h.Top(), msg)
 }
 
-// Rows the view on top paints, the last one kept for the note while there is one
+// Rows the view on top paints, the last ones kept for the note while there is one
 func (h *Hub) bodyRows() int {
-	if h.note == "" {
-		return h.h
-	}
-	return max(h.h-1, 0)
+	return max(h.h-len(h.noteLines(h.w)), 0)
 }
 
 func (h *Hub) View(w, ht int) string {
@@ -447,27 +512,31 @@ func (h *Hub) View(w, ht int) string {
 	for len(lines) < body {
 		lines = append(lines, "")
 	}
-	if h.note != "" {
-		lines = append(lines, h.noteLine(w))
-	}
-	return strings.Join(lines, "\n")
+	return strings.Join(append(lines, h.noteLines(w)...), "\n")
 }
 
-// Note along the bottom in the colour of its weight
-func (h *Hub) noteLine(w int) string {
+// Note along the bottom in the colour of its weight, wrapped so it is read whole, on no more lines than leave the view half its rows
+func (h *Hub) noteLines(w int) []string {
+	if h.note == "" {
+		return nil
+	}
 	t := h.env.Theme
-	text := " " + h.note
+	paint := render.Dim
 	switch h.level {
 	case NoteBusy:
-		text = render.Warm(text, t)
+		paint = render.Warm
 	case NoteDone:
-		text = render.Good(text, t)
+		paint = render.Good
 	case NoteFailed:
-		text = render.Bad(text, t)
-	default:
-		text = render.Dim(text, t)
+		paint = render.Bad
 	}
-	return render.Fit(text, w, t)
+	parts := wrapWords(h.note, max(w-2, 8))
+	parts = parts[:min(len(parts), max(h.h/2, 1))]
+	lines := make([]string, len(parts))
+	for i, part := range parts {
+		lines[i] = render.Fit(" "+paint(part, t), w, t)
+	}
+	return lines
 }
 
 // Text padded with spaces to n cells

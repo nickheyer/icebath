@@ -3,6 +3,9 @@ package server
 import (
 	"cmp"
 	"context"
+	"slices"
+	"sync"
+	"time"
 
 	"connectrpc.com/connect/v2"
 
@@ -30,6 +33,16 @@ type service struct {
 	transports  *transport.Transport
 	credentials *credentials.Credentials
 	models      *models.Models
+	// What was last found on this computer for a kind of provider of a profile, and when, so the list of kinds does not look again for
+	// what it just learned
+	mu    sync.Mutex
+	found map[string]finding
+}
+
+// What looking for a kind's credential on this computer found, and when it was done
+type finding struct {
+	credential credentials.Credential
+	at         time.Time
 }
 
 func Register(host *server.Server, cfg *config.Config, p *provider.Provider, t *transport.Transport, c *credentials.Credentials, m *models.Models) {
@@ -111,12 +124,11 @@ func (s *service) Specs(_ context.Context, request *providerv1.SpecsRequest) (*p
 	wired := s.transports.Factories()
 	instances := s.providers.Instances(cfg)
 	response := &providerv1.SpecsResponse{}
-	for _, spec := range s.providers.Specs() {
-		if spec.Hidden {
-			continue
-		}
+	specs := slices.DeleteFunc(s.providers.Specs(), func(spec provider.Spec) bool { return spec.Hidden })
+	found := s.detect(cfg, specs)
+	for i, spec := range specs {
 		_, usable := wired[spec.Mode]
-		detected, _ := s.credentials.Detect(cfg, spec)
+		detected := found[i]
 		message := &providerv1.Spec{
 			Name:           spec.Name,
 			DisplayName:    spec.Label(),
@@ -131,6 +143,7 @@ func (s *service) Specs(_ context.Context, request *providerv1.SpecsRequest) (*p
 			KeyEnv:         spec.KeyEnvNames(),
 			Aliases:        spec.Aliases,
 			Keyed:          spec.Keyed(),
+			Rank:           uint32(max(spec.Rank, 0)),
 		}
 		for _, instance := range instances {
 			if instance.Spec.Name == spec.Name {
@@ -142,6 +155,55 @@ func (s *service) Specs(_ context.Context, request *providerv1.SpecsRequest) (*p
 	return response, nil
 }
 
+// Longest the list of kinds waits to learn what is already on this computer for them, and how long what it learned stays good
+const (
+	detectWait = 1500 * time.Millisecond
+	detectKeep = time.Minute
+)
+
+// What is found on this computer for each of the kinds, all looked for at once: looking for a cloud sign-in asks services that can take
+// seconds to say no, and the list of kinds does not wait for them. A kind still being looked for when the wait is over counts as not
+// found now, and what the look finds is kept for the next list
+func (s *service) detect(cfg *config.Config, specs []provider.Spec) []credentials.Credential {
+	type answer struct {
+		at    int
+		found credentials.Credential
+	}
+	out := make([]credentials.Credential, len(specs))
+	answers := make(chan answer, len(specs))
+	waiting := 0
+	s.mu.Lock()
+	if s.found == nil {
+		s.found = map[string]finding{}
+	}
+	for i, spec := range specs {
+		key := cfg.Profile() + "\x00" + spec.Name
+		if kept, ok := s.found[key]; ok && time.Since(kept.at) < detectKeep {
+			out[i] = kept.credential
+			continue
+		}
+		waiting++
+		go func() {
+			found, _ := s.credentials.Detect(cfg, spec)
+			s.mu.Lock()
+			s.found[key] = finding{found, time.Now()}
+			s.mu.Unlock()
+			answers <- answer{i, found}
+		}()
+	}
+	s.mu.Unlock()
+	deadline := time.After(detectWait)
+	for range waiting {
+		select {
+		case a := <-answers:
+			out[a.at] = a.found
+		case <-deadline:
+			return out
+		}
+	}
+	return out
+}
+
 func (s *service) instance(profile, name string) (provider.Instance, error) {
 	cfg, err := server.Profile(s.config, profile)
 	if err != nil {
@@ -149,7 +211,7 @@ func (s *service) instance(profile, name string) (provider.Instance, error) {
 	}
 	instance, ok := s.providers.Instance(cfg, name)
 	if !ok {
-		return instance, connect.NewError(connect.CodeNotFound, "Profile "+cfg.Profile()+" has no provider named "+name)
+		return instance, connect.NewError(connect.CodeNotFound, "The profile "+cfg.Profile()+" has no provider named "+name+". Add it in /providers.")
 	}
 	return instance, nil
 }
@@ -173,7 +235,7 @@ func (s *service) Models(ctx context.Context, request *providerv1.ModelsRequest)
 	}
 	catalog := s.models.Catalog(ctx, cfg, route, request.GetRefresh())
 	if len(catalog.IDs) == 0 {
-		return nil, connect.NewError(connect.CodeUnavailable, instance.Label()+" didn't return a model list")
+		return nil, connect.NewError(connect.CodeUnavailable, instance.Label()+" didn't send its list of models. Check that it is connected, then try again.")
 	}
 	prices := s.models.Prices(ctx, cfg, route, request.GetRefresh())
 	response := &providerv1.ModelsResponse{Models: catalog.IDs, Fallback: catalog.Fallback}
@@ -225,7 +287,7 @@ func (s *service) Usage(ctx context.Context, request *providerv1.UsageRequest) (
 			}
 		}
 		if name == "" {
-			return nil, connect.NewError(connect.CodeNotFound, "No connected provider of profile "+cfg.Profile()+" can say what its account may still spend")
+			return nil, connect.NewError(connect.CodeNotFound, "No connected provider of the profile "+cfg.Profile()+" can say how much its account may still use.")
 		}
 	}
 	instance, err := s.instance(request.GetProfile(), name)
@@ -233,7 +295,7 @@ func (s *service) Usage(ctx context.Context, request *providerv1.UsageRequest) (
 		return nil, err
 	}
 	if instance.Spec.AccountUsage == nil {
-		return nil, connect.NewError(connect.CodeUnimplemented, instance.Label()+" can't say what its accounts may still spend")
+		return nil, connect.NewError(connect.CodeUnimplemented, instance.Label()+" can't say how much its accounts may still use.")
 	}
 	route, err := s.credentials.Route(instance, "")
 	if err != nil {
@@ -287,7 +349,7 @@ func (s *service) AddAccount(_ context.Context, request *providerv1.AddAccountRe
 			return &providerv1.AddAccountResponse{Account: account}, nil
 		}
 	}
-	return nil, connect.NewError(connect.CodeInternal, "the account was added but can't be read")
+	return nil, connect.NewError(connect.CodeInternal, "The account was added, but icebath can't read it back. Open /providers to check it.")
 }
 
 func (s *service) RemoveAccount(_ context.Context, request *providerv1.RemoveAccountRequest) (*providerv1.RemoveAccountResponse, error) {

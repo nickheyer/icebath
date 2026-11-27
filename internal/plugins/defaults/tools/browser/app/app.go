@@ -1,5 +1,5 @@
-// The browser page: whether the profile's browser tools drive a live browser over DevTools, attaching them to one and detaching them, and
-// closing the browser that holds the user's own profile
+// The browser screen: whether the agent's browser steps use a browser of the user's own over remote debugging, connecting them to one and
+// disconnecting them, and closing the browser that holds the user's own profile
 package app
 
 import (
@@ -23,19 +23,20 @@ import (
 
 const browserContext = "tui.browser"
 
-const usage = "usage: /browser [connect [url]|disconnect|status|close-profile]; /settings browser keeps an address"
-
-// Address /browser connect tries when given none
+// Address a connect tries when given none: the debugging port of a browser on this computer
 const defaultURL = "http://127.0.0.1:9222"
 
+// Column of the list that holds what each row does, shown whole or not at all
+const aboutColumn = 1
+
 var actions = []keys.Action{
-	{ID: "tui.browser.connect", Context: browserContext, Label: "connect", Doc: "attach the browser tools to a browser with remote debugging",
+	{ID: "tui.browser.connect", Context: browserContext, Label: "connect", Doc: "Connect the agent to a browser that has remote debugging on",
 		Default: []string{"c"}},
-	{ID: "tui.browser.disconnect", Context: browserContext, Label: "disconnect", Doc: "detach the browser tools from the live browser",
+	{ID: "tui.browser.disconnect", Context: browserContext, Label: "disconnect", Doc: "Disconnect the agent from the browser",
 		Default: []string{"d"}},
-	{ID: "tui.browser.close", Context: browserContext, Label: "close profile", Doc: "close the browser that holds your own profile",
+	{ID: "tui.browser.close", Context: browserContext, Label: "close browser", Doc: "Close the browser that holds your own profile",
 		Default: []string{"x"}},
-	{ID: "tui.browser.refresh", Context: browserContext, Label: "refresh", Doc: "read the browser status again", Default: []string{"ctrl+r"}},
+	{ID: "tui.browser.refresh", Context: browserContext, Label: "refresh", Doc: "Check the browser again", Default: []string{"ctrl+r"}},
 }
 
 type screens struct{}
@@ -48,10 +49,12 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 	service := browserv1connect.NewBrowserServiceClient(conn)
 	return []tui.Screen{{
 		ID:      "browser",
+		Group:   tui.GroupAbilities,
+		Order:   70,
 		Title:   "Browser",
-		Short:   "connect the agent to your browser, or close the browser holding your profile",
+		Short:   "Connect the agent to your own browser",
 		Slash:   []string{"browser"},
-		Usage:   "[connect [url]|disconnect|status|close-profile] [@profile]",
+		Usage:   "[connect [address]|disconnect|status|close-profile] [@profile]",
 		Actions: actions,
 		Where:   map[string]string{browserContext: "browser"},
 		Open: func(kit *tui.Kit, argument string) tea.Cmd {
@@ -62,38 +65,114 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 	}}
 }
 
+// Something the screen does, one row each
+type step struct {
+	title, about string
+	// Word on the button that does it
+	verb string
+	run  func(l *cards.List) tea.Cmd
+}
+
 type view struct {
 	kit     *tui.Kit
 	service browserv1connect.BrowserServiceClient
+	// Profile the screen was opened on, the one in use when empty
 	profile string
 	hub     *cards.Hub
-	page    *cards.Page
+	list    *cards.List
 	status  *browserv1.StatusResponse
-	log     []string
-	loaded  bool
-	err     error
+	// What the last connect said as it went
+	log    []string
+	loaded bool
+	err    error
+	steps  []step
 }
 
 func (v *view) open(argument string) tea.Cmd {
-	v.page = cards.NewPage(v.kit.Env, cards.PageSpec{
-		Title:   "Browser",
+	t := v.kit.Env.Theme
+	title := "Browser"
+	if v.profile != "" {
+		title += " · " + v.profile
+	}
+	v.list = cards.NewList(v.kit.Env, cards.ListSpec{
+		Title:   title,
+		Glyph:   t.Glyphs.Fetch,
 		Key:     "tui:browser",
-		Context: browserContext,
-		Follow:  true,
-		Lines:   v.lines,
-		Hints:   v.hints,
-		Actions: map[string]func(*cards.Page) tea.Cmd{
-			"tui.browser.connect":    func(*cards.Page) tea.Cmd { return v.ask() },
-			"tui.browser.disconnect": func(*cards.Page) tea.Cmd { return v.disconnect() },
-			"tui.browser.close":      func(*cards.Page) tea.Cmd { return v.confirmClose() },
-			"tui.browser.refresh":    func(*cards.Page) tea.Cmd { return v.load() },
+		Context: cards.HubContext,
+		// Its own keys stay in force on every row, beside the buttons the rows show
+		Shared:  []string{browserContext},
+		Primary: "hub.use",
+		Intro:   v.intro,
+		Columns: []render.Column{{}, {Flex: 1, Whole: true}},
+		Rows: func() [][]string {
+			v.steps = v.offered()
+			cells := make([][]string, len(v.steps))
+			for i, st := range v.steps {
+				cells[i] = []string{st.title, render.Dim(st.about, t)}
+			}
+			return cells
+		},
+		Detail: func(i int) []string {
+			if v.list.Shows(aboutColumn) || i < 0 || i >= len(v.steps) {
+				return nil
+			}
+			return []string{v.steps[i].about + "."}
+		},
+		Hints: func(_ *cards.List, i int) []wm.Hint {
+			if i < 0 || i >= len(v.steps) {
+				return nil
+			}
+			return []wm.Hint{{Action: "hub.use", Label: v.steps[i].verb}}
+		},
+		Free: map[string]bool{"tui.browser.connect": true, "tui.browser.disconnect": true, "tui.browser.close": true, "tui.browser.refresh": true,
+			"hub.refresh": true},
+		Actions: map[string]func(*cards.List, int) tea.Cmd{
+			"hub.use":                func(l *cards.List, i int) tea.Cmd { return v.steps[i].run(l) },
+			"tui.browser.connect":    func(*cards.List, int) tea.Cmd { return v.ask() },
+			"tui.browser.disconnect": func(*cards.List, int) tea.Cmd { return v.disconnect() },
+			"tui.browser.close":      func(l *cards.List, _ int) tea.Cmd { return v.confirmClose(l) },
+			"tui.browser.refresh":    func(*cards.List, int) tea.Cmd { return v.load() },
+			"hub.refresh":            func(*cards.List, int) tea.Cmd { return v.load() },
 		},
 	})
-	v.hub = v.kit.Hub("browser", v.page)
+	v.list.ToggleDetail()
+	v.hub = v.kit.Hub("browser", v.list)
 	return tea.Batch(v.kit.WM.ShowOverlay(v.hub), v.run(argument))
 }
 
-// Runs what the command names, the status when it names nothing
+// What the screen offers as things stand: connecting, disconnecting while connected, and closing the browser that holds your profile
+func (v *view) offered() []step {
+	connect := step{"Connect to your browser", "Find or start a browser with remote debugging on, then let the agent use it", "connect",
+		func(*cards.List) tea.Cmd { return v.ask() }}
+	if v.status.GetConnected() {
+		connect.title = "Connect to another browser"
+	}
+	out := []step{connect}
+	if v.status.GetConnected() {
+		out = append([]step{{"Disconnect", "Let the agent open a browser of its own again", "disconnect", func(*cards.List) tea.Cmd { return v.disconnect() }}}, out...)
+	}
+	return append(out, step{"Close your browser", "Close the browser that holds your profile, so the agent can copy your sign-ins", "close",
+		func(l *cards.List) tea.Cmd { return v.confirmClose(l) }})
+}
+
+// Lines above the rows: what this is and how the browser stands, then what the last connect said as it went
+func (v *view) intro() []string {
+	lines := []string{"The agent can do its browsing in your own browser, such as Chrome with remote debugging on, where you are signed in."}
+	switch {
+	case v.status == nil:
+		lines = append(lines, tui.Waiting(v.loaded, v.err, ""))
+	case v.status.GetConnected():
+		lines = append(lines, "Connected to the browser at "+v.status.GetUrl()+". The agent's browsing happens there.")
+	default:
+		lines = append(lines, "Not connected. The agent opens a browser of its own. Attach address in /settings under Browser connects every session.")
+	}
+	if len(v.log) > 0 {
+		lines = append(append(lines, ""), v.log...)
+	}
+	return lines
+}
+
+// Runs what the command names, the state of the browser when it names nothing
 func (v *view) run(argument string) tea.Cmd {
 	words := strings.Fields(argument)
 	action := "status"
@@ -110,85 +189,64 @@ func (v *view) run(argument string) tea.Cmd {
 		}
 		return tea.Batch(v.load(), v.connect(address))
 	case "disconnect":
-		return v.disconnect()
+		return tea.Batch(v.load(), v.disconnect())
 	case "close-profile":
-		return tea.Batch(v.load(), v.confirmClose())
+		v.confirmClose(v.list)
+		return v.load()
 	}
-	v.say(usage)
-	return v.load()
+	return tea.Batch(v.load(), v.hub.Fail("/browser takes connect, disconnect, status or close-profile, not "+words[0]+"."))
 }
 
-func (v *view) say(text string) { v.log = append(v.log, text) }
-
-func (v *view) lines(w int) []string {
-	t := v.kit.Env.Theme
-	width := max(w, 1)
-	var lines []string
-	add := func(text string) { lines = append(lines, strings.Split(render.Wrap(text, width), "\n")...) }
-	switch {
-	case v.status == nil:
-		add(tui.Waiting(v.loaded, v.err, ""))
-	case v.status.GetConnected():
-		add("browser connected: " + v.status.GetUrl())
-	default:
-		add(render.Dim("browser not connected (try /browser connect <url> or set browser.cdp_url in config.yaml)", t))
-	}
-	if len(v.log) > 0 {
-		lines = append(lines, "")
-		for _, line := range v.log {
-			add(line)
-		}
-	}
-	return lines
+func (v *view) say(text string) {
+	v.log = append(v.log, text)
+	v.list.Refresh()
 }
 
-func (v *view) hints(*cards.Page) []wm.Hint {
-	out := []wm.Hint{{Action: "tui.browser.connect"}}
-	if v.status.GetConnected() {
-		out = append(out, wm.Hint{Action: "tui.browser.disconnect"})
-	}
-	return append(out, wm.Hint{Action: "tui.browser.close"}, wm.Hint{Action: "tui.browser.refresh"})
-}
-
+// Says why something failed under the screen and keeps it with what the connect said
 func (v *view) fail(err error) tea.Cmd {
-	v.loaded, v.err = true, err
-	v.say(render.Bad(tui.Reason(err), v.kit.Env.Theme))
-	return nil
+	text := tui.Reason(err)
+	v.say(text)
+	return v.hub.Fail(text)
 }
 
 func (v *view) load() tea.Cmd {
 	return tui.Async(func() func() tea.Cmd {
 		status, err := v.service.Status(v.kit.Env.Ctx, &browserv1.StatusRequest{Profile: v.profile})
 		return func() tea.Cmd {
-			if err != nil {
-				return v.fail(err)
+			v.loaded, v.err = true, err
+			if err == nil {
+				v.status = status
 			}
-			v.loaded, v.err, v.status = true, nil, status
+			v.list.Refresh()
 			return nil
 		}
 	})
 }
 
-// Form asking the address to connect to, the local debugging port when left as it is
+// Form asking the address to connect to, the debugging port of this computer when left as it is
 func (v *view) ask() tea.Cmd {
-	return v.hub.Push(cards.NewForm(v.kit.Env, cards.FormSpec{
-		Title:  "Connect the browser tools",
-		Intro:  []string{"Address of a Chromium-family browser with remote debugging; the local one on port 9222 is found or started"},
-		Fields: []cards.Field{{ID: "url", Label: "address", Value: defaultURL}},
-		Submit: "connect",
+	var form *cards.Form
+	form = cards.NewForm(v.kit.Env, cards.FormSpec{
+		Title: "Connect to your browser",
+		Intro: []string{"The address of a Chrome, Edge or Brave browser with remote debugging on.",
+			"Leave it as it is to find or start the one on this computer."},
+		Fields: []cards.Field{{ID: "url", Label: "Address", Value: defaultURL, Required: true}},
+		Submit: "Connect",
 		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
-			return tea.Batch(v.hub.Pop(), v.connect(strings.TrimSpace(values["url"])))
+			return tea.Batch(v.hub.Close(form), v.connect(strings.TrimSpace(values["url"])))
 		},
-		Cancel: func(*cards.Form) tea.Cmd { return v.hub.Pop() },
-	}))
+	})
+	return v.hub.Push(form)
 }
 
-// Connects, each step said on the page as the server tells it
+// Connects, each step the server tells kept above the rows and shown under them as it comes
 func (v *view) connect(address string) tea.Cmd {
 	if address == "" {
 		address = defaultURL
 	}
-	v.say("checking Chromium-family browser remote debugging at " + address + "...")
+	v.log = nil
+	v.say("Looking for a browser with remote debugging at " + address + ".")
+	v.hub.Busy("Connecting to " + address + "…")
 	ctx := v.kit.Env.Ctx
 	go func() {
 		stream, err := v.service.Connect(ctx, &browserv1.ConnectRequest{Profile: v.profile, Url: address})
@@ -200,6 +258,12 @@ func (v *view) connect(address string) tea.Cmd {
 		for {
 			event, err := stream.Receive()
 			if errors.Is(err, io.EOF) {
+				v.kit.Apply(func() tea.Cmd {
+					if v.hub.Waiting() {
+						return tea.Batch(v.load(), v.hub.Fail("The connect stopped without saying whether it worked."))
+					}
+					return nil
+				})
 				return
 			}
 			if err != nil {
@@ -211,25 +275,24 @@ func (v *view) connect(address string) tea.Cmd {
 			switch kind := event.GetEvent().(type) {
 			case *browserv1.ConnectEvent_Progress:
 				v.kit.Apply(func() tea.Cmd {
-					if kind.Progress.GetLevel() == "error" {
-						v.say(render.Warm(kind.Progress.GetMessage(), v.kit.Env.Theme))
-					} else {
-						v.say(kind.Progress.GetMessage())
-					}
+					v.say(kind.Progress.GetMessage())
+					v.hub.Busy(kind.Progress.GetMessage())
 					return nil
 				})
 			case *browserv1.ConnectEvent_Connected:
 				v.kit.Apply(func() tea.Cmd {
-					if kind.Connected.GetConnected() {
-						url := kind.Connected.GetUrl()
-						if url == "" {
-							url = "(url unavailable)"
-						}
-						v.say(render.Good("Browser connected to live Chromium-family browser via CDP", v.kit.Env.Theme))
-						v.say("Endpoint: " + url)
-						v.say("next browser tool call will use this CDP endpoint")
+					url := kind.Connected.GetUrl()
+					if !kind.Connected.GetConnected() {
+						text := "Couldn't connect to the browser at " + address + ". The steps above say why."
+						v.say(text)
+						return tea.Batch(v.load(), v.hub.Fail(text))
 					}
-					return v.load()
+					text := "Connected to the browser at " + url + ". The agent's next browser step uses it."
+					if url == "" {
+						text = "Connected to your browser. The agent's next browser step uses it."
+					}
+					v.say(text)
+					return tea.Batch(v.load(), v.hub.Done(text))
 				})
 				return
 			}
@@ -239,33 +302,27 @@ func (v *view) connect(address string) tea.Cmd {
 }
 
 func (v *view) disconnect() tea.Cmd {
+	v.hub.Busy("Disconnecting…")
 	return tui.Async(func() func() tea.Cmd {
 		_, err := v.service.Disconnect(v.kit.Env.Ctx, &browserv1.DisconnectRequest{Profile: v.profile})
 		return func() tea.Cmd {
 			if err != nil {
 				return v.fail(err)
 			}
-			v.say("browser disconnected")
-			return v.load()
+			v.log = nil
+			return tea.Batch(v.load(), v.hub.Done("Disconnected. The agent opens a browser of its own again."))
 		}
 	})
 }
 
 // Asks before closing the browser that holds the user's own profile, since its unsaved tabs go with it
-func (v *view) confirmClose() tea.Cmd {
-	return v.hub.Push(cards.NewForm(v.kit.Env, cards.FormSpec{
-		Title:  "Close your browser?",
-		Intro:  []string{"Closes the browser that holds your own profile so the agent can use it. Tabs you did not save are lost."},
-		Submit: "Close it",
-		Done:   func(*cards.Form, map[string]string) tea.Cmd { return tea.Batch(v.hub.Pop(), v.closeProfile()) },
-		Cancel: func(*cards.Form) tea.Cmd {
-			v.say("Leave it open")
-			return v.hub.Pop()
-		},
-	}))
+func (v *view) confirmClose(l *cards.List) tea.Cmd {
+	l.Confirm("Close your browser? Tabs you didn't save are lost, and the agent can then copy your sign-ins.", v.closeProfile)
+	return nil
 }
 
 func (v *view) closeProfile() tea.Cmd {
+	v.hub.Busy("Closing your browser…")
 	return tui.Async(func() func() tea.Cmd {
 		reply, err := v.service.CloseProfile(v.kit.Env.Ctx, &browserv1.CloseProfileRequest{Profile: v.profile})
 		return func() tea.Cmd {
@@ -273,11 +330,9 @@ func (v *view) closeProfile() tea.Cmd {
 				return v.fail(err)
 			}
 			if reply.GetClosed() {
-				v.say(render.Good("✓ "+reply.GetMessage(), v.kit.Env.Theme))
-			} else {
-				v.say(render.Bad("✗ "+reply.GetMessage(), v.kit.Env.Theme))
+				return v.hub.Done(reply.GetMessage())
 			}
-			return nil
+			return v.hub.Fail(reply.GetMessage())
 		}
 	})
 }

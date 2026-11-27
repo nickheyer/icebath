@@ -113,7 +113,7 @@ func (m *Mode) Settings() *speechv1.VoiceReply {
 // Whether this machine can record, the server can transcribe and the environment has audio
 func (m *Mode) Requirements() Requirements {
 	r := m.Settings().GetRecognition()
-	return Check(r.GetEnabled(), r.GetLabel(), r.GetProvider())
+	return Check(r.GetEnabled(), r.GetLabel())
 }
 
 // Spoken hint naming the first stop phrase, empty when there are none

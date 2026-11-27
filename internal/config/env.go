@@ -18,6 +18,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Variables a profile reads beyond its .env and this process's own, such as those the secret stores of its settings supply: what its
@@ -278,7 +279,7 @@ func (c *Config) readableEnv() error {
 	}
 	pin, _ := c.pinnedAt(pinnedBackend)
 	if backend, _ := pin.(string); !errors.Is(err, fs.ErrPermission) || strings.TrimSpace(backend) == "" {
-		return fmt.Errorf("The profile's .env (%s) cannot be read: %v. %s", path, err, readFix(err))
+		return fmt.Errorf("The keys file %s can't be read: %v. %s", path, err, readFix(err))
 	}
 	// Told as the read of this version of the file would tell it, so it is said once
 	if c.once("dotenv", path, version(path)) {
@@ -387,7 +388,7 @@ func (c *Config) Launching(names func() []string) {
 // Why a variable can't be written to the .env at the path, nil when it can
 func (c *Config) envWritable(name, path string) error {
 	if !EnvName(name) {
-		return fmt.Errorf("Invalid environment variable name: %q", name)
+		return fmt.Errorf("%q can't be the name of a variable. A name is letters, digits and underscores, and does not start with a digit.", name)
 	}
 	policy := func(name string) string {
 		if runtime.GOOS == "windows" {
@@ -400,9 +401,8 @@ func (c *Config) envWritable(name, path string) error {
 	c.mu.RUnlock()
 	launches := launching != nil && slices.ContainsFunc(launching(), func(launch string) bool { return policy(launch) == policy(name) })
 	if launches || unwritable[policy(name)] || slices.ContainsFunc(unwritablePrefixes, func(prefix string) bool { return strings.HasPrefix(policy(name), prefix) }) {
-		return fmt.Errorf("Environment variable %q is on the writer denylist. Names that influence subprocess execution (LD_PRELOAD, "+
-			"PYTHONPATH, PATH, EDITOR, ...) or Icebath runtime location and security policy (ICEBATH_HOME, ICEBATH_YOLO_MODE, ...) cannot be "+
-			"persisted via the env writer. If you really need this, edit %s directly.", name, display(path))
+		return fmt.Errorf("icebath does not save %s for you, because the variable changes how programs start or where icebath keeps its files and "+
+			"what it allows. To set it anyway, edit %s yourself.", name, display(path))
 	}
 	return nil
 }
@@ -414,7 +414,7 @@ func NonASCII(name, value string) (string, string) {
 	var bad []string
 	for i, r := range []rune(value) {
 		if r > unicode.MaxASCII {
-			bad = append(bad, fmt.Sprintf("  position %d: %s (U+%04X)", i, strconv.Quote(string(r)), r))
+			bad = append(bad, fmt.Sprintf("character %d: %s, U+%04X", i+1, strconv.Quote(string(r)), r))
 			continue
 		}
 		cleaned.WriteRune(r)
@@ -423,8 +423,8 @@ func NonASCII(name, value string) (string, string) {
 		return value, ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n  Warning: %s contains non-ASCII characters that will break API requests.\n  This usually happens when copy-pasting from a PDF, "+
-		"rich-text editor,\n  or web page that substitutes lookalike Unicode glyphs for ASCII letters.\n\n", name)
+	fmt.Fprintf(&b, "⚠ %s held characters that an API key can't have, and they were taken out. That happens when a key is copied from a PDF or a\n"+
+		"  web page that swaps letters for ones that look the same.\n", name)
 	for i, line := range bad[:min(5, len(bad))] {
 		if i > 0 {
 			b.WriteString("\n")
@@ -432,18 +432,15 @@ func NonASCII(name, value string) (string, string) {
 		b.WriteString("  " + line)
 	}
 	if len(bad) > 5 {
-		b.WriteString("\n  ... and more")
+		b.WriteString("\n  and " + strs.Number(float64(len(bad)-5)) + " more")
 	}
-	b.WriteString("\n\n  The non-ASCII characters have been stripped automatically.\n  If authentication fails, re-copy the key from the provider's dashboard.\n")
+	b.WriteString("\n  If the key is refused, copy it again from the provider's website.")
 	return cleaned.String(), b.String()
 }
 
 // Refusal of a write of the profile's .env the administrator's .env or a package manager decides
-func envRefusal(locked *LockedError, action string) error {
-	if locked.By == ByPackageManager {
-		return fmt.Errorf("Cannot %s %s: %s", action, locked.Key, locked.Reason())
-	}
-	return fmt.Errorf("Cannot %s %s: it is managed by your administrator (%s) and cannot be changed.", action, locked.Key, locked.Source)
+func envRefusal(locked *LockedError) error {
+	return errors.New(locked.Refusal())
 }
 
 // Saves the variable in the profile's .env, replacing the line that assigned it, the file kept 0600 and written at once. A value loses
@@ -451,7 +448,7 @@ func envRefusal(locked *LockedError, action string) error {
 func (c *Config) SaveEnv(name, value string) error {
 	path := c.EnvPath()
 	if locked := c.envLock(name); locked != nil {
-		return envRefusal(locked, "set")
+		return envRefusal(locked)
 	}
 	if err := c.envWritable(name, path); err != nil {
 		return err
@@ -488,7 +485,7 @@ func (c *Config) SaveEnv(name, value string) error {
 // Removes every line of the profile's .env that assigns the variable, the file kept 0600 and written at once; whether any did
 func (c *Config) RemoveEnv(name string) (bool, error) {
 	if locked := c.envLock(name); locked != nil {
-		return false, envRefusal(locked, "remove")
+		return false, envRefusal(locked)
 	}
 	path := c.EnvPath()
 	data, err := os.ReadFile(path)

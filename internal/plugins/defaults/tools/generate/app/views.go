@@ -13,11 +13,13 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/image/draw"
 
+	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/generation"
 	generatetools "github.com/nickheyer/icebath/internal/plugins/defaults/tools/generate/tools"
 	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
@@ -27,23 +29,23 @@ import (
 )
 
 const (
-	// Cells a picture takes in the transcript at most
+	// Cells an image takes in the transcript at most
 	maxCols, maxRows = 64, 16
-	// Pictures laid out kept, the least recently drawn going first
+	// Images laid out kept, the least recently drawn going first
 	kept = 48
 	// Alpha a half of a cell needs to be drawn rather than showing the window behind it
 	opaqueEnough = 32
 )
 
-// Rows of the pictures laid out so far, by preview, width and skin
+// Rows of the images laid out so far, by preview, width and skin
 type views struct {
 	mu    sync.Mutex
 	rows  map[string][]string
 	order []string
 }
 
-// The picture image_generate made is drawn in the chat in half blocks, under a line naming what drew it; video_generate's result is the
-// line and where the video is
+// The image that image_generate made is drawn in the chat in half blocks, under a line naming what made it; video_generate's result is
+// the line and where the video is
 func (v *views) Views() []toolsapp.View {
 	return []toolsapp.View{
 		{Tool: generatetools.Image, Result: v.picture, Settings: []string{toolsconfig.InlineImages}},
@@ -77,19 +79,19 @@ func head(kind string, r result, look theme.Theme) string {
 		}
 	}
 	if r.Modality == "image" {
-		about = append(about, "from a picture")
+		about = append(about, "from an image")
 	}
 	if r.Modality == "reference" {
 		about = append(about, "from references")
 	}
 	if r.Duration > 0 {
-		about = append(about, fmt.Sprintf("%.0fs", r.Duration))
+		about = append(about, config.Span(time.Duration(r.Duration*float64(time.Second)).Round(time.Second)))
 	}
 	return render.Heading(kind, look) + render.Dim("  "+strings.Join(about, " · "), look)
 }
 
-// The picture drawn in half blocks with where it is kept under it; nil, so the text shows, when pictures are off, the skin has no colours or
-// the call failed
+// The image drawn in half blocks with where it is kept under it; nil, so the text shows, when inline images are off, the skin has no colors
+// or the call failed
 func (v *views) picture(call toolsapp.Call, width int, look theme.Theme) *toolsapp.Shown {
 	var r result
 	if call.Failed || json.Unmarshal([]byte(call.Result), &r) != nil || !r.Success || look.Plain {
@@ -113,7 +115,7 @@ func (v *views) picture(call toolsapp.Call, width int, look theme.Theme) *toolsa
 			}
 		}
 	}
-	lines := []string{strings.TrimSpace(r.Image + " " + sandbox(r.Visible))}
+	lines := []string{r.Image, sandbox(r.Visible)}
 	if r.Public != r.Image {
 		lines = append(lines, r.Public)
 	}
@@ -125,12 +127,12 @@ func (v *views) picture(call toolsapp.Call, width int, look theme.Theme) *toolsa
 	return shown
 }
 
-// Path the agent's commands see the picture at, said beside its own
+// Path the agent's commands see the image at, said under its own
 func sandbox(path string) string {
 	if path == "" {
 		return ""
 	}
-	return "(" + path + " in the sandbox)"
+	return "In the sandbox: " + path
 }
 
 func revised(prompt string) string {
@@ -188,8 +190,8 @@ func (v *views) blocks(preview string, cols int, look theme.Theme) []string {
 	return rows
 }
 
-// The picture of a data URL fitted into cols cells across and maxRows down, each cell two pixels stacked: the upper one in the glyph's
-// colour, the lower in its background; a half too clear to draw shows the window's background
+// The image of a data URL fitted into cols cells across and maxRows down, each cell two pixels stacked: the upper one in the glyph's
+// color, the lower in its background; a half too clear to draw shows the window's background
 func lay(preview string, cols int, look theme.Theme) []string {
 	data, _, err := generation.Inline(preview)
 	if err != nil {
@@ -235,7 +237,7 @@ func lay(preview string, cols int, look theme.Theme) []string {
 	return rows
 }
 
-// Colour of the pixel laid over the background by its alpha
+// Color of the pixel laid over the background by its alpha
 func over(c color.NRGBA, behind [3]uint8) [3]uint8 {
 	mix := func(front, back uint8) uint8 { return uint8((int(front)*int(c.A) + int(back)*(255-int(c.A))) / 255) }
 	return [3]uint8{mix(c.R, behind[0]), mix(c.G, behind[1]), mix(c.B, behind[2])}

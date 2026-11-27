@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"unsafe"
 
+	"github.com/nickheyer/icebath/internal/packages"
+	"github.com/nickheyer/icebath/internal/plugins/defaults/speech/openwakeword/config"
 	"github.com/nickheyer/icebath/internal/speech/native"
 )
 
@@ -46,11 +48,12 @@ func library(dir string) (*tflite, error) {
 		switch goos + "/" + runtime.GOARCH {
 		case "linux/amd64", "linux/arm64", "windows/amd64", "darwin/arm64":
 		default:
-			return nil, fmt.Errorf("tensorflowlite_c library not found in %s: no tensorflowlite_c build for %s/%s", own, runtime.GOOS, runtime.GOARCH)
+			return nil, fmt.Errorf("openWakeWord can't run here, because TensorFlow Lite has no build for %s/%s.", runtime.GOOS, runtime.GOARCH)
 		}
 		platform := filepath.Join(filepath.Dir(filepath.Clean(dir)), "lib", goos+"_"+runtime.GOARCH)
 		if path = first(platform); path == "" {
-			return nil, fmt.Errorf("tensorflowlite_c library not found in %s or %s", own, platform)
+			return nil, fmt.Errorf("The TensorFlow Lite library of openWakeWord is in neither %s nor %s. Run %s again.", own, platform,
+				packages.InstallHint(config.Extra))
 		}
 	}
 	abs, err := filepath.Abs(path)

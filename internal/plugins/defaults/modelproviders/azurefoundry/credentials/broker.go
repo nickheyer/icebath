@@ -40,11 +40,11 @@ const (
 	brokerRedirectMac    = "msauth.com.msauth.unsignedapp://auth"
 	brokerGrant          = "broker"
 	ciamSuffix           = ".ciamlogin.com"
-	brokerDefaultFailure = "Failed to authenticate user with default broker account."
-	brokerFailure        = "Failed to authenticate user with broker account."
-	noUsableAccount      = "Failed to authenticate user"
-	brokerPlatformOnly   = "InteractiveBrowserBrokerCredential unavailable. Brokered authentication is only supported on Windows and WSL platforms."
-	interactionRequired  = "Interactive authentication is required to get a token. Call 'authenticate' to begin."
+	brokerDefaultFailure = "The sign-in broker could not sign in with its default account."
+	brokerFailure        = "The sign-in broker could not sign in."
+	noUsableAccount      = "The sign-in broker found no account to sign in with."
+	brokerPlatformOnly   = "The sign-in broker works only on Windows and WSL."
+	interactionRequired  = "Getting a token needs you to sign in. Sign in from /providers to begin."
 )
 
 // Where the VS Code Azure Resources extension keeps the account it signed in, below the home folder
@@ -122,11 +122,11 @@ func recordText(raw []byte) (string, error) {
 	case len(raw) >= 2 && raw[0] == 0xFE && raw[1] == 0xFF:
 		order = binary.BigEndian
 	default:
-		return "", errors.New("'utf-8' codec can't decode the authentication record")
+		return "", errors.New("The VS Code sign-in record is not valid UTF-8.")
 	}
 	body := raw[2:]
 	if len(body)%2 != 0 {
-		return "", errors.New("'utf-16' codec can't decode the authentication record: truncated data")
+		return "", errors.New("The VS Code sign-in record is cut short.")
 	}
 	units := make([]uint16, len(body)/2)
 	for i := range units {
@@ -161,7 +161,7 @@ func vscodeRecord() (*record, error) {
 		}
 		data, ok := parsed.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("a broker record value is %s, expected a mapping", kind(parsed))
+			return nil, fmt.Errorf("The VS Code sign-in record holds %s where a set of fields belongs.", kind(parsed))
 		}
 		if err := validRecord(data); err != nil {
 			return nil, err
@@ -251,15 +251,15 @@ func (c *vscode) token(ctx context.Context, scopes []string) (token, error) {
 		library, err := msalruntime.Ensure(ctx, libraryHome())
 		if err != nil {
 			c.mu.Unlock()
-			return token{}, &unavailable{"VisualStudioCodeCredential requires the msalruntime library (" + err.Error() + ")."}
+			return token{}, &unavailable{"The VS Code sign-in needs Microsoft's msalruntime library, which could not be had: " + err.Error() + "."}
 		}
 		b, err := newBrokered(c.env, library, brokerOptions{client: vscodeClient, record: c.record, defaultAccount: true, noInteraction: true,
 			timeout: 300 * time.Second, inChain: true})
 		if err != nil {
 			c.mu.Unlock()
 			if ve, ok := errors.AsType[*valueError](err); ok {
-				return token{}, &unavailable{"Failed to load authentication record from Visual Studio Code: " + ve.message +
-					". Please ensure you have the Azure Resources extension installed and signed in."}
+				return token{}, &unavailable{"The VS Code sign-in record can't be read: " + ve.message + ". Install the Azure Resources " +
+					"extension in VS Code and sign in there."}
 			}
 			return token{}, err
 		}
@@ -305,14 +305,13 @@ func (c *defaultBroker) token(ctx context.Context, scopes []string) (token, erro
 		library, err := msalruntime.Ensure(ctx, libraryHome())
 		if err != nil {
 			c.mu.Unlock()
-			return token{}, &unavailable{"InteractiveBrowserBrokerCredential unavailable. The msalruntime library is required to use brokered " +
-				"authentication (" + err.Error() + ")."}
+			return token{}, &unavailable{"The sign-in broker needs Microsoft's msalruntime library, which could not be had: " + err.Error() + "."}
 		}
 		b, err := newBrokered(c.env, library, brokerOptions{tenant: c.tenant, client: cliClient, defaultAccount: true, noInteraction: true,
 			timeout: 300 * time.Second, inChain: true})
 		if err != nil {
 			c.mu.Unlock()
-			return token{}, &unavailable{"InteractiveBrowserBrokerCredential initialization failed: " + err.Error()}
+			return token{}, &unavailable{"The sign-in broker could not start: " + err.Error()}
 		}
 		c.broker = b
 	}
@@ -441,7 +440,7 @@ func (c *brokered) token(ctx context.Context, scopes []string) (token, error) {
 	result, err := c.request(ctx, scopes)
 	if err == nil {
 		if _, ok := result["access_token"]; !ok {
-			err = fmt.Errorf("Authentication failed: %v", firstNonEmpty(result["error_description"], result["error"], "None"))
+			err = fmt.Errorf("Microsoft Entra ID refused the sign-in: %v", firstNonEmpty(result["error_description"], result["error"], "no reason given"))
 		} else {
 			var built *record
 			if built, err = recordOf(result); err == nil {
@@ -477,7 +476,7 @@ func (c *brokered) silent(ctx context.Context, scopes []string) (token, error) {
 	}
 	app, err := c.application(ctx)
 	if err != nil {
-		return token{}, errors.New("Authentication failed: " + err.Error())
+		return token{}, errors.New("Microsoft Entra ID refused the sign-in: " + err.Error())
 	}
 	for _, account := range app.accountsOf(current.username) {
 		if account.homeAccount != current.homeAccount {
@@ -486,7 +485,7 @@ func (c *brokered) silent(ctx context.Context, scopes []string) (token, error) {
 		now := time.Now().Unix()
 		result, err := app.silent(ctx, scopes, account)
 		if err != nil {
-			return token{}, errors.New("Authentication failed: " + err.Error())
+			return token{}, errors.New("Microsoft Entra ID refused the sign-in: " + err.Error())
 		}
 		_, hasToken := result["access_token"]
 		expiresIn, hasExpiry := whole64(result["expires_in"])
@@ -506,7 +505,7 @@ func (c *brokered) silent(ctx context.Context, scopes []string) (token, error) {
 func (c *brokered) request(ctx context.Context, scopes []string) (map[string]any, error) {
 	app, err := c.application(ctx)
 	if err != nil {
-		return nil, errors.New("Authentication failed: " + err.Error())
+		return nil, errors.New("Microsoft Entra ID refused the sign-in: " + err.Error())
 	}
 	result := map[string]any{}
 	if c.opts.defaultAccount {
@@ -527,14 +526,14 @@ func (c *brokered) request(ctx context.Context, scopes []string) (map[string]any
 	_, unbound := errors.AsType[*bindError](err)
 	switch {
 	case unbound:
-		return nil, &unavailable{"Couldn't start an HTTP server."}
+		return nil, &unavailable{"icebath could not start the local server that a browser sign-in returns to."}
 	case err != nil && runtime.GOOS != "windows" && !wsl():
 		fallback, ferr := c.withoutBroker(ctx)
 		if ferr != nil {
-			return nil, errors.New("Authentication failed: " + ferr.Error())
+			return nil, errors.New("Microsoft Entra ID refused the sign-in: " + ferr.Error())
 		}
 		if r, err = c.attempt(ctx, fallback, scopes, "select_account"); err != nil {
-			return nil, errors.New("Authentication failed: " + err.Error())
+			return nil, errors.New("Microsoft Entra ID refused the sign-in: " + err.Error())
 		}
 	case err != nil:
 		return nil, &unavailable{brokerFailure}
@@ -563,7 +562,7 @@ func (c *brokered) check(result map[string]any) error {
 
 // Account of a token answer, from its client_info or its id token's subject
 func recordOf(result map[string]any) (*record, error) {
-	fail := errors.New("Failed to build AuthenticationRecord from unexpected identity token")
+	fail := errors.New("The sign-in's identity token can't be read, so the account can't be kept.")
 	claims, ok := result["id_token_claims"].(map[string]any)
 	if !ok {
 		return nil, fail
@@ -748,7 +747,7 @@ func (app *public) discover(ctx context.Context, authority string) error {
 			"https://login.microsoftonline.com/your_tenant or https://tenant_name.ciamlogin.com or "+
 			"https://tenant_name.b2clogin.com/tenant.onmicrosoft.com/policy.  Also please double check your tenant name or GUID is correct.", authority)}
 	case status != http.StatusOK:
-		return fmt.Errorf("%d Server Error: %s for url: %s", status, http.StatusText(status), discovery)
+		return fmt.Errorf("Microsoft's sign-in service answered %s with HTTP status %d, %s.", discovery, status, http.StatusText(status))
 	}
 	app.authorizationEndpoint = str(configuration["authorization_endpoint"])
 	app.tokenEndpoint = str(configuration["token_endpoint"])
@@ -1069,7 +1068,7 @@ func (app *public) convert(result *msalruntime.AuthResult) (map[string]any, erro
 		return nil, err
 	}
 	if account == nil {
-		return nil, errors.New("Account is expected to be always available")
+		return nil, errors.New("The sign-in broker returned no account.")
 	}
 	defer account.Release()
 	pop, err := result.IsPopAuthorization()
@@ -1116,7 +1115,7 @@ func (app *public) convert(result *msalruntime.AuthResult) (map[string]any, erro
 		}
 	}
 	if _, ok := out["access_token"]; !ok {
-		return nil, errors.New("'access_token'")
+		return nil, errors.New("The sign-in broker returned no token.")
 	}
 	granted, err := result.GrantedScopes()
 	if err != nil {
@@ -1264,7 +1263,7 @@ func (app *public) viaBrowser(ctx context.Context, req interactiveRequest) (map[
 		case ok && failure.Code == "state_mismatch":
 			return map[string]any{"error": "state_mismatch", "error_description": "state mismatch"}, nil
 		}
-		return nil, errors.New("User did not complete the flow in time")
+		return nil, errors.New("The sign-in in the browser did not finish in time.")
 	}
 	response, err := app.post(ctx, url.Values{"client_id": {app.client}, "grant_type": {"authorization_code"}, "code": {code},
 		"redirect_uri": {redirect}, "code_verifier": {verifier}, "scope": {scope}}, nil)
@@ -1276,7 +1275,7 @@ func (app *public) viaBrowser(ctx context.Context, req interactiveRequest) (map[
 			claims := idClaims(s)
 			response["id_token_claims"] = claims
 			if got := claims["nonce"]; got != nonce {
-				return nil, fmt.Errorf("The nonce in id token (\"%v\") should match our nonce (\"%s\")", firstNonEmpty(got, "None"), nonce)
+				return nil, fmt.Errorf("The sign-in's identity token did not come from this sign-in, so it was refused.")
 			}
 		}
 		app.keep(response, req.scopes, "authorization_code", "", false)

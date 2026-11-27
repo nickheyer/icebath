@@ -54,7 +54,7 @@ func (m *manager) op() (string, error) {
 	if found := onepasswordsecrets.Find(m.cfg.GetString(onepasswordconfig.VaultBinary)); found != "" {
 		return found, nil
 	}
-	return "", errors.New("1Password CLI (op) not found — install it or set vault.onepassword.binary_path")
+	return "", errors.New("op, the 1Password command line tool, is not installed. Install it, or set op program in /settings under Autofill vault › 1Password.")
 }
 
 // Allowed variables of the profile, its Connect credentials, the account and the service token or the session of an unlock
@@ -91,7 +91,8 @@ func (m *manager) Unlock(ctx context.Context, master string) (string, error) {
 	if m.account != "" {
 		argv = append(argv, "--account", m.account)
 	}
-	out, err := secrets.Run(ctx, argv, m.env(""), timeout, "op", fmt.Sprintf("op unlock timed out after %.0fs", timeout.Seconds()), strings.NewReader(master+"\n"))
+	out, err := secrets.Run(ctx, argv, m.env(""), timeout, "op", fmt.Sprintf("op did not answer within %s while unlocking.", strs.Span(timeout)),
+		strings.NewReader(master+"\n"))
 	if err != nil {
 		return "", err
 	}
@@ -99,9 +100,9 @@ func (m *manager) Unlock(ctx context.Context, master string) (string, error) {
 	if out.Code != 0 || token == "" {
 		detail := strs.Head(onepasswordsecrets.Scrub(out.Stderr), 200)
 		if detail == "" {
-			detail = "no session token"
+			detail = "op gave no session token."
 		}
-		return "", fmt.Errorf("1Password unlock failed: %s", detail)
+		return "", fmt.Errorf("1Password did not unlock: %s", secrets.Sentence(detail))
 	}
 	return token, nil
 }
@@ -115,7 +116,7 @@ func (m *manager) run(ctx context.Context, session string, args ...string) (stri
 	if err != nil {
 		return "", err
 	}
-	out, err := secrets.Run(ctx, append([]string{op}, args...), m.env(session), timeout, "op", "op timed out", nil)
+	out, err := secrets.Run(ctx, append([]string{op}, args...), m.env(session), timeout, "op", "op did not answer within "+strs.Span(timeout)+".", nil)
 	if err != nil {
 		return "", err
 	}
@@ -125,7 +126,7 @@ func (m *manager) run(ctx context.Context, session string, args ...string) (stri
 		if m.service == "" && (strings.Contains(lowered, "session") || strings.Contains(lowered, "sign in") || strings.Contains(lowered, "not signed in")) {
 			return "", vault.ErrLocked
 		}
-		return "", fmt.Errorf("op failed: %s", strs.Head(detail, 200))
+		return "", fmt.Errorf("op stopped with an error: %s", secrets.Sentence(strs.Head(detail, 200)))
 	}
 	return out.Stdout, nil
 }
@@ -152,7 +153,7 @@ func (m *manager) Items(ctx context.Context, session string) ([]vault.Item, erro
 		} `json:"urls"`
 	}
 	if err := json.Unmarshal([]byte(text), &listed); err != nil {
-		return nil, fmt.Errorf("op listed something other than items: %v", err)
+		return nil, fmt.Errorf("op printed a list of items icebath can't read: %v.", err)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -194,7 +195,7 @@ func (m *manager) selector(ctx context.Context, session, id string) ([]string, e
 	defer m.mu.Unlock()
 	in, listed := m.vaults[id]
 	if !listed {
-		return nil, errors.New("1Password login not found; list logins again")
+		return nil, errors.New("That 1Password login is no longer in the list. List the logins again, then pick it.")
 	}
 	if in != "" {
 		return []string{id, "--vault", in}, nil

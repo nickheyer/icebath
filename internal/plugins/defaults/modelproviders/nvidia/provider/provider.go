@@ -19,7 +19,7 @@ func (specs) Specs() []provider.Spec {
 		RequestHeaders:     headers,
 		Native:             native,
 		DisplayName:        nvidiaconfig.Title,
-		Description:        "Hosted NIM inference",
+		Description:        "Models hosted by NVIDIA, with an NVIDIA API key",
 		SignupURL:          "https://build.nvidia.com/",
 		BaseURL:            base,
 		BaseURLEnv:         nvidiaconfig.BaseURLEnv,

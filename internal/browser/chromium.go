@@ -136,14 +136,14 @@ func (b *Browser) Resolved(cfg *config.Config) string {
 func (b *Browser) MissingHint(cfg *config.Config) string {
 	if pinned := Pinned(cfg); pinned != "" {
 		return "browser.executable_path is set to " + pinned + ", which is not a browser on this machine: fix the path, or clear it to use " +
-			"Icebath's Chromium."
+			"icebath's Chromium."
 	}
 	if packages.CurrentTarget() == packages.Bionic {
 		return "No Chromium found: pm builds none for Termux. Install one with `pkg install x11-repo && pkg install chromium`, or set " +
 			"browser.executable_path."
 	}
 	if _, err := os.Stat(Baked); err == nil {
-		return "The image's Chromium is missing: pull the current Icebath image and recreate the container (a volume mounted over the image's " +
+		return "The image's Chromium is missing: pull the current icebath image and recreate the container (a volume mounted over the image's " +
 			"tool store hides it)."
 	}
 	if b.Unbuilt() {

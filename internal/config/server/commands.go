@@ -157,12 +157,12 @@ func (s *service) unknown(cfg *config.Config, key string, write bool) error {
 		}
 	}
 	slices.Sort(keys)
-	message := "✗ " + key + " is not a setting icebath knows."
+	message := "There is no setting named " + key + "."
 	if write {
-		message = "✗ " + key + " is not a setting icebath knows; nothing was written."
+		message += " Nothing was changed."
 	}
 	if near := diff.Close(key, keys, 1, 0.6); len(near) > 0 {
-		message += "\n  Did you mean: " + near[0]
+		message += " Did you mean " + near[0] + "?"
 	}
 	return connect.NewError(connect.CodeNotFound, message)
 }
@@ -171,11 +171,11 @@ func (s *service) unknown(cfg *config.Config, key string, write bool) error {
 func spelling(key string) error {
 	trimmed := strings.TrimFunc(key, unicode.IsSpace)
 	if key != trimmed || trimmed == "" {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Sprintf("✗ Invalid config key: %q (empty or surrounding whitespace).", key))
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Sprintf("%q can't be the key of a setting. A key is not empty and has no spaces around it.", key))
 	}
 	if slices.Contains(strings.Split(key, "."), "") {
-		return connect.NewError(connect.CodeInvalidArgument, fmt.Sprintf(`✗ Invalid config key: %q — contains an empty path segment (leading, trailing, `+
-			`or doubled ".").`, key))
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Sprintf("%q can't be the key of a setting. Check for a dot at its start or end, or two "+
+			"dots in a row.", key))
 	}
 	return nil
 }
@@ -199,8 +199,8 @@ func (s *service) Value(_ context.Context, request *configv1.ValueRequest) (*con
 		stale := cfg.Stored(strings.ToLower(key))
 		if _, table := stale.(map[string]any); !found && stale != nil && !table {
 			value, found = fmt.Sprint(stale), true
-			note = fmt.Sprintf("  (note: %s is a stale top-level config.yaml copy; `icebath config set %s <value>` moves it to .env, `icebath config "+
-				"unset %s` removes it)", key, key, key)
+			note = fmt.Sprintf("%s comes from an old copy in the settings file. `icebath config set %s <value>` moves it to the keys file, and `icebath "+
+				"config unset %s` removes it.", key, key, key)
 		}
 		secret = secretKey(key, true)
 	case known:
@@ -296,8 +296,8 @@ func typed(setting config.Setting, known bool, text string) (any, error) {
 	var parsed any
 	if err := yaml.Unmarshal([]byte(text), &parsed); err != nil {
 		detail, _, _ := strings.Cut(strings.TrimPrefix(err.Error(), "yaml: "), "\n")
-		return nil, fmt.Errorf("✗ Value for '%s' looks like a list/mapping but is not valid YAML/JSON (%s) — nothing was written.\n  Fix the "+
-			"literal, or quote it (e.g. \"'[text'\") to store a plain string.", setting.Key, detail)
+		return nil, fmt.Errorf("The value for %s can't be read as a list or a set of named values: %s. Nothing was changed, so fix the value, or put "+
+			"it in quotes to save it as plain text.", setting.Key, detail)
 	}
 	switch parsed.(type) {
 	case []any, map[string]any:
@@ -313,27 +313,27 @@ func (s *service) Put(_ context.Context, request *configv1.PutRequest) (*configv
 	}
 	key, text := request.GetKey(), request.GetValue()
 	if system := cfg.ManagedSystem(); system != "" {
-		return nil, connect.NewError(connect.CodePermissionDenied, (&config.LockedError{By: config.ByPackageManager, Source: system}).Refusal("set"))
+		return nil, connect.NewError(connect.CodePermissionDenied, (&config.LockedError{By: config.ByPackageManager, Source: system}).Refusal())
 	}
 	if err := spelling(key); err != nil {
 		return nil, err
 	}
 	if locked := cfg.Lock(key); locked != nil {
-		return nil, connect.NewError(connect.CodePermissionDenied, locked.Refusal("set"))
+		return nil, connect.NewError(connect.CodePermissionDenied, locked.Refusal())
 	}
 	if s.envKey(cfg, key) {
 		name := strings.ToUpper(key)
 		value, warning := config.NonASCII(name, strings.NewReplacer("\r", "", "\n", "").Replace(text))
 		old := cfg.Dotenv()[name]
 		if err := cfg.SaveEnv(name, value); err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, "✗ "+err.Error())
+			return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 		}
 		if _, err := dropCopies(cfg, key); err != nil {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, "✗ "+err.Error())
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 		}
 		if credentialKey(key) {
 			if err := s.credentials.Saved(cfg, name, old, value); err != nil {
-				return nil, connect.NewError(connect.CodeInvalidArgument, "✗ "+err.Error())
+				return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 			}
 		}
 		shown := name
@@ -359,14 +359,14 @@ func (s *service) Put(_ context.Context, request *configv1.PutRequest) (*configv
 	}
 	if known {
 		if value, err = setting.Check(value); err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, "✗ "+err.Error())
+			return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 		}
 	}
 	if err := cfg.Set(setting.Key, value); err != nil {
 		if locked, ok := errors.AsType[*config.LockedError](err); ok {
-			return nil, connect.NewError(connect.CodePermissionDenied, locked.Refusal("set"))
+			return nil, connect.NewError(connect.CodePermissionDenied, locked.Refusal())
 		}
-		return nil, connect.NewError(connect.CodeFailedPrecondition, "✗ "+err.Error())
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 	}
 	shown := cfg.Stored(setting.Key)
 	if text, ok := shown.(string); ok && (setting.Secret || secretKey(setting.Key, false)) && text != "" {
@@ -393,26 +393,26 @@ func (s *service) Unset(_ context.Context, request *configv1.UnsetRequest) (*con
 	}
 	key := request.GetKey()
 	if system := cfg.ManagedSystem(); system != "" {
-		return nil, connect.NewError(connect.CodePermissionDenied, (&config.LockedError{By: config.ByPackageManager, Source: system}).Refusal("unset"))
+		return nil, connect.NewError(connect.CodePermissionDenied, (&config.LockedError{By: config.ByPackageManager, Source: system}).Refusal())
 	}
 	if locked := cfg.Lock(key); locked != nil {
-		return nil, connect.NewError(connect.CodePermissionDenied, locked.Refusal("unset"))
+		return nil, connect.NewError(connect.CodePermissionDenied, locked.Refusal())
 	}
 	if s.envKey(cfg, key) {
 		name := strings.ToUpper(key)
 		old := cfg.Dotenv()[name]
 		removed, err := cfg.RemoveEnv(name)
 		if err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, "✗ "+err.Error())
+			return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 		}
 		dropped, err := dropCopies(cfg, key)
 		if err != nil {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, "✗ "+err.Error())
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 		}
 		scrubbed := false
 		if credentialKey(key) {
 			if scrubbed, err = s.credentials.Removed(cfg, name, old); err != nil {
-				return nil, connect.NewError(connect.CodeInvalidArgument, "✗ "+err.Error())
+				return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 			}
 		}
 		return &configv1.UnsetResponse{Found: removed || dropped || scrubbed, Destination: cfg.EnvPath()}, nil
@@ -428,13 +428,13 @@ func (s *service) Unset(_ context.Context, request *configv1.UnsetRequest) (*con
 	}
 	// A config.yaml that does not read or parse is refused before anything else is said of the key, as removing it would replace the file
 	if err := cfg.Writable(key); err != nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, "✗ "+err.Error())
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 	}
 	if !cfg.Holds(key) {
 		return &configv1.UnsetResponse{Destination: destination}, nil
 	}
 	if err := cfg.Set(key, nil); err != nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, "✗ "+err.Error())
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 	}
 	return &configv1.UnsetResponse{Found: true, Destination: destination}, nil
 }
@@ -463,7 +463,7 @@ func (s *service) Files(_ context.Context, request *configv1.FilesRequest) (*con
 func (s *service) file(cfg *config.Config, path string) (string, error) {
 	shared, own := cfg.Files()
 	if path != shared && (own == "" || path != own) {
-		return "", connect.NewError(connect.CodePermissionDenied, path+" is not a config file of this profile.")
+		return "", connect.NewError(connect.CodePermissionDenied, path+" is not a settings file of this profile.")
 	}
 	return path, nil
 }
@@ -494,7 +494,7 @@ func (s *service) Write(_ context.Context, request *configv1.WriteRequest) (*con
 		return nil, err
 	}
 	if locked := cfg.EditLock(); locked != nil {
-		return nil, connect.NewError(connect.CodePermissionDenied, "Cannot edit configuration: "+locked.Reason())
+		return nil, connect.NewError(connect.CodePermissionDenied, locked.Refusal())
 	}
 	path, err := s.file(cfg, request.GetPath())
 	if err != nil {
@@ -513,7 +513,7 @@ func (s *service) Seed(_ context.Context, request *configv1.SeedRequest) (*confi
 		return nil, err
 	}
 	if locked := cfg.EditLock(); locked != nil {
-		return nil, connect.NewError(connect.CodePermissionDenied, "Cannot edit configuration: "+locked.Reason())
+		return nil, connect.NewError(connect.CodePermissionDenied, locked.Refusal())
 	}
 	path, err := s.file(cfg, request.GetPath())
 	if err != nil {
@@ -541,7 +541,7 @@ func problem(text []byte) string {
 		return strings.TrimPrefix(err.Error(), "yaml: ")
 	}
 	if _, ok := doc.(map[string]any); !ok && doc != nil {
-		return "it holds no mapping of settings"
+		return "the file must hold named settings"
 	}
 	return ""
 }
@@ -563,7 +563,7 @@ func (s *service) Check(_ context.Context, request *configv1.CheckRequest) (*con
 				continue
 			}
 			key := !strings.HasSuffix(name, "_URL")
-			about := spec.Label() + " base URL override"
+			about := spec.Label() + " base URL"
 			if key {
 				about = spec.Label() + " API key"
 			}
@@ -597,10 +597,10 @@ func (s *service) Check(_ context.Context, request *configv1.CheckRequest) (*con
 			continue
 		}
 		if err != nil {
-			response.Diagnostics = append(response.Diagnostics, fmt.Sprintf("%s cannot be read: %v.", path, err))
+			response.Diagnostics = append(response.Diagnostics, fmt.Sprintf("%s can't be read: %v.", path, err))
 		} else if trouble := problem(data); trouble != "" {
-			response.Diagnostics = append(response.Diagnostics, fmt.Sprintf("%s has a formatting error: %s. Icebath runs on its last good settings until it is "+
-				"fixed.", path, trouble))
+			response.Diagnostics = append(response.Diagnostics, fmt.Sprintf("%s has a formatting error: %s. Until it is fixed, icebath uses the last "+
+				"settings that worked.", path, trouble))
 		}
 	}
 	response.Diagnostics = append(response.Diagnostics, s.inactive(cfg)...)
@@ -608,11 +608,11 @@ func (s *service) Check(_ context.Context, request *configv1.CheckRequest) (*con
 }
 
 // Credentials config show lists by the variable holding each, the Anthropic key after them
-var shownKeys = [][2]string{{"OPENROUTER_API_KEY", "OpenRouter"}, {"VOICE_TOOLS_OPENAI_KEY", "OpenAI (STT/TTS)"}, {"EXA_API_KEY", "Exa"},
+var shownKeys = [][2]string{{"OPENROUTER_API_KEY", "OpenRouter"}, {"VOICE_TOOLS_OPENAI_KEY", "OpenAI speech"}, {"EXA_API_KEY", "Exa"},
 	{"PARALLEL_API_KEY", "Parallel"}, {"FIRECRAWL_API_KEY", "Firecrawl"}, {"TAVILY_API_KEY", "Tavily"}, {"PERPLEXITY_API_KEY", "Perplexity"},
 	{"BROWSERBASE_API_KEY", "Browserbase"}, {"BROWSER_USE_API_KEY", "Browser Use"}, {"FAL_KEY", "FAL"}}
 
-// Messaging platforms config show lists by the variable of each one's bot token
+// Chat apps config show lists by the variable of each one's bot token
 var shownPlatforms = [][2]string{{"TELEGRAM_BOT_TOKEN", "Telegram"}, {"DISCORD_BOT_TOKEN", "Discord"}}
 
 func (s *service) Show(_ context.Context, request *configv1.ShowRequest) (*configv1.ShowResponse, error) {
@@ -647,7 +647,7 @@ func (s *service) Show(_ context.Context, request *configv1.ShowRequest) (*confi
 	}
 	if section, ok := cfg.Section(skillsconfig.Values); ok {
 		for _, setting := range section.Settings {
-			shown := &configv1.Shown{Label: setting.Title, Owner: declarer(setting.About)}
+			shown := &configv1.Shown{Label: setting.Title, Owner: setting.Skill}
 			if value := cfg.Get(setting.Key); config.Truthy(value) {
 				shown.Value, shown.Set = fmt.Sprint(value), true
 			}
@@ -657,22 +657,13 @@ func (s *service) Show(_ context.Context, request *configv1.ShowRequest) (*confi
 	return response, nil
 }
 
-// Skill that declares a value, as the about of its setting ends naming it
-func declarer(about string) string {
-	at := strings.LastIndex(about, " (skill ")
-	if at < 0 {
-		return ""
-	}
-	return strings.TrimSuffix(about[at+len(" (skill "):], ")")
-}
-
 // What the saved settings leave inactive: keys of no setting, keys in the file of the other scope, values their setting refuses, and values
 // an environment variable or the administrator decide instead
 func (s *service) inactive(cfg *config.Config) []string {
 	shared, own := cfg.Files()
 	ownPlace := own
 	if ownPlace == "" {
-		ownPlace = "Remote Config"
+		ownPlace = "The remote settings"
 	}
 	var out []string
 	for _, scope := range []struct {
@@ -689,7 +680,7 @@ func (s *service) inactive(cfg *config.Config) []string {
 				case known:
 					out = append(out, s.misfit(cfg, scope.place, setting, value, scope.global)...)
 				case prefix == "" && !s.registered(cfg, key):
-					out = append(out, fmt.Sprintf("%s holds %s, which is not a setting icebath knows; it is ignored.", scope.place, key))
+					out = append(out, fmt.Sprintf("%s holds %s, which is not a setting. It has no effect.", scope.place, key))
 				default:
 					if child, ok := value.(map[string]any); ok {
 						walk(child, key+".")
@@ -712,21 +703,21 @@ func (s *service) registered(cfg *config.Config, key string) bool {
 func (s *service) misfit(cfg *config.Config, place string, setting config.Setting, value any, global bool) []string {
 	var out []string
 	if shared := cfg.Global(setting.Key); shared != global {
-		where := "the profile's own settings"
+		where := "the profile's own settings file"
 		if shared {
-			where = "the config.yaml every profile shares"
+			where = "the settings file every profile shares"
 		}
-		return []string{fmt.Sprintf("%s holds %s, but it is read from %s; it is ignored there.", place, setting.Key, where)}
+		return []string{fmt.Sprintf("%s holds %s, which is only read from %s. Here it has no effect.", place, setting.Key, where)}
 	}
 	if _, err := setting.Check(value); err != nil {
-		out = append(out, fmt.Sprintf("%s has %s set to %v, but %s.", place, setting.Key, shownValue(setting, value), lower(err.Error())))
+		out = append(out, fmt.Sprintf("%s sets %s to %v, which can't be used. %s", place, setting.Key, shownValue(setting, value), err.Error()))
 	}
 	switch source, variable := cfg.Source(setting); source {
 	case config.FromManaged:
-		out = append(out, fmt.Sprintf("%s sets %s, but your administrator pins it (%s); it is inactive.", place, setting.Key,
+		out = append(out, fmt.Sprintf("%s sets %s, but your administrator sets it in %s. The value here has no effect.", place, setting.Key,
 			filepath.Join(config.ManagedDir(), "config.yaml")))
 	case config.FromEnvironment:
-		out = append(out, fmt.Sprintf("%s sets %s, but %s overrides it; it is inactive.", place, setting.Key, variable))
+		out = append(out, fmt.Sprintf("%s sets %s, but the environment variable %s wins. The value here has no effect.", place, setting.Key, variable))
 	}
 	return out
 }
@@ -736,13 +727,6 @@ func shownValue(setting config.Setting, value any) any {
 		return mask(text)
 	}
 	return value
-}
-
-func lower(text string) string {
-	if text == "" {
-		return text
-	}
-	return strings.ToLower(text[:1]) + text[1:]
 }
 
 func sortedKeys(m map[string]any) []string {

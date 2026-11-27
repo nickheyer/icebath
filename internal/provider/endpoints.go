@@ -120,7 +120,7 @@ func Tier(word string) (string, error) {
 
 type unknownTier struct{ word string }
 
-func (e *unknownTier) Error() string { return "unknown service tier: " + e.word }
+func (e *unknownTier) Error() string { return "There is no service tier named " + e.word + "." }
 
 // Whether the tier is one a single request asks for, priority or ultrafast
 func StaticTier(tier string) bool { return staticTiers[tier] }

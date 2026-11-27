@@ -11,7 +11,7 @@ import (
 )
 
 // The answer of a stateless call holds no JSON-RPC response this client recognizes
-var ErrUnrecognized = errors.New("Unrecognized MCP response shape")
+var ErrUnrecognized = errors.New("The server answered in a form of MCP that icebath does not know.")
 
 // Network failure of a stateless call, before any answer came
 type RequestError struct{ Err error }

@@ -36,7 +36,7 @@ const (
 )
 
 var voiceKeys = []keys.Action{
-	{ID: voiceAction, Context: keys.Session, Label: "voice", Doc: "start or stop voice recording", Default: []string{voiceKey}},
+	{ID: voiceAction, Context: keys.Session, Label: "record", Doc: "Start or stop recording your voice", Default: []string{voiceKey}},
 }
 
 // Contexts a chord of the voice key competes in besides the global one, those of a chat
@@ -100,7 +100,7 @@ func (d *desk) voicing(conn *connect.Client, sp *speech.Speech) *voicing {
 		Stopped:    func(string) { apply(v.stopped) },
 		Silent: func() {
 			apply(func() tea.Cmd {
-				return tea.Batch(v.note("voice: no speech detected 3 times, continuous mode stopped"), v.off(false, true))
+				return tea.Batch(v.note("Voice mode heard no speech 3 times in a row, so it turned off. /voice on turns it on again."), v.off(false, true))
 			})
 		},
 		Interrupted: func() {
@@ -108,7 +108,7 @@ func (d *desk) voicing(conn *connect.Client, sp *speech.Speech) *voicing {
 				if v.owner == nil {
 					return nil
 				}
-				return tea.Batch(toast(d.kit, "voice interrupted the reply"), v.owner.interrupt())
+				return tea.Batch(toast(d.kit, "You talked over the reply, so it stopped."), v.owner.interrupt())
 			})
 		},
 		Woke: func(phrase, profile string, fresh bool) {
@@ -291,7 +291,7 @@ func (v *voicing) bind(value string) tea.Cmd {
 		if warned := keys.Format(taken) + ":" + holder; warned != v.warned {
 			v.warned = warned
 			act, _ := bindings.Action(holder)
-			cmds = append(cmds, v.note(fmt.Sprintf("The voice key %s already does %s, so it is left unbound. Record with %s, or pick another key in /settings voice.",
+			cmds = append(cmds, v.note(fmt.Sprintf("%s already does “%s”, so it can't record. Record with %s, or choose another in /settings under Voice mode › Record key.",
 				keys.Format(taken), act.LabelText(), v.keyLabel())))
 		}
 	}
@@ -333,7 +333,7 @@ func recordChord(text string, mac bool) string {
 
 // Keys that record, as /voice names them
 func (v *voicing) keyLabel() string {
-	return cmp.Or(v.desk.kit.Env.Keys.Display(voiceAction), "a key bound to voice in /keys")
+	return cmp.Or(v.desk.kit.Env.Keys.Display(voiceAction), "the key you give Record in /keys")
 }
 
 // Voice mode moves to the chat: a recording of the chat that had it ends, and its reply is no longer spoken
@@ -360,7 +360,7 @@ func (v *voicing) finish() {
 // Starts or stops a recording in the chat, which voice mode must be on in: one utterance a press, sent once its speaker falls silent
 func (v *voicing) toggle(c *chat) tea.Cmd {
 	if v.owner != c || !v.mode.Settings().GetMode().GetInput() {
-		c.log.note("voice: mode is off — enable with /voice on")
+		c.log.note("Voice mode is off in this chat. /voice on turns it on.")
 		return nil
 	}
 	ctx := v.desk.kit.Env.Ctx
@@ -369,11 +369,11 @@ func (v *voicing) toggle(c *chat) tea.Cmd {
 		return nil
 	}
 	if v.mode.Transcribing() {
-		c.log.note("voice: still transcribing; try again shortly")
+		c.log.note(stillHearing)
 		return nil
 	}
 	if req := v.mode.Requirements(); !req.Available {
-		c.log.note("voice error: " + strings.ReplaceAll(req.Details, "\n", "; "))
+		c.log.note(strings.Join(append([]string{"**Voice mode can't record here.**"}, v.needs(req)...), "\n\n"))
 		return nil
 	}
 	go func() {
@@ -381,9 +381,9 @@ func (v *voicing) toggle(c *chat) tea.Cmd {
 		v.desk.kit.Apply(func() tea.Cmd {
 			switch {
 			case err != nil:
-				c.log.note("voice error: " + err.Error())
+				c.log.note("**The recording did not start.** " + tui.Reason(err))
 			case !started:
-				c.log.note("voice: still transcribing; try again shortly")
+				c.log.note(stillHearing)
 			}
 			return nil
 		})
@@ -416,7 +416,7 @@ func (v *voicing) typedStop(c *chat, text string) bool {
 
 // A stop phrase ended voice chat: voice mode and spoken replies off and kept off
 func (v *voicing) stopped() tea.Cmd {
-	return tea.Batch(v.note("voice: stop phrase — voice chat ended"), v.off(true, false))
+	return tea.Batch(v.note("You said a stop phrase, so voice mode is now off."), v.off(true, false))
 }
 
 // Whether the next message cuts a spoken reply off or follows one that was, which every message tells the model; speech still playing is cut
@@ -448,7 +448,7 @@ func (v *voicing) change(c *chat, values map[string]bool, after func(settings *s
 		}
 		return func() tea.Cmd {
 			if err != nil {
-				c.log.note("voice error: " + tui.Reason(err))
+				c.log.note("**The voice settings were not saved.** " + tui.Reason(err))
 				return nil
 			}
 			cmds := []tea.Cmd{v.settle()}
@@ -536,7 +536,44 @@ func (v *voicing) dial(status *wm.Status) {
 	status.Dials = append(status.Dials, segment)
 }
 
-// /voice: voice mode of the chat on or off, spoken replies toggled, how it stands, or the voice and recognition set up
+// What the chat says while the last recording is still being turned into text
+const stillHearing = "Your last recording is still being turned into text. Try again in a moment."
+
+// On or Off, as the settings screen says a switch
+func onOff(on bool) string {
+	if on {
+		return "On"
+	}
+	return "Off"
+}
+
+// What this machine lacks to record and understand you, each a sentence: the sound it can't record and why, the speech to text it lacks,
+// and what the system warns of
+func (v *voicing) needs(req voice.Requirements) []string {
+	var lines []string
+	if !req.Audio {
+		line := "This computer can't record sound here."
+		// Why recording can't start, as the speech host found it
+		if why := strings.TrimSuffix(strings.TrimSpace(req.NoAudio), "."); why != "" {
+			line = "This computer can't record sound here: " + why + "."
+		}
+		lines = append(lines, line)
+	}
+	if !req.STT {
+		r := v.mode.Settings().GetRecognition()
+		switch {
+		case !r.GetEnabled():
+			lines = append(lines, "Speech to text is off. Turn on Transcribe speech in /settings under Speech to text.")
+		case r.GetProvider() != "" && r.GetProvider() != "none":
+			lines = append(lines, r.GetProvider()+" can't turn speech into text now. /recognition picks another service.")
+		default:
+			lines = append(lines, "No service turns your speech into text yet. /recognition picks one.")
+		}
+	}
+	return append(lines, req.Env.Warnings...)
+}
+
+// /voice: voice mode of the chat on or off, spoken replies on or off, how it stands, or the voice set up
 func (v *voicing) command(kit *tui.Kit, argument string) tea.Cmd {
 	action := strings.ToLower(strings.TrimSpace(argument))
 	if action == "setup" {
@@ -547,89 +584,89 @@ func (v *voicing) command(kit *tui.Kit, argument string) tea.Cmd {
 	}
 	c, ok := v.desk.focused()
 	if !ok && action != "status" {
-		return toast(kit, "no active session — voice mode belongs to a session; start or resume one first")
+		return toast(kit, "Voice mode works in a chat. Open a chat first, then type /voice on.")
 	}
 	say := func(lines ...string) tea.Cmd {
 		if c == nil {
-			return toast(kit, strings.Join(lines, " · "))
+			return toast(kit, strings.Join(lines, " "))
 		}
-		c.log.note(strings.Join(lines, "\n"))
+		c.log.note(strings.Join(lines, "\n\n"))
 		return nil
 	}
 	switch action {
 	case "on":
 		v.claim(c)
 		return v.change(c, map[string]bool{speechconfig.Input: true}, func(settings *speechv1.VoiceReply) tea.Cmd {
-			lines := []string{"Voice mode enabled"}
+			lines := []string{"Voice mode is now on. Press " + v.keyLabel() + " to start recording and again to stop."}
 			if settings.GetMode().GetSpeak() {
-				lines[0] = "Voice mode enabled (TTS enabled)"
+				lines[0] += " Replies are read aloud."
 			}
-			lines = append(lines, "  "+v.keyLabel()+" to start/stop recording")
 			if hint := v.mode.StopHint(); hint != "" {
-				lines = append(lines, "  "+hint)
+				lines = append(lines, hint)
 			}
-			return say(append(lines, "  /voice tts  to toggle speech output", "  /voice off  to disable voice mode")...)
+			if req := v.mode.Requirements(); !req.Available {
+				lines = append(lines, v.needs(req)...)
+			}
+			return say(append(lines, "/voice tts turns reading replies aloud on or off. /voice off turns voice mode off.")...)
 		})
 	case "off":
 		v.owner = c
-		return tea.Batch(say("Voice mode disabled."), v.off(true, false))
+		return tea.Batch(say("Voice mode is now off."), v.off(true, false))
 	case "tts":
 		if v.owner != c || !v.mode.Settings().GetMode().GetInput() {
-			return say("enable voice mode first: /voice on")
+			return say("Turn voice mode on first with /voice on.")
 		}
 		speak := !v.mode.Settings().GetMode().GetSpeak()
 		if !speak {
 			v.mode.Hush()
 		}
 		return v.change(c, map[string]bool{speechconfig.SpeakReplies: speak}, func(settings *speechv1.VoiceReply) tea.Cmd {
-			if settings.GetMode().GetSpeak() {
-				return say("Voice TTS enabled.")
-			}
-			return say("Voice TTS disabled.")
+			return say("Speak replies is now " + onOff(settings.GetMode().GetSpeak()) + ".")
 		})
 	}
 	return tui.Async(func() func() tea.Cmd {
 		settings, err := v.mode.Refresh(kit.Env.Ctx)
 		return func() tea.Cmd {
 			if err != nil {
-				return say("voice error: " + tui.Reason(err))
+				return say("The voice settings could not be read. " + tui.Reason(err))
 			}
 			mode := settings.GetMode()
 			if c != nil && mode.GetInput() {
 				v.claim(c)
 			}
-			word := map[bool]string{true: "ON", false: "OFF"}
-			lines := []string{"Voice Mode Status", "  Mode:       " + word[mode.GetInput()], "  TTS:        " + word[mode.GetSpeak()],
-				"  Record key: " + v.keyLabel()}
-			if req := v.mode.Requirements(); req.Details != "" {
-				lines = append(lines, "", "  Requirements:")
-				for _, line := range strings.Split(req.Details, "\n") {
-					if strings.TrimSpace(line) != "" {
-						lines = append(lines, "    "+line)
-					}
-				}
+			facts := []string{"Voice input: " + onOff(mode.GetInput()), "Speak replies: " + onOff(mode.GetSpeak()), "Record key: " + v.keyLabel()}
+			if label := settings.GetRecognition().GetLabel(); label != "" {
+				facts = append(facts, "Speech to text: "+label)
 			}
+			lines := []string{"**Voice mode**", strings.Join(facts, " · ")}
+			req := v.mode.Requirements()
+			if req.Available {
+				lines = append(lines, "This computer can record you and turn what you say into text.")
+			} else {
+				lines = append(lines, v.needs(req)...)
+			}
+			lines = append(lines, req.Env.Notices...)
 			return tea.Batch(v.settle(), say(lines...))
 		}
 	})
 }
 
-// " for “phrase” · engine" of a wake line, each part left out when empty
+// " for “phrase”" of a wake line, with the listener after it, each part left out when empty
 func wakeDetail(phrase, engine string) string {
 	out := ""
 	if phrase != "" {
 		out = " for “" + phrase + "”"
 	}
 	if engine != "" {
-		out += " · " + engine
+		out += " with " + engine
 	}
 	return out
 }
 
-// Line with the hint after it when there is one
+// Sentence with the hint after it when there is one
 func withHint(line, hint string) string {
 	if hint = strings.TrimSpace(hint); hint != "" {
-		return line + " — " + hint
+		return line + " " + hint
 	}
 	return line
 }
@@ -649,27 +686,28 @@ func (v *voicing) arm(asked bool) tea.Cmd {
 	})
 }
 
-// What arming the wake word came to, as /wake on says it
+// What arming the wake word came to, as /wake on says it, naming the settings that keep it from listening as the settings screen does
 func (v *voicing) started(start voice.WakeStart, saved bool) string {
 	if !start.Started {
 		reason, hint := start.Reason, start.Hint
 		switch reason {
 		case voice.WakeDisabled:
-			reason = "disabled (config wake_word.enabled)"
+			reason = "Listen hands-free is off in /settings under Wake word."
 		case voice.WakeElsewhere:
-			reason = "scoped to another surface (config wake_word.surface)"
+			reason = "In /settings, Wake word › Listens in is set to a place other than this app."
 		case voice.WakeOwned:
-			reason, hint = "another surface owns the listener", ""
+			reason, hint = "Another icebath window already listens for it.", ""
 		case voice.WakeUnavailable:
-			reason = "unavailable"
-		case "":
-			reason = "unknown"
+			// The hint says why: a missing part, a microphone in use, a start that took too long
+			reason = ""
+		default:
+			reason = "The reason is not known."
 		}
-		return withHint("wake: not started — "+reason, hint)
+		return withHint(strings.TrimSpace("The wake word is not listening. "+reason), hint)
 	}
-	line := "wake: listening" + wakeDetail(start.Phrase, start.Engine)
+	line := "Listening" + wakeDetail(start.Phrase, start.Engine) + "."
 	if saved {
-		line += " · enabled in config"
+		line += " Listen hands-free is now On in your settings."
 	}
 	return line
 }
@@ -722,35 +760,35 @@ func (v *voicing) wake(kit *tui.Kit, argument string) tea.Cmd {
 			if !stopped {
 				phrase, engine = v.mode.Settings().GetWake().GetPhrase(), ""
 			}
-			detail := wakeDetail(phrase, engine)
+			told := "Stopped listening" + wakeDetail(phrase, engine) + "."
+			if !stopped {
+				told = "The wake word was not listening" + wakeDetail(phrase, engine) + "."
+			}
 			if saved {
-				detail += " · disabled in config"
+				told += " Listen hands-free is now Off in your settings."
 			}
 			return func() tea.Cmd {
 				v.listening = false
-				if stopped {
-					return v.note("wake: listener off" + detail)
-				}
-				return v.note("wake: nothing to stop — not running" + detail)
+				return v.note(told)
 			}
 		})
 	case "", "status":
 		return tui.Async(func() func() tea.Cmd {
 			state := v.mode.WakeStatus()
 			detail := wakeDetail(state.Phrase, state.Engine)
-			line := "wake: off" + detail + " · /wake on to arm"
+			line := "Not listening" + detail + ". /wake on starts listening."
 			switch {
 			case state.Listening && state.Silent:
-				line = withHint("wake: listening"+detail+" · ⚠ mic delivers only silence", state.Hint)
+				line = withHint("Listening"+detail+", but the microphone gives only silence.", state.Hint)
 			case state.Listening:
-				line = "wake: listening" + detail
+				line = "Listening" + detail + "."
 			case !state.Check.Available:
-				line = withHint("wake: unavailable", state.Hint)
+				line = withHint("The wake word can't run on this computer.", state.Hint)
 			}
 			return func() tea.Cmd { return v.note(line) }
 		})
 	}
-	return v.note("usage: /wake [on|off|status]")
+	return v.note("Usage: /wake [on|off|status]. on starts listening for the wake word, off stops it, status says how it stands.")
 }
 
 // The wake phrase was heard: another profile's told of, else voice mode on in the focused chat, or a new one when the settings say so or
@@ -759,7 +797,7 @@ func (v *voicing) woke(phrase, profile string, fresh bool) tea.Cmd {
 	own := cmp.Or(v.profile(), v.mode.Settings().GetProfile(), "default")
 	if profile != "" && profile != own {
 		v.mode.ResumeWake()
-		return v.note(fmt.Sprintf("wake phrase for profile '%s' — /profiles switches to it", profile))
+		return v.note(fmt.Sprintf("You said the wake phrase of the profile %s. /profiles switches to it.", profile))
 	}
 	c, ok := v.desk.focused()
 	if fresh || !ok {
@@ -792,7 +830,7 @@ func (v *voicing) listen(c *chat) tea.Cmd {
 		return func() tea.Cmd {
 			cmds := []tea.Cmd{v.settle()}
 			if err != nil {
-				cmds = append(cmds, v.note("wake: "+tui.Reason(err)))
+				cmds = append(cmds, v.note("The recording after the wake phrase did not start. "+tui.Reason(err)))
 			}
 			return tea.Batch(cmds...)
 		}

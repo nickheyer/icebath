@@ -282,7 +282,7 @@ func (s *store) Discard(ctx context.Context, session string, ids []string) ([]st
 		}
 		for _, id := range ids {
 			if !slices.Contains(discarded, id) {
-				return fmt.Errorf("Not an unknown (lost) admission of this session: %s", id)
+				return fmt.Errorf("%s is not a lost message of this session.", id)
 			}
 		}
 		return nil

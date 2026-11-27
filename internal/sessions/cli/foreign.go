@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/nickheyer/icebath/internal/cli"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
@@ -359,14 +360,16 @@ func merge(messages []*sessionsv1.Message) []*sessionsv1.Message {
 
 func addImport(parent *cobra.Command, at func(*cobra.Command) *run) {
 	var from string
-	command := &cobra.Command{Use: "import [path]", Short: "Import a Claude Code or Codex CLI session into Icebath",
-		Long: "Pull a conversation started in Claude Code (~/.claude/projects) or Codex CLI (~/.codex/sessions) into the Icebath session store so it can be " +
-			"resumed from the sessions screen. The foreign files are only read, never modified.",
-		Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	command := &cobra.Command{Use: "import [path]", Short: "Bring in a session from Claude Code or Codex",
+		Long: "Copies a conversation from Claude Code (~/.claude/projects) or the Codex CLI (~/.codex/sessions) into icebath, so you can " +
+			"resume it from the sessions screen. Give the path of its file, or none to pick one from a list. icebath only reads those " +
+			"files and never changes them.",
+		Example: "  icebath sessions import\n  icebath sessions import --from codex",
+		Args:    cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 			r := at(cmd)
 			from = strings.TrimPrefix(strings.ToLower(from), "@")
 			if from != "" && foreignLabels[from] == "" {
-				return fmt.Errorf("invalid choice: '%s' (choose from 'claude', 'codex')", from)
+				return fmt.Errorf("--from takes claude or codex, not “%s”.", from)
 			}
 			var session *foreign
 			if len(args) == 1 {
@@ -376,7 +379,7 @@ func addImport(parent *cobra.Command, at func(*cobra.Command) *run) {
 					path = home + rest
 				}
 				if _, err := os.Stat(path); err != nil {
-					return fmt.Errorf("Error: file not found: %s", args[0])
+					return fmt.Errorf("There is no file at %s.", args[0])
 				}
 				tool := from
 				if tool == "" {
@@ -389,14 +392,15 @@ func addImport(parent *cobra.Command, at func(*cobra.Command) *run) {
 					}
 				}
 				if tool == "" {
-					return errors.New("Cannot infer source from path; pass --from claude|codex.")
+					return errors.New("icebath can't tell from the path whether the session is from Claude Code or Codex. Add --from claude or " +
+						"--from codex.")
 				}
 				parsed, err := parseForeign(tool, filepath.Clean(path))
 				if err != nil {
-					return fmt.Errorf("Session file not found: %s", path)
+					return fmt.Errorf("The session file %s can't be read: %s", path, sentence(err.Error()))
 				}
 				if parsed.turns() == 0 {
-					return fmt.Errorf("No user/assistant conversation turns found in %s", path)
+					return fmt.Errorf("%s holds no messages between you and the agent.", path)
 				}
 				session = parsed
 			} else {
@@ -407,7 +411,7 @@ func addImport(parent *cobra.Command, at func(*cobra.Command) *run) {
 			}
 			return r.importForeign(session)
 		}}
-	command.Flags().StringVar(&from, "from", "", "Which tool to import from (default: pick across both)")
+	command.Flags().StringVar(&from, "from", "", "Tool to import from: claude or codex, instead of both")
 	parent.AddCommand(command)
 }
 
@@ -426,23 +430,26 @@ func (r *run) pick(tool string) (*foreign, error) {
 	slices.SortFunc(found, func(a, b *foreign) int { return b.modified.Compare(a.modified) })
 	found = found[:min(25, len(found))]
 	if len(found) == 0 {
-		r.printf("No %s sessions found on this machine.", label)
+		r.printf("There are no %s sessions on this computer.", label)
 		return nil, nil
 	}
-	r.print("Foreign sessions (newest first):")
+	r.printf("Sessions of %s, newest first:", label)
+	var table [][]string
 	for i, f := range found {
-		name := strs.Head(cmp.Or(f.title, strings.TrimSuffix(filepath.Base(f.path), ".jsonl")), 60)
-		where := ""
+		name := clip(cmp.Or(f.title, strings.TrimSuffix(filepath.Base(f.path), ".jsonl")), 60)
+		where := "None"
 		if f.cwd != "" {
-			where = "  (" + filepath.Base(f.cwd) + ")"
+			where = filepath.Base(f.cwd)
 		}
-		r.printf("  %2d. %s  [%s] %s%s  [%d turns]", i+1, f.modified.Local().Format("2006-01-02 15:04"), foreignLabels[f.tool], name, where, f.turns())
+		table = append(table, []string{strs.Number(float64(i + 1)), f.modified.Local().Format("2006-01-02 15:04"), foreignLabels[f.tool], name, where,
+			strs.Number(float64(f.turns()))})
 	}
+	cli.NewConsole(r.cmd).Table([]string{"Number", "Changed", "From", "Title", "Folder", "Messages"}, table)
 	if !term.IsTerminal(os.Stdin.Fd()) {
-		r.print("Non-interactive terminal — pass the file path directly:\n  icebath sessions import --from claude|codex <path>\n")
+		r.print("There is no terminal to pick in. Give the path of the file instead:\n  icebath sessions import [path]\n")
 		return nil, nil
 	}
-	fmt.Fprintf(r.cmd.OutOrStdout(), "Import which session? [1-%d, empty to cancel] ", len(found))
+	fmt.Fprintf(r.cmd.OutOrStdout(), "Session to import, from 1 to %s, or press enter to cancel: ", strs.Number(float64(len(found))))
 	line, _ := bufio.NewReader(r.cmd.InOrStdin()).ReadString('\n')
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -450,11 +457,11 @@ func (r *run) pick(tool string) (*foreign, error) {
 	}
 	var choice int
 	if _, err := fmt.Sscanf(line, "%d", &choice); err != nil {
-		r.print("Not a number: " + line)
+		r.print("“" + line + "” is not a number, so nothing was imported.")
 		return nil, nil
 	}
 	if choice < 1 || choice > len(found) {
-		r.print("Out of range: " + line)
+		r.print("“" + line + "” is not a number from 1 to " + strs.Number(float64(len(found))) + ", so nothing was imported.")
 		return nil, nil
 	}
 	return found[choice-1], nil
@@ -477,7 +484,7 @@ func (r *run) importForeign(f *foreign) error {
 		}
 		if json.Unmarshal([]byte(s.GetPeer().GetOrigin()), &origin) == nil && origin.From.Tool == f.tool &&
 			(f.id != "" && origin.From.Foreign == f.id || f.id == "" && origin.From.Path == f.path) {
-			r.printf("✓ %s session already imported as %s", label, s.GetId())
+			r.printf("✓ This %s session was imported already, as %s.", label, s.GetId())
 			return nil
 		}
 	}
@@ -510,12 +517,12 @@ func (r *run) importForeign(f *foreign) error {
 		Messages: f.messages,
 	}}})
 	if err != nil {
-		return errors.New("Error: " + tui.Reason(err))
+		return errors.New(sentence(tui.Reason(err)))
 	}
 	if len(response.GetIds()) == 0 {
-		return errors.New("Error: the session was not imported")
+		return errors.New("The session was not imported.")
 	}
-	r.printf("✓ Imported %s session as %s", label, response.GetIds()[0])
-	r.printf("  Continue it with: icebath --resume %s", response.GetIds()[0])
+	r.printf("✓ Imported the %s session as %s.", label, response.GetIds()[0])
+	r.printf("  Continue it with icebath --resume %s.", response.GetIds()[0])
 	return nil
 }

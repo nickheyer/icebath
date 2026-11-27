@@ -62,7 +62,7 @@ func StartSSE(ctx context.Context, opts HTTPOptions, connectTimeout time.Duratio
 	if kind := ContentType(resp); kind != "text/event-stream" {
 		drain(resp.Body)
 		cancel()
-		return nil, fmt.Errorf("SSE endpoint answered with Content-Type %q, not text/event-stream", kind)
+		return nil, fmt.Errorf("The SSE address answered with a page of type %s instead of an event stream.", kind)
 	}
 	t.body = resp.Body
 	go t.pump(resp.Body)
@@ -75,7 +75,7 @@ func StartSSE(ctx context.Context, opts HTTPOptions, connectTimeout time.Duratio
 		return t, nil
 	case <-time.After(connectTimeout):
 		t.Close()
-		return nil, errors.New("SSE server did not announce its endpoint within the connect timeout")
+		return nil, errors.New("The SSE server did not say where to send messages within the time limit to connect.")
 	case <-ctx.Done():
 		t.Close()
 		return nil, ctx.Err()
@@ -135,13 +135,13 @@ func (t *SSE) pump(body io.ReadCloser) {
 		select {
 		case <-t.done:
 		default:
-			t.setErr(errors.New("Connection closed"))
+			t.setErr(errors.New("The connection closed."))
 		}
 		close(t.recv)
 	}()
 	reader := NewSSEReader(body, MaxBodyBytes, t.stream)
 	watchdog := time.AfterFunc(sseIdle, func() {
-		t.setErr(errors.New("SSE stream idle past the read timeout"))
+		t.setErr(errors.New("The SSE connection was silent for longer than its time limit to read."))
 		body.Close()
 	})
 	defer watchdog.Stop()
@@ -157,7 +157,7 @@ func (t *SSE) pump(body io.ReadCloser) {
 		event, err := reader.Next()
 		if err != nil {
 			if !announced {
-				announce(fmt.Errorf("SSE stream ended before the endpoint event: %w", err))
+				announce(fmt.Errorf("The SSE connection ended before the server said where to send messages: %w", err))
 			} else if err != io.EOF {
 				t.setErr(err)
 			}
@@ -206,7 +206,7 @@ func sameOrigin(base, endpoint string) (string, error) {
 	}
 	resolved := b.ResolveReference(e)
 	if originOf(resolved) != originOf(b) {
-		return "", fmt.Errorf("endpoint origin %s does not match connection origin %s", resolved.Host, b.Host)
+		return "", fmt.Errorf("The server said to send messages to %s, which is not %s, the server icebath connected to.", resolved.Host, b.Host)
 	}
 	return resolved.String(), nil
 }
@@ -214,14 +214,14 @@ func sameOrigin(base, endpoint string) (string, error) {
 func (t *SSE) Send(ctx context.Context, msg *Message) error {
 	select {
 	case <-t.done:
-		return errors.New("transport is closed")
+		return errors.New("The connection closed.")
 	default:
 	}
 	t.mu.Lock()
 	endpoint := t.endpoint
 	t.mu.Unlock()
 	if endpoint == "" {
-		return errors.New("SSE endpoint not announced yet")
+		return errors.New("The SSE server has not said where to send messages yet.")
 	}
 	body, err := json.Marshal(msg)
 	if err != nil {

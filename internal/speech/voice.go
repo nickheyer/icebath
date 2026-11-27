@@ -97,7 +97,7 @@ type Setup struct {
 	Programs []string
 	// Where to get a key
 	Link string
-	// What it costs and whether it is the one to start with, as the setup lists it: ★ recommended · free, paid, free tier, local · free
+	// What it costs and whether it is the one to start with, as the setup lists it: recommended · free, paid, free tier, free
 	Badge string
 }
 

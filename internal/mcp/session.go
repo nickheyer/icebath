@@ -313,7 +313,7 @@ func (s *Session) request(ctx context.Context, msg *Message, out any) error {
 			return nil
 		}
 		if err := json.Unmarshal(resp.Result, out); err != nil {
-			return fmt.Errorf("decode %s result: %w", msg.Method, err)
+			return fmt.Errorf("The answer of the server to %s cannot be read: %w", msg.Method, err)
 		}
 		return nil
 	case <-ctx.Done():

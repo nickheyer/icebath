@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/fsx"
 	profilev1 "github.com/nickheyer/icebath/pkg/gen/icebath/profile/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/profile/v1/profilev1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type commands struct{}
@@ -61,7 +62,7 @@ func Pick(args []string, w io.Writer) (string, []string, error) {
 				return value, append(append([]string{}, args[:i]...), args[i+2:]...), nil
 			}
 			if !command && !strings.HasPrefix(args[i+1], "-") {
-				fmt.Fprintln(w, "Error: "+profile.Invalid(args[i+1]).Error()+"\nRun `icebath profile list` to see your profiles.")
+				fmt.Fprintln(w, "✗ "+profile.Invalid(args[i+1]).Error()+"\nRun icebath profile list to see your profiles.")
 				return "", args, cli.Exit(2)
 			}
 			break
@@ -84,9 +85,9 @@ func reason(err error) string {
 	return err.Error()
 }
 
-// Prints Error: and why to the output and ends the command with status 1
+// Prints why with the mark of a failure and ends the command with status 1
 func fail(w io.Writer, err error) error {
-	fmt.Fprintln(w, "Error: "+reason(err))
+	fmt.Fprintln(w, "✗ "+sentence(reason(err)))
 	return cli.Exit(1)
 }
 
@@ -94,57 +95,96 @@ func say(w io.Writer, format string, args ...any) {
 	fmt.Fprintf(w, format+"\n", args...)
 }
 
+// Text that ends as a sentence: trimmed, with a period added when it ends in no mark of its own
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?") {
+		return text
+	}
+	return text + "."
+}
+
+// Labels and their values, each value after its label padded to the widest
+func rows(pairs [][2]string) []string {
+	width := 0
+	for _, pair := range pairs {
+		width = max(width, cli.Width(pair[0])+1)
+	}
+	lines := make([]string, len(pairs))
+	for i, pair := range pairs {
+		lines[i] = cli.Pad(pair[0]+":", width) + "  " + pair[1]
+	}
+	return lines
+}
+
 func model(p *profilev1.Profile) string {
 	if p.GetModel() == "" {
 		return ""
 	}
 	if p.GetProvider() != "" {
-		return p.GetModel() + " (" + p.GetProvider() + ")"
+		return p.GetModel() + " · " + p.GetProvider()
 	}
 	return p.GetModel()
 }
 
 func exists(present bool) string {
 	if present {
-		return "exists"
+		return "Exists"
 	}
-	return "not configured"
+	return "Missing"
 }
 
-// Text cut to n characters
-func first(text string, n int) string {
-	runes := []rune(text)
-	return string(runes[:min(n, len(runes))])
+// Distribution and its version as one value
+func distribution(name, version string) string {
+	if version == "" {
+		return name + ", version unknown"
+	}
+	return name + ", version " + version
 }
 
 func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	service := profilev1connect.NewProfileServiceClient(conn)
 	c := &commandSet{service: service}
 	profiles := &cobra.Command{
-		Use:   "profiles",
-		Short: "List all profiles",
-		Args:  cobra.NoArgs,
-		RunE:  c.list,
+		Use:     "profiles",
+		GroupID: cli.GroupApp,
+		Short:   "List your profiles",
+		Long:    "Lists every profile and marks the one in use. This is the same as icebath profile list.",
+		Args:    cobra.NoArgs,
+		RunE:    c.list,
 	}
 	root := &cobra.Command{
-		Use:   "profile",
-		Short: "Manage profiles — multiple isolated Icebath instances",
-		Args:  cobra.NoArgs,
-		RunE:  c.status,
+		Use:     "profile",
+		GroupID: cli.GroupApp,
+		Short:   "Manage your profiles, separate sets of settings and sessions",
+		Long: "A profile is a separate set of settings, providers and sessions, such as one for work and one for home. With no subcommand, " +
+			"profile shows the profile in use. Put -p NAME before any command to use a profile for that one run.",
+		Example: "  icebath profile create work --clone\n  icebath profile use work\n  icebath -p work chat -q \"Hello\"",
+		Args:    cobra.NoArgs,
+		RunE:    c.status,
 	}
-	root.AddCommand(&cobra.Command{Use: "list", Short: "List all profiles", Args: cobra.NoArgs, RunE: c.list},
-		&cobra.Command{Use: "use <profile_name>", Short: "Set sticky default profile", Args: cobra.ExactArgs(1), RunE: c.use},
+	root.AddCommand(&cobra.Command{Use: "list", Short: "List your profiles", Long: "Lists every profile and marks the one in use.", Args: cobra.NoArgs, RunE: c.list},
+		&cobra.Command{Use: "use <profile_name>", Short: "Make a profile the one icebath starts with",
+			Long: "Makes the profile the one icebath uses from now on, until you pick another. -p picks a profile for one run only.",
+			Args: cobra.ExactArgs(1), RunE: c.use},
 		c.create(), c.delete(), c.describe(),
-		&cobra.Command{Use: "show <profile_name>", Short: "Show profile details", Args: cobra.ExactArgs(1), RunE: c.show},
+		&cobra.Command{Use: "show <profile_name>", Short: "Show the details of a profile",
+			Long: "Shows the details of one profile, such as where it is kept and the model it uses.", Args: cobra.ExactArgs(1), RunE: c.show},
 		c.alias(),
-		&cobra.Command{Use: "rename <old_name> <new_name>", Short: "Rename a profile ('default': sets a display name; id unchanged)",
+		&cobra.Command{Use: "rename <old_name> <new_name>", Short: "Rename a profile",
+			Long: "Renames the profile and its folder. The default profile keeps its folder, so for it rename only changes the name shown.",
 			Args: cobra.ExactArgs(2), RunE: c.rename},
-		&cobra.Command{Use: "purge-identity <profile_name>", Short: "Retry a deleted profile's session/routing identity purge", Args: cobra.ExactArgs(1),
-			RunE: c.purge},
-		&cobra.Command{Use: "migrate-identity <old_name> <new_name>", Short: "Retry a renamed profile's session/routing identity migration",
+		&cobra.Command{Use: "purge-identity <profile_name>", Short: "Finish removing the data of a deleted profile",
+			Long: "Tries again to remove what icebath keeps about a deleted profile elsewhere, such as the routes of its sessions. Run " +
+				"purge-identity when delete says that this part failed.",
+			Args: cobra.ExactArgs(1), RunE: c.purge},
+		&cobra.Command{Use: "migrate-identity <old_name> <new_name>", Short: "Finish moving the data of a renamed profile",
+			Long: "Tries again to move what icebath keeps under a renamed profile's old name, such as the routes of its sessions. Run " +
+				"migrate-identity when rename says that this part failed.",
 			Args: cobra.ExactArgs(2), RunE: c.migrate},
 		c.export(), c.importArchive(), c.install(), c.update(),
-		&cobra.Command{Use: "info <profile_name>", Short: "Show a profile's distribution manifest (version, requirements, source)",
+		&cobra.Command{Use: "info <profile_name>", Short: "Show where an installed profile came from",
+			Long: "Shows the manifest of a profile you installed with install: its version, what it needs and where it came from.",
 			Args: cobra.ExactArgs(1), RunE: c.info},
 	)
 	return []*cobra.Command{profiles, root}
@@ -165,16 +205,19 @@ func (c *commandSet) status(cmd *cobra.Command, _ []string) error {
 		if p.GetName() != listed.GetActive() {
 			continue
 		}
-		say(out, "\nActive profile: %s", profile.Label(p.GetName(), p.GetDisplayName()))
-		say(out, "Path:           %s", profile.Tilde(p.GetPath()))
+		shown := [][2]string{{"Profile in use", profile.Label(p.GetName(), p.GetDisplayName())}, {"Folder", profile.Tilde(p.GetPath())}}
 		if m := model(p); m != "" {
-			say(out, "Model:          %s", m)
+			shown = append(shown, [2]string{"Model", m})
 		}
-		say(out, "Skills:         %d installed", p.GetSkills())
+		shown = append(shown, [2]string{"Skills", strs.Count(int(p.GetSkills()), "skill")})
 		if alias, _ := profile.AliasOf(p.GetName()); alias != "" && !p.GetDefault() {
 			if path, _ := profile.OurAlias(alias); path != "" {
-				say(out, "Alias:          %s → icebath -p %s", alias, p.GetName())
+				shown = append(shown, [2]string{"Alias", alias + ", which runs icebath -p " + p.GetName()})
 			}
+		}
+		say(out, "")
+		for _, line := range rows(shown) {
+			say(out, "%s", line)
 		}
 	}
 	say(out, "")
@@ -189,40 +232,35 @@ func (c *commandSet) list(cmd *cobra.Command, _ []string) error {
 	}
 	out := cmd.OutOrStdout()
 	if len(listed.GetProfiles()) == 0 {
-		say(out, "No profiles found.")
+		say(out, "There are no profiles yet. Create one with icebath profile create <profile_name>.")
 		return nil
 	}
 	aliases, _ := profile.Aliases()
-	say(out, "\n %s %s %s %s", cli.Pad("Profile", 16), cli.Pad("Model", 28), cli.Pad("Alias", 12), "Distribution")
-	say(out, " %s    %s    %s    %s", strings.Repeat("─", 15), strings.Repeat("─", 27), strings.Repeat("─", 11), strings.Repeat("─", 20))
+	var table [][]string
 	for _, p := range listed.GetProfiles() {
-		marker := "  "
+		marker := ""
 		if p.GetActive() {
-			marker = " ◆"
+			marker = "●"
 		}
-		alias := "—"
+		alias := "None"
 		if name := aliases[p.GetName()]; name != "" && !p.GetDefault() {
 			alias = name
 		}
-		dist := "—"
+		dist := "None"
 		if p.GetDistribution() != "" {
-			dist = first(p.GetDistribution()+"@"+orUnknown(p.GetDistributionVersion()), 30)
+			dist = distribution(p.GetDistribution(), p.GetDistributionVersion())
 		}
-		shownModel := "—"
+		shownModel := "Not set"
 		if p.GetModel() != "" {
-			shownModel = first(p.GetModel(), 26)
+			shownModel = p.GetModel()
 		}
-		say(out, "%s%s %s %s %s", marker, cli.Pad(profile.Label(p.GetName(), p.GetDisplayName()), 15), cli.Pad(shownModel, 28), cli.Pad(alias, 12), dist)
+		table = append(table, []string{marker, profile.Label(p.GetName(), p.GetDisplayName()), shownModel, alias, dist})
 	}
-	say(out, "")
+	console := cli.NewConsole(cmd)
+	console.Blank()
+	console.Table([]string{"", "Profile", "Model", "Alias", "Distribution"}, table)
+	say(out, "\n● marks the profile in use.\n")
 	return nil
-}
-
-func orUnknown(text string) string {
-	if text == "" {
-		return "?"
-	}
-	return text
 }
 
 func (c *commandSet) use(cmd *cobra.Command, args []string) error {
@@ -231,9 +269,9 @@ func (c *commandSet) use(cmd *cobra.Command, args []string) error {
 		return fail(cmd.OutOrStdout(), err)
 	}
 	if used.GetProfile().GetDefault() {
-		say(cmd.OutOrStdout(), "Switched to: default (%s)", profile.Tilde(used.GetProfile().GetPath()))
+		say(cmd.OutOrStdout(), "✓ icebath uses the default profile from now on. Its folder is %s.", profile.Tilde(used.GetProfile().GetPath()))
 	} else {
-		say(cmd.OutOrStdout(), "Switched to: %s", used.GetProfile().GetName())
+		say(cmd.OutOrStdout(), "✓ icebath uses the profile %s from now on.", used.GetProfile().GetName())
 	}
 	return nil
 }
@@ -243,22 +281,26 @@ func (c *commandSet) create() *cobra.Command {
 	var from, description, startModel, startProvider string
 	cmd := &cobra.Command{
 		Use:   "create <profile_name>",
-		Short: "Create a new profile",
-		Args:  cobra.ExactArgs(1),
+		Short: "Create a profile",
+		Long: "Creates a profile with its own settings, keys, sessions and skills. Unless you pass --no-credentials, the profile takes your " +
+			"API keys, sign-ins and model from the profile in use, so the profile works at once. --clone also copies your settings, and --clone-from " +
+			"copies them from another profile.",
+		Example: "  icebath profile create work\n  icebath profile create review --clone-from work --description \"Code review\"",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			name := args[0]
 			if cmd.Flags().Changed("clone-from") && strings.TrimSpace(from) == "" {
-				return fail(out, errors.New("profile name cannot be empty"))
+				return fail(out, errors.New("Name the profile to copy from after --clone-from."))
 			}
 			cloned := clone || cmd.Flags().Changed("clone-from") || all
 			if cloned && noCredentials {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Error: --no-credentials cannot be combined with --clone / --clone-from / --clone-all (a clone copies the "+
-					"source's keys); create without cloning instead.")
+				fmt.Fprintln(cmd.ErrOrStderr(), "✗ --no-credentials can't go with --clone, --clone-from or --clone-all, because a copy takes the keys of "+
+					"the profile it copies. Leave out one of them.")
 				return cli.Exit(1)
 			}
 			if (startModel == "") != (startProvider == "") {
-				return fail(out, errors.New("--model and --provider go together: a model is pinned with the provider that serves it."))
+				return fail(out, errors.New("--model and --provider go together, because a model is set with the provider that runs it. Give both or neither."))
 			}
 			made, err := c.service.Create(cmd.Context(), &profilev1.CreateRequest{Name: name, Clone: clone, From: from, All: all, Channels: channels,
 				SyncImports: syncImports, NoSkills: noSkills, Description: description, NoCredentials: noCredentials, Model: startModel,
@@ -266,18 +308,22 @@ func (c *commandSet) create() *cobra.Command {
 			if err != nil {
 				return fail(out, err)
 			}
-			say(out, "\nProfile '%s' created at %s", name, made.GetPath())
+			say(out, "\n✓ Created the profile %s in %s.", made.GetProfile().GetName(), made.GetPath())
 			if cloned {
 				if all {
-					say(out, "Full copy from %s (excluding session history, cron jobs, backups, and snapshots).", made.GetSource())
+					say(out, "Copied every file of %s except its sessions, scheduled jobs, backups and checkpoints.", made.GetSource())
 				} else {
-					say(out, "Cloned config, .env, SOUL.md, and skills from %s.", made.GetSource())
+					say(out, "Copied the settings file, keys file, SOUL.md and skills of %s.", made.GetSource())
 					if plugins := clonedPlugins(made.GetPath()); len(plugins) > 0 {
-						say(out, "Cloned installed plugins too: %s.", strings.Join(plugins, ", "))
+						say(out, "Copied its plugins too: %s.", strings.Join(plugins, ", "))
 					}
 				}
 				if syncImports {
-					say(out, "Import sources carried over — `icebath -p %s import-agent --sync` keeps pulling the same Claude Code / Codex trees.", name)
+					if fsx.IsFile(filepath.Join(made.GetPath(), "import-sync.json")) {
+						say(out, "Copied import-sync.json, the record of what %s imported from other agents such as Claude Code and Codex.", made.GetSource())
+					} else {
+						say(out, "%s has no import-sync.json, the record of agents it imported from, so there was none to copy.", made.GetSource())
+					}
 				}
 			}
 			for _, line := range made.GetSeeded() {
@@ -286,13 +332,13 @@ func (c *commandSet) create() *cobra.Command {
 			canon := made.GetProfile().GetName()
 			aliased := !noAlias && aliasCreated(out, canon)
 			if made.GetKeys() {
-				say(out, "Copied API keys from '%s'.", made.GetLaunch())
+				say(out, "Copied the API keys of %s.", made.GetLaunch())
 			}
 			for _, note := range made.GetNotes() {
 				say(out, "%s", note)
 			}
 			for _, warning := range made.GetWarnings() {
-				say(out, "⚠ %s", warning)
+				say(out, "⚠ %s", sentence(warning))
 			}
 			display := profile.Tilde(made.GetPath())
 			// The alias opens the profile when there is one, else the flag does
@@ -300,34 +346,34 @@ func (c *commandSet) create() *cobra.Command {
 			if aliased {
 				command = canon
 			}
-			say(out, "\nNext steps:")
-			say(out, "  %s, type /providers   Configure API keys and model", command)
-			say(out, "  %s chat              Start chatting", command)
+			say(out, "\nWhat to do next:")
+			say(out, "  Run %s and type /providers to set API keys and the model.", command)
+			say(out, "  Run %s chat to start a session.", command)
 			if cloned || made.GetKeys() {
-				say(out, "\n  Edit %s/.env for different API keys", display)
-				say(out, "  Edit %s/SOUL.md for different personality", display)
+				say(out, "\n  To use other API keys, edit %s/.env.", display)
+				say(out, "  To give the agent another personality, edit %s/SOUL.md.", display)
 			} else {
-				say(out, "\n  ⚠ This profile has no API keys yet. Start '%s' and open /providers first,", command)
-				say(out, "    or it will inherit keys from your shell environment.")
-				say(out, "  Edit %s/SOUL.md to customize personality", display)
+				say(out, "\n  ⚠ This profile has no API keys yet. Run %s and open /providers first, or it uses the keys set in your shell.",
+					command)
+				say(out, "  To give the agent a personality of its own here, edit %s/SOUL.md.", display)
 			}
 			say(out, "")
 			return nil
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&startModel, "model", "", "model the profile starts on, with --provider")
-	f.StringVar(&startProvider, "provider", "", "provider of --model")
-	f.BoolVar(&clone, "clone", false, "copy config, .env, SOUL.md and skills from the profile in use")
-	f.BoolVar(&all, "clone-all", false, "copy every file of the source but its session history, cron jobs, backups and snapshots")
-	f.StringVar(&from, "clone-from", "", "profile to clone from instead of the one in use")
-	f.BoolVar(&channels, "clone-channels", false, "copy the source's messaging channels too")
-	f.BoolVar(&syncImports, "sync-imports", false, "carry over where `import-agent --sync` pulls from")
-	f.BoolVar(&noAlias, "no-alias", false, "make no alias command for the profile")
-	f.BoolVar(&isolated, "isolated-auth", false, "copy the logins of the profile in use once, so each profile keeps its own (what every create does)")
-	f.BoolVar(&noCredentials, "no-credentials", false, "take no keys, logins or model from the profile in use")
-	f.BoolVar(&noSkills, "no-skills", false, "seed no bundled skills")
-	f.StringVar(&description, "description", "", "what the profile is for")
+	f.StringVar(&startModel, "model", "", "Model the profile starts with, together with --provider")
+	f.StringVar(&startProvider, "provider", "", "Provider that the --model model belongs to")
+	f.BoolVar(&clone, "clone", false, "Copy settings, keys, SOUL.md and skills from the profile in use")
+	f.BoolVar(&all, "clone-all", false, "Copy every file except sessions, scheduled jobs, backups and checkpoints")
+	f.StringVar(&from, "clone-from", "", "Profile to copy from, instead of the one in use")
+	f.BoolVar(&channels, "clone-channels", false, "Also copy the chat app channels of the profile copied from")
+	f.BoolVar(&syncImports, "sync-imports", false, "Also copy the record of agents that the copied profile imported from")
+	f.BoolVar(&noAlias, "no-alias", false, "Make no alias command for the profile")
+	f.BoolVar(&isolated, "isolated-auth", false, "Copy the sign-ins of the profile in use once, as create always does")
+	f.BoolVar(&noCredentials, "no-credentials", false, "Take no API keys, sign-ins or model from the profile in use")
+	f.BoolVar(&noSkills, "no-skills", false, "Copy no built-in skills into the profile")
+	f.StringVar(&description, "description", "", "What the profile is for")
 	return cmd
 }
 
@@ -350,28 +396,28 @@ func clonedPlugins(dir string) []string {
 func aliasCreated(out io.Writer, name string) bool {
 	collision, err := profile.Collision(name)
 	if err != nil {
-		say(out, "⚠ %v", err)
+		say(out, "⚠ No alias was made: %s", sentence(err.Error()))
 		return false
 	}
 	if collision != "" {
-		say(out, "\n⚠ Cannot create alias '%s' — %s", name, collision)
-		say(out, "  Choose a custom alias:  icebath profile alias %s --name <custom>", name)
-		say(out, "  Or access via flag:     icebath -p %s chat", name)
+		say(out, "\n⚠ No alias named %s was made. %s", name, sentence(collision))
+		say(out, "  To give it another name, run icebath profile alias %s --name NAME.", name)
+		say(out, "  Or open the profile with icebath -p %s chat.", name)
 		return false
 	}
 	path, err := profile.MakeAlias(name, "")
 	if err != nil {
-		say(out, "⚠ %v", err)
+		say(out, "⚠ %s", sentence(err.Error()))
 		return false
 	}
-	say(out, "Wrapper created: %s", path)
+	say(out, "✓ Made the alias %s, a command that opens this profile.", path)
 	onPath, err := profile.AliasesOnPath()
 	if err != nil || onPath {
 		return err == nil
 	}
 	dir, _ := profile.AliasDir()
-	say(out, "\n⚠ %s is not in your PATH.", dir)
-	say(out, "  Add to your shell config (~/.bashrc or ~/.zshrc):")
+	say(out, "\n⚠ %s is not on your PATH, so the alias does not work yet.", dir)
+	say(out, "  Add this line to the startup file of your shell, such as ~/.bashrc or ~/.zshrc:")
 	say(out, `    export PATH="$HOME/.local/bin:$PATH"`)
 	return false
 }
@@ -381,6 +427,7 @@ func (c *commandSet) delete() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <profile_name>",
 		Short: "Delete a profile",
+		Long:  "Deletes the profile with its settings, keys, sessions and skills, after asking. This cannot be undone.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
@@ -400,34 +447,37 @@ func (c *commandSet) delete() *cobra.Command {
 			}
 			p := shown.GetProfile()
 			wrapper, _ := profile.OurAlias(p.GetName())
-			say(out, "\nProfile: %s", p.GetName())
-			say(out, "Path:    %s", p.GetPath())
+			facts := [][2]string{{"Profile", p.GetName()}, {"Folder", p.GetPath()}}
 			if m := model(p); m != "" {
-				say(out, "Model:   %s", m)
+				facts = append(facts, [2]string{"Model", m})
 			}
 			if p.GetSkills() > 0 {
-				say(out, "Skills:  %d", p.GetSkills())
+				facts = append(facts, [2]string{"Skills", strs.Count(int(p.GetSkills()), "skill")})
 			}
 			if p.GetDistribution() != "" {
-				say(out, "Distribution: %s@%s", p.GetDistribution(), orUnknown(p.GetDistributionVersion()))
+				facts = append(facts, [2]string{"Distribution", distribution(p.GetDistribution(), p.GetDistributionVersion())})
 				if p.GetDistributionSource() != "" {
-					say(out, "Installed from: %s", p.GetDistributionSource())
+					facts = append(facts, [2]string{"Installed from", p.GetDistributionSource()})
 				}
 			}
-			say(out, "\nThis will permanently delete:")
-			say(out, "  • All config, API keys, memories, sessions, skills, cron jobs")
+			say(out, "")
+			for _, line := range rows(facts) {
+				say(out, "%s", line)
+			}
+			say(out, "\nDeleting the profile removes, for good:")
+			say(out, "  Its settings, API keys, memories, sessions, skills and scheduled jobs")
 			if wrapper != "" {
-				say(out, "  • Command alias (%s)", wrapper)
+				say(out, "  Its alias %s", wrapper)
 			}
 			if !yes {
 				console := cli.NewConsole(cmd)
 				say(out, "")
-				typed, ok := console.Input(fmt.Sprintf("Type '%s' to confirm: ", p.GetName()))
+				typed, ok := console.Input(fmt.Sprintf("Type %s to delete it for good, or press enter to keep it: ", p.GetName()))
 				if !ok {
 					say(out, "")
 				}
 				if !ok || strings.TrimSpace(typed) != p.GetName() {
-					say(out, "Cancelled.")
+					say(out, "Nothing was deleted.")
 					return nil
 				}
 			}
@@ -439,19 +489,18 @@ func (c *commandSet) delete() *cobra.Command {
 				say(out, "%s", line)
 			}
 			if done.GetFailure() != "" {
-				say(out, "Error: %s", done.GetFailure())
+				say(out, "✗ %s Remove it yourself.", sentence(done.GetFailure()))
 				return cli.Exit(1)
 			}
-			say(out, "\nProfile '%s' deleted.", p.GetName())
+			say(out, "\n✓ Deleted the profile %s.", p.GetName())
 			if !done.GetSettled() {
-				say(out, "Error: Profile '%s' was deleted, but its session/routing identity settlement is still pending — run: icebath profile "+
-					"purge-identity %s", p.GetName(), p.GetName())
+				say(out, "✗ Some of what icebath keeps of %s elsewhere is left. Run icebath profile purge-identity %s to finish.", p.GetName(), p.GetName())
 				return cli.Exit(1)
 			}
 			return nil
 		},
 	}
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "delete without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Delete without asking first")
 	return cmd
 }
 
@@ -460,8 +509,11 @@ func (c *commandSet) describe() *cobra.Command {
 	var auto, overwrite, all bool
 	cmd := &cobra.Command{
 		Use:   "describe [profile_name]",
-		Short: "Read or set a profile's description (used by the kanban orchestrator)",
-		Args:  cobra.MaximumNArgs(1),
+		Short: "Show or set what a profile is for",
+		Long: "Shows the description of a profile, or sets it with --text. --auto has the helper model write one from the profile's skills " +
+			"and model. The kanban board reads these descriptions to decide which profile takes a task.",
+		Example: "  icebath profile describe work --text \"Backend work in Go\"\n  icebath profile describe --auto --all",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out, errw := cmd.OutOrStdout(), cmd.ErrOrStderr()
 			name := ""
@@ -472,43 +524,44 @@ func (c *commandSet) describe() *cobra.Command {
 				All: all})
 			if err != nil {
 				if failure, ok := errors.AsType[*connect.Error](err); ok && failure.Code() == connect.CodeInvalidArgument &&
-					strings.HasPrefix(failure.Message(), "profile describe:") {
-					fmt.Fprintln(errw, failure.Message())
+					strings.HasPrefix(failure.Message(), "icebath profile describe ") {
+					fmt.Fprintln(errw, "✗ "+failure.Message())
 					return cli.Exit(2)
 				}
-				fmt.Fprintln(errw, "Error: "+reason(err))
+				fmt.Fprintln(errw, "✗ "+sentence(reason(err)))
 				return cli.Exit(1)
 			}
 			switch {
 			case text == "" && !auto:
 				if described.GetDescription() == "" {
-					say(out, "(no description set for '%s')", name)
-				} else if described.GetDescriptionAuto() {
-					say(out, "[auto] %s", described.GetDescription())
+					say(out, "%s has no description yet. Set one with icebath profile describe %s --text TEXT, or have one written with --auto.", name, name)
 				} else {
 					say(out, "%s", described.GetDescription())
+					if described.GetDescriptionAuto() {
+						say(out, "The helper model wrote this description.")
+					}
 				}
 				return nil
 			case text != "":
-				say(out, "Description updated for '%s'.", name)
+				say(out, "✓ Saved the description of %s.", name)
 				return nil
 			}
 			if all && len(described.GetOutcomes()) == 0 {
-				say(out, "All profiles already have descriptions.")
+				say(out, "Every profile has a description already.")
 				return nil
 			}
 			ok := 0
 			for _, outcome := range described.GetOutcomes() {
 				if !outcome.GetOk() {
-					fmt.Fprintf(errw, "profile describe %s: %s\n", outcome.GetName(), outcome.GetReason())
+					fmt.Fprintf(errw, "✗ No description was written for %s. %s\n", outcome.GetName(), sentence(outcome.GetReason()))
 					continue
 				}
 				ok++
 				shown := outcome.GetDescription()
 				if shown == "" {
-					shown = "(no description)"
+					shown = "No description"
 				}
-				say(out, "Described '%s': %s", outcome.GetName(), shown)
+				say(out, "✓ %s: %s", outcome.GetName(), shown)
 			}
 			if all && ok > 0 || !all && ok == 1 {
 				return nil
@@ -517,10 +570,10 @@ func (c *commandSet) describe() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&text, "text", "", "description to keep, as written")
-	f.BoolVar(&auto, "auto", false, "have the helper model write it from the profile's skills and model")
-	f.BoolVar(&overwrite, "overwrite", false, "replace a description a person wrote")
-	f.BoolVar(&all, "all", false, "every profile without a description a person wrote (with --auto)")
+	f.StringVar(&text, "text", "", "Description to keep, as written")
+	f.BoolVar(&auto, "auto", false, "Have the helper model write the description")
+	f.BoolVar(&overwrite, "overwrite", false, "Replace a description that a person wrote")
+	f.BoolVar(&all, "all", false, "With --auto, describe every profile that has no description from a person")
 	return cmd
 }
 
@@ -529,7 +582,7 @@ func (c *commandSet) show(cmd *cobra.Command, args []string) error {
 	shown, err := c.service.Show(cmd.Context(), &profilev1.ShowRequest{Name: args[0]})
 	if err != nil {
 		if failure, ok := errors.AsType[*connect.Error](err); ok && failure.Code() == connect.CodeNotFound {
-			say(out, "Error: Profile '%s' does not exist.", args[0])
+			say(out, "✗ There is no profile named %s. Run icebath profile list to see your profiles.", args[0])
 			return cli.Exit(1)
 		}
 		return fail(out, err)
@@ -542,21 +595,25 @@ func (c *commandSet) show(cmd *cobra.Command, args []string) error {
 
 // Lines of what a profile is, which the command prints and the profiles screen shows
 func ShowLines(p *profilev1.Profile) []string {
-	lines := []string{"", "Profile: " + profile.Label(p.GetName(), p.GetDisplayName()), "Path:    " + p.GetPath()}
+	facts := [][2]string{{"Profile", profile.Label(p.GetName(), p.GetDisplayName())}, {"Folder", p.GetPath()}}
 	if m := model(p); m != "" {
-		lines = append(lines, "Model:   "+m)
+		facts = append(facts, [2]string{"Model", m})
 	}
-	lines = append(lines, fmt.Sprintf("Skills:  %d", p.GetSkills()), ".env:    "+exists(p.GetHasEnv()), "SOUL.md: "+exists(p.GetHasSoul()))
+	facts = append(facts, [2]string{"Skills", strs.Count(int(p.GetSkills()), "skill")}, [2]string{"Keys file", exists(p.GetHasEnv())},
+		[2]string{"SOUL.md", exists(p.GetHasSoul())})
 	if p.GetDistribution() != "" {
-		lines = append(lines, fmt.Sprintf("Distribution: %s@%s", p.GetDistribution(), orUnknown(p.GetDistributionVersion())))
+		facts = append(facts, [2]string{"Distribution", distribution(p.GetDistribution(), p.GetDistributionVersion())})
 		if p.GetDistributionSource() != "" {
-			lines = append(lines, "Installed from: "+p.GetDistributionSource())
+			facts = append(facts, [2]string{"Installed from", p.GetDistributionSource()})
 		}
-		lines = append(lines, fmt.Sprintf("  (run `icebath profile info %s` for full manifest)", p.GetName()))
 	}
 	if alias, _ := profile.AliasOf(p.GetName()); alias != "" {
 		path, _ := profile.AliasPath(alias)
-		lines = append(lines, fmt.Sprintf("Alias:   %s → icebath -p %s  (%s)", alias, p.GetName(), path))
+		facts = append(facts, [2]string{"Alias", alias + ", which runs icebath -p " + p.GetName() + ", in " + path})
+	}
+	lines := append([]string{""}, rows(facts)...)
+	if p.GetDistribution() != "" {
+		lines = append(lines, "Run icebath profile info "+p.GetName()+" to see everything its distribution says.")
 	}
 	return append(lines, "")
 }
@@ -566,8 +623,11 @@ func (c *commandSet) alias() *cobra.Command {
 	var aliasName string
 	cmd := &cobra.Command{
 		Use:   "alias <profile_name>",
-		Short: "Manage wrapper scripts",
-		Args:  cobra.ExactArgs(1),
+		Short: "Make a command that opens icebath on a profile",
+		Long: "Makes a small command named after the profile, such as work, that runs icebath on that profile. --name gives the command " +
+			"another name, and --remove deletes it.",
+		Example: "  icebath profile alias work\n  icebath profile alias work --remove",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			name := args[0]
@@ -582,7 +642,7 @@ func (c *commandSet) alias() *cobra.Command {
 			present := err == nil
 			if remove {
 				if aliasName != "" && !present {
-					say(out, "Error: Profile '%s' does not exist.", name)
+					say(out, "✗ There is no profile named %s. Run icebath profile list to see your profiles.", name)
 					return cli.Exit(1)
 				}
 				removed, err := profile.RemoveAlias(alias)
@@ -590,17 +650,17 @@ func (c *commandSet) alias() *cobra.Command {
 				case err != nil:
 					return err
 				case removed:
-					say(out, "✓ Removed alias '%s'", alias)
+					say(out, "✓ Removed the alias %s.", alias)
 				case !present:
-					say(out, "Error: No alias '%s' and no profile '%s'.", alias, name)
+					say(out, "✗ There is no alias named %s and no profile named %s.", alias, name)
 					return cli.Exit(1)
 				default:
-					say(out, "No alias '%s' found to remove.", alias)
+					say(out, "There is no alias named %s to remove.", alias)
 				}
 				return nil
 			}
 			if !present {
-				say(out, "Error: Profile '%s' does not exist.", name)
+				say(out, "✗ There is no profile named %s. Run icebath profile list to see your profiles.", name)
 				return cli.Exit(1)
 			}
 			collision, err := profile.Collision(alias)
@@ -608,7 +668,7 @@ func (c *commandSet) alias() *cobra.Command {
 				return err
 			}
 			if collision != "" {
-				say(out, "Error: %s", collision)
+				say(out, "✗ No alias named %s was made. %s", alias, sentence(collision))
 				return cli.Exit(1)
 			}
 			target := ""
@@ -617,19 +677,19 @@ func (c *commandSet) alias() *cobra.Command {
 			}
 			path, err := profile.MakeAlias(alias, target)
 			if err != nil {
-				say(out, "⚠ %v", err)
+				say(out, "⚠ %s", sentence(err.Error()))
 				return nil
 			}
-			say(out, "✓ Alias created: %s", path)
+			say(out, "✓ Made the alias %s, a command that opens icebath on %s.", path, name)
 			if onPath, err := profile.AliasesOnPath(); err == nil && !onPath {
 				dir, _ := profile.AliasDir()
-				say(out, "⚠ %s is not in your PATH.", dir)
+				say(out, "⚠ %s is not on your PATH, so the alias does not work yet.", dir)
 			}
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&remove, "remove", false, "remove the alias instead")
-	cmd.Flags().StringVar(&aliasName, "name", "", "name of the alias, the profile's own when empty")
+	cmd.Flags().BoolVar(&remove, "remove", false, "Remove the alias command instead")
+	cmd.Flags().StringVar(&aliasName, "name", "", "Name of the alias command, instead of the profile's name")
 	return cmd
 }
 
@@ -651,10 +711,10 @@ func (c *commandSet) rename(cmd *cobra.Command, args []string) error {
 		say(out, "%s", line)
 	}
 	if !done.GetSettled() {
-		say(out, "Retry with:\n    icebath profile migrate-identity %s %s", canon, renamed)
+		say(out, "Finish the rename with:\n    icebath profile migrate-identity %s %s", canon, renamed)
 	}
-	say(out, "\nProfile renamed: %s → %s", args[0], args[1])
-	say(out, "Path: %s\n", done.GetPath())
+	say(out, "\n✓ Renamed the profile %s to %s.", canon, renamed)
+	say(out, "Its folder is %s.\n", done.GetPath())
 	return nil
 }
 
@@ -668,10 +728,10 @@ func (c *commandSet) purge(cmd *cobra.Command, args []string) error {
 		say(errw, "%s", line)
 	}
 	if !done.GetSettled() {
-		say(errw, "Error: session identity was not purged. Retry with:\n    icebath profile purge-identity %s", args[0])
+		say(errw, "✗ Some of what icebath keeps of the profile is still there. Try again with:\n    icebath profile purge-identity %s", args[0])
 		return cli.Exit(1)
 	}
-	say(out, "✓ Session/routing identity purged: %s", args[0])
+	say(out, "✓ Removed what icebath kept of %s elsewhere.", args[0])
 	return nil
 }
 
@@ -689,10 +749,11 @@ func (c *commandSet) migrate(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if !done.GetSettled() {
-		say(errw, "Error: session identity was not migrated. Retry with:\n    icebath profile migrate-identity %s %s", args[0], args[1])
+		say(errw, "✗ Some of what icebath keeps under the old name did not move. Try again with:\n    icebath profile migrate-identity %s %s",
+			args[0], args[1])
 		return cli.Exit(1)
 	}
-	say(out, "✓ Session/routing identity migrated: %s → %s", args[0], args[1])
+	say(out, "✓ Moved what icebath kept under %s to %s.", args[0], args[1])
 	return nil
 }
 
@@ -709,33 +770,37 @@ func Export(cmd *cobra.Command, service profilev1connect.ProfileServiceClient, n
 func (c *commandSet) export() *cobra.Command {
 	var output string
 	cmd := &cobra.Command{
-		Use:   "export <profile_name>",
-		Short: "Export a profile to archive",
-		Args:  cobra.ExactArgs(1),
+		Use:     "export <profile_name>",
+		Short:   "Save a profile to an archive you can share",
+		Long:    "Writes the profile to a .tar.gz archive that you can share and bring back with import.",
+		Example: "  icebath profile export work -o work.tar.gz",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, path, err := Export(cmd, c.service, args[0], output)
 			if err != nil {
 				return fail(cmd.OutOrStdout(), err)
 			}
-			say(cmd.OutOrStdout(), "✓ Exported '%s' to %s", name, path)
+			say(cmd.OutOrStdout(), "✓ Saved the profile %s to %s.", name, path)
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&output, "output", "o", "", "file to write the archive to")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "File to write the archive to")
 	return cmd
 }
 
 func (c *commandSet) importArchive() *cobra.Command {
 	var name string
 	cmd := &cobra.Command{
-		Use:   "import <archive>",
-		Short: "Import a profile from archive",
-		Args:  cobra.ExactArgs(1),
+		Use:     "import <archive>",
+		Short:   "Make a profile from an archive",
+		Long:    "Creates a profile from an archive that export wrote, with an alias command when its name is free.",
+		Example: "  icebath profile import work.tar.gz --name work-copy",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			data, err := os.ReadFile(fsx.ExpandHome(args[0]))
 			if errors.Is(err, fs.ErrNotExist) {
-				return fail(out, errors.New("Archive not found: "+args[0]))
+				return fail(out, errors.New("There is no file at "+args[0]+"."))
 			}
 			if err != nil {
 				return fail(out, err)
@@ -744,19 +809,19 @@ func (c *commandSet) importArchive() *cobra.Command {
 			if err != nil {
 				return fail(out, err)
 			}
-			say(out, "✓ Imported profile '%s' at %s", imported.GetName(), imported.GetPath())
+			say(out, "✓ Imported the profile %s into %s.", imported.GetName(), imported.GetPath())
 			if collision, err := profile.Collision(imported.GetName()); err == nil && collision == "" {
 				if path, err := profile.MakeAlias(imported.GetName(), ""); err == nil {
-					say(out, "  Wrapper created: %s", path)
+					say(out, "  Made the alias %s, a command that opens this profile.", path)
 				} else {
-					say(out, "⚠ %v", err)
+					say(out, "⚠ %s", sentence(err.Error()))
 				}
 			}
 			say(out, "")
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&name, "name", "", "name of the new profile, the archive's own when empty")
+	cmd.Flags().StringVar(&name, "name", "", "Name of the new profile, instead of the archive's")
 	return cmd
 }
 
@@ -775,48 +840,53 @@ func source(raw string) string {
 // Lines of what an install would do, which the command prints and the profiles screen shows
 func PlanLines(plan *profilev1.Plan) []string {
 	m := plan.GetManifest()
-	lines := []string{"", fmt.Sprintf("Distribution: %s v%s", m.GetName(), m.GetVersion())}
+	lines := []string{"", "Distribution: " + distribution(m.GetName(), m.GetVersion())}
 	if m.GetDescription() != "" {
 		lines = append(lines, "  "+m.GetDescription())
 	}
+	facts := [][2]string{}
 	if m.GetAuthor() != "" {
-		lines = append(lines, "  Author:   "+m.GetAuthor())
+		facts = append(facts, [2]string{"Author", m.GetAuthor()})
 	}
 	if m.GetRequires() != "" {
-		lines = append(lines, "  Requires: Icebath "+m.GetRequires())
+		facts = append(facts, [2]string{"Needs", "icebath " + m.GetRequires()})
 	}
-	lines = append(lines, "  Source:   "+plan.GetProvenance(), "  Target:   "+plan.GetTarget())
+	facts = append(facts, [2]string{"Source", plan.GetProvenance()}, [2]string{"Folder", plan.GetTarget()})
+	for _, line := range rows(facts) {
+		lines = append(lines, "  "+line)
+	}
 	if plan.GetExisting() {
 		if plan.GetDistribution() {
-			lines = append(lines, "  (profile exists — will overwrite distribution-owned files only)")
+			lines = append(lines, "  The profile exists already, and only the files the distribution owns are replaced.")
 		} else {
-			lines = append(lines, "  ⚠ Profile exists but is NOT a distribution.  Installing here will", "    overwrite its SOUL.md and mcp.json and replace any skill or "+
-				"cron job", "    of the same name the distribution ships.", "    Your memories, sessions, auth.json, and .env will be preserved,",
-				"    but any hand-edits to distribution-owned files will be lost.")
+			lines = append(lines, "  ⚠ The profile exists already and was not installed from a distribution.",
+				"    Installing here replaces its SOUL.md and mcp.json, and every skill or scheduled job",
+				"    that has the name of one the distribution brings.", "    Your memories, sessions, sign-ins in auth.json and keys file stay,",
+				"    but your own changes to files the distribution owns are lost.")
 		}
 	}
 	if len(m.GetEnv()) > 0 {
-		lines = append(lines, "", "  Env vars:")
+		lines = append(lines, "", "  Variables:")
 		for _, r := range m.GetEnv() {
-			tag, status := "optional", "—"
+			words := "Optional"
 			if r.GetRequired() {
-				tag = "required"
+				words = "Required"
 			}
 			switch {
 			case r.GetSet():
-				status = "✓ set"
+				words += ", set already"
 			case r.GetRequired():
-				status = "needs setting"
+				words += ", not set yet"
 			}
-			line := fmt.Sprintf("    • %s (%s, %s)", r.GetName(), tag, status)
+			line := "    " + r.GetName() + ": " + words + "."
 			if r.GetDescription() != "" {
-				line += " — " + r.GetDescription()
+				line += " " + sentence(r.GetDescription())
 			}
 			lines = append(lines, line)
 		}
 	}
 	if plan.GetHasCron() {
-		lines = append(lines, "", "  ⚠ This distribution ships cron jobs.  They will NOT run automatically — review and enable manually.")
+		lines = append(lines, "", "  ⚠ This distribution brings scheduled jobs in cron/jobs.json, and this build of icebath does not run them.")
 	}
 	return lines
 }
@@ -826,8 +896,11 @@ func (c *commandSet) install() *cobra.Command {
 	var alias, force, yes bool
 	cmd := &cobra.Command{
 		Use:   "install <source>",
-		Short: "Install a profile distribution from a git URL or local directory",
-		Args:  cobra.ExactArgs(1),
+		Short: "Install a ready-made profile from git or a folder",
+		Long: "Installs a profile distribution, a ready-made profile kept in a git repository or a folder. install shows what it will set " +
+			"up and asks first.",
+		Example: "  icebath profile install https://github.com/you/research-profile\n  icebath profile install ./research-profile --alias",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			from := source(args[0])
@@ -838,8 +911,9 @@ func (c *commandSet) install() *cobra.Command {
 			for _, line := range PlanLines(planned.GetPlan()) {
 				say(out, "%s", line)
 			}
-			if !yes && !cli.NewConsole(cmd).Agree("\nProceed with install? [y/N] ", false) {
-				say(out, "Install cancelled.")
+			question := fmt.Sprintf("\nInstall the profile %s from this distribution? [y/N] ", planned.GetPlan().GetManifest().GetName())
+			if !yes && !cli.NewConsole(cmd).Agree(question, false) {
+				say(out, "Nothing was installed.")
 				return nil
 			}
 			installed, err := c.service.Install(cmd.Context(), &profilev1.InstallRequest{Source: from, Name: name, Force: force})
@@ -851,27 +925,27 @@ func (c *commandSet) install() *cobra.Command {
 			if alias {
 				if collision, err := profile.Collision(m.GetName()); err == nil && collision == "" {
 					if _, err := profile.MakeAlias(m.GetName(), ""); err != nil {
-						say(out, "⚠ %v", err)
+						say(out, "⚠ %s", sentence(err.Error()))
 					}
 				}
 			}
-			say(out, "\n✓ Installed '%s' v%s", m.GetName(), m.GetVersion())
-			say(out, "  Profile path: %s", plan.GetTarget())
+			say(out, "\n✓ Installed the profile %s, version %s.", m.GetName(), m.GetVersion())
+			say(out, "  Its folder is %s.", plan.GetTarget())
 			if len(m.GetEnv()) > 0 {
-				say(out, "  Next: copy .env.EXAMPLE to .env and fill in required keys:\n    %s/.env.EXAMPLE", plan.GetTarget())
+				say(out, "  Next, copy .env.EXAMPLE to .env in that folder and fill in the required keys:\n    %s/.env.EXAMPLE", plan.GetTarget())
 			}
 			if plan.GetHasCron() {
-				say(out, "  Cron jobs were included but are NOT scheduled automatically.\n  Review them with:  icebath -p %s cron list", m.GetName())
+				say(out, "  It brought scheduled jobs in %s/cron/jobs.json, and this build of icebath does not run them.", plan.GetTarget())
 			}
-			say(out, "\n  Use with:      icebath -p %s chat", m.GetName())
+			say(out, "\n  Open it with icebath -p %s chat.", m.GetName())
 			return nil
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&name, "name", "", "name of the profile, the distribution's own when empty")
-	f.BoolVar(&alias, "alias", false, "make an alias command for the profile")
-	f.BoolVar(&force, "force", false, "install over a profile that is already there")
-	f.BoolVarP(&yes, "yes", "y", false, "install without asking")
+	f.StringVar(&name, "name", "", "Name of the profile, instead of the distribution's")
+	f.BoolVar(&alias, "alias", false, "Make an alias command for the profile")
+	f.BoolVar(&force, "force", false, "Install over a profile that has this name")
+	f.BoolVarP(&yes, "yes", "y", false, "Install without asking first")
 	return cmd
 }
 
@@ -879,8 +953,10 @@ func (c *commandSet) update() *cobra.Command {
 	var forceConfig, yes bool
 	cmd := &cobra.Command{
 		Use:   "update <profile_name>",
-		Short: "Re-pull a distribution and apply updates (user data preserved)",
-		Args:  cobra.ExactArgs(1),
+		Short: "Update an installed profile from where it came from",
+		Long: "Pulls the distribution that the profile was installed from again and applies its changes. Your sessions, keys and other data " +
+			"stay. Your settings file stays too, unless you pass --force-config.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			canon, err := profile.Normalize(args[0])
@@ -892,25 +968,25 @@ func (c *commandSet) update() *cobra.Command {
 				return fail(out, err)
 			}
 			if !current.GetFound() {
-				say(out, "Error: Profile '%s' is not a distribution (no distribution.yaml). Only profiles installed via `icebath profile install` can "+
-					"be updated.", canon)
+				say(out, "✗ %s was not installed from a distribution, because it has no distribution.yaml. Only a profile installed with "+
+					"icebath profile install can be updated.", canon)
 				return cli.Exit(1)
 			}
 			if !yes {
 				from := current.GetManifest().GetSource()
 				if from == "" {
-					from = "(no source)"
+					from = "a source icebath did not record"
 				}
-				say(out, "\nUpdate '%s' from: %s", canon, from)
-				say(out, "  Currently at version %s", current.GetManifest().GetVersion())
+				say(out, "\nUpdating %s pulls it again from %s.", canon, from)
+				say(out, "  It is at version %s now.", current.GetManifest().GetVersion())
 				if forceConfig {
-					say(out, "  --force-config set: config.yaml WILL be overwritten.")
+					say(out, "  Because you passed --force-config, its settings file config.yaml is replaced.")
 				} else {
-					say(out, "  config.yaml will be preserved (pass --force-config to overwrite).")
+					say(out, "  Its settings file config.yaml stays as it is. --force-config would replace it.")
 				}
-				say(out, "  User data (memories, sessions, auth, .env) will NOT be touched.")
-				if !cli.NewConsole(cmd).Agree("\nProceed? [y/N] ", false) {
-					say(out, "Update cancelled.")
+				say(out, "  Its memories, sessions, sign-ins and keys file are not touched.")
+				if !cli.NewConsole(cmd).Agree(fmt.Sprintf("\nUpdate the profile %s now? [y/N] ", canon), false) {
+					say(out, "Nothing was updated.")
 					return nil
 				}
 			}
@@ -919,15 +995,15 @@ func (c *commandSet) update() *cobra.Command {
 				return fail(out, err)
 			}
 			m := updated.GetPlan().GetManifest()
-			say(out, "\n✓ Updated '%s' → v%s", m.GetName(), m.GetVersion())
+			say(out, "\n✓ Updated %s to version %s.", m.GetName(), m.GetVersion())
 			if updated.GetPlan().GetHasCron() {
-				say(out, "  Cron files were refreshed.  Review with:  icebath -p %s cron list", m.GetName())
+				say(out, "  Its scheduled jobs in cron/jobs.json were updated too, and this build of icebath does not run them.")
 			}
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&forceConfig, "force-config", false, "overwrite config.yaml with the distribution's")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "update without asking")
+	cmd.Flags().BoolVar(&forceConfig, "force-config", false, "Replace the settings file with the distribution's")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Update without asking first")
 	return cmd
 }
 
@@ -938,7 +1014,7 @@ func (c *commandSet) info(cmd *cobra.Command, args []string) error {
 		return fail(out, err)
 	}
 	if !found.GetFound() {
-		say(out, "Profile '%s' is not a distribution (no distribution.yaml).", args[0])
+		say(out, "%s was not installed from a distribution, because it has no distribution.yaml.", args[0])
 		return nil
 	}
 	for _, line := range InfoLines(found.GetManifest()) {
@@ -949,27 +1025,34 @@ func (c *commandSet) info(cmd *cobra.Command, args []string) error {
 
 // Lines of a distribution's manifest, which the command prints and the profiles screen shows
 func InfoLines(m *profilev1.Manifest) []string {
-	lines := []string{"", "Distribution: " + m.GetName(), "Version:      " + orUnknown(m.GetVersion())}
-	for _, row := range [][2]string{{m.GetDescription(), "Description:  "}, {m.GetAuthor(), "Author:       "}, {m.GetLicense(), "License:      "},
-		{m.GetRequires(), "Requires:     Icebath "}, {m.GetSource(), "Source:       "}, {m.GetInstalledAt(), "Installed:    "}} {
-		if row[0] != "" {
-			lines = append(lines, row[1]+row[0])
+	version := m.GetVersion()
+	if version == "" {
+		version = "Unknown"
+	}
+	facts := [][2]string{{"Distribution", m.GetName()}, {"Version", version}}
+	for _, row := range [][2]string{{"Description", m.GetDescription()}, {"Author", m.GetAuthor()}, {"License", m.GetLicense()},
+		{"Needs", m.GetRequires()}, {"Source", m.GetSource()}, {"Installed", m.GetInstalledAt()}} {
+		if row[1] != "" {
+			if row[0] == "Needs" {
+				row[1] = "icebath " + row[1]
+			}
+			facts = append(facts, row)
 		}
 	}
+	lines := append([]string{""}, rows(facts)...)
 	if len(m.GetEnv()) > 0 {
-		lines = append(lines, "", "Environment variables:")
+		lines = append(lines, "", "Variables:")
 		for _, r := range m.GetEnv() {
-			tag := "optional"
+			line := "  " + r.GetName() + ": Optional."
 			if r.GetRequired() {
-				tag = "required"
+				line = "  " + r.GetName() + ": Required."
 			}
-			line := fmt.Sprintf("  %s (%s)", r.GetName(), tag)
 			if r.GetDescription() != "" {
-				line += " — " + r.GetDescription()
+				line += " " + sentence(r.GetDescription())
 			}
 			lines = append(lines, line)
 			if r.GetDefault() != "" {
-				lines = append(lines, "      default: "+r.GetDefault())
+				lines = append(lines, "      Default: "+r.GetDefault())
 			}
 		}
 	}

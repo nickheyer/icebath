@@ -22,6 +22,7 @@ func (specs) Specs() []provider.Spec {
 		ExtraBody:                 extraBody,
 		ReplaysToolCallSignatures: true,
 		DisplayName:               vertexconfig.Title,
+		Description:               "Gemini and Claude through Google Cloud, with your Google credentials",
 		BaseURL:                   vertexconfig.BaseURL,
 		Mode:                      provider.ModeChatCompletions,
 		Auth:                      provider.AuthGCPOAuth,
@@ -35,12 +36,12 @@ func (specs) Specs() []provider.Spec {
 		ListPrices:                "googleapis.com",
 		DefaultAuxModel:           "google/gemini-3.6-flash",
 		Settings: []config.Setting{
-			{Key: vertexconfig.Project, Title: "Vertex project", About: "Google Cloud project of the requests; the project of the credentials when empty",
-				Default: "", Env: []string{vertexconfig.ProjectEnv}},
-			{Key: vertexconfig.Region, Title: "Vertex region", About: "Region of the requests, such as us-central1, or global", Default: vertexconfig.DefaultRegion,
-				Env: []string{vertexconfig.RegionEnv}},
+			{Key: vertexconfig.Project, Title: "Google Cloud project", About: "The Google Cloud project that requests are made for.", Default: "",
+				Zero: "From your sign-in", Env: []string{vertexconfig.ProjectEnv}},
+			{Key: vertexconfig.Region, Title: "Region", About: "The Google Cloud region that requests are sent to.", Help: "Such as us-central1, or global.",
+				Default: vertexconfig.DefaultRegion, Env: []string{vertexconfig.RegionEnv}},
 		},
-		Account: []config.Setting{{Key: vertexconfig.CredentialsPath, Title: "Service account key", About: "Path to a Google service account JSON key",
+		Account: []config.Setting{{Key: vertexconfig.CredentialsPath, Title: "Service account key", About: "The path to a JSON key file of a Google service account.",
 			Default: ""}},
 	}}
 }

@@ -9,8 +9,8 @@ import (
 	"io"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"connectrpc.com/connect/v2"
@@ -21,6 +21,7 @@ import (
 	shellhooks "github.com/nickheyer/icebath/internal/plugins/defaults/hooks/shellhooks/hooks"
 	hooksv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/hooks/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/hooks/v1/hooksv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type commands struct{}
@@ -29,72 +30,108 @@ func Register(registry *cli.Registry) {
 	registry.Register(commands{})
 }
 
-const long = "Inspect the shell-script hooks declared under " + shellconfig.Events + " in the profile's config.yaml, test them against synthetic payloads, " +
-	"and manage the first-use consent allowlist, " + shellhooks.AllowlistFile + " in the profile's folder.\n\n" +
-	"Each event of " + shellconfig.Events + " holds a list of hooks: command (run with the event as JSON on its standard input), matcher (a pattern " +
-	"of tool names, for pre_tool_call and post_tool_call), timeout (seconds, at most 300, 60 when unset) and fail_closed (pre_tool_call only: a " +
-	"hook that fails or gives no answer blocks the call). A hook answers with a JSON object on its standard output: {\"action\": \"block\", " +
-	"\"message\": ...}, {\"action\": \"modify\", \"args\": {...}} or {\"action\": \"approve\", \"message\": ..., \"rule_key\": ...} for pre_tool_call " +
-	"(exit code 2 blocks too), {\"action\": \"continue\", \"message\": ...} for pre_verify, {\"context\": ...} for pre_llm_call and the others. " +
-	shellconfig.Outbound + " lists addresses events are posted to."
+const long = "Hooks are your own commands that run when the agent acts, such as before it calls a tool. You set them under " +
+	shellconfig.Events + " in the settings file. icebath asks you once before a new hook first runs and keeps your answers in " +
+	shellhooks.AllowlistFile + " in the profile's folder. Use these commands to list your hooks, try them on a sample event, take back an " +
+	"answer and check them all.\n\n" +
+	"Each event holds a list of hooks. command is the command to run, and it gets the event as JSON on its standard input. matcher is a " +
+	"pattern of tool names, for pre_tool_call and post_tool_call. timeout is the time limit in seconds, 60 when not set and at most 300. " +
+	"With fail_closed, a pre_tool_call hook that fails or gives no answer blocks the call.\n\n" +
+	"A hook answers with a JSON object on its standard output. A pre_tool_call hook blocks the call with {\"action\": \"block\", " +
+	"\"message\": ...}, changes its arguments with {\"action\": \"modify\", \"args\": {...}} or approves it with {\"action\": " +
+	"\"approve\", \"message\": ..., \"rule_key\": ...}. Exit status 2 blocks the call too. A pre_verify hook answers {\"action\": " +
+	"\"continue\", \"message\": ...}. pre_llm_call and the other events answer {\"context\": ...}. icebath also posts events to the " +
+	"addresses under " + shellconfig.Outbound + ".\n\n" +
+	"Where no one can answer, such as in CI, --accept-hooks, ICEBATH_ACCEPT_HOOKS=1 or " + shellconfig.AutoAccept + ": true in the " +
+	"settings file allows every new hook without asking."
 
 func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	service := hooksv1connect.NewHooksServiceClient(conn)
 	root := &cobra.Command{
-		Use:   "hooks",
-		Short: "Inspect and manage shell-script hooks",
-		Long:  long,
-		Args:  cobra.ArbitraryArgs,
+		Use:     "hooks",
+		GroupID: cli.GroupAbilities,
+		Short:   "List, test and check your hooks",
+		Long:    long,
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			if len(args) > 0 {
-				fmt.Fprintf(out, "Unknown hooks subcommand: %s\n", args[0])
-				return nil
+				fmt.Fprintf(out, "icebath hooks has no command “%s”.\n", args[0])
 			}
-			fmt.Fprintln(out, "Usage: icebath hooks {list|test|revoke|doctor}")
-			fmt.Fprintln(out, "Run 'icebath hooks --help' for details.")
+			fmt.Fprintln(out, "Usage: icebath hooks [command]")
+			fmt.Fprintln(out, "\nCommands:")
+			width := 0
+			for _, sub := range cmd.Commands() {
+				width = max(width, cli.Width(sub.Name()))
+			}
+			for _, sub := range cmd.Commands() {
+				if sub.IsAvailableCommand() {
+					fmt.Fprintf(out, "  %s  %s\n", cli.Pad(sub.Name(), width), sub.Short)
+				}
+			}
+			fmt.Fprintln(out, "\nFor how hooks are written, run icebath hooks --help.")
 			return nil
 		},
 	}
 	list := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List configured hooks with matcher, timeout, and consent status",
-		Args:    cobra.NoArgs,
-		RunE:    func(cmd *cobra.Command, _ []string) error { return listed(cmd, service) },
+		Short:   "List your hooks and whether each may run",
+		Long: "Lists every hook by event with the tools it matches, its time limit and whether you allowed it, then the addresses " +
+			"icebath posts events to.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return listed(cmd, service) },
 	}
 	var tool, file string
 	test := &cobra.Command{
 		Use:   "test <event>",
-		Short: "Fire every hook matching <event> against a synthetic payload",
-		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return tested(cmd, service, args[0], tool, file) },
+		Short: "Run the hooks of an event on a sample event",
+		Long: "Runs every hook set on the event once, with a made-up event as its input, and shows what each one answers. Use test to try a " +
+			"hook before the agent runs it for real.",
+		Example: "  icebath hooks test pre_tool_call --for-tool terminal\n  icebath hooks test pre_llm_call --payload-file event.json",
+		Args:    cobra.ExactArgs(1),
+		RunE:    func(cmd *cobra.Command, args []string) error { return tested(cmd, service, args[0], tool, file) },
 	}
-	test.Flags().StringVar(&tool, "for-tool", "", "Only fire hooks whose matcher matches this tool name (used for pre_tool_call / post_tool_call)")
-	test.Flags().StringVar(&file, "payload-file", "", "Path to a JSON file whose contents are merged into the synthetic payload before execution")
+	test.Flags().StringVar(&tool, "for-tool", "", "Run only the hooks whose matcher matches this tool, for tool events")
+	test.Flags().StringVar(&file, "payload-file", "", "JSON file whose fields are added to the sample event")
 	revoke := &cobra.Command{
 		Use:     "revoke <command>",
 		Aliases: []string{"remove", "rm"},
-		Short:   "Remove a command's allowlist entries (a running icebath stops running it at its next event)",
+		Short:   "Take back your consent to a hook's command",
+		Long: "Removes the command from the hooks you allowed, so icebath asks again before it runs the command. A running icebath stops " +
+			"running the command at its next event.",
+		Example: "  icebath hooks revoke ~/.config/icebath/hooks/lint.sh",
 		Args:    cobra.ExactArgs(1),
 		RunE:    func(cmd *cobra.Command, args []string) error { return revoked(cmd, service, args[0]) },
 	}
 	doctor := &cobra.Command{
 		Use:   "doctor",
-		Short: "Check each configured hook: exec bit, allowlist, mtime drift, JSON validity, and synthetic run timing",
-		Args:  cobra.NoArgs,
-		RunE:  func(cmd *cobra.Command, _ []string) error { return checked(cmd, service) },
+		Short: "Check every hook for problems",
+		Long: "Checks each hook: that its file may run, that you allowed it, that it has not changed since, that it answers with valid JSON " +
+			"and how long a sample run takes.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error { return checked(cmd, service) },
 	}
 	root.AddCommand(list, test, revoke, doctor)
 	return []*cobra.Command{root}
 }
 
-// Matcher part of a line of the list, empty without a matcher
-func matcherPart(matcher string) string {
-	if matcher == "" {
-		return ""
+// Facts of a hook or webhook after its command or address: the tools it runs for, its time limit and how it stands
+func facts(matcher string, timeout int32, standing string) string {
+	parts := []string{}
+	if matcher != "" {
+		parts = append(parts, "Runs for tools that match "+matcher+".")
 	}
-	return " matcher='" + matcher + "'"
+	parts = append(parts, "Time limit: "+strs.Span(time.Duration(timeout)*time.Second)+".")
+	if standing != "" {
+		parts = append(parts, standing)
+	}
+	return strings.Join(parts, " ")
+}
+
+// Length of a run in words
+func span(seconds float64) string {
+	return strs.Span(time.Duration(seconds * float64(time.Second)).Round(time.Millisecond))
 }
 
 // Prints the configured shell hooks by event with their consent and drift, then the outbound webhooks
@@ -106,12 +143,15 @@ func listed(cmd *cobra.Command, service hooksv1connect.HooksServiceClient) error
 	out := cmd.OutOrStdout()
 	hooks, webhooks := response.GetHooks(), response.GetWebhooks()
 	if len(hooks) == 0 && len(webhooks) == 0 {
-		fmt.Fprintf(out, "No shell hooks or outbound webhooks configured in the profile's config.yaml (%s, %s).\n", shellconfig.Events, shellconfig.Outbound)
-		fmt.Fprintln(out, "See `icebath hooks --help` for the config schema.")
+		fmt.Fprintln(out, "You have no shell hooks or webhooks yet. Add them in /settings under Hooks › Shell hooks, or under "+shellconfig.Events+
+			" and "+shellconfig.Outbound+" in the settings file.")
+		fmt.Fprintln(out, "For how a hook is written, run icebath hooks --help.")
 		return nil
 	}
 	if len(hooks) == 0 {
-		fmt.Fprintf(out, "No shell hooks configured in the profile's config.yaml (%s).\n", shellconfig.Events)
+		fmt.Fprintln(out, "You have no shell hooks yet. Add them in /settings under Hooks › Shell hooks › Commands, or under "+shellconfig.Events+
+			" in the settings file.")
+		fmt.Fprintln(out)
 	} else {
 		byEvent := map[string][]*hooksv1.Hook{}
 		var events []string
@@ -122,37 +162,36 @@ func listed(cmd *cobra.Command, service hooksv1connect.HooksServiceClient) error
 			byEvent[hook.GetEvent()] = append(byEvent[hook.GetEvent()], hook)
 		}
 		slices.Sort(events)
-		fmt.Fprintf(out, "Configured shell hooks (%d total):\n\n", len(hooks))
+		fmt.Fprintf(out, "%s:\n\n", strs.Count(len(hooks), "shell hook"))
 		for _, event := range events {
-			fmt.Fprintf(out, "  [%s]\n", event)
+			fmt.Fprintf(out, "  On %s\n", event)
 			for _, hook := range byEvent[event] {
-				status := "✗ not allowlisted"
-				if hook.GetAllowed() {
-					status = "✓ allowed"
+				standing := "Not allowed yet, so it does not run."
+				switch {
+				case hook.GetAllowed() && hook.GetApprovedAt() != "":
+					standing = "You allowed it on " + hook.GetApprovedAt() + "."
+				case hook.GetAllowed():
+					standing = "Allowed."
 				}
-				fmt.Fprintf(out, "    - %s%s (timeout=%ds, %s)\n", hook.GetCommand(), matcherPart(hook.GetMatcher()), hook.GetTimeout(), status)
-				if hook.GetApprovedAt() != "" {
-					fmt.Fprintf(out, "      approved_at: %s\n", hook.GetApprovedAt())
-					if hook.GetChanged() {
-						fmt.Fprintf(out, "      ⚠ script modified since approval (was %s, now %s) — run `icebath hooks doctor` to re-validate\n", hook.GetChangedWas(),
-							hook.GetChangedNow())
-					}
+				fmt.Fprintf(out, "    %s\n      %s\n", hook.GetCommand(), facts(hook.GetMatcher(), hook.GetTimeout(), standing))
+				if hook.GetApprovedAt() != "" && hook.GetChanged() {
+					fmt.Fprintf(out, "      ⚠ The script changed after you allowed it. Its time was %s then and is %s now. Run icebath hooks doctor to "+
+						"check it again.\n", hook.GetChangedWas(), hook.GetChangedNow())
 				}
 			}
 			fmt.Fprintln(out)
 		}
 	}
 	if len(webhooks) > 0 {
-		fmt.Fprintf(out, "Configured outbound webhooks (%d total):\n\n", len(webhooks))
+		fmt.Fprintf(out, "%s:\n\n", strs.Count(len(webhooks), "webhook"))
 		for _, target := range webhooks {
-			signed := "UNSIGNED"
+			signed := "Not signed."
 			if target.GetSigned() {
-				signed = "signed"
+				signed = "Signed."
 			}
-			fmt.Fprintf(out, "  - %s\n", target.GetLabel())
-			fmt.Fprintf(out, "      url:     %s\n", target.GetUrl())
-			fmt.Fprintf(out, "      events:  %s%s (timeout=%ds, %s)\n", strings.Join(target.GetEvents(), ", "), matcherPart(target.GetMatcher()), target.GetTimeout(),
-				signed)
+			fmt.Fprintf(out, "  %s\n", target.GetLabel())
+			fmt.Fprintf(out, "      Address: %s\n", target.GetUrl())
+			fmt.Fprintf(out, "      Events: %s. %s\n", strings.Join(target.GetEvents(), ", "), facts(target.GetMatcher(), target.GetTimeout(), signed))
 		}
 		fmt.Fprintln(out)
 	}
@@ -167,25 +206,25 @@ func tested(cmd *cobra.Command, service hooksv1connect.HooksServiceClient, event
 		return err
 	}
 	if !slices.Contains(listing.GetPoints(), event) {
-		fmt.Fprintf(out, "Unknown event: '%s'\n", event)
-		fmt.Fprintf(out, "Valid events: %s\n", strings.Join(listing.GetPoints(), ", "))
+		fmt.Fprintf(out, "✗ icebath has no event “%s”.\n", event)
+		fmt.Fprintf(out, "The events are %s.\n", strings.Join(listing.GetPoints(), ", "))
 		return nil
 	}
 	payload := ""
 	if file != "" {
 		data, err := os.ReadFile(file)
 		if err != nil {
-			fmt.Fprintf(out, "Error reading payload file: %s\n", err)
+			fmt.Fprintf(out, "✗ The sample event file can't be read: %s.\n", err)
 			return nil
 		}
 		data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 		if !utf8.Valid(data) {
-			fmt.Fprintf(out, "Error reading payload file: %s is not UTF-8 text\n", file)
+			fmt.Fprintf(out, "✗ The sample event file %s can't be read, because it is not text.\n", file)
 			return nil
 		}
 		var custom any
 		if err := json.Unmarshal(data, &custom); err != nil {
-			fmt.Fprintf(out, "Error reading payload file: %s\n", err)
+			fmt.Fprintf(out, "✗ The sample event file %s is not valid JSON: %s.\n", file, err)
 			return nil
 		}
 		if object, ok := custom.(map[string]any); ok {
@@ -195,7 +234,7 @@ func tested(cmd *cobra.Command, service hooksv1connect.HooksServiceClient, event
 			}
 			payload = string(encoded)
 		} else {
-			fmt.Fprintf(out, "Warning: %s is not a JSON object; ignoring\n", file)
+			fmt.Fprintf(out, "⚠ %s does not hold a JSON object, so the made-up event is used as it is.\n", file)
 		}
 	}
 	response, err := service.Test(cmd.Context(), &hooksv1.TestRequest{Event: event, Tool: tool, Payload: payload})
@@ -204,51 +243,49 @@ func tested(cmd *cobra.Command, service hooksv1connect.HooksServiceClient, event
 	}
 	runs := response.GetRuns()
 	if len(runs) == 0 {
-		fmt.Fprintf(out, "No shell hooks configured for event: %s\n", event)
 		if tool != "" {
-			fmt.Fprintf(out, "(with matcher filter --for-tool=%s)\n", tool)
+			fmt.Fprintf(out, "No shell hook runs on %s for the tool %s.\n", event, tool)
+		} else {
+			fmt.Fprintf(out, "No shell hook runs on %s.\n", event)
 		}
 		return nil
 	}
-	fmt.Fprintf(out, "Firing %d hook(s) for event '%s':\n\n", len(runs), event)
+	fmt.Fprintf(out, "Running %s on a made-up %s event:\n\n", strs.Count(len(runs), "hook"), event)
 	for _, tested := range runs {
-		fmt.Fprintf(out, "  → %s\n", tested.GetCommand())
+		fmt.Fprintf(out, "  %s\n", tested.GetCommand())
 		printRun(out, tested.GetRun())
 		fmt.Fprintln(out)
 	}
 	return nil
 }
 
-// Seconds as the commands print them, as short as they write
-func seconds(s float64) string { return strconv.FormatFloat(s, 'f', -1, 64) }
-
-// Exit code of a run, None for one that did not run to its end
-func exitCode(run *hooksv1.Run) string {
+// How a run ended and how long it took
+func ended(run *hooksv1.Run) string {
 	if !run.GetExited() {
-		return "None"
+		return "It was stopped after " + span(run.GetSeconds()) + ", with no exit code."
 	}
-	return strconv.Itoa(int(run.GetExitCode()))
+	return fmt.Sprintf("It ended with exit code %d after %s.", run.GetExitCode(), span(run.GetSeconds()))
 }
 
 // Prints how one run went and the directive it answered with, even after an error or a timeout, so failing closed and open differ
 func printRun(out io.Writer, run *hooksv1.Run) {
 	switch {
 	case run.GetError() != "":
-		fmt.Fprintf(out, "      ✗ error: %s\n", run.GetError())
+		fmt.Fprintf(out, "      ✗ %s\n", sentence(run.GetError()))
 	case run.GetTimedOut():
-		fmt.Fprintf(out, "      ✗ timed out after %ss\n", seconds(run.GetSeconds()))
+		fmt.Fprintf(out, "      ✗ It did not finish within %s.\n", span(run.GetSeconds()))
 	default:
-		fmt.Fprintf(out, "      exit=%s  elapsed=%ss\n", exitCode(run), seconds(run.GetSeconds()))
-		for _, stream := range []struct{ name, text string }{{"stdout", run.GetStdout()}, {"stderr", run.GetStderr()}} {
+		fmt.Fprintf(out, "      %s\n", ended(run))
+		for _, stream := range []struct{ name, text string }{{"Output", run.GetStdout()}, {"Errors", run.GetStderr()}} {
 			if text := strings.TrimSpace(stream.text); text != "" {
 				fmt.Fprintf(out, "      %s: %s\n", stream.name, truncate(text, 400))
 			}
 		}
 	}
 	if run.GetDirective() != "" {
-		fmt.Fprintf(out, "      parsed (Icebath wire shape): %s\n", run.GetDirective())
+		fmt.Fprintf(out, "      icebath reads its answer as %s\n", run.GetDirective())
 	} else {
-		fmt.Fprintln(out, "      parsed: <none — hook contributed nothing to the dispatcher>")
+		fmt.Fprintln(out, "      icebath reads no answer from it, so it changes nothing.")
 	}
 }
 
@@ -258,7 +295,16 @@ func truncate(s string, n int) string {
 	if len(runes) <= n {
 		return s
 	}
-	return string(runes[:n-3]) + "..."
+	return string(runes[:n-1]) + "…"
+}
+
+// Text that ends as a sentence: trimmed, with a period added when it ends in no mark of its own
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?") {
+		return text
+	}
+	return text + "."
 }
 
 // Takes every allowlist entry of the command off and says how soon running icebaths stop running it
@@ -269,12 +315,12 @@ func revoked(cmd *cobra.Command, service hooksv1connect.HooksServiceClient, comm
 	}
 	out := cmd.OutOrStdout()
 	if response.GetRemoved() == 0 {
-		fmt.Fprintf(out, "No allowlist entry found for command: %s\n", command)
+		fmt.Fprintf(out, "You had not allowed %s, so there was nothing to take back.\n", command)
 		return nil
 	}
-	fmt.Fprintf(out, "Removed %d allowlist entry/entries for: %s\n", response.GetRemoved(), command)
-	fmt.Fprintf(out, "Note: a running icebath stops running it at its next event (unless --accept-hooks / ICEBATH_ACCEPT_HOOKS / %s approves every hook "+
-		"there).\n", shellconfig.AutoAccept)
+	fmt.Fprintf(out, "✓ Removed %s that allowed %s.\n", strs.Count(int(response.GetRemoved()), "entry"), command)
+	fmt.Fprintln(out, "A running icebath stops running it at its next event, unless --accept-hooks, ICEBATH_ACCEPT_HOOKS or Run without asking in "+
+		"/settings under Hooks › Shell hooks allows every hook there.")
 	return nil
 }
 
@@ -287,21 +333,21 @@ func checked(cmd *cobra.Command, service hooksv1connect.HooksServiceClient) erro
 	out := cmd.OutOrStdout()
 	checks := response.GetChecks()
 	if len(checks) == 0 {
-		fmt.Fprintln(out, "No shell hooks configured — nothing to check.")
+		fmt.Fprintln(out, "You have no shell hooks, so there is nothing to check. Add them in /settings under Hooks › Shell hooks › Commands.")
 		return nil
 	}
-	fmt.Fprintf(out, "Checking %d configured shell hook(s)...\n\n", len(checks))
+	fmt.Fprintf(out, "Checking %s…\n\n", strs.Count(len(checks), "shell hook"))
 	problems := 0
 	for _, check := range checks {
-		fmt.Fprintf(out, "  [%s] %s\n", check.GetEvent(), check.GetCommand())
+		fmt.Fprintf(out, "  %s, on %s\n", check.GetCommand(), check.GetEvent())
 		doctorOne(out, check)
 		problems += int(check.GetProblems())
 		fmt.Fprintln(out)
 	}
 	if problems > 0 {
-		fmt.Fprintf(out, "%d issue(s) found.  Fix before relying on these hooks.\n", problems)
+		fmt.Fprintf(out, "✗ Found %s. Fix them before you rely on these hooks.\n", strs.Count(problems, "problem"))
 	} else {
-		fmt.Fprintln(out, "All shell hooks look healthy.")
+		fmt.Fprintln(out, "✓ Every shell hook works.")
 	}
 	return nil
 }
@@ -309,42 +355,44 @@ func checked(cmd *cobra.Command, service hooksv1connect.HooksServiceClient) erro
 // Prints what checking one hook found, the smoke run kept for an allowed hook whose script can run
 func doctorOne(out io.Writer, check *hooksv1.Checked) {
 	if check.GetRunnable() {
-		fmt.Fprintln(out, "      ✓ script exists and is executable")
+		fmt.Fprintln(out, "      ✓ The script exists and may run.")
 	} else {
-		fmt.Fprintln(out, "      ✗ script missing or not executable (chmod +x the file, or fix the path)")
+		fmt.Fprintln(out, "      ✗ The script is missing or may not run. Fix the path, or make the file runnable with chmod +x.")
 	}
-	if check.GetAllowed() {
-		fmt.Fprintf(out, "      ✓ allowlisted (approved %s)\n", check.GetApprovedAt())
-	} else {
-		fmt.Fprintln(out, "      ✗ not allowlisted — hook will NOT fire at runtime (run with --accept-hooks once, or confirm at the TTY prompt)")
+	switch {
+	case check.GetAllowed() && check.GetApprovedAt() != "":
+		fmt.Fprintf(out, "      ✓ You allowed it on %s.\n", check.GetApprovedAt())
+	case check.GetAllowed():
+		fmt.Fprintln(out, "      ✓ You allowed it.")
+	default:
+		fmt.Fprintln(out, "      ✗ You have not allowed it, so it does not run. Allow it when icebath asks, or start icebath once with --accept-hooks.")
 	}
 	switch {
 	case check.GetCompared() && check.GetChanged():
-		fmt.Fprintf(out, "      ⚠ script modified since approval (was %s, now %s) — review changes, then `icebath hooks revoke` + re-approve to refresh\n",
-			check.GetChangedWas(), check.GetChangedNow())
+		fmt.Fprintf(out, "      ⚠ The script changed after you allowed it. Its time was %s then and is %s now. Check the change, then run icebath "+
+			"hooks revoke and allow it again.\n", check.GetChangedWas(), check.GetChangedNow())
 	case check.GetCompared():
-		fmt.Fprintln(out, "      ✓ script unchanged since approval")
+		fmt.Fprintln(out, "      ✓ The script has not changed since you allowed it.")
 	}
 	if !check.GetAllowed() {
-		fmt.Fprintln(out, "      ℹ skipped JSON smoke test — not allowlisted yet. Approve the hook first (via TTY prompt or --accept-hooks), then re-run "+
-			"`icebath hooks doctor`.")
+		fmt.Fprintln(out, "      Its answer was not checked, because you have not allowed it. Allow it first, then run icebath hooks doctor again.")
 		return
 	}
 	run := check.GetRun()
 	if run == nil {
 		return
 	}
-	elapsed, code := seconds(run.GetSeconds()), exitCode(run)
 	switch {
 	case run.GetTimedOut():
-		fmt.Fprintf(out, "      ✗ timed out after %ss on synthetic payload (timeout=%ds)\n", elapsed, check.GetTimeout())
+		fmt.Fprintf(out, "      ✗ It did not finish a made-up event within %s. Its time limit is %s.\n", span(run.GetSeconds()),
+			strs.Span(time.Duration(check.GetTimeout())*time.Second))
 	case run.GetError() != "":
-		fmt.Fprintf(out, "      ✗ execution error: %s\n", run.GetError())
+		fmt.Fprintf(out, "      ✗ It could not run. %s\n", sentence(run.GetError()))
 	case check.GetOutput() == "empty":
-		fmt.Fprintf(out, "      ✓ ran clean with empty stdout (exit=%s, %ss) — hook is observer-only\n", code, elapsed)
+		fmt.Fprintf(out, "      ✓ It printed nothing, so it only watches and changes nothing. %s\n", ended(run))
 	case check.GetOutput() == "json":
-		fmt.Fprintf(out, "      ✓ produced valid JSON on synthetic payload (exit=%s, %ss)\n", code, elapsed)
+		fmt.Fprintf(out, "      ✓ It answered a made-up event with valid JSON. %s\n", ended(run))
 	default:
-		fmt.Fprintf(out, "      ✗ stdout was not valid JSON (exit=%s, %ss): %s\n", code, elapsed, truncate(strings.TrimSpace(run.GetStdout()), 120))
+		fmt.Fprintf(out, "      ✗ Its answer is not valid JSON. %s It printed: %s\n", ended(run), truncate(strings.TrimSpace(run.GetStdout()), 120))
 	}
 }

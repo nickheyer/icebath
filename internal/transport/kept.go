@@ -50,7 +50,7 @@ func (k *kept) Stream(ctx context.Context, request *provider.Request, fn provide
 			return response, err
 		}
 		if next.Account == route.Account && fn != nil {
-			_ = fn(provider.StreamEvent{Kind: provider.EventStatus, Text: "🔐 " + k.renewed(route, failure)})
+			_ = fn(provider.StreamEvent{Kind: provider.EventStatus, Text: k.renewed(route, failure)})
 		}
 		if next.Model != route.Model {
 			copied := *request
@@ -78,7 +78,7 @@ func (k *kept) renewed(route provider.Route, failure *provider.APIError) string 
 	}
 	name := cmp.Or(spec.DisplayName, spec.Name, route.Provider)
 	if reason == "unauthorized" {
-		return name + " credentials refreshed after 401. Retrying request..."
+		return name + " refused the sign-in, so icebath renewed it. Trying again."
 	}
-	return name + " credential renewed after a stale-credential error. Retrying request..."
+	return name + " refused a sign-in that had gone stale, so icebath renewed it. Trying again."
 }

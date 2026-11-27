@@ -252,7 +252,7 @@ func (g *background) taskFailed(b *batch, e *entry) {
 	if e.TaskIndex < len(b.writers) && b.writers[e.TaskIndex].path != "" {
 		lines = append(lines, "Live transcript: "+b.writers[e.TaskIndex].path)
 	}
-	if err := g.a.deliver(b.parent, tools.Notice{Text: strings.Join(lines, "\n"), Title: "Subagent Task Failed: " + shortTitle(b.tasks[e.TaskIndex].goal)}); err != nil {
+	if err := g.a.deliver(b.parent, tools.Notice{Text: strings.Join(lines, "\n"), Title: "The background subagent working on “" + shortTitle(b.tasks[e.TaskIndex].goal) + "” failed."}); err != nil {
 		slog.Debug("task failure notice failed", "error", err)
 	}
 }
@@ -696,14 +696,14 @@ func preamble(r *record, title, intro string) []string {
 
 // Short title the windows show for a finished unit
 func displayTitle(r *record, results []*entry) string {
-	labels := map[string]string{"failed": "Failed", "error": "Failed", "cancelled": "Cancelled", "interrupted": "Interrupted", "timeout": "Timed Out",
-		"stalled": "Stalled", "unknown": "Unknown", "rejected": "Failed"}
+	labels := map[string]string{"failed": "failed", "error": "failed", "cancelled": "was cancelled", "interrupted": "was interrupted",
+		"timeout": "ran out of time", "stalled": "stalled", "unknown": "ended in an unknown state", "rejected": "failed"}
 	var outcome, titles []string
 	for _, e := range results {
-		label := "Incomplete"
+		label := "stopped before finishing"
 		switch {
 		case done(e.Status) && !e.Truncated:
-			label = "Completed"
+			label = "finished"
 		case labels[e.Status] != "":
 			label = labels[e.Status]
 		}
@@ -715,15 +715,15 @@ func displayTitle(r *record, results []*entry) string {
 		titles = append(titles, strings.Join(strings.Fields(cmp.Or(goal, "Background task")), " "))
 	}
 	if len(results) == 0 {
-		return "Subagent Tasks Unknown: " + shortTitle(strings.Join(r.Goals, "; "))
+		return "The background subagents working on “" + shortTitle(strings.Join(r.Goals, ", ")) + "” ended in an unknown state."
 	}
 	if len(results) == 1 {
-		return fmt.Sprintf("Subagent Task %s: %s", outcome[0], shortTitle(titles[0]))
+		return fmt.Sprintf("The background subagent working on “%s” %s.", shortTitle(titles[0]), outcome[0])
 	}
 	verdict := outcome[0]
 	for _, o := range outcome[1:] {
 		if o != verdict {
-			verdict = "Finished with Issues"
+			verdict = "finished, some with problems"
 			break
 		}
 	}
@@ -731,12 +731,13 @@ func displayTitle(r *record, results []*entry) string {
 	if r.Group != nil {
 		title = strings.Join(strings.Fields(*r.Group), " ")
 	}
-	return fmt.Sprintf("Subagent Tasks %s: %s (%d tasks)", verdict, shortTitle(cmp.Or(title, strings.Join(titles, "; "))), len(results))
+	return fmt.Sprintf("%s working on “%s” %s.", strs.Count(len(results), "background subagent"), shortTitle(cmp.Or(title, strings.Join(titles, ", "))),
+		verdict)
 }
 
 func shortTitle(title string) string {
 	if utf8.RuneCountInString(title) > 200 {
-		return strs.Head(title, 197) + "..."
+		return strs.Head(title, 199) + "…"
 	}
 	return title
 }

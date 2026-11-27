@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"sync"
 
@@ -27,10 +28,13 @@ import (
 const signinContext = "providers.signin"
 
 var signinKeys = []keys.Action{
-	{ID: "providers.signin.open", Context: signinContext, Label: "open link", Doc: "open the sign in link in the browser of this computer", Default: []string{"o"}},
-	{ID: "providers.signin.copy", Context: signinContext, Label: "copy link", Doc: "copy the sign in link", Default: []string{"c"}},
-	{ID: "providers.signin.code", Context: signinContext, Label: "copy code", Doc: "copy the code to type on the sign in page", Default: []string{"y"}},
+	{ID: "providers.signin.open", Context: signinContext, Label: "open link", Doc: "Open the sign-in link in the browser on this computer", Default: []string{"o"}},
+	{ID: "providers.signin.copy", Context: signinContext, Label: "copy link", Doc: "Copy the sign-in link", Default: []string{"c"}},
+	{ID: "providers.signin.code", Context: signinContext, Label: "copy code", Doc: "Copy the code to type on the sign-in page", Default: []string{"y"}},
 }
+
+// Lines of what a sign-in says that a page shows under the link and the code
+const saidLines = 8
 
 // Connector of the sign-ins a plugin adds for one kind, each run on a page of its own: what it says, the link to open and the code to
 // type there with keys to open and copy them, what it asks in a form, and the fields it gives kept in the account
@@ -38,7 +42,7 @@ func SignIns(conn *connect.Client, spec string, ways ...credentials.SignIn) Conn
 	settings := configv1connect.NewConfigServiceClient(conn)
 	connector := Connector{Spec: spec}
 	for _, way := range ways {
-		connector.Ways = append(connector.Ways, Way{Title: way.Title, Open: func(kit *tui.Kit, target Target) tea.Cmd {
+		connector.Ways = append(connector.Ways, Way{Title: way.Title, Kind: way.Type, Open: func(kit *tui.Kit, target Target) tea.Cmd {
 			return (&signing{kit: kit, settings: settings, target: target, way: way}).run()
 		}})
 	}
@@ -55,6 +59,8 @@ type signing struct {
 	text     bytes.Buffer
 	link     string
 	code     string
+	// Why the sign-in stopped, empty while it runs
+	failed string
 }
 
 func (s *signing) Write(data []byte) (int, error) {
@@ -63,41 +69,69 @@ func (s *signing) Write(data []byte) (int, error) {
 	return s.text.Write(data)
 }
 
-// What the page shows: the link to open and the code, then the last of what the sign-in said
-func (s *signing) lines(int) []string {
+// What the page shows: what to do, the link to open and the code to type there, then the last of what the sign-in said that the link and
+// the code do not repeat, and what the page waits for
+func (s *signing) lines(w int) []string {
 	t := s.kit.Env.Theme
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	name := s.target.Provider.GetDisplayName()
 	var out []string
 	switch {
 	case s.link != "" && s.code != "":
-		out = append(out, "Open this:", render.Warm(s.link, t), "", "Then type this code:", render.Heading(s.code, t), "")
+		out = append(out, "Open this address in your browser and sign in to "+name+":", render.Warm(s.link, t), "", "When the page asks for a code, type this one:",
+			render.Heading(s.code, t))
 	case s.link != "":
-		out = append(out, "Open this:", render.Warm(s.link, t), "")
+		out = append(out, "Open this address in your browser and sign in to "+name+":", render.Warm(s.link, t))
 	}
-	said := strings.Split(strings.TrimRight(s.text.String(), "\n"), "\n")
-	if len(out) > 0 && len(said) > 8 {
-		said = said[len(said)-8:]
+	var said []string
+	for _, line := range strings.Split(strings.TrimRight(s.text.String(), "\n"), "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "", trimmed == "To continue:":
+		case s.link != "" && strings.Contains(line, s.link), s.code != "" && strings.Contains(line, s.code):
+		default:
+			said = append(said, line)
+		}
+	}
+	if len(said) > saidLines {
+		said = said[len(said)-saidLines:]
+	}
+	if len(said) > 0 && len(out) > 0 {
+		out = append(out, "")
 	}
 	for _, line := range said {
-		if len(out) > 0 {
-			line = render.Dim(line, t)
-		}
-		out = append(out, line)
+		out = append(out, strings.Split(render.Wrap(render.Dim(line, t), max(w, 8)), "\n")...)
+	}
+	if len(out) > 0 {
+		out = append(out, "")
+	}
+	switch {
+	case s.failed != "":
+		out = append(out, render.Bad(s.failed, t))
+	case s.link == "" && len(said) == 0:
+		out = append(out, render.Dim("Starting the sign-in to "+name+"…", t))
+	default:
+		out = append(out, render.Dim("Waiting for you to finish signing in…", t))
 	}
 	return out
 }
 
-// Opens the page and runs the sign-in behind it; closing the page stops the sign-in
+// Opens the page and runs the sign-in behind it; closing the page stops the sign-in. The page shows in the dialog the sign-in was started
+// from, which then says how it ended and reads the provider again, and in a dialog of its own when it was started from none
 func (s *signing) run() tea.Cmd {
 	ctx, cancel := context.WithCancel(s.kit.Env.Ctx)
-	var hub *cards.Hub
+	hub := s.target.Hub
 	page := cards.NewPage(s.kit.Env, cards.PageSpec{
 		Title:   s.way.Title,
 		Key:     "providers.signin." + s.way.Spec,
 		Lines:   s.lines,
 		Follow:  true,
 		Context: signinContext,
+		Closed: func(*cards.Page) tea.Cmd {
+			cancel()
+			return nil
+		},
 		Hints: func(*cards.Page) []wm.Hint {
 			s.mu.Lock()
 			defer s.mu.Unlock()
@@ -112,15 +146,16 @@ func (s *signing) run() tea.Cmd {
 		},
 		Actions: map[string]func(*cards.Page) tea.Cmd{
 			"providers.signin.open": func(*cards.Page) tea.Cmd { return s.open(hub) },
-			"providers.signin.copy": func(*cards.Page) tea.Cmd { return s.copy(hub, s.shown(true), "link") },
-			"providers.signin.code": func(*cards.Page) tea.Cmd { return s.copy(hub, s.shown(false), "code") },
+			"providers.signin.copy": func(*cards.Page) tea.Cmd { return s.copy(hub, s.shown(true), "the sign-in address") },
+			"providers.signin.code": func(*cards.Page) tea.Cmd { return s.copy(hub, s.shown(false), "the code") },
 		},
 	})
-	hub = s.kit.Hub("providers.signin", page)
-	hub.OnClose(func() tea.Cmd {
-		cancel()
-		return nil
-	})
+	show := func() tea.Cmd { return hub.Push(page) }
+	if hub == nil {
+		own := s.kit.Hub("providers.signin", page)
+		hub, show = own, func() tea.Cmd { return s.kit.WM.ShowOverlay(own) }
+	}
+	shared := s.target.Hub != nil
 	prompter := &credentials.Prompter{
 		Ctx: ctx,
 		Out: s,
@@ -136,7 +171,8 @@ func (s *signing) run() tea.Cmd {
 		Options:  map[string]string{},
 		Settings: s.values(ctx),
 	}
-	return tea.Batch(s.kit.WM.ShowOverlay(hub), tui.Async(func() func() tea.Cmd {
+	was := connected(s.target.Provider.GetCredentialOrigin())
+	return tea.Batch(show(), tui.Async(func() func() tea.Cmd {
 		signed, err := s.way.Run(prompter)
 		left := ctx.Err() != nil
 		if err == nil {
@@ -148,11 +184,44 @@ func (s *signing) run() tea.Cmd {
 			case left:
 				return nil
 			case err != nil:
-				return hub.Fail(strings.Join(credentials.FailureLines(err, "", "/providers"), " "))
+				reason := failure(err, s.target.Provider.GetDisplayName())
+				s.mu.Lock()
+				s.failed = reason
+				s.mu.Unlock()
+				return hub.Fail(reason)
 			}
-			return tea.Batch(s.kit.WM.DismissCard(hub), s.kit.WM.Toast("Connected "+s.target.Account.GetTitle(), wm.Success, wm.DefaultToastTTL))
+			if shared {
+				var read tea.Cmd
+				if s.target.Done != nil {
+					read = s.target.Done()
+				}
+				return tea.Batch(hub.Close(page), hub.Done(connectedNote(s.target, was, false)), read)
+			}
+			return tea.Batch(s.kit.WM.DismissCard(hub), s.kit.WM.Toast(connectedNote(s.target, was, true), wm.Success, wm.DefaultToastTTL))
 		}
 	}))
+}
+
+// Why a sign-in failed and what to do next, in words a person can act on
+func failure(err error, name string) string {
+	switch {
+	case credentials.Cancelled(err):
+		return "The sign-in stopped before it finished. Close this and connect again to retry."
+	case credentials.Unreachable(err):
+		return "icebath could not reach " + name + ". Check your internet connection or proxy, then connect again."
+	}
+	reason := strings.TrimSuffix(strings.TrimSpace(tui.Reason(err)), ".")
+	if refused, ok := errors.AsType[*credentials.AuthError](err); ok {
+		reason = strings.TrimSuffix(strings.TrimSpace(refused.Message), ".")
+		if refused.Code == credentials.Expired {
+			return reason + ". Close this and connect again for a new code."
+		}
+	}
+	// The reason is a sentence of its own
+	if reason != "" {
+		reason = " " + strings.ToUpper(reason[:1]) + reason[1:] + "."
+	}
+	return "The sign-in failed." + reason + " Close this and try again, or pick another way to connect."
 }
 
 // Link or code shown on the page
@@ -198,9 +267,9 @@ func (s *signing) open(hub *cards.Hub) tea.Cmd {
 		err := browser.Open(s.kit.Env.Ctx, link)
 		return func() tea.Cmd {
 			if err != nil {
-				return hub.Fail("The browser didn't open: copy the link and open it yourself")
+				return hub.Fail("The browser did not open. " + s.kit.Env.Keys.Display("providers.signin.copy") + " copies the address so you can open it yourself.")
 			}
-			return nil
+			return hub.Done("Opened the sign-in address in your browser.")
 		}
 	})
 }
@@ -213,9 +282,9 @@ func (s *signing) copy(hub *cards.Hub, text, what string) tea.Cmd {
 		ok := clip.WriteText(s.kit.Env.Ctx, text)
 		return func() tea.Cmd {
 			if !ok {
-				return hub.Fail("Couldn't copy the " + what)
+				return hub.Fail("Could not copy " + what + ". Select it on the screen and copy it yourself.")
 			}
-			return hub.Done("Copied the " + what)
+			return hub.Done("Copied " + what + ".")
 		}
 	})
 }
@@ -236,13 +305,26 @@ func (s *signing) values(ctx context.Context) map[string]string {
 	return values
 }
 
-// Keeps the fields the sign-in gave in the account, clearing what the account last ran into
+// Keeps the fields the sign-in gave in the account, made now when it was waiting for the sign-in, clearing what the account last ran into
 func (s *signing) save(ctx context.Context, signed credentials.Signed) error {
-	return Store(ctx, s.settings, s.target, signed.Fields)
+	if s.target.Account == nil && !s.target.Titled && signed.Identity != "" {
+		s.target.Title = signed.Identity
+	}
+	target, err := s.target.Ready(ctx)
+	if err != nil {
+		return err
+	}
+	s.target = target
+	return Store(ctx, s.settings, target, signed.Fields)
 }
 
-// Keeps fields in the account of the target, each as YAML, nil putting its default back, and clears the limits the account ran into
+// Keeps fields in the account of the target, made first when it was waiting, each as YAML, nil putting its default back, and clears the
+// limits the account ran into
 func Store(ctx context.Context, settings configv1connect.ConfigServiceClient, target Target, fields map[string]any) error {
+	target, err := target.Ready(ctx)
+	if err != nil {
+		return err
+	}
 	fields[providerconfig.Status] = nil
 	for field, value := range fields {
 		text := "null"
@@ -258,4 +340,17 @@ func Store(ctx context.Context, settings configv1connect.ConfigServiceClient, ta
 		}
 	}
 	return nil
+}
+
+// Note once an account connected: the provider ready to use when it was not before, else the account connected. Closed when the screen
+// that connected it has closed already
+func connectedNote(target Target, was, closed bool) string {
+	name := target.Provider.GetDisplayName()
+	switch {
+	case was:
+		return target.Label() + " of " + name + " is connected."
+	case closed:
+		return name + " is connected. Send a message to start."
+	}
+	return name + " is connected. Close this and send a message to start."
 }

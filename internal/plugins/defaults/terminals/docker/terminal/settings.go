@@ -118,10 +118,10 @@ func list(cfg *config.Config, key string) ([]string, error) {
 			return strings.Fields(text), nil
 		}
 		if err := json.Unmarshal([]byte(text), &items); err != nil {
-			return nil, malformed(key, value)
+			return nil, malformed(cfg, key, value)
 		}
 	default:
-		return nil, malformed(key, fmt.Sprint(value))
+		return nil, malformed(cfg, key, fmt.Sprint(value))
 	}
 	var out []string
 	for _, item := range items {
@@ -153,16 +153,21 @@ func table(cfg *config.Config, key string) (map[string]any, error) {
 			return out, nil
 		}
 		if err := json.Unmarshal([]byte(value), &out); err != nil {
-			return nil, malformed(key, value)
+			return nil, malformed(cfg, key, value)
 		}
 		return out, nil
 	default:
-		return nil, malformed(key, fmt.Sprint(value))
+		return nil, malformed(cfg, key, fmt.Sprint(value))
 	}
 }
 
-func malformed(key, value string) error {
-	return fmt.Errorf("%s holds %q, which is not a valid list or mapping; fix it in /settings under Terminal → Docker", key, value)
+// Refusal of a list or table setting whose value is neither, naming it by its title
+func malformed(cfg *config.Config, key, value string) error {
+	title := key
+	if _, setting, ok := cfg.Setting(key); ok && setting.Title != "" {
+		title = setting.Title
+	}
+	return fmt.Errorf("%s is set to %q, which is not a list or a table. Change it in /settings under Terminal › Docker.", title, value)
 }
 
 // Forwarded variable names that are variable names, once each

@@ -23,7 +23,7 @@ func (e *ValueError) Error() string { return e.Message }
 
 func shownPath(path Path) string {
 	if len(path) == 0 {
-		return "<root>"
+		return "The top of the settings"
 	}
 	return Encode(path)
 }
@@ -47,7 +47,7 @@ func toWire(value any, path Path) (any, error) {
 		return toWire(float64(v), path)
 	case float64:
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return nil, &ValueError{shownPath(path) + ": NaN/Infinity cannot be stored in Remote Config"}
+			return nil, &ValueError{shownPath(path) + " holds a number that is not finite, which the remote settings can't keep."}
 		}
 		return v, nil
 	case time.Time:
@@ -91,7 +91,7 @@ func toWire(value any, path Path) (any, error) {
 				return nil, err
 			}
 			if _, dup := out[key]; dup {
-				return nil, &ValueError{fmt.Sprintf("%s: two keys become the same string key %s", Encode(extend(path, key)), strconv.Quote(key))}
+				return nil, &ValueError{fmt.Sprintf("%s can't be saved in the remote settings, because two of its names both become %s.", Encode(extend(path, key)), strconv.Quote(key))}
 			}
 			wire, err := toWire(item, extend(path, key))
 			if err != nil {
@@ -106,11 +106,11 @@ func toWire(value any, path Path) (any, error) {
 	} else if rv.CanUint() {
 		return wireInt(new(big.Int).SetUint64(rv.Uint()), path), nil
 	}
-	kind := fmt.Sprintf("%T", value)
+	kind := fmt.Sprintf("a value of the kind %T", value)
 	if _, binary := value.([]byte); binary {
-		kind = "binary"
+		kind = "raw bytes"
 	}
-	return nil, &ValueError{fmt.Sprintf("%s: a %s value cannot be stored in Remote Config", shownPath(path), kind)}
+	return nil, &ValueError{fmt.Sprintf("%s holds %s, which the remote settings can't keep.", shownPath(path), kind)}
 }
 
 // Integer as JSON carries it exactly, a decimal string with a warning beyond what a JSON number holds
@@ -134,7 +134,7 @@ func wireKey(key any, path Path) (string, error) {
 	case uint64:
 		return strconv.FormatUint(k, 10), nil
 	}
-	return "", &ValueError{fmt.Sprintf("%s: a %T mapping key (%v) cannot be stored in Remote Config; quote it in YAML", shownPath(path), key, key)}
+	return "", &ValueError{fmt.Sprintf("%s has the name %v, which the remote settings can't keep as it is. Put the name in quotes.", shownPath(path), key)}
 }
 
 // What the plane counts as a secret, the same rules it refuses literal secrets by

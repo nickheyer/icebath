@@ -55,6 +55,9 @@ const (
 	exitDetached    = 3
 )
 
+// Why a run left its reply waiting: the agent asked something no one answers here
+const waitingAnswer = "The agent is waiting for an answer that this run can't give. Open the session in icebath to answer, and the reply goes on."
+
 // Longest tool output a stream-json event carries
 const streamOutputCap = 5000
 
@@ -106,10 +109,17 @@ func (c commands) chat(conn *connect.Client) *cobra.Command {
 	launchFlags := map[string]*bool{}
 	launchValues := map[string]*[]string{}
 	cmd := &cobra.Command{
-		Use:   "chat",
-		Short: "Answer one query and print it, or list the tools a chat would have",
-		Long: "Answer one query in a new session, or one resumed, and print the reply. -z prints only the final reply and runs commands without " +
-			"asking; -q prints the reply as it streams. A query can also come from --query-file or piped stdin.",
+		Use:     "chat",
+		GroupID: cli.GroupSessions,
+		Short:   "Send the agent one message and print the reply",
+		Long: "Sends one message to the agent and prints the reply as it comes. This is a single-question run: it starts a new session, or " +
+			"resumes one with -c or -r, and ends when the reply is done. The message comes from -q, -z, --query-file or standard input. " +
+			"-z prints only the final reply and runs every command without asking.\n\n" +
+			"--safe-mode leaves out your settings file, rule files such as AGENTS.md, memory and MCP servers, so you can tell whether a " +
+			"problem comes from your setup. Without --max-turns, the agent takes as many steps as your settings allow. --run-budget gives " +
+			"each reply a time limit in seconds, and the agent is told once to wrap up when 80% of it has passed.",
+		Example: "  icebath chat -q \"What does this project do?\"\n  icebath chat -c --query-file notes.md\n  git diff | icebath chat --quiet\n" +
+			"  icebath -z \"Write a commit message for the staged changes\"",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			given := launch.Given{}
@@ -143,39 +153,33 @@ func (c commands) chat(conn *connect.Client) *cobra.Command {
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringVarP(&o.query, "query", "q", "", "the query to answer")
-	flags.StringVar(&o.queryFile, "query-file", "", "read the query from a file, - for stdin")
-	flags.StringVarP(&o.oneshot, "oneshot", "z", "", "answer the prompt and print only the final reply, approvals bypassed")
-	flags.StringVar(&o.usageFile, "usage-file", "", "write a JSON report of the tokens the run took, even when it fails")
-	flags.StringVar(&o.format, "format", "text", "output format: text or stream-json (newline-delimited JSON events)")
-	flags.BoolVarP(&o.quiet, "quiet", "Q", false, "print only the reply: no query line, tool lines or streaming")
-	flags.BoolVarP(&o.verbose, "verbose", "v", false, "also print tool results and the agent's notices")
-	flags.StringVar(&o.image, "image", "", "attach an image file to the query")
-	flags.StringVarP(&o.model, "model", "m", "", "model for this run")
-	flags.StringVar(&o.provider, "provider", "", "provider for this run, as named in the profile")
-	flags.StringVar(&o.reasoning, "reasoning", "", "reasoning effort for this run")
-	flags.StringVarP(&o.resume, "resume", "r", "", "resume the session the id, its start or a title names; latest for the newest of this workspace")
-	flags.StringVarP(&o.continued, "continue", "c", "", "resume the newest session of this workspace, or the one titled NAME")
+	flags.StringVarP(&o.query, "query", "q", "", "Message to send")
+	flags.StringVar(&o.queryFile, "query-file", "", "File to read the message from, - for standard input")
+	flags.StringVarP(&o.oneshot, "oneshot", "z", "", "Message to send, printing only the final reply and never asking first")
+	flags.StringVar(&o.usageFile, "usage-file", "", "File to write a JSON report of the tokens used to, even when the run fails")
+	flags.StringVar(&o.format, "format", "text", "Output format: text, or stream-json for one JSON event per line")
+	flags.BoolVarP(&o.quiet, "quiet", "Q", false, "Print only the reply, without the message, tool lines or streaming")
+	flags.BoolVarP(&o.verbose, "verbose", "v", false, "Also print tool results and the agent's notices")
+	flags.StringVar(&o.image, "image", "", "Image file to attach to the message")
+	flags.StringVarP(&o.model, "model", "m", "", "Model to use for this run")
+	flags.StringVar(&o.provider, "provider", "", "Provider to use for this run, by its name in the profile")
+	flags.StringVar(&o.reasoning, "reasoning", "", "Reasoning effort for this run, such as low or high")
+	flags.StringVarP(&o.resume, "resume", "r", "", "Session to resume by id, start of an id or title, or latest for the newest")
+	flags.StringVarP(&o.continued, "continue", "c", "", "Resume the newest session of this folder, or the one titled NAME")
 	flags.Lookup("continue").NoOptDefVal = " "
-	flags.BoolVar(&o.create, "create-if-missing", false, "with -c NAME, start a session of that title when none has it")
-	flags.StringVar(&o.in, "in", "", "start or resume in this folder, whose workspace session lookups are scoped to")
-	flags.StringVar(&o.source, "source", "", "source tag of the session; tool keeps it out of session lists")
-	flags.BoolVar(&o.yolo, "yolo", false, "run every command without asking")
-	flags.BoolVar(&o.listTools, "list-tools", false, "list the tools a chat would have, then exit")
-	flags.BoolVar(&o.listSets, "list-toolsets", false, "list the toolsets a chat would have, then exit")
-	flags.StringArrayVarP(&o.skills, "skills", "s", nil, "Preload one or more skills for the session (repeat flag or comma-separate)")
-	flags.IntVar(&o.maxTurns, "max-turns", 0, "Maximum tool-calling iterations per conversation turn, 0 for no limit (default: agent.max_turns in config)")
-	flags.Float64Var(&o.runBudget, "run-budget", 0, "Optional wall-clock budget in seconds for each conversation run. At 80% elapsed the agent gets a "+
-		"one-time wrap-up notice. Unset = off. Also configurable as agent.run_budget_seconds in config.yaml. Intended for one-shot/eval invocations "+
-		"with a hard ceiling.")
-	flags.BoolVar(&o.passSession, "pass-session-id", false, "Include the session ID in the agent's system prompt")
-	flags.BoolVar(&o.ignoreConfig, "ignore-user-config", false, "Ignore the profile's config.yaml and fall back to built-in defaults (credentials in "+
-		".env are still loaded). Useful for isolated CI runs, reproduction, and third-party integrations.")
-	flags.BoolVar(&o.ignoreRules, "ignore-rules", false, "Skip auto-injection of AGENTS.md, SOUL.md, .cursorrules, memory, and preloaded skills. "+
-		"Combine with --ignore-user-config for a fully isolated run.")
-	flags.BoolVar(&o.safeMode, "safe-mode", false, "Troubleshooting mode: disable ALL customizations — user config, AGENTS.md/memory injection, "+
-		"and MCP servers (implies --ignore-user-config and --ignore-rules). Use to isolate whether a problem comes from your setup or from "+
-		"Icebath itself.")
+	flags.BoolVar(&o.create, "create-if-missing", false, "With -c NAME, start a session with that title when none has it")
+	flags.StringVar(&o.in, "in", "", "Folder to work in, which also decides the sessions that -c and -r find")
+	flags.StringVar(&o.source, "source", "", "Label of where the session came from, and tool hides it from lists")
+	flags.BoolVar(&o.yolo, "yolo", false, "Run every command without asking")
+	flags.BoolVar(&o.listTools, "list-tools", false, "Print the tools a session would have, then exit")
+	flags.BoolVar(&o.listSets, "list-toolsets", false, "Print the groups of tools a session would have, then exit")
+	flags.StringArrayVarP(&o.skills, "skills", "s", nil, "Skills to load at the start, repeatable or separated by commas")
+	flags.IntVar(&o.maxTurns, "max-turns", 0, "Most steps the agent may take for one reply, 0 for no limit")
+	flags.Float64Var(&o.runBudget, "run-budget", 0, "Time limit in seconds for each reply, with a warning to the agent at 80%")
+	flags.BoolVar(&o.passSession, "pass-session-id", false, "Put the session id in the agent's system prompt")
+	flags.BoolVar(&o.ignoreConfig, "ignore-user-config", false, "Use the default settings instead of the settings file, keys file still read")
+	flags.BoolVar(&o.ignoreRules, "ignore-rules", false, "Leave out rule files such as AGENTS.md, memory and preloaded skills")
+	flags.BoolVar(&o.safeMode, "safe-mode", false, "Leave out every customization, to find out whether your setup causes a problem")
 	for _, flag := range c.launch.Flags() {
 		long, short := "", ""
 		for _, name := range flag.Names {
@@ -207,7 +211,7 @@ func (c commands) around(cmd *cobra.Command, conn *connect.Client, o options, gi
 			return err
 		}
 		if err := os.Chdir(dir); err != nil {
-			return fmt.Errorf("cannot enter --in directory %s: %w", o.in, err)
+			return fmt.Errorf("icebath can't work in %s, the folder --in names. %s", o.in, trouble(err))
 		}
 		o.in = ""
 	}
@@ -227,11 +231,12 @@ func run(ctx context.Context, conn *connect.Client, cmd *cobra.Command, o option
 		return list(ctx, conn, cmd.OutOrStdout(), o.listSets)
 	}
 	if o.format != "text" && o.format != "stream-json" {
-		return exit{code: exitFailed}.with(cmd, "Error: --format must be text or stream-json")
+		return exit{code: exitFailed}.with(cmd, "✗ --format must be text or stream-json.")
 	}
 	if (o.safeMode || o.ignoreConfig) && o.model == "" && o.resume == "" && o.continued == "" {
-		return exit{code: exitEmpty}.with(cmd, "Error: --safe-mode / --ignore-user-config (or ICEBATH_SAFE_MODE / ICEBATH_IGNORE_USER_CONFIG) read no "+
-			"profile default: pass --model explicitly.\n  Example: icebath chat --safe-mode --provider openrouter --model anthropic/claude-sonnet-4 -q \"hello\"")
+		return exit{code: exitEmpty}.with(cmd, "✗ --safe-mode and --ignore-user-config leave out your settings file, and so do ICEBATH_SAFE_MODE and "+
+			"ICEBATH_IGNORE_USER_CONFIG, so no model is chosen. Name one with --model, such as:\n"+
+			"  icebath chat --safe-mode --provider openrouter --model anthropic/claude-sonnet-4 -q \"hello\"")
 	}
 	if o.safeMode {
 		// Sessions this process serves itself leave out every customization, MCP servers it would start included
@@ -290,11 +295,11 @@ func (o *options) launch(cmd *cobra.Command, given launch.Given) *agentv1.Launch
 func (o *options) text(cmd *cobra.Command) (string, error) {
 	query := cmp.Or(o.oneshot, o.query)
 	if o.oneshot != "" && o.query != "" {
-		return "", exit{code: exitFailed}.with(cmd, "Error: -z/--oneshot and -q/--query are mutually exclusive")
+		return "", exit{code: exitFailed}.with(cmd, "✗ Give the message with -z or with -q, not both.")
 	}
 	if o.queryFile != "" {
 		if query != "" {
-			return "", exit{code: exitFailed}.with(cmd, "Error: -q/--query and --query-file are mutually exclusive")
+			return "", exit{code: exitFailed}.with(cmd, "✗ Give the message with -q, -z or --query-file, not more than one.")
 		}
 		var raw []byte
 		var err error
@@ -304,11 +309,11 @@ func (o *options) text(cmd *cobra.Command) (string, error) {
 			raw, err = os.ReadFile(o.queryFile)
 		}
 		if err != nil {
-			return "", exit{code: exitFailed}.with(cmd, fmt.Sprintf("Error: cannot read --query-file %s: %v", o.queryFile, err))
+			return "", exit{code: exitFailed}.with(cmd, fmt.Sprintf("✗ The file %s that --query-file names can't be read. %s", o.queryFile, trouble(err)))
 		}
 		query = strings.TrimPrefix(strings.ToValidUTF8(string(raw), "\uFFFD"), "\ufeff")
 		if strings.TrimSpace(query) == "" {
-			return "", exit{code: exitFailed}.with(cmd, fmt.Sprintf("Error: --query-file %s is empty", o.queryFile))
+			return "", exit{code: exitFailed}.with(cmd, fmt.Sprintf("✗ The file %s that --query-file names is empty.", o.queryFile))
 		}
 	}
 	if query == "" {
@@ -321,7 +326,7 @@ func (o *options) text(cmd *cobra.Command) (string, error) {
 		}
 	}
 	if strings.TrimSpace(query) == "" && o.image == "" {
-		return "", exit{code: exitFailed}.with(cmd, "Error: give a query with -q, -z, --query-file or on stdin")
+		return "", exit{code: exitFailed}.with(cmd, "✗ Give a message with -q, -z or --query-file, or pipe it in.")
 	}
 	if o.image != "" {
 		path, err := filepath.Abs(o.image)
@@ -329,7 +334,7 @@ func (o *options) text(cmd *cobra.Command) (string, error) {
 			return "", err
 		}
 		if _, err := os.Stat(path); err != nil {
-			return "", exit{code: exitFailed}.with(cmd, fmt.Sprintf("Error: cannot read --image %s: %v", o.image, err))
+			return "", exit{code: exitFailed}.with(cmd, fmt.Sprintf("✗ The image %s that --image names can't be read. %s", o.image, trouble(err)))
 		}
 		query = strings.TrimSpace(query + "\n\n" + "Look at the image " + path)
 	}
@@ -342,6 +347,25 @@ func (e exit) with(cmd *cobra.Command, message string) error {
 	return e
 }
 
+// Why a file or folder could not be used, as a sentence
+func trouble(err error) string {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "It does not exist."
+	case errors.Is(err, os.ErrPermission):
+		return "You don't have permission to open it."
+	}
+	var path *os.PathError
+	if errors.As(err, &path) {
+		err = path.Err
+	}
+	text := strings.TrimSuffix(err.Error(), ".")
+	if text == "" {
+		return ""
+	}
+	return strings.ToUpper(text[:1]) + text[1:] + "."
+}
+
 // Folder the session works in: the one --in names, else this one
 func folder(in string) (string, error) {
 	if in == "" {
@@ -352,7 +376,7 @@ func folder(in string) (string, error) {
 		return "", err
 	}
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return "", fmt.Errorf("--in %s is not a folder", in)
+		return "", fmt.Errorf("%s is not a folder. Give --in a folder that exists.", in)
 	}
 	return dir, nil
 }
@@ -373,7 +397,7 @@ func (o *options) session(ctx context.Context, sessions sessionsv1connect.Sessio
 			return nil, err
 		}
 		if len(listed.GetSessions()) == 0 {
-			return nil, errors.New("No session of this workspace to continue.")
+			return nil, errors.New("This folder has no session to continue. Leave out -c and -r to start a new one.")
 		}
 		ref = listed.GetSessions()[0].GetId()
 	case title != "":
@@ -414,7 +438,7 @@ func list(ctx context.Context, conn *connect.Client, out io.Writer, sets bool) e
 	sort.Strings(names)
 	for _, set := range names {
 		if sets {
-			fmt.Fprintf(out, "%s (%d tools)\n", set, len(byset[set]))
+			fmt.Fprintf(out, "%s\t%s\n", set, strs.Count(len(byset[set]), "tool"))
 			continue
 		}
 		sort.Strings(byset[set])
@@ -499,7 +523,7 @@ func (r *runner) ask(parent, ctx context.Context, conn *connect.Client, query st
 	if r.o.format == "stream-json" {
 		r.emit(map[string]any{"type": "system", "subtype": "init", "model": cmp.Or(r.o.model, got.GetSession().GetModel(), r.model), "session_id": r.id})
 	} else if !r.o.quiet && r.o.oneshot == "" {
-		fmt.Fprintln(r.out, "Query: "+query)
+		fmt.Fprintln(r.out, "Message: "+query)
 	}
 	if parent.Err() != nil {
 		// Stopped before the query went
@@ -593,10 +617,10 @@ func (r *runner) follow(stream agentv1connect.AgentServiceWatchClientStream) err
 				continue
 			}
 			switch text := e.Notice; {
-			case text == "Stopped.":
+			case text == agentlaunch.Stopped:
 				r.stopped = true
-			case strings.HasPrefix(text, "**Error:** "):
-				r.failure = strings.TrimPrefix(text, "**Error:** ")
+			case strings.HasPrefix(text, agentlaunch.Failed):
+				r.failure = strings.TrimPrefix(text, agentlaunch.Failed)
 			case r.o.verbose:
 				fmt.Fprintln(r.errs, text)
 			}
@@ -618,12 +642,12 @@ func (r *runner) follow(stream agentv1connect.AgentServiceWatchClientStream) err
 		case *agentv1.WatchResponse_Approvals:
 			// No one answers a prompt the run waits on: it leaves the turn waiting for an interactive window
 			if started && len(e.Approvals.GetPending()) > 0 {
-				r.detached = "Input required; detached without cancelling. Resume this session interactively."
+				r.detached = waitingAnswer
 				return nil
 			}
 		case *agentv1.WatchResponse_Questions:
 			if started && len(e.Questions.GetQuestions()) > 0 {
-				r.detached = "Input required; detached without cancelling. Resume this session interactively."
+				r.detached = waitingAnswer
 				return nil
 			}
 		}
@@ -649,12 +673,12 @@ func (r *runner) subagent(event *agentv1.Subagent) {
 	switch event.GetKind() {
 	case "thinking":
 		if text := strings.TrimSpace(event.GetText()); text != "" {
-			line = fmt.Sprintf("💭 %q", shortText(text, 55))
+			line = "Thinking: “" + shortText(text, 55) + "”"
 		}
 	case "tool":
-		line = "⚡ " + event.GetTool()
+		line = "Tool: " + event.GetTool()
 		if preview := strings.TrimSpace(event.GetPreview()); preview != "" {
-			line += fmt.Sprintf("  %q", shortText(preview, 35))
+			line += "  “" + shortText(preview, 35) + "”"
 		}
 	case "complete":
 		switch event.GetStatus() {
@@ -669,62 +693,55 @@ func (r *runner) subagent(event *agentv1.Subagent) {
 
 func shortText(text string, n int) string {
 	if runes := []rune(text); len(runes) > n {
-		return string(runes[:n]) + "..."
+		return string(runes[:n]) + "…"
 	}
 	return text
 }
 
-// Plain clause of the kind of failure that ended a subagent
+// Why a subagent failed, by the kind of failure, said to follow "because"
 var failureGloss = map[string]string{
-	"timeout": "the AI model service did not respond in time", "network": "the AI model service did not respond in time",
-	"rate_limit": "the AI model service was rate-limited (too many requests)", "upstream_rate_limit": "the AI model service was rate-limited (too many requests)",
-	"overloaded": "the AI model service is overloaded right now", "server": "the AI model service returned an internal error",
-	"server_error": "the AI model service returned an internal error", "billing": "the AI model service says the account's usage or credit limit is reached",
-	"quota": "the AI model service says the account's usage or credit limit is reached", "auth": "the AI model service rejected the sign-in",
-	"auth_permanent": "the AI model service rejected the sign-in", "upstream_blocked": "a firewall/CDN in front of the AI model service blocked the request",
-	"model_not_found": "the model it uses was not found at the AI model service", "content_filter": "the AI model service's safety filter rejected the request",
-	"content_policy_blocked":  "the AI model service's safety filter rejected the request",
-	"provider_policy_blocked": "the AI model service refused the request because of a policy on the account",
-	"context_overflow":        "its request grew too large for the model", "payload_too_large": "its request grew too large for the model",
+	"timeout": "the provider did not answer in time", "network": "the provider did not answer in time",
+	"rate_limit": "the provider is limiting how many requests you can send", "upstream_rate_limit": "the provider is limiting how many requests you can send",
+	"overloaded": "the provider is overloaded right now", "server": "the provider had a failure of its own",
+	"server_error": "the provider had a failure of its own", "billing": "the account has reached its usage or credit limit",
+	"quota": "the account has reached its usage or credit limit", "auth": "the provider did not accept the account",
+	"auth_permanent": "the provider did not accept the account", "upstream_blocked": "a firewall in front of the provider blocked the request",
+	"model_not_found": "the provider does not have the model the subagent uses", "content_filter": "the provider's safety filter refused the request",
+	"content_policy_blocked":  "the provider's safety filter refused the request",
+	"provider_policy_blocked": "the provider refused the request because of a policy on the account",
+	"context_overflow":        "the subagent's request grew too large for the model", "payload_too_large": "the subagent's request grew too large for the model",
 }
 
-// Line about a subagent that failed or timed out, with what the user can do next
+// Line about a subagent that failed or ran out of time, with what the person can do next
 func failureLine(event *agentv1.Subagent) string {
 	goal := strings.ReplaceAll(strings.TrimSpace(event.GetGoal()), "\n", " ")
 	if runes := []rune(goal); len(runes) > 60 {
-		goal = string(runes[:57]) + "..."
+		goal = string(runes[:57]) + "…"
 	}
-	part := ""
+	who := "A subagent"
 	if goal != "" {
-		part = fmt.Sprintf(` — "%s"`, goal)
+		who = "The subagent working on “" + goal + "”"
 	}
-	took := ""
+	after := ""
 	switch seconds := event.GetDurationSeconds(); {
 	case seconds >= 120:
-		took = fmt.Sprintf("%d min", int(math.RoundToEven(seconds/60)))
+		after = " after " + strs.Span(time.Duration(math.RoundToEven(seconds/60))*time.Minute)
 	case seconds > 0:
-		took = fmt.Sprintf("%ds", int(math.RoundToEven(seconds)))
+		after = " after " + strs.Span(time.Duration(max(math.RoundToEven(seconds), 1))*time.Second)
 	}
 	if event.GetStatus() == "timeout" {
-		after := ""
-		if took != "" {
-			after = " after " + took
-		}
-		return fmt.Sprintf("⚠️ Subagent timed out%s%s without finishing. I will carry on without it; ask me to retry it, or raise "+
-			"delegation.child_timeout_seconds in config.yaml if these tasks legitimately take longer.", part, after)
+		return fmt.Sprintf("⚠ %s stopped%s without finishing, and the agent goes on without it. Ask the agent to try it again, or raise Idle "+
+			"limit in /settings under Subagents if such tasks take longer.", who, after)
 	}
-	line := "⚠️ Subagent failed" + part
-	if took != "" {
-		line += " after " + took
+	line := "⚠ " + who + " failed" + after
+	if reason := failureGloss[event.GetFailureReason()]; reason != "" {
+		line += " because " + reason + "."
+	} else if reason = strs.Clip(strings.Join(strings.Fields(cmp.Or(event.GetSummary(), event.GetText())), " "), 200); reason != "" {
+		line += ": " + strings.TrimRight(reason, ".") + "."
+	} else {
+		line += "."
 	}
-	reason := failureGloss[event.GetFailureReason()]
-	if reason == "" {
-		reason = strs.Clip(strings.Join(strings.Fields(cmp.Or(event.GetSummary(), event.GetText())), " "), 200)
-	}
-	if reason != "" {
-		line += ": " + strings.TrimRight(reason, ".")
-	}
-	return line + ". Details: /agents, or ask me to retry with a smaller task."
+	return line + " See /agents for details, or ask the agent to try again with a smaller task."
 }
 
 // Takes one message of the run in: a reply's text is the final one so far, a tool call and its result shown as the format says
@@ -811,25 +828,25 @@ func (r *runner) finish(ctx context.Context) error {
 		}
 		r.emit(result)
 	case r.failure != "" && r.reply == "":
-		fmt.Fprintln(r.errs, "Error: "+r.failure)
+		fmt.Fprintln(r.errs, agentlaunch.Failed+r.failure)
 	case r.o.quiet || r.o.oneshot != "":
 		if r.reply != "" {
 			fmt.Fprintln(r.out, r.reply)
 		}
 	}
 	if r.failure != "" && r.reply != "" {
-		fmt.Fprintln(r.errs, "Error: "+r.failure)
+		fmt.Fprintln(r.errs, agentlaunch.Failed+r.failure)
 	}
 	if r.o.format != "stream-json" {
 		switch {
 		case r.interrupted() && r.reply == "":
-			fmt.Fprintln(r.errs, "Turn interrupted; it was not retried. Resume this session to continue.")
+			fmt.Fprintln(r.errs, "The reply was stopped before it finished. Resume the session to go on.")
 		case r.o.oneshot != "" && code == exitEmpty:
-			fmt.Fprintln(r.errs, "icebath -z: no final response was produced; treating the run as failed.")
+			fmt.Fprintln(r.errs, "✗ The agent gave no final reply, so this run counts as failed.")
 		}
 	}
 	if r.o.oneshot == "" {
-		fmt.Fprintf(r.errs, "\nsession_id: %s\n", r.id)
+		fmt.Fprintf(r.errs, "\nSession: %s\n", r.id)
 	}
 	if !r.o.quiet && r.o.oneshot == "" {
 		// How to go on with the session, the profile named unless it is the default

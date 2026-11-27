@@ -44,7 +44,7 @@ func suggestions(model string, ids []string, cutoff float64) string {
 	for i, id := range close {
 		quoted[i] = "`" + byLower[id] + "`"
 	}
-	return "\n  Similar models: " + strings.Join(quoted, ", ")
+	return "\nSimilar models: " + strings.Join(quoted, ", ")
 }
 
 // Loopback, private network and single label hosts, which name an endpoint of the user's rather than a vendor's
@@ -95,16 +95,16 @@ func (m *Models) Validate(ctx context.Context, cfg *config.Config, route provide
 	spec := m.Spec(route)
 	switch {
 	case model == "":
-		return reject("Model name cannot be empty.")
+		return reject("Name the model to use.")
 	case IsKnownNonChatModel(model):
-		return reject("`" + model + "` is a generation model and cannot be used for chat. Pick a chat model, or use image generation for image models.")
+		return reject("`" + model + "` makes images or other media and can't chat. Pick a chat model, and set image models in /settings under Images.")
 	case strings.ContainsFunc(model, unicode.IsSpace) && !spaced(route, spec):
-		return reject("Model names cannot contain spaces.")
+		return reject("A model name can't hold spaces.")
 	}
 	label := cmp.Or(spec.DisplayName, spec.Name, route.Provider)
 	catalog := m.Catalog(ctx, cfg, route, false)
 	if len(catalog.IDs) == 0 {
-		return accept(fmt.Sprintf("Note: could not reach the %s API to validate `%s`. If the service isn't down, this model may not be valid.", label, model))
+		return accept(fmt.Sprintf("icebath could not reach %s to check `%s`. If %s is not down, the model may not exist.", label, model, label))
 	}
 	listed := func(id string) bool {
 		return slices.ContainsFunc(catalog.IDs, func(have string) bool { return strings.EqualFold(have, id) })
@@ -119,20 +119,20 @@ func (m *Models) Validate(ctx context.Context, cfg *config.Config, route provide
 	similar := suggestions(model, catalog.IDs, cutoff)
 	switch {
 	case catalog.Fallback:
-		return accept(fmt.Sprintf("Note: `%s` was not found in the %s curated catalog and the /models endpoint was unreachable.", model, label) + similar +
-			"\n  The model may still work if it exists on the provider.")
+		return accept(fmt.Sprintf("`%s` is not in icebath's list of %s models, and %s could not be asked. It still works if %s has it.", model,
+			label, label, label) + similar)
 	case route.Spec == "custom":
-		return accept(fmt.Sprintf("Note: `%s` was not found in this custom endpoint's model listing (%s). It may still work if the server supports "+
-			"hidden or aliased models.", model, cmp.Or(spec.ModelsURL, strings.TrimRight(route.BaseURL, "/")+"/models")) + similar)
+		return accept(fmt.Sprintf("`%s` is not in the list of models at %s. It still works if the server has hidden models or other names for "+
+			"them.", model, cmp.Or(spec.ModelsURL, strings.TrimRight(route.BaseURL, "/")+"/models")) + similar)
 	case route.Spec == "anthropic":
-		return accept(fmt.Sprintf("Note: `%s` was not found in Anthropic's /v1/models listing. It may still work if you have early-access or snapshot "+
-			"IDs.", model) + similar)
+		return accept(fmt.Sprintf("`%s` is not in Anthropic's list of models. It still works if your account has early access or the model is a "+
+			"dated version.", model) + similar)
 	case route.Mode == provider.ModeAnthropicMessages:
-		return accept(fmt.Sprintf("Note: `%s` is not named in this endpoint's model listing (it may still serve it under an alias).", model) + similar +
-			"\n  The model name has been accepted without verification.")
+		return accept(fmt.Sprintf("`%s` is not in this provider's list of models, so it was taken without a check. The provider may know it by "+
+			"another name.", model) + similar)
 	case route.Local || spec.Local:
-		return accept(fmt.Sprintf("Note: `%s` was not found in this local server's model listing. It may still work if the server supports hidden "+
-			"or aliased models.", model) + similar)
+		return accept(fmt.Sprintf("`%s` is not in the list of models on this computer's server. It still works if the server has hidden models "+
+			"or other names for them.", model) + similar)
 	}
-	return reject(fmt.Sprintf("Model `%s` was not found in this provider's model listing.%s", model, similar))
+	return reject(fmt.Sprintf("This provider has no model `%s`. Type /model to see the ones it has.%s", model, similar))
 }

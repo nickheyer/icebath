@@ -29,7 +29,7 @@ func Join(words []string) string {
 	return strings.Join(quoted, " ")
 }
 
-var errUnbalanced = errors.New("No closing quotation")
+var errUnbalanced = errors.New("The command has a quotation mark that is never closed.")
 
 // Words of a command line as a POSIX shell splits them, without expanding anything
 func Split(line string) ([]string, error) {
@@ -70,7 +70,7 @@ func Split(line string) ([]string, error) {
 			in = true
 		case c == '\\':
 			if i+1 >= len(line) {
-				return nil, errors.New("No escaped character")
+				return nil, errors.New("The command ends in a backslash with nothing after it.")
 			}
 			word.WriteByte(line[i+1])
 			in, i = true, i+2

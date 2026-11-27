@@ -19,8 +19,8 @@ import (
 	"github.com/nickheyer/icebath/internal/tools"
 )
 
-const description = "execute_code script execution. The script can spawn subprocesses or mutate files without passing through terminal command " +
-	"approval; approval is one-shot for this run."
+const description = "The agent wants to run a Python script, which can start programs and change files without the checks that commands get. " +
+	"Your answer counts for this run only."
 
 type registrant struct {
 	// Tools a script calls go out through, with their approvals and guards
@@ -50,6 +50,8 @@ func (r *registrant) Tools() []tools.Def {
 		Name:           "execute_code",
 		Toolset:        "code_execution",
 		Title:          "Python",
+		About:          "Run a Python script that can use the other tools",
+		Group:          "Code execution",
 		Icon:           tools.IconShell,
 		Subject:        "code",
 		Schema:         r.schema(nil),
@@ -191,7 +193,7 @@ func (r *registrant) execute(ctx context.Context, call *tools.Call) string {
 		return tools.ErrorResult(fmt.Errorf("execute_code refused: %s (profile terminal policy unresolved; fix the profile's settings and retry)", err))
 	}
 	if !backend.Isolated && call.Env.Gate != nil {
-		err := call.Env.Gate(ctx, tools.Gate{Key: "execute_code", Description: description, Target: "execute_code <<'PY'\n" + code + "\nPY", Code: true,
+		err := call.Env.Gate(ctx, tools.Gate{Key: "execute_code", Description: description, Target: "Python script:\n" + code, Code: true,
 			Subject: "execute_code runs arbitrary local Python (including subprocess calls that bypass shell-string approval checks)"})
 		if refusal, ok := errors.AsType[*tools.Refusal](err); ok {
 			return failed(cmp.Or(refusal.Message, "execute_code blocked by approval guard."), 0, 0, refusal.Summary)

@@ -76,27 +76,30 @@ func wholeWord(text, word string) bool {
 	return false
 }
 
-// Python list form of names, as the findings quote them
+// Names in quotes as a sentence lists them, the last after "and"
 func quoted(values []string) string {
 	parts := make([]string, len(values))
 	for i, v := range values {
-		parts[i] = "'" + v + "'"
+		parts[i] = "“" + v + "”"
 	}
-	return "[" + strings.Join(parts, ", ") + "]"
+	if len(parts) < 2 {
+		return strings.Join(parts, "")
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
 func lintFrontmatter(fm Frontmatter, dir string) []Finding {
 	var out []Finding
 	name := strings.TrimSpace(fm.Name(""))
 	if name != "" && !lintName.MatchString(name) {
-		out = append(out, Finding{"error", "name-format", fmt.Sprintf("name '%s' must be lowercase letters, digits, hyphens, and underscores only.", name)})
+		out = append(out, Finding{"error", "name-format", fmt.Sprintf("The name %s may hold only lowercase letters, digits, hyphens and underscores.", name)})
 	}
 	if dir != "" && name != "" && name != filepath.Base(dir) {
-		out = append(out, Finding{"error", "name-dir-mismatch", fmt.Sprintf("frontmatter name '%s' does not match directory '%s'; they must be identical.", name, filepath.Base(dir))})
+		out = append(out, Finding{"error", "name-dir-mismatch", fmt.Sprintf("The name %s differs from the name of its folder, %s. They must be the same.", name, filepath.Base(dir))})
 	}
 	description := strings.Trim(strings.TrimSpace(text(fm["description"])), `'"`)
 	if n := utf8.RuneCountInString(description); n > IndexDescription {
-		out = append(out, Finding{"warning", "description-length", fmt.Sprintf("description is %d chars; the skill index shows %d and clips the rest, losing routing signal. Keep it to one sentence.", n, IndexDescription)})
+		out = append(out, Finding{"warning", "description-length", fmt.Sprintf("The description has %s, and the skill index shows only %s, so the agent never sees the rest. Keep it to one sentence.", strs.Count(n, "character"), strs.Number(IndexDescription))})
 	}
 	var hits []string
 	for _, word := range marketingWords {
@@ -105,11 +108,11 @@ func lintFrontmatter(fm Frontmatter, dir string) []Finding {
 		}
 	}
 	if len(hits) > 0 {
-		out = append(out, Finding{"warning", "description-marketing", fmt.Sprintf("description contains marketing words %s; state the capability, not adjectives.", quoted(hits))})
+		out = append(out, Finding{"warning", "description-marketing", fmt.Sprintf("The description sells with %s. Say what the skill does instead.", quoted(hits))})
 	}
 	for _, key := range []string{"version", "author", "license"} {
 		if _, ok := fm[key]; !ok {
-			out = append(out, Finding{"warning", "missing-metadata", fmt.Sprintf("frontmatter is missing '%s'; every peer skill has it.", key)})
+			out = append(out, Finding{"warning", "missing-metadata", fmt.Sprintf("The frontmatter has no %s, which every other skill has.", key)})
 		}
 	}
 	var meta map[string]any
@@ -119,15 +122,16 @@ func lintFrontmatter(fm Frontmatter, dir string) []Finding {
 		}
 	}
 	if meta == nil {
-		out = append(out, Finding{"warning", "missing-metadata", "frontmatter is missing metadata.icebath.{tags, related_skills}."})
+		out = append(out, Finding{"warning", "missing-metadata", "The frontmatter has no metadata.icebath with tags and related_skills."})
 	} else if _, ok := meta["tags"]; !ok {
-		out = append(out, Finding{"warning", "missing-metadata", "metadata.icebath.tags is missing."})
+		out = append(out, Finding{"warning", "missing-metadata", "The frontmatter has no metadata.icebath.tags."})
 	}
 	author := text(fm["author"])
 	switch strings.ToLower(strings.TrimSpace(author)) {
 	case "icebath", "agent", "icebath agent":
-		if author != "Icebath Agent" {
-			out = append(out, Finding{"warning", "author-caps", fmt.Sprintf("author '%s' should be 'Icebath Agent' (proper caps) or a real contributor name.", author)})
+		// Icebath is what the skill-authoring standards tell the agent to write, Icebath Agent what the shipped skills carry
+		if author != "Icebath Agent" && author != "Icebath" {
+			out = append(out, Finding{"warning", "author-caps", fmt.Sprintf("The author %s should be written Icebath or Icebath Agent, or be the name of a real person.", author)})
 		}
 	}
 	if platforms := fm["platforms"]; config.Truthy(platforms) {
@@ -144,7 +148,7 @@ func lintFrontmatter(fm Frontmatter, dir string) []Finding {
 			}
 		}
 		if len(bad) > 0 {
-			out = append(out, Finding{"warning", "platforms-value", fmt.Sprintf("platforms contains unrecognized value(s) %s; expected a subset of darwin, linux, macos, windows.", quoted(bad))})
+			out = append(out, Finding{"warning", "platforms-value", fmt.Sprintf("The platforms list holds %s, which icebath doesn't know. Use only darwin, linux, macos and windows.", quoted(bad))})
 		}
 	}
 	return out
@@ -153,23 +157,23 @@ func lintFrontmatter(fm Frontmatter, dir string) []Finding {
 func lintBody(body, dir string) []Finding {
 	var out []Finding
 	if n := utf8.RuneCountInString(body); n > bodyBudget {
-		out = append(out, Finding{"warning", "oversized-body", fmt.Sprintf("SKILL.md body is %s chars (~%s tokens); skill_view loads all of it and it stays in context for every later call of the session. Keep the always-on rules here (~200 lines) and move topic depth into references/<topic>.md, linked from the body.", strs.Thousands(n), strs.Thousands(n/4))})
+		out = append(out, Finding{"warning", "oversized-body", fmt.Sprintf("The body of SKILL.md has %s, about %s, and all of it stays in the context of the agent for the rest of the session. Keep only the rules that always apply here, about 200 lines, and move the depth of each topic into references/<topic>.md, linked from the body.", strs.Count(n, "character"), strs.Count(n/4, "token"))})
 	}
 	prose := codeBlock.ReplaceAllString(body, "")
 	for _, pair := range shellTools {
 		if strings.Contains(prose, "`"+pair[0]+"`") {
-			out = append(out, Finding{"warning", "shell-utility-reference", fmt.Sprintf("prose references `%s`; name the native tool `%s` instead.", pair[0], pair[1])})
+			out = append(out, Finding{"warning", "shell-utility-reference", fmt.Sprintf("The text names %s. Name the tool %s of the agent instead.", pair[0], pair[1])})
 		}
 	}
 	if !whenToUse.MatchString(body) {
-		out = append(out, Finding{"warning", "missing-section", "no '## When to Use' section found; skills need explicit trigger conditions near the top."})
+		out = append(out, Finding{"warning", "missing-section", "There is no ## When to Use section. A skill must say near the top when it applies."})
 	}
 	refs := 0
 	for m, _ := incident.FindStringMatch(prose); m != nil; m, _ = incident.FindNextMatch(m) {
 		refs++
 	}
 	if length := max(1, utf8.RuneCountInString(prose)); refs >= incidentMin && float64(refs)/float64(length)*1000 >= incidentPerKChar {
-		out = append(out, Finding{"warning", "incident-log-shape", fmt.Sprintf("%d PR/issue references in prose; write the generalizable rule + why and drop the incident numbers — the rule must stand without the story.", refs)})
+		out = append(out, Finding{"warning", "incident-log-shape", fmt.Sprintf("The text cites %s. Write the general rule and why it holds, and drop the numbers, because the rule must stand without the story.", strs.Count(refs, "pull request or issue number"))})
 	}
 	if dir == "" {
 		return out
@@ -181,7 +185,7 @@ func lintBody(body, dir string) []Finding {
 		}
 		seen[rel] = true
 		if !fsx.Exists(filepath.Join(dir, filepath.FromSlash(rel))) {
-			out = append(out, Finding{"warning", "dangling-reference", fmt.Sprintf("body references '%s' but that file does not exist in the skill directory.", rel)})
+			out = append(out, Finding{"warning", "dangling-reference", fmt.Sprintf("The body links %s, and the folder of the skill has no such file.", rel)})
 		}
 	}
 	return out
@@ -220,16 +224,16 @@ func lintFiles(fm Frontmatter, dir string) []Finding {
 				}
 			}
 			if len(hit) > 0 {
-				offenders = append(offenders, filepath.Base(script)+": "+quoted(hit))
+				offenders = append(offenders, filepath.Base(script)+" uses "+quoted(hit))
 			}
 		}
 	}
 	if len(offenders) > 0 {
-		out = append(out, Finding{"warning", "platforms-gating", fmt.Sprintf("scripts use POSIX-only primitives (%s) but no 'platforms:' frontmatter is declared. Fix cross-platform or gate with platforms: [linux, macos].", strings.Join(offenders, "; "))})
+		out = append(out, Finding{"warning", "platforms-gating", fmt.Sprintf("Scripts use what only Linux and macOS have, and the frontmatter has no platforms: %s. Make them work everywhere, or add platforms: [linux, macos].", strings.Join(offenders, ", "))})
 	}
 	for _, name := range forbiddenFiles {
 		if fsx.Exists(filepath.Join(dir, name)) {
-			out = append(out, Finding{"warning", "forbidden-file", fmt.Sprintf("skill ships '%s'; skills should not include scaffolding/config files.", name)})
+			out = append(out, Finding{"warning", "forbidden-file", fmt.Sprintf("The skill ships %s. A skill should hold no files of build tools or settings.", name)})
 		}
 	}
 	if refs := filepath.Join(dir, "references"); fsx.IsDir(refs) {
@@ -248,7 +252,7 @@ func lintFiles(fm Frontmatter, dir string) []Finding {
 			}
 		}
 		if n > maxReferences {
-			out = append(out, Finding{"warning", "references-sprawl", fmt.Sprintf("%d files under references/; that is a per-session log, not topical depth. Merge same-topic files into one rule set and drop incident narration.", n)})
+			out = append(out, Finding{"warning", "references-sprawl", fmt.Sprintf("The references folder holds %s, which reads like a log of sessions, not depth on topics. Merge the files of each topic into one set of rules and drop the stories of incidents.", strs.Count(n, "file"))})
 		}
 	}
 	return out

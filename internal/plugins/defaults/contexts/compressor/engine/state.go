@@ -1,10 +1,8 @@
 package engine
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -12,6 +10,7 @@ import (
 	"github.com/spf13/cast"
 
 	"github.com/nickheyer/icebath/internal/sessions"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Keys of the session's model settings the compressor keeps state under
@@ -162,7 +161,7 @@ func (c *compressor) recordCooldown(wait time.Duration, failure string) {
 // Records a summary that timed out or stalled on the ladder of waits, never shorter than the idle limit of the summary step
 func (c *compressor) recordTimeout(failure, kind string, idle time.Duration) {
 	wait := nextRung(&c.timeoutFailures)
-	c.recordCooldown(max(wait, idle), fmt.Sprintf("backoff:%s:strategy=%s: %s", cmp.Or(kind, "timeout"), cmp.Or(c.s.tailMode, "unknown"), failure))
+	c.recordCooldown(max(wait, idle), "The summary model took too long, so summaries pause for "+strs.Span(max(wait, idle).Round(time.Second))+": "+failure)
 }
 
 // Next rung of the ladder of waits, the counter moved on

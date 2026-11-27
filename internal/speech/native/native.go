@@ -12,15 +12,15 @@ import (
 )
 
 // No dynamic library loader for this platform
-var ErrUnsupported = errors.New("no dynamic library loader for " + runtime.GOOS + "/" + runtime.GOARCH)
+var ErrUnsupported = errors.New("this build of icebath can't load libraries on " + runtime.GOOS + "/" + runtime.GOARCH)
 
 // No library turned up for a name, path or search
-var ErrNotFound = errors.New("library not found")
+var ErrNotFound = errors.New("the library was not found")
 
 // No trampoline through which C can call a Go function in this build
-var ErrNoCallback = errors.New("no C callback support for " + runtime.GOOS + "/" + runtime.GOARCH)
+var ErrNoCallback = errors.New("this build of icebath can't take calls from libraries on " + runtime.GOOS + "/" + runtime.GOARCH)
 
-var errNotOpen = errors.New("library is not open")
+var errNotOpen = errors.New("the library is not open")
 
 // A shared library that could not be opened, with the loader's reason
 type LoadError struct {

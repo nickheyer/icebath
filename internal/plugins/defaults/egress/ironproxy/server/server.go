@@ -94,19 +94,23 @@ func (s *service) bitwardenNames(ctx context.Context, cfg *config.Config) ([]str
 	host := s.secrets.Host()
 	source, ok := host.Source(ironterminal.Bitwarden)
 	if !ok || !host.Enabled(cfg, ironterminal.Bitwarden) {
-		return nil, []string{"✗ --from-bitwarden requested but secrets.bitwarden.enabled is false.", "Run `icebath secrets bitwarden setup` first, or omit --from-bitwarden."}
+		return nil, []string{"✗ --from-bitwarden reads keys from Bitwarden, but Load from Bitwarden is off in /settings under Secret stores › Bitwarden.",
+			"Run `icebath secrets bitwarden setup` first, or run setup without --from-bitwarden."}
 	}
 	tokenEnv := host.TokenEnv(cfg, source.Spec())
 	if strings.TrimSpace(host.Existing(cfg)[tokenEnv]) == "" {
-		return nil, []string{"✗ --from-bitwarden requested but " + tokenEnv + " is not set in the environment."}
+		return nil, []string{"✗ --from-bitwarden reads keys from Bitwarden, but " + tokenEnv + " is not set in the environment.",
+			"Export the Bitwarden access token as " + tokenEnv + ", then run setup again."}
 	}
 	result := host.Fetch(ctx, cfg, source, true)
 	if !result.OK() {
-		return nil, []string{"✗ Could not enumerate Bitwarden secrets: " + result.Error, "Either fix the Bitwarden config and retry, or rerun setup without " +
-			"--from-bitwarden (the proxy will read secrets from the host process env at start time)."}
+		return nil, []string{"✗ The secrets in Bitwarden could not be listed: " + strings.TrimRight(result.Error, ".") + ".",
+			"Fix the Bitwarden settings and try again, or run setup without --from-bitwarden, so the proxy reads keys from the environment of this " +
+				"computer when it starts."}
 	}
 	if len(result.Secrets) == 0 {
-		return nil, []string{"✗ Bitwarden returned an empty secrets list.", "Check the project_id in secrets.bitwarden and the BWS access-token's project scope."}
+		return nil, []string{"✗ Bitwarden listed no secrets.", "Check Project in /settings under Secret stores › Bitwarden, and that the access " +
+			"token may read that project."}
 	}
 	names := make([]string, 0, len(result.Secrets))
 	for name := range result.Secrets {
@@ -198,11 +202,11 @@ func (s *service) Write(ctx context.Context, request *egressv1.WriteRequest) (*e
 		source = ironconfig.FromBitwarden
 	case request.GetNoBitwarden():
 		if existing == ironconfig.FromBitwarden {
-			response.Notes = append(response.Notes, "Switched credential_source from bitwarden to env.")
+			response.Notes = append(response.Notes, "Key source is now Environment instead of Bitwarden.")
 		}
 	case existing == ironconfig.FromBitwarden:
 		source = existing
-		response.Notes = append(response.Notes, "Keeping credential_source=bitwarden from existing config. Pass --no-bitwarden to switch to env-based credentials.")
+		response.Notes = append(response.Notes, "Key source stays Bitwarden, as it was. Run setup with --no-bitwarden to read keys from the environment instead.")
 	}
 	for key, value := range map[string]any{ironconfig.TunnelPort: port, ironconfig.Enabled: true, ironconfig.Source: source} {
 		if err := cfg.Set(key, value); err != nil {
@@ -221,7 +225,7 @@ func (s *service) Start(ctx context.Context, request *egressv1.StartRequest) (*e
 	response := &egressv1.StartResponse{}
 	if !request.GetSetup() {
 		if !cfg.GetBool(ironconfig.Enabled) {
-			response.Refusal = "proxy.enabled is false — run `icebath egress setup` first."
+			response.Refusal = "The sandbox proxy is off. Run `icebath egress setup` first."
 			return response, nil
 		}
 		fallback, source := cfg.GetBool(ironconfig.Fallback), cfg.GetString(ironconfig.Source)
@@ -230,24 +234,29 @@ func (s *service) Start(ctx context.Context, request *egressv1.StartRequest) (*e
 		refresh := source == ironconfig.FromBitwarden && registered && host.Enabled(cfg, ironterminal.Bitwarden)
 		if source == ironconfig.FromBitwarden && !refresh {
 			if !fallback {
-				response.Refusal = "proxy.credential_source is 'bitwarden' but secrets.bitwarden is disabled or missing."
-				response.Hint = "Re-enable it (`secrets.bitwarden.enabled: true`), switch back to env credentials with `icebath egress setup --no-bitwarden`, " +
-					"or set `proxy.allow_env_fallback: true` to opt into the host-env fallback."
+				response.Refusal = "Key source is Bitwarden, but Bitwarden is off or not set up."
+				response.Hint = "Turn on Load from Bitwarden in /settings under Secret stores › Bitwarden, read keys from the environment again with " +
+					"`icebath egress setup --no-bitwarden`, or turn on Fall back to environment in /settings under Sandbox proxy."
 				return response, nil
 			}
-			response.Notes = append(response.Notes, "⚠ credential_source=bitwarden but secrets.bitwarden is disabled or missing — falling back to host-env secrets "+
-				"(allow_env_fallback=true).  Rotated Bitwarden keys will NOT propagate.")
+			response.Notes = append(response.Notes, "⚠ Key source is Bitwarden, but Bitwarden is off or not set up, so the proxy reads keys from the "+
+				"environment, as Fall back to environment allows. Keys you change in Bitwarden do not reach it.")
 		}
 		if refresh {
 			source, _ := host.Source(ironterminal.Bitwarden)
 			if tokenEnv := host.TokenEnv(cfg, source.Spec()); strings.TrimSpace(host.Existing(cfg)[tokenEnv]) == "" {
-				response.Refusal = fmt.Sprintf("credential_source=bitwarden but %s is not set in the environment.", tokenEnv)
-				response.Hint = "Either export the access token, or run `icebath egress setup --no-bitwarden` to switch back to env-based credentials."
+				response.Refusal = fmt.Sprintf("Key source is Bitwarden, but %s is not set in the environment.", tokenEnv)
+				response.Hint = "Export the Bitwarden access token as " + tokenEnv + ", or run `icebath egress setup --no-bitwarden` to read keys from " +
+					"the environment instead."
 				return response, nil
 			}
 			if configured, missing := host.Configured(cfg, source); !configured {
-				response.Refusal = "credential_source=bitwarden but " + missing + " is empty."
-				response.Hint = "Run `icebath secrets bitwarden setup` to configure the project, or switch back via `icebath egress setup --no-bitwarden`."
+				if _, setting, ok := cfg.Setting(missing); ok && setting.Title != "" {
+					missing = setting.Title + " in /settings under Secret stores › Bitwarden"
+				}
+				response.Refusal = "Key source is Bitwarden, but " + missing + " is not set."
+				response.Hint = "Run `icebath secrets bitwarden setup` to choose the project, or run `icebath egress setup --no-bitwarden` to read keys " +
+					"from the environment instead."
 				return response, nil
 			}
 		}
@@ -258,7 +267,7 @@ func (s *service) Start(ctx context.Context, request *egressv1.StartRequest) (*e
 		return nil, refuse(err)
 	}
 	if status.PID == 0 {
-		return nil, refuse(errors.New("iron-proxy did not come up cleanly"))
+		return nil, refuse(errors.New("iron-proxy did not start. Its log is iron-proxy.log in the folder of the sandbox proxy."))
 	}
 	response.Pid, response.Port, response.Listening = int32(status.PID), int32(status.Port), status.Listening
 	return response, nil

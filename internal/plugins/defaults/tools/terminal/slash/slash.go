@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/internal/slash"
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/internal/tools"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type commands struct {
@@ -23,8 +24,8 @@ func Register(registry *slash.Registry, host *terminal.Terminal, toolset *tools.
 
 func (c commands) Commands() []slash.Command {
 	return []slash.Command{
-		{Name: "processes", Aliases: []string{"ps"}, Usage: "[id|kill <id>]", Help: "List the background processes of the session, read their output or kill one", Run: c.processes},
-		{Name: "stop", Help: "Kill all running background processes of the session, and the subagents running for it", Run: c.stop},
+		{Name: "processes", Aliases: []string{"ps"}, Usage: "[id|kill <id>]", Help: "See and stop this session's background processes", Run: c.processes},
+		{Name: "stop", Help: "Stop this session's processes and subagents", Run: c.stop},
 	}
 }
 
@@ -45,35 +46,53 @@ func (c commands) processes(ctx context.Context, call *slash.Call) (string, erro
 func (c commands) list(session string) string {
 	views := c.host.Jobs.Views(session)
 	if len(views) == 0 {
-		return "No background processes in this session."
+		return "This session has no background processes. One appears here when the agent runs a command in the background."
 	}
 	var out strings.Builder
 	for _, view := range views {
 		fmt.Fprintf(&out, "- `%s` %s · `%s`\n", view.ID, state(view), oneLine(view.Command, 80))
 		if line := lastLine(view.Tail); line != "" {
-			fmt.Fprintf(&out, "  last: %s\n", oneLine(line, 120))
+			fmt.Fprintf(&out, "  Last line: %s\n", oneLine(line, 120))
 		}
 	}
-	out.WriteString("\n`/processes <id>` shows one's output, `/processes kill <id>` kills it.")
+	out.WriteString("\n/processes <id> shows the output of one, and /processes kill <id> stops it.")
 	return out.String()
+}
+
+// Length of time in words in the largest whole unit it has passed, such as 5 minutes
+func span(length time.Duration) string {
+	unit := time.Second
+	switch {
+	case length < time.Second:
+		return "under a second"
+	case length >= 24*time.Hour:
+		unit = 24 * time.Hour
+	case length >= time.Hour:
+		unit = time.Hour
+	case length >= time.Minute:
+		unit = time.Minute
+	}
+	return strs.Span(length.Truncate(unit))
 }
 
 // How the process stands: running and for how long, or how it ended and how long ago
 func state(view terminal.View) string {
 	if view.Status == "running" {
-		return "running · " + terminal.ShortUptime(int(time.Since(view.Started).Seconds()))
+		return "Running for " + span(time.Since(view.Started))
 	}
-	verdict := "done"
+	verdict := "Finished"
 	switch {
-	case view.Reason == "killed", view.Reason == "lost":
-		verdict = view.Reason
+	case view.Reason == "killed":
+		verdict = "Stopped"
+	case view.Reason == "lost":
+		verdict = "Lost"
 	case view.Reason == "failed_start", view.Code != nil && *view.Code != 0:
-		verdict = "failed"
+		verdict = "Failed"
 	}
 	if view.Code != nil && view.Reason != "killed" && view.Reason != "lost" {
-		verdict += fmt.Sprintf(" · exit %d", *view.Code)
+		verdict += fmt.Sprintf(" with exit code %d", *view.Code)
 	}
-	return verdict + " · " + terminal.ShortUptime(int(time.Since(view.Ended).Seconds())) + " ago"
+	return verdict + ", " + span(time.Since(view.Ended)) + " ago"
 }
 
 func oneLine(text string, limit int) string {
@@ -130,28 +149,32 @@ func (c commands) kill(ctx context.Context, session, id string) (string, error) 
 	report := c.host.Jobs.Kill(ctx, nil, session, view.ID, "process.kill", false)
 	switch report.Status {
 	case "killed":
-		return "Killed " + view.ID + ".", nil
+		return "Stopped " + view.ID + ".", nil
 	case "already_exited":
-		return view.ID + " had already exited.", nil
+		return view.ID + " had already finished.", nil
 	case "not_found":
 		return "", fmt.Errorf("%s is no longer a process of this session.", view.ID)
 	}
-	return "", fmt.Errorf("Could not kill %s: %s", view.ID, report.Error)
+	return "", fmt.Errorf("Could not stop %s: %s.", view.ID, strings.TrimSuffix(report.Error, "."))
 }
 
 // Kills every running background process of the session and ends the background work its tools keep, such as running subagents
 func (c commands) stop(ctx context.Context, call *slash.Call) (string, error) {
 	killed := c.host.Jobs.KillAll(ctx, call.SessionID, "process.stop", false)
-	text := fmt.Sprintf("Stopped %d background processes.", killed)
-	if killed == 1 {
-		text = "Stopped 1 background process."
+	ended := c.tools.Stop(call.SessionID)
+	var said []string
+	if killed > 0 {
+		said = append(said, "Stopped "+strs.Count(killed, "background process")+".")
 	}
-	switch ended := c.tools.Stop(call.SessionID); ended {
+	switch ended {
 	case 0:
 	case 1:
-		text += " Interrupted 1 subagent or background delegation; its partial result still returns."
+		said = append(said, "Stopped 1 subagent, and what it did so far still comes back.")
 	default:
-		text += fmt.Sprintf(" Interrupted %d subagents or background delegations; their partial results still return.", ended)
+		said = append(said, "Stopped "+strs.Count(ended, "subagent")+", and what they did so far still comes back.")
 	}
-	return text, nil
+	if len(said) == 0 {
+		return "Nothing was running in this session.", nil
+	}
+	return strings.Join(said, " "), nil
 }

@@ -9,6 +9,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/strs"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
@@ -35,20 +37,8 @@ func Wrap(s string, width int) string {
 	return ansi.Hardwrap(ansi.Wordwrap(s, width, ""), width, true)
 }
 
-// Count with its noun, pluralized past one
-func Count(n int, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	suffix := "s"
-	switch {
-	case strings.HasSuffix(noun, "ch"), strings.HasSuffix(noun, "sh"), strings.HasSuffix(noun, "s"), strings.HasSuffix(noun, "x"):
-		suffix = "es"
-	case len(noun) > 1 && noun[len(noun)-1] == 'y' && !strings.ContainsRune("aeiou", rune(noun[len(noun)-2])):
-		noun, suffix = noun[:len(noun)-1], "ies"
-	}
-	return fmt.Sprintf("%d %s%s", n, noun, suffix)
-}
+// Count with its noun, pluralized past one and grouped in thousands
+func Count(n int, noun string) string { return strs.Count(n, noun) }
 
 // Renders text in the style, restarting the style after every reset inside the text so its background runs unbroken
 func Paint(st lipgloss.Style, text string) string {
@@ -98,20 +88,8 @@ func Tokens(n int) string {
 	return trimZero(fmt.Sprintf("%.2fM", float64(n)/1_000_000))
 }
 
-// Byte count in the largest unit that keeps it under a thousand
-func Bytes(n int64) string {
-	switch {
-	case n < 0:
-		return "0 B"
-	case n < 1024:
-		return fmt.Sprintf("%d B", n)
-	case n < 1<<20:
-		return trimZero(fmt.Sprintf("%.1f KiB", float64(n)/1024))
-	case n < 1<<30:
-		return trimZero(fmt.Sprintf("%.1f MiB", float64(n)/(1<<20)))
-	}
-	return trimZero(fmt.Sprintf("%.2f GiB", float64(n)/(1<<30)))
-}
+// Byte count in the largest unit that fits, as every screen says a size: 512 bytes, 1.5 KB, 5 MB
+func Bytes(n int64) string { return strs.Size(float64(max(n, 0))) }
 
 // Dollars with cents, or fractions of a cent for tiny amounts
 func Money(f float64) string {
@@ -201,6 +179,11 @@ func ToolGlyph(icon string, t theme.Theme) string {
 		return g.Ask
 	}
 	return g.Tool
+}
+
+// Heading of a group of rows in a list, in capitals
+func Group(text string, t theme.Theme) string {
+	return lipgloss.NewStyle().Foreground(t.TextDim).Bold(true).Render(lang.Upper(text))
 }
 
 // Section heading in bold text

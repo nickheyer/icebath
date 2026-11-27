@@ -150,7 +150,7 @@ func host(req *http.Request) string {
 // Signs the request in place: its date, the session token and the Authorization header over the exact body given
 func Sign(req *http.Request, body []byte, keys Keys, service, region string, now time.Time) error {
 	if !keys.Valid() {
-		return errors.New("SigV4 signing needs an access key id and secret access key.")
+		return errors.New("AWS requests need an access key ID and a secret access key, and these credentials lack one.")
 	}
 	ts := now.UTC()
 	req.Header.Del("Authorization")

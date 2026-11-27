@@ -238,7 +238,7 @@ func checkProvenance(summary string, hasUser bool) error {
 		snapshot = strings.TrimSpace(parts[len(parts)-1])
 	}
 	if snapshot != noUserTask || userAsked.MatchString(summary) {
-		return errors.New("Context compression summary invented user attribution for a session with no user-authored turns")
+		return errors.New("The summary claimed you asked for things in a session where you sent no message, so it was refused.")
 	}
 	return nil
 }
@@ -593,7 +593,7 @@ func refused(content string) bool {
 // One call of the summariser, its text checked: an empty, refusing or cut off reply is a failure
 func (c *compressor) call(ctx context.Context, env *contexts.Env, prompt string, pin pinned) (string, error) {
 	if env.Aux == nil {
-		return "", errors.New("No LLM provider configured for task=compression: the session has no helper models.")
+		return "", &auxiliary.NoProvider{Job: "Summaries"}
 	}
 	model := c.lastAuxModel
 	if route, err := env.Aux.Route(ctx, Task); err == nil {
@@ -750,7 +750,11 @@ func classify(err error) failure {
 	var reply *replyError
 	errors.As(err, &reply)
 	var syntax *json.SyntaxError
-	stalled := strings.Contains(text, "stalled") || errors.Is(err, context.DeadlineExceeded)
+	_, timedOut := errors.AsType[interface {
+		error
+		Timeout() bool
+	}](err)
+	stalled := strings.Contains(text, "stalled") || errors.Is(err, context.DeadlineExceeded) || timedOut
 	return failure{
 		missing:    status == 404 || status == 503 || api != nil && api.Kind == provider.ErrModelNotFound || has(text, "model_not_found", "does not exist", "no available channel"),
 		timeout:    stalled || status == 408 || status == 429 || status == 502 || status == 504 || has(text, "timeout", "timed out"),
@@ -781,19 +785,19 @@ func accessFailure(err error) bool {
 func shortError(err error, limit int) string {
 	text := strings.TrimSpace(err.Error())
 	if text == "" {
-		text = "unknown error"
+		text = "No reason was given."
 	}
 	if utf8.RuneCountInString(text) <= limit {
 		return text
 	}
-	return strings.TrimRightFunc(string([]rune(text)[:limit-3]), unicode.IsSpace) + "..."
+	return strings.TrimRightFunc(string([]rune(text)[:limit-1]), unicode.IsSpace) + "…"
 }
 
 // Handles a failed summary: once on the main model when the summarising model differs, else a cooldown on the rung the failure calls for,
 // with the failures that abort the compression marked; empty for the caller to fall back
 func (c *compressor) failed(ctx context.Context, env *contexts.Env, err error, turns []*sessionsv1.Message, focus, memory string) (string, error) {
-	if strings.Contains(err.Error(), "No LLM provider configured") {
-		c.recordCooldown(failureCooldown, "no auxiliary LLM provider configured")
+	if _, none := errors.AsType[*auxiliary.NoProvider](err); none {
+		c.recordCooldown(failureCooldown, "No helper model can make summaries. Set one in /settings under Helper models › Summaries.")
 		slog.Warn(fmt.Sprintf("Context compression: no provider available for summary. Middle turns will be dropped without summary for %.0f seconds.",
 			failureCooldown.Seconds()))
 		return "", nil

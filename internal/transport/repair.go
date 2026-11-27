@@ -4,10 +4,11 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/strs"
 	"log/slog"
 	"regexp"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 var trailingComma = regexp.MustCompile(`,\s*([}\]])`)

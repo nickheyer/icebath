@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"maps"
@@ -24,9 +25,13 @@ import (
 const again = 2 * time.Second
 
 type Screen struct {
-	ID      string
-	Title   string
-	Short   string
+	ID    string
+	Title string
+	Short string
+	// Heading the command palette lists the screen under, one of the Group names, and its place among the screens of that heading,
+	// lower first. A screen that names no heading is listed under More
+	Group   string
+	Order   int
 	Slash   []string
 	Usage   string
 	Keys    []string
@@ -40,6 +45,30 @@ type Screen struct {
 	Open    func(kit *Kit, argument string) tea.Cmd
 	// Settings the screen follows by key, each run with the value as YAML once the app starts and again whenever it changes
 	Follows map[string]func(kit *Kit, value string) tea.Cmd
+}
+
+// Headings the command palette lists screens under, in the order they show: what a person reaches for first comes first
+const (
+	GroupSessions  = "Sessions"
+	GroupModels    = "Models"
+	GroupAbilities = "What the agent can do"
+	GroupSafety    = "Safety"
+	GroupMedia     = "Images and video"
+	GroupVoice     = "Voice"
+	GroupSecrets   = "Keys and passwords"
+	GroupApp       = "This app"
+	GroupMore      = "More"
+)
+
+// Headings of the screens in the order the palette shows them
+var groups = []string{GroupSessions, GroupModels, GroupAbilities, GroupSafety, GroupMedia, GroupVoice, GroupSecrets, GroupApp, GroupMore}
+
+// Place of a heading among the headings, a heading that is none of them counted as More
+func place(group string) int {
+	if at := slices.Index(groups, group); at >= 0 {
+		return at
+	}
+	return slices.Index(groups, GroupMore)
 }
 
 type Options struct {
@@ -369,14 +398,19 @@ func (m *model) interrupt() tea.Cmd {
 		return m.quit()
 	}
 	m.interrupted = time.Now()
-	return tea.Batch(m.kit.WM.Fire("session.stop"), m.kit.WM.Toast("Press "+m.kit.Env.Keys.Display("interrupt")+" again to quit", wm.Info, again))
+	return tea.Batch(m.kit.WM.Fire("session.stop"), m.kit.WM.Toast("Press "+m.kit.Env.Keys.Display("interrupt")+" again to quit.", wm.Info, again))
 }
 
 func (m *model) commands() []wm.Command {
 	commands := []wm.Command{
 		{ID: "interrupt", Run: m.interrupt},
 	}
-	for _, screen := range m.kit.screens {
+	// Screens under their headings, in the order of the headings and then their own
+	screens := slices.Clone(m.kit.screens)
+	slices.SortStableFunc(screens, func(a, b Screen) int {
+		return cmp.Or(cmp.Compare(place(a.Group), place(b.Group)), cmp.Compare(a.Order, b.Order))
+	})
+	for _, screen := range screens {
 		if screen.Title == "" {
 			continue
 		}
@@ -384,16 +418,18 @@ func (m *model) commands() []wm.Command {
 		if screen.Ready != nil {
 			ready = func() bool { return screen.Ready(m.kit) }
 		}
-		commands = append(commands, wm.Command{ID: "open." + screen.ID, Title: screen.Title, Detail: screen.Short, When: ready, Run: func() tea.Cmd { return screen.Open(m.kit, "") }})
+		commands = append(commands, wm.Command{ID: "open." + screen.ID, Title: screen.Title, Detail: screen.Short, Group: groups[place(screen.Group)],
+			When: ready, Run: func() tea.Cmd { return screen.Open(m.kit, "") }})
 	}
 	return append(commands,
-		wm.Command{ID: "workspace.new", Title: "Space: new", Run: m.space},
+		wm.Command{ID: "workspace.new", Group: wm.GroupSpaces, Title: "New space", Run: m.space},
 		wm.Command{
 			ID:    "workspace.close",
-			Title: "Space: close",
+			Group: wm.GroupSpaces,
+			Title: "Close space",
 			When:  func() bool { return len(m.kit.WM.Workspaces()) > 1 },
 			Run:   func() tea.Cmd { return m.kit.WM.RemoveWorkspace(m.kit.WM.ActiveIndex()) },
 		},
-		wm.Command{ID: "quit", Title: "Quit", Last: true, Run: m.quit},
+		wm.Command{ID: "quit", Group: GroupApp, Title: "Quit", Last: true, Run: m.quit},
 	)
 }

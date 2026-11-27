@@ -17,6 +17,7 @@ func (specs) Specs() []provider.Spec {
 		Shape:              shape,
 		Carriers:           []string{"reasoning_content", "reasoning"},
 		DisplayName:        lmstudioconfig.Title,
+		Description:        "Models that run on this computer in LM Studio",
 		BaseURL:            lmstudioconfig.BaseURL,
 		BaseURLEnv:         lmstudioconfig.BaseURLEnv,
 		Mode:               provider.ModeChatCompletions,

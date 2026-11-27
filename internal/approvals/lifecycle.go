@@ -104,7 +104,7 @@ const maxPeels = 8
 
 // Text every surface shows for a kill aimed at the program hosting the server
 const hostKillRefusal = "Blocked: this command kills every process whose image/name matches the interpreter hosting this gateway (and this command). " +
-	"Stop only the process you own instead: process(action=\"kill\", session_id=\"proc_…\") for a background job Icebath started, or kill/taskkill " +
+	"Stop only the process you own instead: process(action=\"kill\", session_id=\"proc_…\") for a background job icebath started, or kill/taskkill " +
 	"by its explicit PID."
 
 // Whether a process or image name is the program hosting the server, a prefix of it counting when substring is set

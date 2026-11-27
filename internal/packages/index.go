@@ -32,7 +32,7 @@ func GitHubReleases(cfg *config.Config, repo string, pages int) ([]Release, erro
 		return false
 	})
 	if err != nil {
-		return nil, fmt.Errorf("releases of %s: %w", repo, err)
+		return nil, fmt.Errorf("The releases of %s could not be read: %w", repo, err)
 	}
 	return out, nil
 }

@@ -60,11 +60,11 @@ func python(pin Pin) Package {
 			}
 			release, tag, _ := strings.Cut(version, "+")
 			if tag == "" {
-				return nil, Failure(Python, fmt.Sprintf("version %s needs the +<release> tag", version), "")
+				return nil, Failure(Python, fmt.Sprintf("The version %s needs its +RELEASE tag, such as 3.14.0+20251010.", version), "")
 			}
 			triple, ok := RustTriple[target]
 			if !ok {
-				return nil, fmt.Errorf("no download for target %s", target)
+				return nil, fmt.Errorf("There is no download for %s.", target)
 			}
 			return []string{fmt.Sprintf("https://github.com/astral-sh/python-build-standalone/releases/download/%s/cpython-%s+%s-%s-install_only.tar.gz",
 				tag, release, tag, triple)}, nil
@@ -77,7 +77,7 @@ func python(pin Pin) Package {
 			parts := strings.Split(release, ".")
 			triple, ok := RustTriple[target]
 			if !ok {
-				return nil, fmt.Errorf("no download for target %s", target)
+				return nil, fmt.Errorf("There is no download for %s.", target)
 			}
 			return standaloneVersions(cfg, strings.Join(parts[:min(2, len(parts))], "."), triple)
 		},
@@ -156,7 +156,7 @@ func uv(pin Pin) Package {
 			}
 			triple, ok := RustTriple[target]
 			if !ok {
-				return nil, fmt.Errorf("no download for target %s", target)
+				return nil, fmt.Errorf("There is no download for %s.", target)
 			}
 			ext := "tar.gz"
 			if strings.HasPrefix(target, "win32") {
@@ -182,7 +182,7 @@ func node(pin Pin) Package {
 			}
 			platform, ok := nodePlatform[target]
 			if !ok {
-				return nil, fmt.Errorf("no download for target %s", target)
+				return nil, fmt.Errorf("There is no download for %s.", target)
 			}
 			ext, base := "tar.xz", "https://nodejs.org/dist"
 			if strings.HasPrefix(target, "win32") {
@@ -233,14 +233,14 @@ func npm(pin Pin) Package {
 			}
 			nodeBin, err := b.Binary(Node)
 			if err != nil || nodeBin == "" || !fsx.IsFile(nodeBin) {
-				return Failure(NPM, "npm extends node, which is not installed", "")
+				return Failure(NPM, "npm runs on Node, which is not installed.", "Run `icebath pm install node` first.")
 			}
 			cli := filepath.Join(filepath.Dir(filepath.Dir(nodeBin)), "lib", "node_modules", "npm", "bin", "npm-cli.js")
 			if strings.HasPrefix(b.Target, "win32") {
 				cli = filepath.Join(filepath.Dir(nodeBin), "node_modules", "npm", "bin", "npm-cli.js")
 			}
 			if !fsx.IsFile(cli) {
-				return Failure(NPM, "node's entry is missing its bundled npm-cli.js", "")
+				return Failure(NPM, "The installed Node is missing the npm-cli.js that comes with it.", "Run `icebath pm install node` to install it again.")
 			}
 			if err := os.MkdirAll(b.Dir, 0o777); err != nil {
 				return err
@@ -256,7 +256,7 @@ func npm(pin Pin) Package {
 				return err
 			}
 			if r.code != 0 {
-				return Failure(NPM, fmt.Sprintf("self-install exited %d: %s", r.code, strs.Tail(r.stderr, 400)), "")
+				return Failure(NPM, fmt.Sprintf("npm could not install itself. It ended with exit code %d and said: %s", r.code, strs.Tail(r.stderr, 400)), "")
 			}
 			return nil
 		},
@@ -298,7 +298,7 @@ func git(pin Pin) Package {
 	gaps := map[string]string{}
 	for _, target := range Targets {
 		if !strings.HasPrefix(target, "win32") {
-			gaps[target] = "POSIX uses system git by choice"
+			gaps[target] = "icebath uses the git of this system there"
 		}
 	}
 	return Package{
@@ -307,7 +307,7 @@ func git(pin Pin) Package {
 		URLs: func(version, target string) ([]string, error) {
 			tag, build, ok := strings.Cut(version, "+")
 			if !ok {
-				return nil, fmt.Errorf("git version %s must be two parts joined by +", version)
+				return nil, fmt.Errorf("The git version %s must be two parts joined by +, such as 2.47.1+1.", version)
 			}
 			arch := "64-bit"
 			if strings.HasSuffix(target, "arm64") {
@@ -331,8 +331,8 @@ func git(pin Pin) Package {
 		},
 		Unpack: func(b *Build, archive string) error {
 			if runtime.GOOS != "windows" {
-				return Failure(Git, "the pinned artifact is a PortableGit self-extracting 7z, which only runs on Windows",
-					"stage win32 git on a Windows host; POSIX hosts use the system git")
+				return Failure(Git, "The pinned archive is a PortableGit installer, which runs only on Windows.",
+					"Prepare git for Windows on a Windows computer. Other systems use their own git.")
 			}
 			removeQuiet(b.Dir)
 			if err := os.MkdirAll(b.Dir, 0o777); err != nil {
@@ -349,14 +349,14 @@ func git(pin Pin) Package {
 			}
 			r, err := run(b.Ctx, command{argv: []string{exe, "-o" + b.Dir, "-y"}, timeout: 600 * time.Second})
 			if err == errTimedOut {
-				return Failure(Git, "PortableGit self-extractor did not finish in 600 s", "")
+				return Failure(Git, "The PortableGit installer did not finish within 10 minutes.", "")
 			}
 			if err != nil {
 				return err
 			}
 			if r.code != 0 {
-				return Failure(Git, fmt.Sprintf("PortableGit self-extractor exited %d (it reports nothing under -y; usual causes: disk full, path-length limit, "+
-					"antivirus lock)", r.code), "")
+				return Failure(Git, fmt.Sprintf("The PortableGit installer ended with exit code %d and said nothing. The usual causes are a full disk, "+
+					"a path too long for Windows or an antivirus program holding a file.", r.code), "")
 			}
 			return nil
 		},
@@ -370,17 +370,17 @@ func git(pin Pin) Package {
 func gh(pin Pin) Package {
 	return Package{
 		Name: GH, Optional: true, Pin: pin,
-		Gaps:   map[string]string{Bionic: "the GitHub CLI publishes no Android build"},
+		Gaps:   map[string]string{Bionic: "the GitHub CLI has no build for Android"},
 		Binary: map[string]string{"win32": "bin/gh.exe", "posix": "bin/gh"},
 		URLs: func(version, target string) ([]string, error) {
 			osName, arch, _ := strings.Cut(strings.TrimSuffix(target, "-musl"), "-")
 			platform, ok := map[string]string{"win32": "windows", "linux": "linux", "darwin": "macOS"}[osName]
 			if !ok {
-				return nil, fmt.Errorf("no download for operating system %s", osName)
+				return nil, fmt.Errorf("There is no download for the operating system %s.", osName)
 			}
 			archName, ok := map[string]string{"x64": "amd64", "arm64": "arm64"}[arch]
 			if !ok {
-				return nil, fmt.Errorf("no download for architecture %s", arch)
+				return nil, fmt.Errorf("There is no download for the processor type %s.", arch)
 			}
 			ext := "tar.gz"
 			if osName == "win32" || osName == "darwin" {

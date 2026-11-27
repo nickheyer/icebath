@@ -124,35 +124,22 @@ func listMove(id string, sel, n, page int) int {
 	return sel
 }
 
-// Table lines cut to room rows keeping its head rows and the cursor row, with the first row index
-func window(table []string, sel, room, head int) ([]string, int) {
-	if len(table) <= room || room <= head {
-		return table, 0
-	}
-	body := room - head
-	start := 0
-	if sel >= body {
-		start = sel - body + 1
-	}
-	end := min(len(table), head+start+body)
-	return append(append([]string(nil), table[:head]...), table[head+start:end]...), start
-}
-
 // Dim text centered in w by h, for a card with nothing to show
 func emptyView(w, h int, text string, t theme.Theme) string {
 	return lipgloss.Place(w, max(h, 1), lipgloss.Center, lipgloss.Center, render.Dim(text, t))
 }
 
-// Lines cut or padded to h rows with the foot on the last row, as they are when there is no foot
-func footed(lines []string, foot string, h int) string {
-	if foot == "" {
+// Lines cut or padded to h rows with the foot on the last ones, as they are when there is no foot
+func footed(lines, foot []string, h int) string {
+	if len(foot) == 0 {
 		return strings.Join(lines[:min(len(lines), max(h, 0))], "\n")
 	}
-	body := lines[:min(len(lines), max(h-1, 0))]
-	for len(body) < h-1 {
+	room := max(h-len(foot), 0)
+	body := lines[:min(len(lines), room)]
+	for len(body) < room {
 		body = append(body, "")
 	}
-	return strings.Join(append(body, foot), "\n")
+	return strings.Join(append(body, foot...), "\n")
 }
 
 // Error of ShellWords when a quote or a trailing backslash is left open

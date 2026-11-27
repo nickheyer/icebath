@@ -4,7 +4,7 @@
    "anchors": [
     "pvporcupine"
    ],
-   "feature": "Porcupine wake word engine",
+   "feature": "the Porcupine wake word listener",
    "packages": [
     {
      "marker": "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') or (platform_machine == 'ARM64' and sys_platform == 'win32')",

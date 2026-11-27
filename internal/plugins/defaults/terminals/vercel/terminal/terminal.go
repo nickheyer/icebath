@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/internal/skills"
 	"github.com/nickheyer/icebath/internal/terminal"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Folder a Vercel sandbox starts in
@@ -42,7 +43,7 @@ func (r registrant) Backends() []terminal.Backend {
 	return []terminal.Backend{{
 		Name:      "vercel_sandbox",
 		Title:     "Vercel Sandbox",
-		About:     "Cloud microVM with snapshot filesystem persistence",
+		About:     "A cloud sandbox on your Vercel account",
 		Where:     "a Vercel sandbox (Linux)",
 		Remote:    true,
 		Container: true,
@@ -65,33 +66,40 @@ func setting(cfg *config.Config, key string) string {
 }
 
 // Settings of the access token, project and team, in the order they are asked for
-var tuple = []struct{ key, env string }{
-	{vercelconfig.Token, "VERCEL_TOKEN"}, {vercelconfig.ProjectID, "VERCEL_PROJECT_ID"}, {vercelconfig.TeamID, "VERCEL_TEAM_ID"},
+var tuple = []struct{ key, env, title string }{
+	{vercelconfig.Token, "VERCEL_TOKEN", "Access token"}, {vercelconfig.ProjectID, "VERCEL_PROJECT_ID", "Project ID"},
+	{vercelconfig.TeamID, "VERCEL_TEAM_ID", "Team ID"},
 }
+
+// Where the Vercel settings are, as a sentence names them
+const where = "in /settings under Terminal › Vercel Sandbox"
 
 // Credentials from the OIDC token's claims, else the access token with its project and team
 func credentialsOf(cfg *config.Config) (credentials, error) {
 	if oidc := setting(cfg, vercelconfig.OIDCToken); oidc != "" {
 		parts := strings.Split(oidc, ".")
 		if len(parts) < 2 {
-			return credentials{}, errors.New("Invalid Vercel OIDC token: not a JWT")
+			return credentials{}, errors.New("The Vercel OIDC token is not valid, because it is not a JWT. Copy it again into OIDC token " + where + ".")
 		}
 		raw, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
 		if err != nil {
-			return credentials{}, fmt.Errorf("Invalid Vercel OIDC token: %v", err)
+			return credentials{}, fmt.Errorf("The Vercel OIDC token is not valid, because its claims could not be read: %v. Copy it again into OIDC token %s.",
+				err, where)
 		}
 		var claims struct {
 			ProjectID string `json:"project_id"`
 			OwnerID   string `json:"owner_id"`
 		}
 		if err := json.Unmarshal(raw, &claims); err != nil || claims.ProjectID == "" || claims.OwnerID == "" {
-			return credentials{}, errors.New("Invalid Vercel OIDC token: missing project_id or owner_id claims")
+			return credentials{}, errors.New("The Vercel OIDC token is not valid, because it names no project_id or owner_id. Copy it again into OIDC " +
+				"token " + where + ".")
 		}
 		return credentials{token: oidc, team: claims.OwnerID, project: claims.ProjectID}, nil
 	}
 	c := credentials{token: setting(cfg, vercelconfig.Token), project: setting(cfg, vercelconfig.ProjectID), team: setting(cfg, vercelconfig.TeamID)}
 	if c.token == "" || c.project == "" || c.team == "" {
-		return credentials{}, errors.New("Vercel Sandbox auth is not configured: set VERCEL_TOKEN, VERCEL_PROJECT_ID, and VERCEL_TEAM_ID together, or VERCEL_OIDC_TOKEN for local development")
+		return credentials{}, errors.New("Vercel Sandbox cannot sign in. Set Access token, Project ID and Team ID together " + where + ", or OIDC " +
+			"token for one-off local development.")
 	}
 	return c, nil
 }
@@ -103,46 +111,53 @@ type auth struct {
 	details []string
 }
 
+// Titles as one list, the last after "and"
+func titles(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
 func describe(cfg *config.Config) auth {
 	var present, missing []string
 	for _, field := range tuple {
 		if setting(cfg, field.key) != "" {
-			present = append(present, field.env)
+			present = append(present, field.title)
 		} else {
-			missing = append(missing, field.env)
+			missing = append(missing, field.title)
 		}
 	}
 	if setting(cfg, vercelconfig.OIDCToken) != "" {
-		details := []string{"mode: OIDC", "active env: VERCEL_OIDC_TOKEN",
-			"note: OIDC tokens are development-only; use access-token auth for deployments and long-running processes"}
+		details := []string{"OIDC tokens are for development only. Use an access token for deployments and work that runs a long time."}
 		if len(present) > 0 {
-			details = append(details, "also present: "+strings.Join(present, ", "))
+			details = append(details, titles(present)+" are set too, and the OIDC token wins over them.")
 		}
-		return auth{true, "OIDC token via VERCEL_OIDC_TOKEN", details}
+		return auth{ok: true, label: "Signed in with the OIDC token.", details: details}
 	}
 	if len(missing) == 0 {
-		return auth{true, "access token + project/team via VERCEL_TOKEN, VERCEL_PROJECT_ID, VERCEL_TEAM_ID",
-			[]string{"mode: access token", "active env: VERCEL_TOKEN, VERCEL_PROJECT_ID, VERCEL_TEAM_ID"}}
+		return auth{ok: true, label: "Signed in with the access token, project ID and team ID."}
 	}
 	if len(present) > 0 {
-		return auth{false, fmt.Sprintf("partial access-token auth (missing %s)", strings.Join(missing, ", ")),
-			[]string{"mode: incomplete access token", "present env: " + strings.Join(present, ", "), "missing env: " + strings.Join(missing, ", "),
-				"recommended: set VERCEL_TOKEN, VERCEL_PROJECT_ID, and VERCEL_TEAM_ID together"}}
+		return auth{label: "Sign-in is incomplete.", details: []string{"Set: " + titles(present) + ".", "Not set: " + titles(missing) + ".",
+			"Set Access token, Project ID and Team ID together " + where + "."}}
 	}
-	return auth{false, "not configured", []string{"recommended: set VERCEL_TOKEN, VERCEL_PROJECT_ID, and VERCEL_TEAM_ID",
-		"development-only alternative: set VERCEL_OIDC_TOKEN"}}
+	return auth{label: "Sign-in is not set up.", details: []string{"Set Access token, Project ID and Team ID together " + where + ".",
+		"For development only, OIDC token works instead."}}
 }
 
 func check(cfg *config.Config) error {
 	if runtime := setting(cfg, vercelconfig.Runtime); runtime != "" && !slices.Contains(vercelconfig.Runtimes, runtime) {
-		return fmt.Errorf("Vercel Sandbox runtime %s is not supported. Set %s to one of: %s.", strconv.Quote(runtime), vercelconfig.Runtime, strings.Join(vercelconfig.Runtimes, ", "))
+		return fmt.Errorf("Vercel Sandbox has no runtime %s. Set Runtime %s to %s, or clear it.", strconv.Quote(runtime), where,
+			strings.Join(vercelconfig.Runtimes, ", "))
 	}
 	resources, err := terminal.SandboxResources(cfg)
 	if err != nil {
 		return err
 	}
 	if resources.Disk != 0 && resources.Disk != defaultDisk {
-		return fmt.Errorf("Vercel Sandbox does not support a custom disk size (%s is %d). Reset it to the default of %d MB.", terminalconfig.ContainerDisk, resources.Disk, defaultDisk)
+		return fmt.Errorf("Vercel Sandbox does not take a custom disk size, and Sandbox disk in /settings under Terminal is %s. Set it back to %s.",
+			strs.Counted(float64(resources.Disk), "MB"), strs.Counted(defaultDisk, "MB"))
 	}
 	if setting(cfg, vercelconfig.OIDCToken) != "" {
 		_, err := credentialsOf(cfg)
@@ -157,29 +172,34 @@ func check(cfg *config.Config) error {
 	if present == len(tuple) {
 		return nil
 	}
-	head := "selected but no supported auth configuration was found. Set VERCEL_TOKEN, VERCEL_PROJECT_ID, and VERCEL_TEAM_ID for normal use."
 	if present > 0 {
-		head = "selected with token auth, but VERCEL_TOKEN, VERCEL_PROJECT_ID, and VERCEL_TEAM_ID must all be set together."
+		return errors.New("Vercel Sandbox cannot sign in, because Access token, Project ID and Team ID must all be set together " + where + ". An " +
+			"OIDC token works only for one-off local development.")
 	}
-	return fmt.Errorf("Vercel Sandbox backend %s VERCEL_OIDC_TOKEN is supported for one-off local development only.", head)
+	return errors.New("Vercel Sandbox cannot sign in. Set Access token, Project ID and Team ID " + where + ", since an OIDC token works only for " +
+		"one-off local development.")
 }
 
 func setup(cfg *config.Config) []string {
 	lines := []string{
-		"Cloud microVM sandboxes with snapshot-backed filesystem persistence.",
-		"Set the Vercel image to a Vercel managed image or a VCR repository[:tag] (default " + vercelconfig.DefaultImage + ").",
-		"Snapshots restore files only; live processes do not continue after sandbox recreation.",
-		"Use a long-lived Vercel access token plus project/team IDs: set the access token, project ID and team ID together in the Vercel Sandbox settings (VERCEL_TOKEN, VERCEL_PROJECT_ID, VERCEL_TEAM_ID), or the OIDC token (VERCEL_OIDC_TOKEN) for one-off local development.",
-		"Readying the backend fills the project and team IDs from the nearest .vercel/project.json when they are unset, then starts and stops a sandbox to prove it works.",
+		"Cloud sandboxes in small virtual machines, whose files Vercel can keep between sessions.",
+		"Set Image " + where + " to an image Vercel manages or to a VCR repository, with an optional :tag. The default is " + vercelconfig.DefaultImage + ".",
+		"A kept sandbox brings back its files only. Programs that were running do not carry on after the sandbox is made again.",
+		"Use a long-lived Vercel access token with its project and team: set Access token, Project ID and Team ID together " + where + ", or " +
+			"export VERCEL_TOKEN, VERCEL_PROJECT_ID and VERCEL_TEAM_ID. For one-off local development, OIDC token or VERCEL_OIDC_TOKEN works instead.",
+		"Preparing Vercel Sandbox on this screen fills in Project ID and Team ID from the nearest .vercel/project.json when they are not set, " +
+			"then starts and stops a sandbox to prove it works.",
 	}
 	if runtime := setting(cfg, vercelconfig.Runtime); runtime != "" {
-		lines = append(lines, fmt.Sprintf("%s=%s is deprecated by Vercel and overrides the image; unset it to use the image.", vercelconfig.Runtime, strconv.Quote(runtime)))
+		lines = append(lines, fmt.Sprintf("Runtime is set to %s, which Vercel is phasing out and which wins over Image. Clear Runtime to use the image.",
+			strconv.Quote(runtime)))
 	}
 	if resources, err := terminal.SandboxResources(cfg); err == nil && resources.Disk != 0 && resources.Disk != defaultDisk {
-		lines = append(lines, fmt.Sprintf("Vercel Sandbox does not support custom disk sizing; reset %s to %d.", terminalconfig.ContainerDisk, defaultDisk))
+		lines = append(lines, "Vercel Sandbox does not take a custom disk size. Set Sandbox disk in /settings under Terminal back to "+
+			strs.Counted(defaultDisk, "MB")+".")
 	}
 	if linked, err := linkedProject(); err == nil && len(linked) > 0 {
-		lines = append(lines, "Found defaults in nearest .vercel/project.json: "+describeLinked(linked)+".")
+		lines = append(lines, "The nearest .vercel/project.json names "+describeLinked(linked)+".")
 	}
 	return lines
 }
@@ -187,12 +207,12 @@ func setup(cfg *config.Config) []string {
 func describeLinked(linked map[string]string) string {
 	var parts []string
 	if id := linked["projectId"]; id != "" {
-		parts = append(parts, "project ID "+id)
+		parts = append(parts, "the project ID "+id)
 	}
 	if id := linked["orgId"]; id != "" {
-		parts = append(parts, "team ID "+id)
+		parts = append(parts, "the team ID "+id)
 	}
-	return strings.Join(parts, ", ")
+	return strings.Join(parts, " and ")
 }
 
 func doctor(cfg *config.Config) []terminal.Check {
@@ -200,33 +220,28 @@ func doctor(cfg *config.Config) []terminal.Check {
 	supported := strings.Join(vercelconfig.Runtimes, ", ")
 	switch runtime := setting(cfg, vercelconfig.Runtime); {
 	case runtime == "":
-		rows = append(rows, terminal.Check{OK: true, Label: "Vercel image", Detail: "(" + cmp.Or(setting(cfg, vercelconfig.Image), vercelconfig.DefaultImage) + ")"})
+		rows = append(rows, terminal.Check{OK: true, Label: "Sandbox image:", Detail: cmp.Or(setting(cfg, vercelconfig.Image), vercelconfig.DefaultImage)})
 	case slices.Contains(vercelconfig.Runtimes, runtime):
-		rows = append(rows, terminal.Check{OK: true, Label: "Vercel runtime", Detail: "(" + runtime + ")"})
+		rows = append(rows, terminal.Check{OK: true, Label: "Runtime:", Detail: runtime})
 	default:
-		rows = append(rows, terminal.Check{OK: false, Label: "Vercel runtime unsupported", Detail: "(" + runtime + "; use " + supported + ")"})
+		rows = append(rows, terminal.Check{OK: false, Label: "Vercel Sandbox has no runtime " + strconv.Quote(runtime) + ".", Detail: "Use " + supported + "."})
 	}
 	if resources, err := terminal.SandboxResources(cfg); err == nil && (resources.Disk == 0 || resources.Disk == defaultDisk) {
-		rows = append(rows, terminal.Check{OK: true, Label: "Vercel disk setting", Detail: "(uses platform default)"})
+		rows = append(rows, terminal.Check{OK: true, Label: "Sandbox disk is the size Vercel gives."})
 	} else {
-		rows = append(rows, terminal.Check{OK: false, Label: "Vercel custom disk unsupported", Detail: fmt.Sprintf("(reset %s to %d)", terminalconfig.ContainerDisk, defaultDisk)})
+		rows = append(rows, terminal.Check{OK: false, Label: "Vercel Sandbox does not take a custom disk size.",
+			Detail: "Set Sandbox disk in /settings under Terminal back to " + strs.Counted(defaultDisk, "MB") + "."})
 	}
 	a := describe(cfg)
-	switch {
-	case a.ok:
-		rows = append(rows, terminal.Check{OK: true, Label: "Vercel auth", Detail: "(" + a.label + ")"})
-	case strings.HasPrefix(a.label, "partial"):
-		rows = append(rows, terminal.Check{OK: false, Label: "Vercel auth incomplete", Detail: "(" + a.label + ")"})
-	default:
-		rows = append(rows, terminal.Check{OK: false, Label: "Vercel auth not configured", Detail: "(" + a.label + ")"})
-	}
+	rows = append(rows, terminal.Check{OK: a.ok, Label: a.label})
 	for _, line := range a.details {
-		rows = append(rows, terminal.Check{OK: true, Label: "Vercel auth " + line})
+		rows = append(rows, terminal.Check{OK: true, Label: line})
 	}
 	if cfg.GetBool(terminalconfig.ContainerPersistent) {
-		return append(rows, terminal.Check{OK: true, Label: "Vercel persistence", Detail: "snapshot filesystem only; live processes do not survive sandbox recreation"})
+		return append(rows, terminal.Check{OK: true, Label: "Sandbox files are kept.", Detail: "Programs that were running do not carry on after the " +
+			"sandbox is made again."})
 	}
-	return append(rows, terminal.Check{OK: true, Label: "Vercel persistence", Detail: "ephemeral filesystem"})
+	return append(rows, terminal.Check{OK: true, Label: "Sandbox files are not kept.", Detail: "They go when the sandbox does."})
 }
 
 // Fills the project and team IDs the nearest .vercel/project.json links when unset, then starts a sandbox and stops it
@@ -234,17 +249,17 @@ func prepare(ctx context.Context, cfg *config.Config, say func(string)) error {
 	if setting(cfg, vercelconfig.OIDCToken) == "" {
 		linked, err := linkedProject()
 		if err != nil {
-			return err
+			return fmt.Errorf("The working folder could not be read to find .vercel/project.json: %w", err)
 		}
 		if len(linked) > 0 {
-			say("Found defaults in nearest .vercel/project.json.")
+			say("Found " + describeLinked(linked) + " in the nearest .vercel/project.json.")
 		}
-		for _, field := range []struct{ key, linked, title string }{{vercelconfig.ProjectID, "projectId", "project ID"}, {vercelconfig.TeamID, "orgId", "team ID"}} {
+		for _, field := range []struct{ key, linked, title string }{{vercelconfig.ProjectID, "projectId", "Project ID"}, {vercelconfig.TeamID, "orgId", "Team ID"}} {
 			if id := linked[field.linked]; id != "" && setting(cfg, field.key) == "" {
 				if err := cfg.Set(field.key, id); err != nil {
 					return err
 				}
-				say("Set the Vercel " + field.title + " to " + id + ".")
+				say("Set " + field.title + " to " + id + ".")
 			}
 		}
 	}
@@ -258,16 +273,16 @@ func prepare(ctx context.Context, cfg *config.Config, say func(string)) error {
 	c := &client{credentials: creds, http: newHTTP()}
 	params := paramsOf(cfg, 0)
 	params.timeout = testLifetime
-	say("Starting a test sandbox...")
+	say("Starting a test sandbox…")
 	s, err := retry("sandbox create", createAttempts, func() (session, error) { return c.create(ctx, params, "") })
 	if err != nil {
-		return err
+		return fmt.Errorf("Vercel did not start a test sandbox: %w", err)
 	}
 	defer stop(c, s)
 	if err := waitRunning(ctx, c, &s); err != nil {
 		return err
 	}
-	say("Vercel Sandbox works: a sandbox started, and is being stopped.")
+	say("Vercel Sandbox works. The test sandbox started and is being stopped.")
 	return nil
 }
 

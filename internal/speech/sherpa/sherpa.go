@@ -86,16 +86,16 @@ func Load(ctx context.Context, s *speech.Speech, gpu bool) (*Module, error) {
 	defer loaded.Unlock()
 	if m := loaded.module; m != nil {
 		if m.gpu != gpu {
-			return nil, fmt.Errorf("the local speech engine already runs on the %s in this process, restart icebath to move it to the %s", device(m.gpu), device(gpu))
+			return nil, fmt.Errorf("The speech engine of this computer already runs on the %s. Restart icebath to move it to the %s.", device(m.gpu), device(gpu))
 		}
 		return m, nil
 	}
 	asset, ok := archive(gpu)
 	if !ok || !native.Supported {
 		if gpu {
-			return nil, errors.New("the local speech engine has no GPU build for " + runtime.GOOS + "/" + runtime.GOARCH)
+			return nil, errors.New("The speech engine of this computer has no GPU build for " + runtime.GOOS + "/" + runtime.GOARCH + ".")
 		}
-		return nil, errors.New("the local speech engine has no build for " + runtime.GOOS + "/" + runtime.GOARCH)
+		return nil, errors.New("The speech engine of this computer has no build for " + runtime.GOOS + "/" + runtime.GOARCH + ".")
 	}
 	tree, err := s.Tree(ctx, asset)
 	if err != nil {
@@ -107,11 +107,11 @@ func Load(ctx context.Context, s *speech.Speech, gpu bool) (*Module, error) {
 	}
 	lib, err := native.Open(filepath.Join(tree, strings.TrimSuffix(asset.Name, ".tar.bz2"), "lib", name), false)
 	if err != nil {
-		return nil, fmt.Errorf("the local speech engine library failed to load: %w", err)
+		return nil, fmt.Errorf("The library of the speech engine did not load: %w", err)
 	}
 	m := &Module{gpu: gpu, lib: lib}
 	if err := lib.BindAll(m.api.table()); err != nil {
-		return nil, fmt.Errorf("the local speech engine library failed to load: %w", err)
+		return nil, fmt.Errorf("The library of the speech engine did not load: %w", err)
 	}
 	loaded.module = m
 	return m, nil
@@ -157,7 +157,7 @@ func (m *Module) provider() string {
 func requireFiles(paths ...string) error {
 	for _, path := range paths {
 		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-			return fmt.Errorf("speech model file %s is missing", path)
+			return fmt.Errorf("The speech model file %s is missing.", path)
 		}
 	}
 	return nil
@@ -195,7 +195,7 @@ func (m *Module) NewVoice(o VoiceOptions) (*Voice, error) {
 	handle := m.api.createOfflineTts(config)
 	runtime.KeepAlive(held)
 	if handle == 0 {
-		return nil, fmt.Errorf("the speech engine rejected the voice model at %s", o.Model)
+		return nil, fmt.Errorf("The speech engine refused the voice model at %s.", o.Model)
 	}
 	return &Voice{api: &m.api, handle: handle}, nil
 }
@@ -205,14 +205,14 @@ func (v *Voice) Speak(text string, speaker int, speed float32) ([]float32, int, 
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.handle == 0 {
-		return nil, 0, errors.New("the voice is closed")
+		return nil, 0, errors.New("The voice is closed.")
 	}
 	var held [][]byte
 	config := &cGenerationConfig{silenceScale: 0.2, speed: speed, sid: int32(speaker)}
 	audio := v.api.offlineTtsGenerate(v.handle, native.Chars(&held, text), config, 0, 0)
 	runtime.KeepAlive(held)
 	if audio == 0 {
-		return nil, 0, errors.New("the speech engine produced no audio")
+		return nil, 0, errors.New("The speech engine made no audio.")
 	}
 	defer v.api.destroyGeneratedAudio(audio)
 	generated := native.At[cGeneratedAudio](audio)
@@ -247,11 +247,11 @@ func (m *Module) NewSpotter(o SpotterOptions) (*Spotter, error) {
 		return nil, err
 	}
 	if o.Threads <= 0 {
-		return nil, fmt.Errorf("the keyword spotter needs at least one thread, not %d", o.Threads)
+		return nil, fmt.Errorf("The keyword spotter needs at least one thread, not %d.", o.Threads)
 	}
 	// the C API puts its own default in place of a zero
 	if o.Threshold == 0 {
-		return nil, errors.New("keywords_threshold=0 is replaced by the library default in the sherpa-onnx C API")
+		return nil, errors.New("A keyword threshold of 0 can't be used, because the speech engine puts its own default in its place.")
 	}
 	var held [][]byte
 	config := &cKeywordSpotterConfig{
@@ -265,7 +265,7 @@ func (m *Module) NewSpotter(o SpotterOptions) (*Spotter, error) {
 	handle := m.api.createKeywordSpotter(config)
 	runtime.KeepAlive(held)
 	if handle == 0 {
-		return nil, errors.New("the speech engine rejected the keyword spotter config")
+		return nil, errors.New("The speech engine refused the settings of the keyword spotter.")
 	}
 	return &Spotter{api: &m.api, handle: handle}, nil
 }

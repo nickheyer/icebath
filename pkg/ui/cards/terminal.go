@@ -486,7 +486,7 @@ func (t *Terminal) started(msg termStartMsg) tea.Cmd {
 	t.starting = false
 	if msg.err != nil {
 		t.err = msg.err
-		return tea.Batch(t.end(TerminalEnd{Err: msg.err}), wm.Notify("Shell failed to start: "+msg.err.Error(), wm.Error))
+		return tea.Batch(t.end(TerminalEnd{Err: msg.err}), wm.Notify("The shell did not start: "+msg.err.Error(), wm.Error))
 	}
 	if t.closed {
 		go msg.s.Close()
@@ -653,9 +653,9 @@ func (t *Terminal) act(id string) tea.Cmd {
 	case "terminal.lock":
 		t.locked = !t.locked
 		if t.locked {
-			return wm.Notify("Keys locked to the shell. "+t.env.keyed("terminal.lock", "to unlock."), wm.Info)
+			return wm.Notify("Every key now goes to the shell. "+t.env.keyed("terminal.lock", "gives them back."), wm.Info)
 		}
-		return wm.Notify("Keys unlocked", wm.Info)
+		return wm.Notify("Window keys work again.", wm.Info)
 	case "terminal.clear":
 		if t.sess != nil {
 			t.sess.Emu.ClearScrollback()
@@ -701,7 +701,7 @@ func (t *Terminal) jumpPrompt(d int) tea.Cmd {
 	}
 	row, ok := t.sess.Emu.Prompt(t.top(), d)
 	if !ok {
-		return wm.Notify("No more prompts (needs shell integration)", wm.Info)
+		return wm.Notify("No more prompts. Moving between prompts needs shell integration.", wm.Info)
 	}
 	t.show(row)
 	return nil
@@ -731,7 +731,7 @@ func (t *Terminal) copy() tea.Cmd {
 	}
 	text := e.Text(*sel)
 	if strings.TrimSpace(text) == "" {
-		return wm.Notify("Nothing to copy", wm.Info)
+		return wm.Notify("Nothing to copy.", wm.Info)
 	}
 	n := strings.Count(text, "\n") + 1
 	return tea.Batch(clip.Copy(text), wm.Notify("Copied "+render.Count(n, "line"), wm.Success))

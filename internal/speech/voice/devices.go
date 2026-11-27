@@ -28,10 +28,13 @@ const (
 	silenceRMS = 200
 )
 
-const termuxAppMissing = "Termux:API Android app is not installed. Install/update the Termux:API app to use termux-microphone-record."
+const termuxAppMissing = "The Termux:API app for Android is not installed, and recording needs it. Install or update the Termux:API app."
 
 // Package probes of the Termux:API app
 var termuxProbes = [][]string{{"pm", "list", "packages", "com.termux.api"}, {"cmd", "package", "list", "packages", "com.termux.api"}}
+
+// Notice of recording through Termux:API where PortAudio can't load
+const termuxRecords = "Recording works through Termux:API, so PortAudio is not needed."
 
 // PortAudio of this process, the reason it can't load kept apart from other failures
 func audio() (portaudio.Audio, error) {
@@ -70,19 +73,27 @@ func found(name string) (string, bool) {
 // Why this build can't load PortAudio, the Termux:API route on Termux
 func captureHint(err error) string {
 	if termux() {
-		return "this build cannot load PortAudio on Termux, record through Termux:API instead: pkg install termux-api, then install the Termux:API Android app"
+		return "this build of icebath can't load PortAudio on Termux, so record through Termux:API instead: run pkg install termux-api, then install the Termux:API app for Android"
 	}
 	return err.Error()
 }
 
+// Text with its first letter in capitals
+func capital(text string) string {
+	if text == "" {
+		return ""
+	}
+	return strings.ToUpper(text[:1]) + text[1:]
+}
+
 // How to install PortAudio, a line per kind of machine the loader searches
 func portaudioMissing() string {
-	hint := "  Linux:  sudo apt-get install libportaudio2\n  macOS:  brew install portaudio\n" +
-		"  Windows: put portaudio.dll in a PATH directory or libportaudio64bit.dll beside icebath.exe"
+	hint := "  Linux:    sudo apt-get install libportaudio2\n  macOS:    brew install portaudio\n" +
+		"  Windows:  put portaudio.dll in a folder on PATH, or libportaudio64bit.dll next to icebath.exe"
 	if termux() {
-		hint = "  Termux: pkg install portaudio"
+		hint = "  Termux:   pkg install portaudio"
 	}
-	return "PortAudio system library not found -- install it first:\n" + hint + "\nThen retry /voice on."
+	return "PortAudio, the sound library icebath records with, is not installed. Install it:\n" + hint + "\nThen run /voice on again."
 }
 
 // termux-microphone-record on Termux, empty elsewhere
@@ -187,23 +198,25 @@ func probeLibraries(env *Environment, forwarded bool, recorder string, app bool)
 	if err != nil {
 		switch {
 		case unloadable(err):
-			outcome("Termux:API microphone recording available (PortAudio not required)", "PortAudio cannot be loaded ("+captureHint(err)+")", "", true)
+			outcome(termuxRecords, capital(captureHint(err))+".", "", true)
 		case missingLibrary(err):
-			outcome("Termux:API microphone recording available (PortAudio not required)", portaudioMissing(), "", true)
+			outcome(termuxRecords, portaudioMissing(), "", true)
 		default:
-			outcome("PortAudio failed to start, but Termux:API microphone capture is available", "Audio subsystem error ("+err.Error()+")", "", true)
+			outcome("PortAudio failed to start, but recording works through Termux:API.", "The sound system failed: "+
+				strings.TrimSuffix(err.Error(), ".")+".", "", true)
 		}
 		return
 	}
 	devices, err := pa.Devices()
 	if err != nil {
-		outcome("PortAudio device query failed, but Termux:API microphone capture is available", "Audio subsystem error (PortAudio cannot query devices)",
-			"Audio device query failed but host audio forwarding is configured -- continuing", false)
+		outcome("PortAudio could not list the sound devices, but recording works through Termux:API.",
+			"The sound system failed, because PortAudio can't list the sound devices.",
+			"PortAudio could not list the sound devices, but sound comes from the host, so voice mode goes on.", false)
 		return
 	}
 	if len(devices) == 0 {
-		outcome("No PortAudio devices detected, but Termux:API microphone capture is available", "No audio input/output devices detected",
-			"No PortAudio devices detected but host audio forwarding is configured -- continuing", false)
+		outcome("PortAudio found no sound devices, but recording works through Termux:API.", "No microphone or speaker was found.",
+			"PortAudio found no sound devices, but sound comes from the host, so voice mode goes on.", false)
 	}
 }
 
@@ -220,27 +233,28 @@ func Detect() Environment {
 		}
 	}
 	if os.Getenv("SSH_CLIENT") != "" || os.Getenv("SSH_TTY") != "" || os.Getenv("SSH_CONNECTION") != "" {
-		report("Running over SSH with a reachable PulseAudio/PipeWire sound server",
-			"Running over SSH -- no audio devices available.\n  If a sound server (PulseAudio/PipeWire) is running on this host,\n  point Icebath at it, e.g.:\n"+
-				"    export XDG_RUNTIME_DIR=/run/user/$(id -u)\n    # or: export PULSE_SERVER=unix:$XDG_RUNTIME_DIR/pulse/native")
+		report("icebath runs over SSH, and it can reach a PulseAudio or PipeWire sound server.",
+			"icebath runs over SSH, so it has no sound devices.\n  If a PulseAudio or PipeWire sound server runs on this computer, point icebath at it, such as with\n"+
+				"    export XDG_RUNTIME_DIR=/run/user/$(id -u)\n  or\n    export PULSE_SERVER=unix:$XDG_RUNTIME_DIR/pulse/native")
 	}
 	if terminal.InContainer() {
-		report("Running inside container (Docker/Podman/LXC) with host audio forwarding",
-			"Running inside container (Docker/Podman/LXC) -- no audio devices.\n  Forward host audio with one of (substitute $XDG_RUNTIME_DIR for your runtime dir,\n"+
-				"  typically /run/user/$UID):\n    PulseAudio:  -v $XDG_RUNTIME_DIR/pulse/native:$XDG_RUNTIME_DIR/pulse/native \\\n"+
+		report("icebath runs in a container, such as Docker, Podman or LXC, and sound comes from the host.",
+			"icebath runs in a container, such as Docker, Podman or LXC, so it has no sound devices.\n"+
+				"  Pass the sound of the host in with one of these, where $XDG_RUNTIME_DIR is usually /run/user/$UID:\n"+
+				"    PulseAudio:  -v $XDG_RUNTIME_DIR/pulse/native:$XDG_RUNTIME_DIR/pulse/native \\\n"+
 				"                 -e PULSE_SERVER=unix:$XDG_RUNTIME_DIR/pulse/native\n    PipeWire:    -e PIPEWIRE_REMOTE=$XDG_RUNTIME_DIR/pipewire-0")
 	}
 	if wsl() {
 		switch {
 		case forwarded:
-			env.Notices = append(env.Notices, "Running in WSL with a reachable PulseAudio/PipeWire sound server")
+			env.Notices = append(env.Notices, "icebath runs in WSL, and it can reach a PulseAudio or PipeWire sound server.")
 		case wslPowershell():
-			env.Notices = append(env.Notices, "Running in WSL without a PulseAudio bridge -- TTS playback will use the PowerShell/Media.SoundPlayer fallback. "+
-				"Voice INPUT (recording) still requires a PulseAudio bridge:\n  1. Set PULSE_SERVER=unix:/mnt/wslg/PulseServer\n"+
-				"  2. Create ~/.asoundrc pointing ALSA at PulseAudio\n  3. Verify with: arecord -d 3 test.wav && aplay test.wav")
+			env.Notices = append(env.Notices, "icebath runs in WSL without a PulseAudio bridge, so it plays speech through PowerShell. "+
+				"Recording your voice still needs the bridge:\n  1. Set PULSE_SERVER=unix:/mnt/wslg/PulseServer\n"+
+				"  2. Make ~/.asoundrc point ALSA at PulseAudio\n  3. Check it with arecord -d 3 test.wav && aplay test.wav")
 		default:
-			env.Warnings = append(env.Warnings, "Running in WSL -- audio requires a forwarded sound server.\n  PulseAudio: export PULSE_SERVER=unix:/mnt/wslg/PulseServer\n"+
-				"  PipeWire:   export PIPEWIRE_REMOTE=$XDG_RUNTIME_DIR/pipewire-0\n  Then verify: arecord -d 3 test.wav && aplay test.wav")
+			env.Warnings = append(env.Warnings, "icebath runs in WSL, where sound needs a sound server of Windows.\n  PulseAudio: export PULSE_SERVER=unix:/mnt/wslg/PulseServer\n"+
+				"  PipeWire:   export PIPEWIRE_REMOTE=$XDG_RUNTIME_DIR/pipewire-0\n  Then check it with arecord -d 3 test.wav && aplay test.wav")
 		}
 	}
 	probeLibraries(&env, forwarded, recorder, app)
@@ -263,7 +277,7 @@ func captureMissing() string {
 	case unloadable(err):
 		return captureHint(err)
 	case missingLibrary(err):
-		return strings.SplitN(portaudioMissing(), "\n", 2)[0]
+		return "PortAudio, the sound library icebath records with, is not installed"
 	}
 	return err.Error()
 }
@@ -291,38 +305,20 @@ type Requirements struct {
 	Available bool
 	Audio     bool
 	STT       bool
-	Details   string
-	Env       Environment
+	// Why sound can't be recorded, empty when it can or nothing more is known
+	NoAudio string
+	Env     Environment
 }
 
-// Requirements of voice mode with the recognizer the server reports
-func Check(enabled bool, label, provider string) Requirements {
+// Requirements of voice mode with the recognizer the server reports: whether speech is transcribed at all, and the recognizer by its label
+func Check(enabled bool, label string) Requirements {
 	stt := enabled && label != ""
 	termuxed := termuxCapture()
 	has := audioLoads() || termuxed
 	env := Detect()
-	capture := "Audio capture: OK"
-	switch {
-	case termuxed:
-		capture = "Audio capture: OK (Termux:API microphone)"
-	case !has:
-		capture = "Audio capture: MISSING (" + captureMissing() + ")"
+	why := ""
+	if !has {
+		why = captureMissing()
 	}
-	line := "STT provider: MISSING (run /recognition to set up Local Whisper or a cloud provider)"
-	switch {
-	case !enabled:
-		line = "STT provider: DISABLED in config (stt.enabled: false)"
-	case label != "":
-		line = "STT provider: OK (" + label + ")"
-	case provider != "" && provider != "none":
-		line = "STT provider: MISSING (" + provider + " can't transcribe now)"
-	}
-	details := []string{capture, line}
-	for _, w := range env.Warnings {
-		details = append(details, "Environment: "+w)
-	}
-	for _, n := range env.Notices {
-		details = append(details, "Environment: "+n)
-	}
-	return Requirements{Available: has && stt && env.Available, Audio: has, STT: stt, Details: strings.Join(details, "\n"), Env: env}
+	return Requirements{Available: has && stt && env.Available, Audio: has, STT: stt, NoAudio: why, Env: env}
 }

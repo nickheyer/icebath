@@ -54,12 +54,12 @@ func (b *Backend) token(ctx context.Context, env Env) (string, error) {
 	tokenURL, clientID := strings.TrimSpace(env(TokenURLEnv)), strings.TrimSpace(env(ClientIDEnv))
 	clientSecret, scope := strings.TrimSpace(env(ClientSecretEnv)), strings.TrimSpace(env(ScopeEnv))
 	if tokenURL == "" {
-		return "", &CredentialError{Message: "Remote Config needs a plane credential: set " + TokenURLEnv + ", " + ClientIDEnv + " and " +
-			ClientSecretEnv + " in .env (OAuth2 client-credentials grant)."}
+		return "", &CredentialError{Message: "The remote settings need a sign-in. Set " + TokenURLEnv + ", " + ClientIDEnv + " and " +
+			ClientSecretEnv + " in the keys file, as the OAuth2 client credentials grant uses them."}
 	}
 	if clientID == "" || clientSecret == "" {
-		return "", &CredentialError{Message: TokenURLEnv + " is set but " + ClientIDEnv + " / " + ClientSecretEnv +
-			" are not: Remote Config needs the OAuth2 client-credentials grant (both values in .env)."}
+		return "", &CredentialError{Message: TokenURLEnv + " is set, but " + ClientIDEnv + " and " + ClientSecretEnv +
+			" are not both set. The remote settings need both in the keys file."}
 	}
 	if _, err := checkedURL(tokenURL, TokenURLEnv); err != nil {
 		return "", err
@@ -82,11 +82,11 @@ func (b *Backend) token(ctx context.Context, env Env) (string, error) {
 		if _, refused := errors.AsType[*DestinationError](err); refused {
 			return "", err
 		}
-		return "", &CredentialError{Message: fmt.Sprintf("IdP token request to %s failed: %v", DisplayURL(tokenURL), err), Retryable: true}
+		return "", &CredentialError{Message: fmt.Sprintf("The sign-in at %s failed: %v.", DisplayURL(tokenURL), err), Retryable: true}
 	}
 	accessToken, _ := payload["access_token"].(string)
 	if accessToken == "" {
-		return "", &CredentialError{Message: "IdP client-credentials response had no access_token", Retryable: true}
+		return "", &CredentialError{Message: "The sign-in server answered without an access token.", Retryable: true}
 	}
 	ttl := 60.0
 	switch seconds := payload["expires_in"].(type) {
@@ -119,7 +119,7 @@ func postGrant(ctx context.Context, tokenURL, body string) (map[string]any, erro
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP Error %d: %s", resp.StatusCode, strings.TrimPrefix(resp.Status, strconv.Itoa(resp.StatusCode)+" "))
+		return nil, fmt.Errorf("the server answered HTTP %d %s", resp.StatusCode, strings.TrimPrefix(resp.Status, strconv.Itoa(resp.StatusCode)+" "))
 	}
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {

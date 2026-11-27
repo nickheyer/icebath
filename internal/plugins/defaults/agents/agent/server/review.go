@@ -26,7 +26,7 @@ const reviewTask = "review"
 type reviews struct{}
 
 func (reviews) Tasks() []auxiliary.Task {
-	return []auxiliary.Task{{Name: reviewTask, Title: "Reviews", About: "Model the independent reviewer /review starts runs on; unset uses the main model"}}
+	return []auxiliary.Task{{Name: reviewTask, Title: "Reviews", About: "The model that reviews work when you use /review", Order: 60}}
 }
 
 const (
@@ -59,7 +59,7 @@ func (a *Agent) Review(ctx context.Context, id, instructions string) (string, er
 	}
 	snapshot := recentConversation(history)
 	if len(snapshot) == 0 {
-		return "", errors.New("Nothing to review yet — the conversation is empty.")
+		return "", errors.New("There is nothing to review yet, because this session has no messages.")
 	}
 	r.mu.Lock()
 	launched := append([]string{}, r.skills...)
@@ -88,13 +88,13 @@ func (a *Agent) Review(ctx context.Context, id, instructions string) (string, er
 	raw := a.delegateWith(ctx, r, call, pinned, true)
 	var result map[string]any
 	if json.Unmarshal([]byte(raw), &result) != nil {
-		return "", fmt.Errorf("Review dispatch failed: %q", raw)
+		return "", fmt.Errorf("The review could not start. The subagent answered: %s", strs.Head(strings.TrimSpace(raw), 300))
 	}
 	if reason, _ := result["error"].(string); reason != "" {
 		return "", errors.New(reason)
 	}
 	if result["status"] == "dispatched" {
-		return "Review started. Results will return here.", nil
+		return "The review started. Its findings come back to this session when it is done.", nil
 	}
 	model := ""
 	if pinned != nil {
@@ -105,14 +105,14 @@ func (a *Agent) Review(ctx context.Context, id, instructions string) (string, er
 		note = " on " + model
 	}
 	if focus := strings.TrimSpace(instructions); focus != "" {
-		note += " (focus: " + focus + ")"
+		note += ", focused on “" + focus + "”"
 	}
 	body := any(result)
 	if results, ok := result["results"]; ok {
 		body = results
 	}
 	dumped, _ := json.Marshal(body)
-	return "⚖ Review completed synchronously" + note + " — results:\n" + strs.Head(string(dumped), 4000), nil
+	return "The review is done" + note + ".\n\n```json\n" + strs.Head(string(dumped), 4000) + "\n```", nil
 }
 
 // Last user and assistant messages with text, oldest first, each cut to the characters a reviewer gets

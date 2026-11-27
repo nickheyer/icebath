@@ -138,7 +138,7 @@ func (h *Packages) extraNames() []string {
 
 // Refusal of an extra no feature declares, naming those there are
 func (h *Packages) unknownExtra(name string) *InstallError {
-	return Failure(name, "no extra of that name", "known extras are "+strings.Join(h.extraNames(), ", "))
+	return Failure(name, "There is no extra of that name.", "The extras are "+joined(h.extraNames(), "and")+".")
 }
 
 // Command that provisions an extra
@@ -148,12 +148,12 @@ func installHint(extra string) string { return "icebath pm install --extra " + e
 func pinnedPython(l *lockfile) (string, string, error) {
 	version, ok := l.version(Python)
 	if !ok {
-		return "", "", errors.New("pm lock pins no python")
+		return "", "", errors.New("The lock file pins no Python. Run `icebath pm lock --bump python VERSION` to pin one.")
 	}
 	full, _, _ := strings.Cut(version, "+")
 	parts := strings.Split(full, ".")
 	if len(parts) < 2 {
-		return "", "", fmt.Errorf("the lock pins no usable python version, only %s", version)
+		return "", "", fmt.Errorf("The lock file pins Python as %s, which is not a version icebath can use.", version)
 	}
 	return parts[0] + "." + parts[1], full, nil
 }
@@ -287,26 +287,26 @@ func compilerPresent() bool {
 func preflight(name string, e *Extra, target string, r Reporter) error {
 	r = reporter(r)
 	if reason, ok := e.Unsupported[target]; ok {
-		return Failure(name, e.Feature+" cannot be installed on "+target+": "+reason, "use a platform the extra supports")
+		return Failure(name, e.Feature+" cannot be installed on "+target+": "+reason, "Use a platform the extra supports.")
 	}
 	if builds := slices.Sorted(slices.Values(e.Build[target])); len(builds) > 0 {
 		if !compilerPresent() {
-			return Failure(name, fmt.Sprintf("%s compiles %s from source on %s and this machine has no C and C++ compiler", e.Feature, strings.Join(builds, ", "), target),
-				"install a compiler, then run `"+installHint(name)+"` again"+installLines(compilerInstall))
+			return Failure(name, fmt.Sprintf("%s compiles %s from source on %s, and this computer has no C and C++ compiler.", e.Feature,
+				joined(builds, "and"), target), "Install a compiler, then run `"+installHint(name)+"` again. The usual commands:"+installLines(compilerInstall))
 		}
-		r.Line(fmt.Sprintf("  %s builds %s from source with this machine's compiler", name, strings.Join(builds, ", ")))
+		r.Line(fmt.Sprintf("  %s builds %s from source with the compiler of this computer.", name, joined(builds, "and")))
 	}
 	for _, t := range e.Tools {
 		if !(t == Git && runtime.GOOS != "windows") {
-			r.Line(fmt.Sprintf("  %s builds with icebath's own %s", name, t))
+			r.Line(fmt.Sprintf("  %s builds with the %s that comes with icebath.", name, t))
 			continue
 		}
 		found := Which(t, os.Getenv("PATH"))
 		if found == "" {
-			return Failure(name, fmt.Sprintf("%s fetches sources with %s while it builds and this machine has no %s", e.Feature, t, t),
-				"install it, then run `"+installHint(name)+"` again"+installLines(gitInstall))
+			return Failure(name, fmt.Sprintf("%s fetches sources with %s while it builds, and this computer has no %s.", e.Feature, t, t),
+				"Install it, then run `"+installHint(name)+"` again. The usual commands:"+installLines(gitInstall))
 		}
-		r.Line(fmt.Sprintf("  %s builds with %s", name, found))
+		r.Line(fmt.Sprintf("  %s builds with %s.", name, found))
 	}
 	return nil
 }
@@ -326,8 +326,8 @@ func (h *Packages) merged(names []string, target string) ([]byte, []Locked, erro
 				return nil, h.unknownExtra(name)
 			}
 			if e.Python != "" && e.Python != short {
-				return nil, Failure(e.Name, fmt.Sprintf("its resolution is for Python %s but the pinned interpreter is %s", e.Python, short),
-					"run `icebath pm lock` to resolve the extras again for this interpreter")
+				return nil, Failure(e.Name, fmt.Sprintf("Its packages were worked out for Python %s, but the pinned Python is %s.", e.Python, short),
+					"Run `icebath pm lock` to work out the extras again for this Python.")
 			}
 			packages, err := e.serving(pick(e), target, short, full)
 			if err != nil {
@@ -337,8 +337,8 @@ func (h *Packages) merged(names []string, target string) ([]byte, []Locked, erro
 				key := normalName(p.Name)
 				if prior, ok := seen[key]; ok {
 					if prior.Version != p.Version {
-						return nil, Failure(e.Name, fmt.Sprintf("%s %s %s %s but %s %s %s", e.Name, verb, p.Name, p.Version, owner[key], verb, prior.Version),
-							"build these extras in separate environments")
+						return nil, Failure(e.Name, fmt.Sprintf("%s %s %s %s, but %s %s %s %s.", e.Name, verb, p.Name, p.Version, owner[key], verb, p.Name,
+							prior.Version), "Build these extras in separate environments.")
 					}
 					continue
 				}
@@ -416,7 +416,7 @@ func (h *Packages) buildTools(ctx context.Context, cfg *config.Config, tools []s
 			return nil, err
 		}
 		if bar.fetched {
-			reporter(r).Line("  ✓ " + name)
+			reporter(r).Line("  ✓ Installed " + name + ".")
 		}
 		if env == nil {
 			env = runner.Env
@@ -461,12 +461,12 @@ func (h *Packages) installLocked(ctx context.Context, e *pyenv, pins []byte, bui
 			if _, err := h.Download([]Source{{URL: f.URL, Dest: dest, SHA256: f.SHA256}}).Run(ctx, nil); err != nil {
 				remedy := retryDownloadRemedy
 				if IsDownload(err, HashMismatch) {
-					remedy = "the file that arrived is not the one the lock pins, so nothing was built with it; check what proxy or mirror sits between this " +
-						"machine and the address, then run the same command again"
+					remedy = "The file that arrived is not the one the lock file pins, so nothing was built with it. Check which proxy or mirror " +
+						"sits between this computer and the address, then run the same command again."
 				}
-				return Failure(p.Name, fmt.Sprintf("build requirement %s %s: %s", p.Name, p.Version, err), remedy)
+				return Failure(p.Name, fmt.Sprintf("The build requirement %s %s could not be downloaded: %s", p.Name, p.Version, err), remedy)
 			}
-			reporter(r).Line(fmt.Sprintf("  ✓ build requirement %s %s", p.Name, p.Version))
+			reporter(r).Line(fmt.Sprintf("  ✓ Downloaded the build requirement %s %s.", p.Name, p.Version))
 		}
 	}
 	args := []string{"pip", "install", "--no-config", "--python", e.executable(), "--preview-features", "pylock,build-dependency-hashes", "--requirements",
@@ -521,7 +521,7 @@ func (h *Packages) ProvisionExtra(ctx context.Context, cfg *config.Config, name 
 func provisioningFailure(name string, ie *InstallError, retry string) *InstallError {
 	remedy := ie.Remedy
 	if remedy == retryDownloadRemedy || remedy == Failure("", "", "").Remedy {
-		remedy = "check that this machine reaches the address in the error, through its proxy when it uses one, then run `" + retry + "` again"
+		remedy = "Check that this computer reaches the address in the error, through its proxy when it uses one, then run `" + retry + "` again."
 	}
 	return &InstallError{Package: name, Cause: ie.Cause, Remedy: remedy, Err: ie.Err}
 }
@@ -633,7 +633,7 @@ func (h *Packages) declinedExtras() (map[string]bool, error) {
 		err = json.Unmarshal(data, &doc)
 	}
 	if err != nil {
-		return nil, Failure("venv", fmt.Sprintf("cannot read %s: %s", path, err), "fix or delete the file, then retry")
+		return nil, Failure("Left-out extras", fmt.Sprintf("The file %s cannot be read: %s", path, err), "Fix or delete the file, then try again.")
 	}
 	out := map[string]bool{}
 	for _, name := range doc.Declined {

@@ -7,11 +7,13 @@ func Register(cfg *config.Config) {
 	cfg.Register(config.Sections{
 		{
 			Key:   Key,
-			Title: "Packages",
-			About: "Tools, runtimes and Python environments icebath downloads and keeps on this machine for its features",
+			Title: "Downloads",
+			About: "Whether tools may download what they need",
+			Group: config.GroupApp,
+			Order: 50,
 			Settings: []config.Setting{
-				{Key: LazyInstalls, Title: "Allow on-demand installs", About: "Let tools install missing add-ons the first time they are used. " +
-					"ICEBATH_DISABLE_LAZY_INSTALLS=1 turns this off for every profile", Default: true},
+				{Key: LazyInstalls, Title: "Download when needed", About: "Let tools download what they are missing the first time they are used.",
+					Help: "Setting ICEBATH_DISABLE_LAZY_INSTALLS=1 turns this off for every profile.", Default: true},
 			},
 		},
 	})

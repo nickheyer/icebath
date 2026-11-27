@@ -18,6 +18,7 @@ func (specs) Specs() []provider.Spec {
 		Carriers:           []string{"reasoning_content", "reasoning", "reasoning_details"},
 		Native:             provider.Vendored,
 		DisplayName:        kilocodeconfig.Title,
+		Description:        "Many companies' models behind one Kilo Code API key",
 		BaseURL:            base,
 		BaseURLEnv:         kilocodeconfig.BaseURLEnv,
 		ModelsURL:          provider.ModelsURL(base),

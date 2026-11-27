@@ -6,10 +6,11 @@ import (
 )
 
 func Register(cfg *config.Config) {
-	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.STT, Title: "Groq recognition", About: "Whisper on Groq, fast and with a free tier; needs " + KeyEnv,
-		Settings: []config.Setting{
-			{Key: BaseURL, Title: "Groq endpoint", About: "Custom endpoint for Groq speech recognition; empty for Groq's own", Default: "", Env: []string{BaseURLEnv}},
-			{Key: Language, Title: "Groq language", About: "Language hint for Groq transcripts; empty detects it", Default: ""},
-			{Key: Model, Title: "Groq model", About: "Speech recognition model used with Groq", Default: DefaultModel, Env: []string{ModelEnv}},
+	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.STT, Title: "Groq", About: "Fast speech to text with a free tier and a Groq API key",
+		Order: 20, Settings: []config.Setting{
+			{Key: Model, Title: "Model", About: "The Groq model that turns speech into text.", Default: DefaultModel, Env: []string{ModelEnv}},
+			{Key: Language, Title: "Language", About: "The language of what you say.", Help: "A code such as en or de.", Default: "", Zero: "Your language"},
+			{Key: BaseURL, Title: "Base URL", About: "The address Groq requests go to.", Default: "", Zero: "Groq's address", Env: []string{BaseURLEnv},
+				Advanced: true},
 		}}})
 }

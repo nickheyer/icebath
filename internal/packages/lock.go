@@ -116,7 +116,7 @@ func (l *lockfile) save() error {
 	for _, name := range slices.Sorted(maps.Keys(l.touched)) {
 		intended := l.user[name]
 		if now, ok := current[name]; ok && !reflect.DeepEqual(now, l.base[name]) && !reflect.DeepEqual(now, intended) {
-			return &StaleError{Message: fmt.Sprintf("%s changed in %s; read the lockfile again and retry", name, l.path)}
+			return &StaleError{Message: fmt.Sprintf("The pin of %s changed in %s while this command ran. Run the command again.", name, l.path)}
 		}
 		updated[name] = intended
 	}
@@ -184,7 +184,7 @@ func (f *facts) reload(strict bool) error {
 	}
 	if json.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &doc) != nil || doc.Schema != lockSchema {
 		if strict {
-			return fmt.Errorf("cannot read recorded package state: %s", f.path)
+			return fmt.Errorf("The record of installed programs in %s cannot be read. Delete it, then run `icebath pm install` to install and record them again.", f.path)
 		}
 		if len(bytes.TrimSpace(data)) > 0 {
 			_ = os.WriteFile(strings.TrimSuffix(f.path, ".json")+".corrupt", data, 0o666)

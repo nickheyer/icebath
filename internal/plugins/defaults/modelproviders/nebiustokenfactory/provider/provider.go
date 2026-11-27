@@ -17,7 +17,7 @@ func (specs) Specs() []provider.Spec {
 		Shape:           shape,
 		Native:          provider.Unprefixed,
 		DisplayName:     nebiustokenfactoryconfig.Title,
-		Description:     "OpenAI-compatible inference",
+		Description:     "Open models hosted by Nebius, with an API key paid by use",
 		SignupURL:       "https://tokenfactory.nebius.com/",
 		BaseURL:         nebiustokenfactoryconfig.BaseURL,
 		BaseURLEnv:      nebiustokenfactoryconfig.BaseURLEnv,

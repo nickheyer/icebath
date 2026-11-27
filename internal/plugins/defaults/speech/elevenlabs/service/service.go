@@ -42,7 +42,7 @@ func Register(registry *speech.Registry) {
 	ready := func(job *speech.Job) bool { return key(job) != "" }
 	registry.Register(speech.Services{
 		Speakers: []speech.Voice{{
-			Name: config.Name, Title: "ElevenLabs", About: "Most natural voices",
+			Name: config.Name, Title: "ElevenLabs", About: "The most lifelike voices, needs an ElevenLabs API key",
 			Ready: ready,
 			Limit: func(job *speech.Job) int {
 				if limit := modelLimits[job.Text(config.ModelID, config.DefaultModel)]; limit > 0 {
@@ -69,11 +69,11 @@ func Register(registry *speech.Registry) {
 			Setup: setup,
 		}},
 		Recognizing: []speech.Recognizer{{
-			Name: config.Name, Title: "ElevenLabs Scribe", About: "scribe_v2 — diarization + audio-event tagging", Cloud: true, Rank: 7,
+			Name: config.Name, Title: "ElevenLabs Scribe", About: "Tells speakers apart and marks sounds, needs an API key", Cloud: true, Rank: 7,
 			Detected: "ElevenLabs Scribe STT API", Warning: "STT provider 'elevenlabs' configured but " + config.KeyEnv + " not set",
 			Missing: func(_ context.Context, job *speech.Job) string {
 				if key(job) == "" {
-					return config.KeyEnv + " not set"
+					return "ElevenLabs needs an API key. Set " + config.KeyEnv + " in your keys file."
 				}
 				return ""
 			},

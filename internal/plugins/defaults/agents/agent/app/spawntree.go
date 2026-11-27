@@ -22,21 +22,23 @@ import (
 const spawnContext = "agent.spawntree"
 
 var spawnKeys = []keys.Action{
-	{ID: "agent.spawntree.tail", Context: spawnContext, Label: "tail", Doc: "follow the live transcript of the highlighted subagent", Default: []string{"enter", "t"}},
-	{ID: "agent.spawntree.detail", Context: spawnContext, Label: "detail", Doc: "everything known of the highlighted subagent", Default: []string{"d"}},
-	{ID: "agent.spawntree.steer", Context: spawnContext, Label: "steer", Doc: "send guidance the highlighted subagent reads after its next tool call", Default: []string{"e"}},
-	{ID: "agent.spawntree.kill", Context: spawnContext, Label: "stop", Doc: "stop the highlighted subagent", Default: []string{"x"}},
-	{ID: "agent.spawntree.subtree", Context: spawnContext, Label: "stop subtree", Doc: "stop the highlighted subagent and every subagent under it", Default: []string{"X"}},
-	{ID: "agent.spawntree.pause", Context: spawnContext, Label: "pause", Doc: "hold new subagents back from starting, or let them start again", Default: []string{"p"}},
-	{ID: "agent.spawntree.sort", Context: spawnContext, Label: "sort", Doc: "order the tree by spawn order, status, the slowest or the busiest", Default: []string{"s"}},
-	{ID: "agent.spawntree.filter", Context: spawnContext, Label: "filter", Doc: "show every subagent, those running, those that failed or the leaves", Default: []string{"f"}},
-	{ID: "agent.spawntree.older", Context: spawnContext, Label: "older", Doc: "show the spawn tree that finished before this one", Default: []string{"["}},
-	{ID: "agent.spawntree.newer", Context: spawnContext, Label: "newer", Doc: "show the spawn tree that finished after this one, then the live turn", Default: []string{"]"}},
+	{ID: "agent.spawntree.tail", Context: spawnContext, Label: "follow", Doc: "Follow what the highlighted subagent does as it happens", Default: []string{"enter", "t"}},
+	{ID: "agent.spawntree.detail", Context: spawnContext, Label: "details", Doc: "Show everything known about the highlighted subagent", Default: []string{"d"}},
+	{ID: "agent.spawntree.steer", Context: spawnContext, Label: "steer", Doc: "Send the highlighted subagent a note it reads after its next tool call", Default: []string{"e"}},
+	{ID: "agent.spawntree.kill", Context: spawnContext, Label: "stop", Doc: "Stop the highlighted subagent", Default: []string{"x"}},
+	{ID: "agent.spawntree.subtree", Context: spawnContext, Label: "stop all", Doc: "Stop the highlighted subagent and every subagent under it", Default: []string{"X"}},
+	{ID: "agent.spawntree.pause", Context: spawnContext, Label: "pause", Doc: "Hold new subagents back, or let them start again", Default: []string{"p"}},
+	{ID: "agent.spawntree.sort", Context: spawnContext, Label: "sort", Doc: "Sort the tree by start, status, time or tool calls", Default: []string{"s"}},
+	{ID: "agent.spawntree.filter", Context: spawnContext, Label: "filter", Doc: "Show all subagents, or only the working, the failed or those with none under them", Default: []string{"f"}},
+	{ID: "agent.spawntree.older", Context: spawnContext, Label: "older tree", Doc: "Show the spawn tree that finished before this one", Default: []string{"["}},
+	{ID: "agent.spawntree.newer", Context: spawnContext, Label: "newer tree", Doc: "Show the next finished spawn tree, then the reply running now", Default: []string{"]"}},
+	{ID: "agent.spawntree.more", Context: spawnContext, Label: "more", Doc: "Show everything you can do with the subagent and the tree", Default: []string{"m", "ctrl+o"}},
 }
 
 var (
-	spawnSorts   = []string{"spawn order", "status", "slowest", "busiest"}
-	spawnFilters = []string{"all", "running", "failed", "leaves"}
+	// Ways the tree is sorted and parts of it shown, as the note and the status say them, in the order the keys step through them
+	spawnSorts   = []string{"the order they started", "status", "time, slowest first", "tool calls, most first"}
+	spawnFilters = []string{"all subagents", "only working subagents", "only failed subagents", "only subagents with none under them"}
 	// Order the status sort puts subagents in, those that need a look first
 	spawnRank = map[string]int{"running": 0, "queued": 1, "failed": 2, "error": 2, "timeout": 3, "interrupted": 3, "completed": 4}
 )
@@ -98,29 +100,29 @@ func (s *spawnScreen) agents() []*agentv1.Subagent {
 func (s *spawnScreen) prepare() []*spawnNode {
 	nodes := flatten(spawnTree(s.agents()))
 	now := time.Now()
-	switch spawnFilters[s.filter] {
-	case "running":
+	switch s.filter {
+	case 1:
 		nodes = slices.DeleteFunc(nodes, func(n *spawnNode) bool { return !inFlight(n.agent.GetStatus()) })
-	case "failed":
+	case 2:
 		nodes = slices.DeleteFunc(nodes, func(n *spawnNode) bool {
 			status := n.agent.GetStatus()
 			return status != "failed" && status != "error" && status != "timeout" && status != "interrupted"
 		})
-	case "leaves":
+	case 3:
 		nodes = slices.DeleteFunc(nodes, func(n *spawnNode) bool { return len(n.children) > 0 })
 	}
-	switch spawnSorts[s.sort] {
-	case "status":
+	switch s.sort {
+	case 1:
 		slices.SortStableFunc(nodes, func(x, y *spawnNode) int {
 			return cmp.Compare(rankOf(x.agent.GetStatus()), rankOf(y.agent.GetStatus()))
 		})
-	case "slowest":
+	case 2:
 		slices.SortStableFunc(nodes, func(x, y *spawnNode) int {
 			a, _ := elapsed(x.agent, now)
 			b, _ := elapsed(y.agent, now)
 			return cmp.Compare(b, a)
 		})
-	case "busiest":
+	case 3:
 		slices.SortStableFunc(nodes, func(x, y *spawnNode) int { return cmp.Compare(y.agg.tools, x.agg.tools) })
 	}
 	return nodes
@@ -143,18 +145,25 @@ func rankOf(status string) int {
 	return 5
 }
 
-// Opens the spawn tree of the chat: the live turn, or the kth newest finished tree, or a tree read from disk
+// Columns of the tree: the subagent's task, what it is doing, its model, its tool calls, how long it ran and the tokens it used
+var spawnColumns = []render.Column{{Title: "Subagent", Flex: 3}, {Title: "Status"}, {Title: "Model", Flex: 1}, {Title: "Tools", Right: true},
+	{Title: "Time", Right: true}, {Title: "Tokens", Right: true}}
+
+// Opens the spawn tree of the chat: the live reply, or the kth newest finished tree, or a tree read from disk
 func (c *chat) openTree(index int, loaded *agentv1.SpawnTree) tea.Cmd {
 	kit := c.kit
 	s := &spawnScreen{chat: c, index: index, loaded: loaded}
 	t := kit.Env.Theme
 	s.list = cards.NewList(kit.Env, cards.ListSpec{
-		Title:   "Spawn tree",
-		Glyph:   t.Glyphs.Agent,
-		Key:     "tui:agents",
-		Context: spawnContext,
+		Title: "Spawn tree",
+		Glyph: t.Glyphs.Agent,
+		Key:   "tui:agents",
+		// The keys of the tree are shared rather than its own, so each works while the footer shows only the five most used
+		Context: cards.HubContext,
+		Shared:  []string{spawnContext},
 		Primary: "agent.spawntree.tail",
-		Columns: []render.Column{{Title: "Agent", Flex: 3}, {Title: "Status"}, {Title: "Model", Flex: 1}, {Title: "Tools"}, {Title: "Time"}, {Title: "Tokens"}},
+		Intro:   s.intro,
+		Columns: spawnColumns,
 		Yield:   []int{2, 5, 3},
 		Rows: func() [][]string {
 			s.nodes = s.prepare()
@@ -166,13 +175,9 @@ func (c *chat) openTree(index int, loaded *agentv1.SpawnTree) tea.Cmd {
 				if seconds, ok := elapsed(a, now); ok {
 					took = spawnDuration(seconds)
 				}
-				tools := strconv.Itoa(int(a.GetToolCount()))
-				if n.agg.tools != int(a.GetToolCount()) {
-					tools += render.Dim(fmt.Sprintf(" (%d)", n.agg.tools), t)
-				}
-				goal := strings.Repeat("  ", int(a.GetDepth())) + statusGlyph(a.GetStatus(), t) + " " + cmp.Or(a.GetGoal(), "subagent")
-				rows[i] = []string{goal, a.GetStatus(), cmp.Or(a.GetModel(), render.Dim("inherit", t)), tools, took,
-					spawnTokens(a.GetInputTokens() + a.GetOutputTokens())}
+				goal := strings.Repeat("  ", int(a.GetDepth())) + statusGlyph(a.GetStatus(), t) + " " + cmp.Or(oneLine(a.GetGoal()), "Subagent")
+				rows[i] = []string{goal, statusWord(a.GetStatus()), cmp.Or(a.GetModel(), render.Dim("same as the agent", t)), strconv.Itoa(int(a.GetToolCount())),
+					took, spawnTokens(a.GetInputTokens() + a.GetOutputTokens())}
 			}
 			return rows
 		},
@@ -182,26 +187,32 @@ func (c *chat) openTree(index int, loaded *agentv1.SpawnTree) tea.Cmd {
 			}
 			return s.detail(s.nodes[i], false)
 		},
-		Empty:  func() string { return "No subagents this turn. Trigger delegate_task to populate the tree." },
+		Empty: func() string {
+			if s.replay() {
+				return "This tree has no subagents."
+			}
+			return "No subagents in this reply yet. The agent starts them when it splits up a big task."
+		},
 		Status: s.trailer,
 		Banner: s.banner,
 		Free: map[string]bool{"agent.spawntree.pause": true, "agent.spawntree.sort": true, "agent.spawntree.filter": true, "agent.spawntree.older": true,
-			"agent.spawntree.newer": true},
+			"agent.spawntree.newer": true, "agent.spawntree.more": true},
 		Hints: func(_ *cards.List, i int) []wm.Hint {
-			if s.replay() {
-				return []wm.Hint{{Action: "agent.spawntree.tail", Label: "transcript"}, {Action: "agent.spawntree.detail"}, {Action: "agent.spawntree.older"},
-					{Action: "agent.spawntree.newer"}}
+			more := wm.Hint{Action: "agent.spawntree.more"}
+			switch {
+			case i < 0 && s.replay():
+				return []wm.Hint{{Action: "agent.spawntree.older"}, {Action: "agent.spawntree.newer"}, more}
+			case i < 0:
+				return []wm.Hint{s.pauseHint(), {Action: "agent.spawntree.filter"}, {Action: "agent.spawntree.older"}, more}
+			case s.replay():
+				return []wm.Hint{{Action: "agent.spawntree.tail", Label: "read transcript"}, {Action: "agent.spawntree.detail"}, {Action: "agent.spawntree.older"},
+					{Action: "agent.spawntree.newer"}, more}
+			case !inFlight(s.nodes[i].agent.GetStatus()):
+				return []wm.Hint{{Action: "agent.spawntree.tail", Label: "read transcript"}, {Action: "agent.spawntree.detail"}, s.pauseHint(),
+					{Action: "agent.spawntree.filter"}, more}
 			}
-			pause := "pause"
-			if s.status.GetPaused() {
-				pause = "resume"
-			}
-			hints := []wm.Hint{{Action: "agent.spawntree.pause", Label: pause}, {Action: "agent.spawntree.sort"}, {Action: "agent.spawntree.filter"}}
-			if i >= 0 {
-				hints = append([]wm.Hint{{Action: "agent.spawntree.tail"}, {Action: "agent.spawntree.detail"}, {Action: "agent.spawntree.steer"},
-					{Action: "agent.spawntree.kill"}, {Action: "agent.spawntree.subtree"}}, hints...)
-			}
-			return hints
+			return []wm.Hint{{Action: "agent.spawntree.tail"}, {Action: "agent.spawntree.detail"}, {Action: "agent.spawntree.steer"},
+				{Action: "agent.spawntree.kill"}, more}
 		},
 		Actions: map[string]func(*cards.List, int) tea.Cmd{
 			"agent.spawntree.tail":   func(_ *cards.List, i int) tea.Cmd { return s.tail(s.nodes[i].agent) },
@@ -214,10 +225,16 @@ func (c *chat) openTree(index int, loaded *agentv1.SpawnTree) tea.Cmd {
 				return s.live(func() tea.Cmd { return s.kill(subtree(s.nodes[i])) })
 			},
 			"agent.spawntree.pause":  func(*cards.List, int) tea.Cmd { return s.live(s.pause) },
-			"agent.spawntree.sort":   func(*cards.List, int) tea.Cmd { s.sort = (s.sort + 1) % len(spawnSorts); s.refresh(); return nil },
-			"agent.spawntree.filter": func(*cards.List, int) tea.Cmd { s.filter = (s.filter + 1) % len(spawnFilters); s.refresh(); return nil },
+			"agent.spawntree.sort":   func(*cards.List, int) tea.Cmd { return s.resort() },
+			"agent.spawntree.filter": func(*cards.List, int) tea.Cmd { return s.refilter() },
 			"agent.spawntree.older":  func(*cards.List, int) tea.Cmd { return s.step(1) },
 			"agent.spawntree.newer":  func(*cards.List, int) tea.Cmd { return s.step(-1) },
+			"agent.spawntree.more": func(_ *cards.List, i int) tea.Cmd {
+				if i < 0 || i >= len(s.nodes) {
+					return s.more(nil)
+				}
+				return s.more(s.nodes[i])
+			},
 		},
 	})
 	s.list.ToggleDetail()
@@ -232,6 +249,72 @@ func (c *chat) openTree(index int, loaded *agentv1.SpawnTree) tea.Cmd {
 	c.tree = s
 	go s.poll(c.id)
 	return kit.WM.ShowOverlay(s.hub)
+}
+
+// Button that holds new subagents back, or lets them start again
+func (s *spawnScreen) pauseHint() wm.Hint {
+	if s.status.GetPaused() {
+		return wm.Hint{Action: "agent.spawntree.pause", Label: "let start"}
+	}
+	return wm.Hint{Action: "agent.spawntree.pause"}
+}
+
+// Sorts the tree the next way and says which
+func (s *spawnScreen) resort() tea.Cmd {
+	s.sort = (s.sort + 1) % len(spawnSorts)
+	s.refresh()
+	return s.hub.Say("Sorted by "+spawnSorts[s.sort]+".", cards.NoteInfo)
+}
+
+// Shows the next part of the tree and says which
+func (s *spawnScreen) refilter() tea.Cmd {
+	s.filter = (s.filter + 1) % len(spawnFilters)
+	s.refresh()
+	return s.hub.Say("Showing "+spawnFilters[s.filter]+".", cards.NoteInfo)
+}
+
+// Everything the tree does, with the highlighted subagent and with the tree, in a view of its own, each row with the key that does it
+// straight from the tree
+func (s *spawnScreen) more(n *spawnNode) tea.Cmd {
+	var deeds []deed
+	title := "Spawn tree"
+	if n != nil {
+		a := n.agent
+		title = cmp.Or(oneLine(a.GetGoal()), "Subagent")
+		const own = "This subagent"
+		follow := deed{"Follow what it does", own, "agent.spawntree.tail", "follow", func() tea.Cmd { return s.tail(a) }}
+		if s.replay() || !inFlight(a.GetStatus()) {
+			follow.title, follow.verb = "Read its transcript", "read"
+		}
+		deeds = append(deeds, follow, deed{"Show everything known about it", own, "agent.spawntree.detail", "show", func() tea.Cmd { return s.page(n) }})
+		if !s.replay() && inFlight(a.GetStatus()) {
+			deeds = append(deeds,
+				deed{"Send it a note", own, "agent.spawntree.steer", "steer", func() tea.Cmd { return s.steer(a) }},
+				deed{"Stop it", own, "agent.spawntree.kill", "stop", func() tea.Cmd { return s.kill([]*agentv1.Subagent{a}) }})
+		}
+		if !s.replay() && len(n.children) > 0 {
+			deeds = append(deeds, deed{"Stop it and every subagent under it", own, "agent.spawntree.subtree", "stop all", func() tea.Cmd { return s.kill(subtree(n)) }})
+		}
+	}
+	const all = "The tree"
+	if !s.replay() {
+		pause := deed{"Hold new subagents back", all, "agent.spawntree.pause", "pause", s.pause}
+		if s.status.GetPaused() {
+			pause.title, pause.verb = "Let new subagents start again", "let start"
+		}
+		deeds = append(deeds, pause)
+	}
+	next := func(list []string, at int) string { return list[(at+1)%len(list)] }
+	deeds = append(deeds,
+		deed{"Sort by " + next(spawnSorts, s.sort), all, "agent.spawntree.sort", "sort", s.resort},
+		deed{"Show " + next(spawnFilters, s.filter), all, "agent.spawntree.filter", "show", s.refilter})
+	if s.loaded == nil && s.index < len(s.chat.spawn.trees) {
+		deeds = append(deeds, deed{"Show the tree that finished before", all, "agent.spawntree.older", "show", func() tea.Cmd { return s.step(1) }})
+	}
+	if s.loaded == nil && s.index > 0 {
+		deeds = append(deeds, deed{"Show the next tree", all, "agent.spawntree.newer", "show", func() tea.Cmd { return s.step(-1) }})
+	}
+	return showDeeds(s.chat.kit, s.hub, title, "Everything you can do here. The key beside each one does it straight from the tree.", deeds)
 }
 
 // Reads how delegation stands for the session while the screen is open, the rows repainted each second so running times count
@@ -274,10 +357,10 @@ func (s *spawnScreen) onUI(ask func() bool) bool {
 	}
 }
 
-// Runs the control on the live turn; a finished tree takes none
+// Runs the control on the live reply; a finished tree takes none
 func (s *spawnScreen) live(action func() tea.Cmd) tea.Cmd {
 	if s.replay() {
-		return s.hub.Say("replay mode — controls disabled", cards.NoteFailed)
+		return s.hub.Fail("This tree has finished, so its subagents can't be changed.")
 	}
 	return action()
 }
@@ -298,38 +381,49 @@ func subtree(node *spawnNode) []*agentv1.Subagent {
 	return out
 }
 
+// Stops the subagents, after a yes for more than one
 func (s *spawnScreen) kill(agents []*agentv1.Subagent) tea.Cmd {
 	if len(agents) == 0 {
-		return s.hub.Say("nothing running there to stop", cards.NoteFailed)
+		return s.hub.Fail("Nothing is running there to stop.")
 	}
-	label := "stopping " + cmp.Or(agents[0].GetGoal(), agents[0].GetId())
-	if len(agents) > 1 {
-		label = fmt.Sprintf("stopping subtree · %d nodes", len(agents))
+	name := "“" + cmp.Or(oneLine(agents[0].GetGoal()), agents[0].GetId()) + "”"
+	stop := func() tea.Cmd {
+		if len(agents) > 1 {
+			s.hub.Busy("Stopping " + render.Count(len(agents), "subagent") + "…")
+		} else {
+			s.hub.Busy("Stopping " + name + "…")
+		}
+		kit := s.chat.kit
+		return tui.Async(func() func() tea.Cmd {
+			var failed error
+			missing := false
+			for _, a := range agents {
+				response, err := s.chat.desk.agents.Interrupt(kit.Env.Ctx, &agentv1.InterruptRequest{SessionId: s.chat.id, SubagentId: a.GetId()})
+				switch {
+				case err != nil:
+					failed = err
+				case !response.GetFound():
+					missing = true
+				}
+			}
+			return func() tea.Cmd {
+				switch {
+				case failed != nil:
+					return s.hub.Fail("The subagent did not stop. " + tui.Reason(failed))
+				case missing && len(agents) == 1:
+					return s.hub.Fail(name + " had already finished.")
+				case len(agents) > 1:
+					return s.hub.Done("Stopped " + render.Count(len(agents), "subagent") + ".")
+				}
+				return s.hub.Done("Stopped " + name + ".")
+			}
+		})
 	}
-	s.hub.Busy(label)
-	kit := s.chat.kit
-	return tui.Async(func() func() tea.Cmd {
-		var failed error
-		missing := ""
-		for _, a := range agents {
-			response, err := s.chat.desk.agents.Interrupt(kit.Env.Ctx, &agentv1.InterruptRequest{SessionId: s.chat.id, SubagentId: a.GetId()})
-			switch {
-			case err != nil:
-				failed = err
-			case !response.GetFound():
-				missing = a.GetId()
-			}
-		}
-		return func() tea.Cmd {
-			switch {
-			case failed != nil:
-				return s.hub.Fail("stop failed: " + failed.Error())
-			case missing != "" && len(agents) == 1:
-				return s.hub.Fail("not found: " + missing)
-			}
-			return s.hub.Done(strings.Replace(label, "stopping", "stopped", 1))
-		}
-	})
+	if len(agents) == 1 {
+		return stop()
+	}
+	s.list.Confirm("Stop "+render.Count(len(agents), "subagent")+"? Their work so far is kept.", stop)
+	return nil
 }
 
 func (s *spawnScreen) pause() tea.Cmd {
@@ -339,7 +433,10 @@ func (s *spawnScreen) pause() tea.Cmd {
 		response, err := s.chat.desk.agents.Pause(kit.Env.Ctx, &agentv1.PauseRequest{Paused: paused})
 		return func() tea.Cmd {
 			if err != nil {
-				return s.hub.Fail("pause failed")
+				if paused {
+					return s.hub.Fail("New subagents were not held back. " + tui.Reason(err))
+				}
+				return s.hub.Fail("New subagents are still held back. " + tui.Reason(err))
 			}
 			if s.status == nil {
 				s.status = &agentv1.SubagentsResponse{}
@@ -348,22 +445,22 @@ func (s *spawnScreen) pause() tea.Cmd {
 			s.chat.limits = s.status
 			s.refresh()
 			if response.GetPaused() {
-				return s.hub.Done("spawning paused")
+				return s.hub.Done("New subagents are now held back. Those running go on.")
 			}
-			return s.hub.Done("spawning resumed")
+			return s.hub.Done("New subagents can start again.")
 		}
 	})
 }
 
-// Asks for the guidance to steer the subagent with and sends it
+// Asks for the note to steer the subagent with and sends it
 func (s *spawnScreen) steer(a *agentv1.Subagent) tea.Cmd {
 	kit := s.chat.kit
 	var form *cards.Form
 	form = cards.NewForm(kit.Env, cards.FormSpec{
-		Title:  "Steer " + cmp.Or(a.GetGoal(), a.GetId()),
-		Intro:  []string{"The subagent reads this after its next tool call, without being interrupted."},
+		Title:  "Steer",
+		Intro:  []string{"Send “" + cmp.Or(oneLine(a.GetGoal()), a.GetId()) + "” a note. It reads the note after its next tool call, without stopping."},
 		Submit: "Send",
-		Fields: []cards.Field{{ID: "text", Label: "Guidance", Required: true}},
+		Fields: []cards.Field{{ID: "text", Label: "Note", Required: true, Help: "For example, what to look at first or what to leave alone."}},
 		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
 			text := strings.TrimSpace(values["text"])
 			return tea.Batch(s.hub.Close(form), tui.Async(func() func() tea.Cmd {
@@ -371,11 +468,11 @@ func (s *spawnScreen) steer(a *agentv1.Subagent) tea.Cmd {
 				return func() tea.Cmd {
 					switch {
 					case err != nil:
-						return s.hub.Fail(err.Error())
+						return s.hub.Fail("The note was not sent. " + tui.Reason(err))
 					case !response.GetQueued():
-						return s.hub.Fail(cmp.Or(response.GetReason(), "steer rejected"))
+						return s.hub.Fail(cmp.Or(response.GetReason(), "The subagent did not take the note."))
 					}
-					return s.hub.Done("steer queued — arrives after next tool call")
+					return s.hub.Done("Note sent. The subagent reads it after its next tool call.")
 				}
 			}))
 		},
@@ -383,83 +480,121 @@ func (s *spawnScreen) steer(a *agentv1.Subagent) tea.Cmd {
 	return s.hub.Push(form)
 }
 
-// Steps through the finished trees: older away from the live turn, newer back to it
+// Steps through the finished trees: older away from the live reply, newer back to it
 func (s *spawnScreen) step(delta int) tea.Cmd {
 	if s.loaded != nil {
-		return s.hub.Say("a tree read from disk has no neighbours", cards.NoteFailed)
+		return s.hub.Fail("This tree was opened from a file, so it has no older or newer tree.")
 	}
 	next := s.index + delta
-	if next < 0 || next > len(s.chat.spawn.trees) {
-		return nil
+	switch {
+	case next < 0:
+		return s.hub.Say("This is the reply running now, the newest there is.", cards.NoteInfo)
+	case next > len(s.chat.spawn.trees):
+		return s.hub.Say("This is the oldest finished tree this chat keeps.", cards.NoteInfo)
 	}
 	s.index = next
 	s.refresh()
 	if next == 0 {
-		return s.hub.Say("live turn", cards.NoteDone)
+		return s.hub.Say("Showing the reply running now.", cards.NoteInfo)
 	}
-	return s.hub.Say(fmt.Sprintf("replay · %d/%d", next, len(s.chat.spawn.trees)), cards.NoteDone)
+	return s.hub.Say(fmt.Sprintf("Showing finished tree %d of %d.", next, len(s.chat.spawn.trees)), cards.NoteInfo)
 }
 
-// Trailer of the frame: what is shown, the caps and the pause, the sort and the filter
-func (s *spawnScreen) trailer() string {
-	parts := []string{}
+// Lines above the tree: which tree it is, how far delegation may go and whether new subagents are held back, and the totals of the tree
+func (s *spawnScreen) intro() []string {
+	var lines []string
 	if snap := s.snapshot(); snap != nil {
-		label := "replay"
+		head := "A finished spawn tree"
 		if s.index > 0 {
-			label = fmt.Sprintf("replay %d/%d", s.index, len(s.chat.spawn.trees))
+			head = fmt.Sprintf("Finished spawn tree %d of %d", s.index, len(s.chat.spawn.trees))
 		}
-		parts = append(parts, label+" · "+snap.GetLabel())
+		if label := snap.GetLabel(); label != "" {
+			head += ": " + label
+		}
+		lines = append(lines, head+".")
 	} else {
-		parts = append(parts, "live turn")
-		if s.status != nil {
-			parts = append(parts, fmt.Sprintf("caps d%d/%d", s.status.GetMaxSpawnDepth(), s.status.GetMaxConcurrentChildren()))
-			if s.status.GetPaused() {
-				parts = append(parts, "⏸ paused")
-			}
+		line := "The subagents of the reply running now."
+		if n := s.status.GetMaxConcurrentChildren(); n > 0 {
+			line += fmt.Sprintf(" Up to %d run at once.", n)
 		}
+		if n := s.status.GetMaxSpawnDepth(); n > 0 {
+			line += " They nest up to " + render.Count(int(n), "level") + " deep."
+		}
+		if s.status.GetPaused() {
+			line += " New subagents are held back."
+		}
+		lines = append(lines, line)
 	}
 	if tree := spawnTree(s.agents()); len(tree) > 0 {
-		parts = append(parts, spawnSummary(spawnTotals(tree)))
+		lines = append(lines, render.Dim(spawnSummary(spawnTotals(tree)), s.chat.kit.Env.Theme))
 	}
-	parts = append(parts, "sort "+spawnSorts[s.sort], "filter "+spawnFilters[s.filter])
+	return lines
+}
+
+// Trailer of the frame: the sort and the part of the tree shown, each only when it is not the first one
+func (s *spawnScreen) trailer() string {
+	var parts []string
+	if s.filter > 0 {
+		parts = append(parts, "Showing "+spawnFilters[s.filter])
+	}
+	if s.sort > 0 {
+		parts = append(parts, "Sorted by "+spawnSorts[s.sort])
+	}
 	return strings.Join(parts, " · ")
 }
 
-// Line above the tree: the session's failed background delegations of the last day, for the live turn
+// Line above the tree: the session's failed background subagents of the last day, for the live reply
 func (s *spawnScreen) banner() string {
 	if s.replay() || len(s.status.GetFailed()) == 0 {
 		return ""
 	}
 	failed := s.status.GetFailed()
 	first := failed[0]
-	return fmt.Sprintf("Failed delegations · %d · newest: %s · %s · %s", len(failed), cmp.Or(first.GetGoal(), "subagent"), first.GetStatus(),
-		cmp.Or(first.GetError(), "-"))
+	said := render.Count(len(failed), "subagent") + " started in the background failed in the last day."
+	if len(failed) == 1 {
+		said = "A subagent started in the background failed in the last day."
+	}
+	newest := "The newest, “" + cmp.Or(oneLine(first.GetGoal()), "subagent") + "”, " + strings.ToLower(statusWord(first.GetStatus()))
+	if reason := oneLine(first.GetError()); reason != "" {
+		newest += ": " + strings.TrimRight(reason, ".")
+	}
+	return said + " " + newest + "."
 }
 
 // What is known of the subagent; in full for its own page, else the short form the detail pane shows
 func (s *spawnScreen) detail(n *spawnNode, full bool) []string {
 	t := s.chat.kit.Env.Theme
 	a := n.agent
-	lines := []string{render.Heading(cmp.Or(a.GetGoal(), "subagent"), t)}
-	meta := []string{"depth " + strconv.Itoa(int(a.GetDepth())), "model " + cmp.Or(a.GetModel(), "inherit")}
-	if seconds, ok := elapsed(a, time.Now()); ok {
-		meta = append(meta, "elapsed "+spawnDuration(seconds))
+	lines := []string{render.Heading(cmp.Or(oneLine(a.GetGoal()), "Subagent"), t)}
+	meta := []string{statusWord(a.GetStatus()), "Model: " + cmp.Or(a.GetModel(), "the same as the agent")}
+	if depth := a.GetDepth(); depth > 0 {
+		meta = append(meta, fmt.Sprintf("%d levels down", depth))
 	}
-	if a.GetApiCalls() > 0 {
-		meta = append(meta, fmt.Sprintf("%d api calls", a.GetApiCalls()))
+	if seconds, ok := elapsed(a, time.Now()); ok {
+		meta = append(meta, "Ran for "+spawnDuration(seconds))
+	}
+	if calls := a.GetApiCalls(); calls > 0 {
+		meta = append(meta, render.Count(int(calls), "step"))
 	}
 	lines = append(lines, render.Dim(strings.Join(meta, " · "), t))
-	tokens := fmt.Sprintf("tokens %s in · %s out", spawnTokens(a.GetInputTokens()), spawnTokens(a.GetOutputTokens()))
+	tokens := fmt.Sprintf("Tokens: %s read, %s written", spawnTokens(a.GetInputTokens()), spawnTokens(a.GetOutputTokens()))
 	if a.GetReasoningTokens() > 0 {
-		tokens += " · " + spawnTokens(a.GetReasoningTokens()) + " reasoning"
+		tokens += ", " + spawnTokens(a.GetReasoningTokens()) + " reasoning"
 	}
 	if a.GetCost() > 0 {
-		tokens += " · " + render.Money(a.GetCost())
+		tokens += " · Cost " + render.Money(a.GetCost())
 	}
-	lines = append(lines, render.Dim(tokens, t), render.Dim(fmt.Sprintf("tools %d (subtree %d)", a.GetToolCount(), n.agg.tools), t))
+	tools := "Tools: " + render.Count(int(a.GetToolCount()), "call")
+	if n.agg.tools != int(a.GetToolCount()) {
+		tools += fmt.Sprintf(", %d with the subagents under it", n.agg.tools)
+	}
+	lines = append(lines, render.Dim(tokens+" · "+tools, t))
 	if n.agg.descendants > 0 {
-		lines = append(lines, render.Dim(fmt.Sprintf("subtree %s · d%d · ⚡%d · %s tok", render.Count(n.agg.descendants, "agent"), n.agg.depth, n.agg.active,
-			spawnTokens(n.agg.input+n.agg.output)), t))
+		under := "Under it: " + render.Count(n.agg.descendants, "subagent") + ", " + render.Count(n.agg.depth, "level") + " deep"
+		if n.agg.active > 0 {
+			under += fmt.Sprintf(", %d working", n.agg.active)
+		}
+		lines = append(lines, render.Dim(under+", "+spawnTokens(n.agg.input+n.agg.output)+" tokens", t))
 	}
 	files := func(title string, paths []string) {
 		if len(paths) == 0 {
@@ -474,7 +609,7 @@ func (s *spawnScreen) detail(n *spawnNode, full bool) []string {
 			lines = append(lines, "  "+path)
 		}
 		if limit < len(paths) {
-			lines = append(lines, render.Dim(fmt.Sprintf("  …+%d more", len(paths)-limit), t))
+			lines = append(lines, render.Dim(fmt.Sprintf("  and %d more", len(paths)-limit), t))
 		}
 	}
 	files("Files read", a.GetFilesRead())
@@ -501,7 +636,7 @@ func (s *spawnScreen) detail(n *spawnNode, full bool) []string {
 		section("Tool calls", progress.tools)
 		section("Progress", progress.notes)
 		if full {
-			section("Thinking", progress.thinking)
+			section("Reasoning", progress.thinking)
 		}
 	} else if a.GetTool() != "" {
 		section("Tool calls", []string{toolLine(a.GetTool(), a.GetPreview())})
@@ -518,10 +653,13 @@ func (s *spawnScreen) detail(n *spawnNode, full bool) []string {
 		section("Output", out)
 	}
 	if summary := strings.TrimSpace(a.GetSummary()); summary != "" {
-		lines = append(lines, "", render.Heading("Summary", t))
+		lines = append(lines, "", render.Heading("Report", t))
 		for _, line := range strings.Split(summary, "\n") {
 			lines = append(lines, "  "+line)
 		}
+	}
+	if !full {
+		lines = append(lines, "", render.Dim(s.chat.kit.Env.Keys.Display("agent.spawntree.detail")+" shows all of it on a page of its own.", t))
 	}
 	return lines
 }
@@ -529,7 +667,7 @@ func (s *spawnScreen) detail(n *spawnNode, full bool) []string {
 // Page of everything known of the subagent
 func (s *spawnScreen) page(n *spawnNode) tea.Cmd {
 	page := cards.NewPage(s.chat.kit.Env, cards.PageSpec{
-		Title: cmp.Or(n.agent.GetGoal(), n.agent.GetId()),
+		Title: "Details",
 		Key:   "tui:agents:" + n.agent.GetId(),
 		Lines: func(w int) []string {
 			var out []string
@@ -552,24 +690,28 @@ func (s *spawnScreen) tail(a *agentv1.Subagent) tea.Cmd {
 		kit.Apply(func() tea.Cmd {
 			switch {
 			case err != nil:
-				text = err.Error()
+				text = "The transcript could not be read. " + tui.Reason(err)
 			case !response.GetAvailable():
 				text = "This subagent left no transcript."
 			default:
 				text = response.GetText()
 				if response.GetTruncated() {
-					text = "[…older output not shown]\n" + text
+					text = "Older lines are not shown.\n\n" + text
 				}
 			}
 			return nil
 		})
 	}
 	page = cards.NewPage(kit.Env, cards.PageSpec{
-		Title:  "Transcript · " + cmp.Or(a.GetGoal(), a.GetId()),
+		Title:  "Transcript",
 		Key:    "tui:agents:tail:" + a.GetId(),
 		Follow: true,
 		Lines: func(w int) []string {
-			return strings.Split(render.Wrap(text, max(w, 1)), "\n")
+			var lines []string
+			for _, line := range strings.Split(render.Wrap(cmp.Or(oneLine(a.GetGoal()), "Subagent"), max(w, 1)), "\n") {
+				lines = append(lines, render.Heading(line, kit.Env.Theme))
+			}
+			return append(append(lines, ""), strings.Split(render.Wrap(text, max(w, 1)), "\n")...)
 		},
 		Init: func(*cards.Page) tea.Cmd {
 			id := a.GetId()
@@ -630,18 +772,18 @@ func (c *chat) replayTree(argument string) (tea.Cmd, bool) {
 	case strings.HasPrefix(lower, "load"):
 		path := strings.TrimSpace(raw[len("load"):])
 		if path == "" {
-			return wm.Notify("usage: /replay load <path>", wm.Warn), true
+			return wm.Notify("Usage: /replay load <path>. The path is that of a saved spawn tree, as /replay list shows it.", wm.Warn), true
 		}
 		return c.loadTree(path), true
 	}
 	if len(c.spawn.trees) == 0 {
-		return wm.Notify("no completed spawn trees this session · try /replay list", wm.Info), true
+		return wm.Notify("No spawn tree has finished in this chat yet. /replay list shows those saved for this session.", wm.Info), true
 	}
 	index := 1
 	if raw != "" && lower != "last" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 || n > len(c.spawn.trees) {
-			return wm.Notify(fmt.Sprintf("replay: index out of range 1..%d · use /replay list for disk", len(c.spawn.trees)), wm.Warn), true
+			return wm.Notify(fmt.Sprintf("Usage: /replay %s. Pick a tree from 1 to %d, where 1 is the last.", replayUsage, len(c.spawn.trees)), wm.Warn), true
 		}
 		index = n
 	}
@@ -650,38 +792,62 @@ func (c *chat) replayTree(argument string) (tea.Cmd, bool) {
 
 // The spawn trees kept on disk for the session, newest first, each opened on enter
 func (c *chat) savedTrees() tea.Cmd {
+	none := "No spawn trees are saved for this session yet. A tree is saved once its reply ends."
 	if c.id == "" {
-		return wm.Notify("no archived spawn trees on disk for this session", wm.Info)
+		return wm.Notify(none, wm.Info)
 	}
 	kit := c.kit
+	t := kit.Env.Theme
 	return tui.Async(func() func() tea.Cmd {
 		response, err := c.desk.agents.Trees(kit.Env.Ctx, &agentv1.TreesRequest{SessionId: c.id, Limit: 30})
 		return func() tea.Cmd {
 			if err != nil {
-				return wm.Notify(err.Error(), wm.Error)
+				return wm.Notify("The saved spawn trees could not be read. "+tui.Reason(err), wm.Error)
 			}
 			trees := response.GetTrees()
 			if len(trees) == 0 {
-				return wm.Notify("no archived spawn trees on disk for this session", wm.Info)
+				return wm.Notify(none, wm.Info)
+			}
+			count := func(i int) string {
+				if i < len(response.GetCounts()) {
+					return render.Count(int(response.GetCounts()[i]), "subagent")
+				}
+				return ""
 			}
 			var hub *cards.Hub
-			list := cards.NewList(kit.Env, cards.ListSpec{
-				Title:   "Archived spawn trees",
-				Glyph:   kit.Env.Theme.Glyphs.Agent,
+			var list *cards.List
+			list = cards.NewList(kit.Env, cards.ListSpec{
+				Title:   "Saved spawn trees",
+				Glyph:   t.Glyphs.Agent,
 				Key:     "tui:agents:saved",
 				Context: cards.HubContext,
 				Primary: "hub.use",
-				Columns: []render.Column{{Title: "finished"}, {Title: "agents"}, {Title: "label", Flex: 2}, {Title: "path", Flex: 1}},
+				Pick:    true,
+				Bar:     len(trees) > 8,
+				Search:  "Search saved trees",
+				Intro:   func() []string { return []string{"The spawn trees saved for this session, newest first."} },
+				Columns: []render.Column{{}, {Right: true}, {Flex: 1}},
 				Rows: func() [][]string {
 					rows := make([][]string, len(trees))
 					for i, tree := range trees {
-						count := ""
-						if i < len(response.GetCounts()) {
-							count = fmt.Sprintf("%d subagents", response.GetCounts()[i])
-						}
-						rows[i] = []string{tree.GetFinished().AsTime().Local().Format("Jan 2 15:04"), count, tree.GetLabel(), render.Dim(tree.GetPath(), kit.Env.Theme)}
+						rows[i] = []string{tree.GetFinished().AsTime().Local().Format("Jan 2 15:04"), render.Dim(count(i), t), render.Dim(tree.GetLabel(), t)}
 					}
 					return rows
+				},
+				Words: func(i int) string { return trees[i].GetPath() },
+				Detail: func(i int) []string {
+					lines := []string{cmp.Or(trees[i].GetLabel(), "A spawn tree")}
+					facts := "Finished " + trees[i].GetFinished().AsTime().Local().Format("Jan 2 15:04")
+					if n := count(i); n != "" {
+						facts += " · " + n
+					}
+					return append(lines, render.Dim(facts, t), render.Dim("File: "+tilde(trees[i].GetPath()), t))
+				},
+				Hints: func(_ *cards.List, i int) []wm.Hint {
+					if i < 0 {
+						return nil
+					}
+					return []wm.Hint{{Action: "hub.use", Label: "open"}}
 				},
 				Actions: map[string]func(*cards.List, int) tea.Cmd{
 					"hub.use": func(_ *cards.List, i int) tea.Cmd {
@@ -689,6 +855,7 @@ func (c *chat) savedTrees() tea.Cmd {
 					},
 				},
 			})
+			list.ToggleDetail()
 			hub = kit.Hub("tui:agents:saved", list)
 			return kit.WM.ShowOverlay(hub)
 		}
@@ -703,9 +870,9 @@ func (c *chat) loadTree(path string) tea.Cmd {
 		return func() tea.Cmd {
 			switch {
 			case err != nil:
-				return wm.Notify(err.Error(), wm.Error)
+				return wm.Notify("The spawn tree could not be read. "+tui.Reason(err), wm.Error)
 			case len(response.GetTree().GetSubagents()) == 0:
-				return wm.Notify("snapshot empty or unreadable", wm.Warn)
+				return wm.Notify("That file holds no spawn tree icebath can read.", wm.Warn)
 			}
 			return c.openTree(0, response.GetTree())
 		}
@@ -715,8 +882,9 @@ func (c *chat) loadTree(path string) tea.Cmd {
 // /replay-diff: two finished trees of this chat side by side, picked by their places
 func (c *chat) replayDiff(argument string) (tea.Cmd, bool) {
 	words := strings.Fields(argument)
+	usage := "Usage: /replay-diff " + replayDiffUsage + ". For example, /replay-diff 2 1 compares the last tree with the one before it."
 	if len(words) != 2 {
-		return wm.Notify("usage: /replay-diff <a> <b>  (e.g. /replay-diff 1 2 for last two)", wm.Warn), true
+		return wm.Notify(usage, wm.Warn), true
 	}
 	pick := func(word string) *agentv1.SpawnTree {
 		if n, err := strconv.Atoi(word); err == nil && n >= 1 && n <= len(c.spawn.trees) {
@@ -725,8 +893,11 @@ func (c *chat) replayDiff(argument string) (tea.Cmd, bool) {
 		return nil
 	}
 	baseline, candidate := pick(words[0]), pick(words[1])
-	if baseline == nil || candidate == nil {
-		return wm.Notify(fmt.Sprintf("replay-diff: could not resolve indices · history has %d entries", len(c.spawn.trees)), wm.Warn), true
+	switch {
+	case len(c.spawn.trees) < 2:
+		return wm.Notify("This chat has "+render.Count(len(c.spawn.trees), "finished spawn tree")+". Comparing needs two.", wm.Warn), true
+	case baseline == nil || candidate == nil:
+		return wm.Notify(fmt.Sprintf("Pick two trees from 1 to %d, where 1 is the last. %s", len(c.spawn.trees), usage), wm.Warn), true
 	}
 	t := c.kit.Env.Theme
 	a, b := spawnTree(baseline.GetSubagents()), spawnTree(candidate.GetSubagents())
@@ -743,7 +914,7 @@ func (c *chat) replayDiff(argument string) (tea.Cmd, bool) {
 		if delta < 0 {
 			sign = "-"
 		}
-		text := fmt.Sprintf("%-10s %12s %12s   Δ %s%s", name, format(x), format(y), sign, format(max(delta, -delta)))
+		text := fmt.Sprintf("%-10s %12s %12s   %s%s", name, format(x), format(y), sign, format(max(delta, -delta)))
 		switch {
 		case delta > 0:
 			return render.Warm(text, t)
@@ -755,22 +926,24 @@ func (c *chat) replayDiff(argument string) (tea.Cmd, bool) {
 	number := func(f float64) string { return strconv.Itoa(int(f)) }
 	tokens := func(f float64) string { return spawnTokens(int64(f)) }
 	pane := func(title string, tree *agentv1.SpawnTree, nodes []*spawnNode) []string {
-		lines := []string{"", render.Heading(title+" · "+tree.GetLabel(), t), render.Dim(spawnSummary(spawnTotals(nodes)), t)}
+		lines := []string{"", render.Heading(title+": "+tree.GetLabel(), t), render.Dim(spawnSummary(spawnTotals(nodes)), t)}
 		for _, n := range flatten(nodes) {
-			lines = append(lines, strings.Repeat("  ", int(n.agent.GetDepth())+1)+statusGlyph(n.agent.GetStatus(), t)+" "+cmp.Or(n.agent.GetGoal(), "subagent"))
+			lines = append(lines, strings.Repeat("  ", int(n.agent.GetDepth())+1)+statusGlyph(n.agent.GetStatus(), t)+" "+cmp.Or(oneLine(n.agent.GetGoal()), "Subagent"))
 		}
 		return lines
 	}
-	lines := []string{render.Heading(fmt.Sprintf("%-10s %12s %12s", "", "A · baseline", "B · candidate"), t),
-		metric("agents", float64(ta.descendants), float64(tb.descendants), number),
-		metric("depth", float64(ta.depth), float64(tb.depth), number),
-		metric("tools", float64(ta.tools), float64(tb.tools), number),
-		metric("duration", took(baseline), took(candidate), spawnDuration),
-		metric("tokens", float64(ta.input+ta.output), float64(tb.input+tb.output), tokens)}
-	lines = append(lines, pane("A · baseline", baseline, a)...)
-	lines = append(lines, pane("B · candidate", candidate, b)...)
+	first, second := "Tree "+words[0], "Tree "+words[1]
+	lines := []string{render.Dim("How the second tree differs from the first.", t), "",
+		render.Heading(fmt.Sprintf("%-10s %12s %12s   %s", "", first, second, "Change"), t),
+		metric("Subagents", float64(ta.descendants), float64(tb.descendants), number),
+		metric("Depth", float64(ta.depth), float64(tb.depth), number),
+		metric("Tool calls", float64(ta.tools), float64(tb.tools), number),
+		metric("Time", took(baseline), took(candidate), spawnDuration),
+		metric("Tokens", float64(ta.input+ta.output), float64(tb.input+tb.output), tokens)}
+	lines = append(lines, pane(first, baseline, a)...)
+	lines = append(lines, pane(second, candidate, b)...)
 	page := cards.NewPage(c.kit.Env, cards.PageSpec{
-		Title: "Replay diff",
+		Title: "Spawn trees compared",
 		Key:   "tui:agents:diff",
 		Lines: func(int) []string { return lines },
 	})

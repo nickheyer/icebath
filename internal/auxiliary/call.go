@@ -17,6 +17,7 @@ import (
 
 	auxiliaryconfig "github.com/nickheyer/icebath/internal/auxiliary/config"
 	"github.com/nickheyer/icebath/internal/provider"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Why a failed call falls back to the next route
@@ -58,6 +59,9 @@ type timeout struct {
 }
 
 func (t *timeout) Error() string { return t.text }
+
+// A call stopped for its silence is one that timed out, as the failures that are tried again later count it
+func (t *timeout) Timeout() bool { return true }
 
 // One route's answer to the request, retried on the route while that can help: after a brief network error, once at a rate limit, and once
 // without each part of the request the route refuses
@@ -184,7 +188,8 @@ func (c *Client) attempt(ctx context.Context, task Task, s settings, next candid
 func answer(task Task, response *provider.Response) (string, error) {
 	message := response.Message
 	if strings.TrimSpace(message.GetText()) == shim && len(message.GetToolCalls()) == 0 {
-		return "", &provider.APIError{Kind: provider.ErrEmptyResponse, Message: fmt.Sprintf("Auxiliary %s: provider returned a timeout shim instead of a completion", task.Name)}
+		return "", &provider.APIError{Kind: provider.ErrEmptyResponse, Message: fmt.Sprintf("A router in front of the provider gave up waiting "+
+			"for the helper job %s and sent a stand-in instead of an answer.", cmp.Or(task.Title, task.Name)), Own: true}
 	}
 	if text := strings.TrimSpace(thinking.ReplaceAllString(message.GetText(), "")); text != "" {
 		return text, nil
@@ -199,7 +204,7 @@ func (c *Client) stream(ctx context.Context, client provider.Client, call *provi
 	start := time.Now()
 	ceiling := max(10*time.Minute, 4*window)
 	hard := time.AfterFunc(ceiling, func() {
-		cancel(&timeout{text: fmt.Sprintf("Auxiliary streamed call timed out after %.0fs total ceiling (stream still open but over budget)", ceiling.Seconds())})
+		cancel(&timeout{text: fmt.Sprintf("The helper model was still answering after %s, past its time limit, so it was stopped.", strs.Span(ceiling))})
 	})
 	defer hard.Stop()
 	var mu sync.Mutex
@@ -209,10 +214,11 @@ func (c *Client) stream(ctx context.Context, client provider.Client, call *provi
 		defer mu.Unlock()
 		elapsed := time.Since(start).Seconds()
 		if !started {
-			cancel(&timeout{text: fmt.Sprintf("Request timed out after %.0fs with no output.", window.Seconds()), full: true})
+			cancel(&timeout{text: fmt.Sprintf("The helper model gave no output within %s.", strs.Span(max(window.Round(time.Second), time.Second))), full: true})
 			return
 		}
-		cancel(&timeout{text: fmt.Sprintf("Auxiliary chat stream stalled: no new output for %.1fs (%.1fs elapsed, timed out)", stall.Seconds(), elapsed)})
+		cancel(&timeout{text: fmt.Sprintf("The helper model stopped giving output for %s, after %s, so it was stopped.",
+			strs.Span(max(stall.Round(100*time.Millisecond), 100*time.Millisecond)), strs.Span(max(time.Duration(elapsed*float64(time.Second)).Round(100*time.Millisecond), 100*time.Millisecond)))})
 	})
 	defer idle.Stop()
 	response, err := client.Stream(ctx, call, func(event provider.StreamEvent) error {

@@ -77,6 +77,8 @@ func (r registrant) Tools() []tools.Def {
 		Name:    Name,
 		Toolset: toolset,
 		Title:   "Session search",
+		About:   "Search and read your past sessions",
+		Group:   "Sessions",
 		Icon:    tools.IconSearch,
 		Subject: "query",
 		Schema: tools.Schema("Search or read past Icebath conversations (FTS5), or scroll inside one. Four shapes, picked by args: `query` = discovery "+

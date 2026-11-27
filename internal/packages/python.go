@@ -36,15 +36,18 @@ const (
 	cacheRounds = 3
 )
 
+// Name failures of the Python environments are given
+const pythonEnvironment = "Python environment"
+
 // Remedies the uv failures name
 const (
-	retryDownloadRemedy = "check that this machine reaches the address in the error, through its proxy when it uses one, then run the same command again"
-	timeoutHint         = "uv timed out. If your network needs a package mirror, set index-url in pip.conf (bridged to uv automatically) or UV_INDEX_URL; " +
-		"raise UV_HTTP_TIMEOUT for slow links."
-	undatedHint = "the package index did not report upload times, which locking icebath's dependencies needs for its 3-day release-age check. " +
-		"Use https://pypi.org/simple or a mirror that serves upload times (pip.conf index-url / UV_INDEX_URL), then retry."
-	compilerRemedy = "%s: install a C/C++ compiler (Debian/Ubuntu/WSL: `sudo apt install build-essential`; Fedora: `sudo dnf install gcc gcc-c++`; " +
-		"macOS: `xcode-select --install`) or point CC/CXX at one, then retry"
+	retryDownloadRemedy = "Check that this computer reaches the address in the error, through its proxy when it uses one, then run the same command again."
+	timeoutHint         = "If your network needs a package mirror, set index-url in pip.conf, which uv reads too, or UV_INDEX_URL. On a slow " +
+		"connection, raise UV_HTTP_TIMEOUT."
+	undatedHint = "The package index did not say when packages were uploaded, and icebath needs that to skip releases younger than 3 days. " +
+		"Use https://pypi.org/simple, or a mirror that says when packages were uploaded, in pip.conf index-url or UV_INDEX_URL, then try again."
+	compilerRemedy = "%s. Install a C and C++ compiler, such as with `sudo apt install build-essential` on Debian, Ubuntu or WSL, " +
+		"`sudo dnf install gcc gcc-c++` on Fedora or `xcode-select --install` on macOS, or point CC and CXX at one, then try again."
 )
 
 // Name a dependency set or extra is matched by: separator runs folded to one dash, lower case
@@ -65,7 +68,7 @@ func (h *Packages) toolchain(ctx context.Context, cfg *config.Config, realize, e
 				return "", "", false, err
 			}
 			if bar.fetched {
-				reporter(r).Line("  ✓ " + name)
+				reporter(r).Line("  ✓ Installed " + name + ".")
 			}
 		}
 	}
@@ -83,7 +86,7 @@ func (h *Packages) toolchain(ctx context.Context, cfg *config.Config, realize, e
 			if !realize {
 				return "", "", false, nil
 			}
-			return "", "", false, Failure(name, "pinned tool is unavailable", "run `icebath pm install`")
+			return "", "", false, Failure(name, "The pinned copy is not installed.", "Run `icebath pm install`.")
 		}
 		binaries[name] = got.Binary
 	}
@@ -107,7 +110,7 @@ func (h *Packages) pyenv(ctx context.Context, cfg *config.Config, dest string, b
 		return nil, err
 	}
 	if !found {
-		return nil, Failure("venv", "PM's pinned toolchain is unavailable", "")
+		return nil, Failure(pythonEnvironment, "The pinned uv and Python of the package manager are not installed.", "Run `icebath pm install`.")
 	}
 	env, err := uvBase(base)
 	if err != nil {
@@ -296,8 +299,12 @@ type uvResult struct {
 }
 
 // Labels of the uv steps a person watches
-var uvLabels = map[string]string{"sync": "Installing Python dependencies", "lock": "Resolving Python dependencies", "pip install": "Installing Python packages",
-	"cache": "Pruning the uv cache"}
+var uvLabels = map[string]string{"sync": "Installing Python dependencies", "lock": "Working out Python dependencies", "pip install": "Installing Python packages",
+	"cache": "Cleaning the uv cache"}
+
+// What the uv steps a person watches say once they succeed
+var uvDone = map[string]string{"sync": "Installed Python dependencies", "lock": "Worked out Python dependencies", "pip install": "Installed Python packages",
+	"cache": "Cleaned the uv cache"}
 
 // Runs one uv command isolated from the user's uv config, its output behind a status line, streamed as it is when verbose
 func (e *pyenv) run(ctx context.Context, args []string, dir string, timeout time.Duration) (uvResult, error) {
@@ -313,9 +320,9 @@ func (e *pyenv) run(ctx context.Context, args []string, dir string, timeout time
 	defer os.RemoveAll(isolated)
 	env["XDG_CONFIG_HOME"], env["XDG_CONFIG_DIRS"] = isolated, isolated
 	argv := append([]string{e.uv}, args...)
-	label := uvLabels[args[0]]
+	label, done := uvLabels[args[0]], uvDone[args[0]]
 	if len(args) > 1 {
-		label = cmp.Or(uvLabels[args[0]+" "+args[1]], label)
+		label, done = cmp.Or(uvLabels[args[0]+" "+args[1]], label), cmp.Or(uvDone[args[0]+" "+args[1]], done)
 	}
 	c := command{argv: argv, dir: dir, env: env, timeout: timeout}
 	var out strings.Builder
@@ -336,7 +343,7 @@ func (e *pyenv) run(ctx context.Context, args []string, dir string, timeout time
 			}
 		}
 	case e.report != nil:
-		tail = newLiveTail(e.report, label, "  ")
+		tail = newLiveTail(e.report, label, done, "  ")
 		c.stream = func(text string) { out.WriteString(text); tail.write(text) }
 	}
 	r, err := run(ctx, c)
@@ -347,7 +354,7 @@ func (e *pyenv) run(ctx context.Context, args []string, dir string, timeout time
 		if tail != nil {
 			tail.close(false)
 		}
-		return uvResult{}, Failure("venv", fmt.Sprintf("uv %s timed out after %ds", args[0], int(timeout.Seconds())), timeoutHint)
+		return uvResult{}, Failure(pythonEnvironment, fmt.Sprintf("`uv %s` did not finish within %s.", args[0], strs.Span(timeout)), timeoutHint)
 	}
 	if err != nil {
 		if tail != nil {
@@ -396,7 +403,7 @@ func (e *pyenv) create(ctx context.Context) error {
 		return err
 	}
 	if r.code != 0 {
-		return Failure("venv", "uv venv failed: "+strs.Tail(r.output, 600), "")
+		return Failure(pythonEnvironment, "`uv venv` failed: "+strs.Tail(r.output, 600), "")
 	}
 	return nil
 }
@@ -425,7 +432,7 @@ func (e *pyenv) sync(ctx context.Context, project string, timeout time.Duration)
 		if err != nil || !bytecodeFailure(r) {
 			return r, err
 		}
-		reporter(e.report).Line("Bytecode compile failed; retrying the install without it. Modules will compile on first import.")
+		reporter(e.report).Line("Compiling Python bytecode failed, so the install runs again without it. Modules compile the first time they are imported.")
 		return e.run(ctx, slices.DeleteFunc(slices.Clone(args), func(a string) bool { return a == "--compile-bytecode" }), project, cmp.Or(timeout, defaultUVTimeout))
 	})
 	if err != nil {
@@ -446,7 +453,7 @@ func (e *pyenv) check(ctx context.Context) error {
 		return err
 	}
 	if r.code != 0 {
-		return Failure("venv", "dependency validation failed: "+strs.Tail(r.output, 600), "")
+		return Failure(pythonEnvironment, "The installed packages do not agree with each other: "+strs.Tail(r.output, 600), "")
 	}
 	return nil
 }
@@ -477,7 +484,7 @@ func classify(stage string, code int, output string) error {
 		}
 		tail = trimmed
 	}
-	cause := fmt.Sprintf("uv %s exited %d: %s", stage, code, tail)
+	cause := fmt.Sprintf("`uv %s` ended with exit code %d: %s", stage, code, tail)
 	lowered := strings.ToLower(output)
 	contains := func(markers []string) bool {
 		return slices.ContainsFunc(markers, func(m string) bool { return strings.Contains(lowered, m) })
@@ -485,15 +492,15 @@ func classify(stage string, code int, output string) error {
 	switch {
 	case strings.Contains(lowered, "has no publish time") ||
 		(strings.Contains(lowered, "is missing an upload date") && strings.Contains(lowered, "was filtered by `exclude-newer")):
-		return Failure("venv", cause, undatedHint)
+		return Failure(pythonEnvironment, cause, undatedHint)
 	case contains(resolverMarkers):
-		return &ConflictError{Failure("venv", cause, "")}
+		return &ConflictError{Failure(pythonEnvironment, cause, "")}
 	case strings.Contains(lowered, "the build backend returned an error"):
-		return Failure("venv", cause, compilerHint(output))
+		return Failure(pythonEnvironment, cause, compilerHint(output))
 	case contains(networkMarkers):
-		return Failure("venv", cause, retryDownloadRemedy)
+		return Failure(pythonEnvironment, cause, retryDownloadRemedy)
 	}
-	return Failure("venv", cause, "")
+	return Failure(pythonEnvironment, cause, "")
 }
 
 // Remedy of a build that found no compiler, empty when that is not what failed
@@ -501,10 +508,10 @@ func compilerHint(output string) string {
 	for _, pattern := range missingCompilers {
 		for _, m := range pattern.FindAllStringSubmatch(output, -1) {
 			if len(m) == 1 {
-				return fmt.Sprintf(compilerRemedy, "this package compiles native code and no compiler was found")
+				return fmt.Sprintf(compilerRemedy, "This package compiles native code, and no compiler was found")
 			}
 			if compilerName.MatchString(filepath.Base(m[1])) {
-				return fmt.Sprintf(compilerRemedy, "the build needs `"+m[1]+"`, which is not on PATH")
+				return fmt.Sprintf(compilerRemedy, "The build needs `"+m[1]+"`, which is not on your PATH")
 			}
 		}
 	}
@@ -534,10 +541,10 @@ func (e *pyenv) recovering(ctx context.Context, stage string, attempt func() (uv
 			delete(union, name)
 		}
 		names := slices.Sorted(maps.Keys(union))
-		reporter(e.report).Line(fmt.Sprintf("The cached copy of %s is corrupt; removing it from the uv cache and retrying the install.", strings.Join(names, ", ")))
+		reporter(e.report).Line(fmt.Sprintf("The cached copy of %s is damaged, so it is removed from the uv cache and the install runs again.", joined(names, "and")))
 		if err := e.purge(ctx, names); err != nil {
 			if ie, ok := errors.AsType[*InstallError](err); ok {
-				return r, Failure(ie.Package, fmt.Sprintf("%s; uv %s had failed with: %s", ie.Cause, stage, strs.Tail(strings.TrimSpace(r.output), 600)), ie.Remedy)
+				return r, Failure(ie.Package, fmt.Sprintf("%s Before that, `uv %s` failed: %s", sentence(ie.Cause, ie.Package), stage, strs.Tail(strings.TrimSpace(r.output), 600)), ie.Remedy)
 			}
 			return r, err
 		}
@@ -552,13 +559,13 @@ func (e *pyenv) recovering(ctx context.Context, stage string, attempt func() (uv
 		return r, nil
 	}
 	if still := failedCached(r.output); len(still) > 0 {
-		remedy := "run `icebath pm doctor --repair`, then retry"
+		remedy := "Run `icebath pm doctor --repair`, then try again."
 		if subset(still, purged) {
-			remedy = "the package source is serving a broken wheel; retry later or pin another version"
+			remedy = "The package source serves a broken wheel. Try again later, or pin another version."
 		}
-		return r, Failure("venv", fmt.Sprintf("uv %s exited %d: the cached copy of %s is still invalid after removing %s from the uv cache at %s: %s", stage, r.code,
-			strings.Join(slices.Sorted(maps.Keys(still)), ", "), strings.Join(slices.Sorted(maps.Keys(purged)), ", "), e.cache,
-			strs.Tail(strings.TrimSpace(r.output), 600)), remedy)
+		return r, Failure(pythonEnvironment, fmt.Sprintf("`uv %s` ended with exit code %d, because the cached copy of %s is still damaged after %s "+
+			"was removed from the uv cache at %s: %s", stage, r.code, joined(slices.Sorted(maps.Keys(still)), "and"),
+			joined(slices.Sorted(maps.Keys(purged)), "and"), e.cache, strs.Tail(strings.TrimSpace(r.output), 600)), remedy)
 	}
 	return r, nil
 }
@@ -579,12 +586,12 @@ func (e *pyenv) purge(ctx context.Context, names []string) error {
 	r, err := quiet.run(ctx, append([]string{"cache", "clean"}, names...), filepath.Dir(e.cache), 900*time.Second)
 	if err != nil {
 		if ie, ok := errors.AsType[*InstallError](err); ok {
-			return Failure("uv", fmt.Sprintf("could not clean the uv cache at %s: %s", e.cache, ie.Cause), "stop other icebath installs and retry")
+			return Failure("uv", fmt.Sprintf("The uv cache at %s could not be cleaned: %s", e.cache, ie.Cause), "Stop the other icebath installs, then try again.")
 		}
 		return err
 	}
 	if r.code != 0 {
-		return Failure("uv", fmt.Sprintf("could not remove %s from the uv cache at %s: %s", strings.Join(names, ", "), e.cache, strs.Tail(r.output, 600)), "")
+		return Failure("uv", fmt.Sprintf("%s could not be removed from the uv cache at %s: %s", joined(names, "and"), e.cache, strs.Tail(r.output, 600)), "")
 	}
 	return removeCorrupt(e.cache, names)
 }
@@ -598,7 +605,7 @@ func selected(root string) (selection, error) {
 	if os.IsNotExist(err) {
 		return selection{}, nil
 	}
-	unreadable := Failure("venv", "cannot read environment selection: "+root, "")
+	unreadable := Failure(pythonEnvironment, "The record of which environment is in use in "+root+" cannot be read.", "")
 	if err != nil {
 		return nil, unreadable
 	}
@@ -607,7 +614,7 @@ func selected(root string) (selection, error) {
 		return nil, unreadable
 	}
 	if generation, ok := record["generation"].(string); !ok || !generationName.MatchString(generation) {
-		return nil, Failure("venv", "invalid environment selection: "+root, "")
+		return nil, Failure(pythonEnvironment, "The record of which environment is in use in "+root+" is not valid.", "")
 	}
 	return record, nil
 }
@@ -620,7 +627,7 @@ func selectedPython(name, root string) (string, bool, error) {
 	}
 	venv := filepath.Join(root, record["generation"].(string), "venv")
 	if !fsx.Within(resolved(venv), resolved(root)) {
-		return "", false, Failure(name, "selected environment escapes its root", "")
+		return "", false, Failure(name, "The environment in use points outside its folder.", "")
 	}
 	python := venvPython(venv)
 	return python, fsx.IsFile(python) && fsx.IsFile(filepath.Join(venv, "pyvenv.cfg")), nil
@@ -711,7 +718,7 @@ func (h *Packages) generation(ctx context.Context, cfg *config.Config, name, roo
 		return existing, err
 	}
 	if !explicit && !h.LazyAllowed(cfg) {
-		return "", refuseLazy(ctx, name, "isolated Python environment is missing or outdated")
+		return "", refuseLazy(ctx, name, "its own Python environment, which is missing or out of date")
 	}
 	release, err := fsx.Lock(ctx, filepath.Join(root, ".install.lock"), -1)
 	if err != nil {
@@ -838,7 +845,7 @@ func (h *Packages) buildProject(ctx context.Context, cfg *config.Config, project
 	r Reporter) (string, error) {
 	venv := filepath.Join(project, "venv")
 	if fsx.Lexists(venv) {
-		return "", fmt.Errorf("environment destination already exists: %s", venv)
+		return "", fmt.Errorf("The environment folder %s already exists.", venv)
 	}
 	e, err := h.pyenv(ctx, cfg, venv, nil, explicit, r)
 	if err != nil {

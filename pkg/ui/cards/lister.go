@@ -2,7 +2,6 @@ package cards
 
 import (
 	"cmp"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -112,6 +111,25 @@ type lister struct {
 	barY int
 	// Words the empty filter field shows
 	search string
+	// Shows the filter field of a list to pick from at once
+	always bool
+	// Lines above the rows saying what the list is
+	intro func() []string
+	// Heading of the group a row of the data belongs to
+	group func(i int) string
+	// Words the filter reads for a row of the data besides its cells
+	words func(i int) string
+	// First line of the rows and headings in view, and for each line in view at the last paint the shown row on it, -1 for a heading
+	top      int
+	lineRows []int
+	// Line of the cursor row among those in view at the last paint
+	selY int
+	// Whether a filter narrowed the rows at the last read, and the row the cursor was on before it did, where it goes back to once the
+	// filter is cleared
+	narrowed bool
+	before   int
+	// Words of the filter at the last read: other words put the cursor on the first row they leave
+	asked string
 	// Lines the longest detail of a row wraps to at the width it was measured at, measured again once the rows are read again
 	need, needW int
 	needOK      bool
@@ -142,14 +160,19 @@ func (l *lister) Contexts() []string {
 		return []string{keys.Edit, keys.Text}
 	case l.bar.Active() && l.bar.pinned && l.ctx != "":
 		// Typing only filters a list to pick from, so the row keys stay in force ahead of the filter's own
-		return append(append([]string{l.ctx}, l.shared...), l.bar.Contexts()...)
+		out := append(append([]string{l.ctx}, l.shared...), l.bar.Contexts()...)
+		if l.detailShown() && l.pane.overflows() {
+			out = append([]string{keys.Detail}, out...)
+		}
+		return out
 	case l.bar.Active():
 		return l.bar.Contexts()
 	case l.typing():
 		return append(append(slices.Clone(l.input.ctxs), l.shared...), keys.Edit, keys.Text)
 	}
 	out := []string{keys.Filter, keys.List, keys.Panel}
-	if l.detailShown() {
+	// The paging keys scroll the detail only while it has more lines than it shows, and page the rows otherwise
+	if l.detailShown() && l.pane.overflows() {
 		out = append([]string{keys.Detail}, out...)
 	}
 	out = append(slices.Clone(l.shared), out...)
@@ -220,15 +243,6 @@ func (l *lister) selectRow(i int) bool {
 	return true
 }
 
-// First row a table of n rows under head rows shows in room lines with the cursor on sel, as window cuts it
-func windowStart(n, sel, room, head int) int {
-	body := room - head
-	if n <= body || body <= 0 || sel < body {
-		return 0
-	}
-	return sel - body + 1
-}
-
 // Takes text the table keys left over, a digit picking one of the first ten rows in view and the rest going to the spec
 func (l *lister) leftover(text string) tea.Cmd {
 	if l.quick != nil && len(text) == 1 && text[0] >= '0' && text[0] <= '9' {
@@ -255,10 +269,29 @@ func (l *lister) refresh() {
 		l.data = l.rows()
 	}
 	l.needOK = false
-	q := strings.ToLower(l.bar.Query())
+	terms := strings.Fields(strings.ToLower(l.bar.Query()))
+	narrowed := len(terms) > 0
+	asked := strings.Join(terms, " ")
+	switch {
+	case narrowed && !l.narrowed:
+		l.before, l.sel, last = l.sel, 0, false
+	case !narrowed && l.narrowed:
+		l.sel, last = l.before, false
+	case narrowed && asked != l.asked:
+		l.sel, last = 0, false
+	}
+	l.narrowed, l.asked = narrowed, asked
 	l.shown = l.shown[:0]
 	for i, r := range l.data {
-		if q == "" || strings.Contains(strings.ToLower(ansi.Strip(strings.Join(r, " "))), q) {
+		if len(terms) == 0 {
+			l.shown = append(l.shown, i)
+			continue
+		}
+		text := strings.ToLower(ansi.Strip(strings.Join(r, " ")))
+		if l.words != nil {
+			text += " " + strings.ToLower(l.words(i))
+		}
+		if !slices.ContainsFunc(terms, func(term string) bool { return !strings.Contains(text, term) }) {
 			l.shown = append(l.shown, i)
 		}
 	}
@@ -266,6 +299,15 @@ func (l *lister) refresh() {
 		l.sel = len(l.shown) - 1
 	}
 	l.sel = min(max(l.sel, 0), max(0, len(l.shown)-1))
+}
+
+// Reports whether the cell of a row of the data in a column of the table is wider than the column, so the table cuts it
+func (l *lister) cut(i, col int) bool {
+	col += l.shift
+	if i < 0 || i >= len(l.data) || col-l.shift >= len(l.data[i]) || col >= len(l.widths) {
+		return false
+	}
+	return ansi.StringWidth(ansi.Strip(l.data[i][col-l.shift])) > l.widths[col]
 }
 
 // Row of the data under the cursor, -1 when there is none
@@ -339,10 +381,11 @@ func (l *lister) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			return l, nil
 		}
 		l.bar.Accept()
-		row := msg.Y - l.lead - l.head + l.start
-		if msg.Y < l.lead+l.head || row >= len(l.shown) {
+		at := msg.Y - l.lead - l.head
+		if at < 0 || at >= len(l.lineRows) || l.lineRows[at] < 0 {
 			return l, nil
 		}
+		row := l.lineRows[at]
 		if row == l.sel && l.primary != "" {
 			return l, l.act(l.primary)
 		}
@@ -448,6 +491,13 @@ func (l *lister) act(id string) tea.Cmd {
 		return nil
 	}
 	if in := l.typingInto(); in != nil && strings.HasPrefix(id, "text.") {
+		// Home and end have no caret to move in a search field that holds nothing: they go to the first and the last row, as they do in
+		// a list with no field
+		if in == l.bar.input() && in.Empty() && (id == "text.line.start" || id == "text.line.end") {
+			move := map[string]string{"text.line.start": "list.top", "text.line.end": "list.bottom"}[id]
+			l.sel = listMove(move, l.sel, len(l.shown), l.h-l.head)
+			return nil
+		}
 		before := in.Value()
 		cmd, _ := in.Action(id)
 		l.took(in.Value() != before)
@@ -459,28 +509,114 @@ func (l *lister) act(id string) tea.Cmd {
 	return nil
 }
 
-// Line along the bottom, the key capture prompt or the question
-func (l *lister) foot(w int) string {
+// Lines along the bottom, the key capture prompt or the question, wrapped so it is read whole
+func (l *lister) foot(w int) []string {
 	t := l.env.Theme
+	text, paint := "", render.Bad
 	switch {
 	case l.capture != nil:
-		return render.Fit(" "+render.Warm(l.asking, t), w, t)
+		text, paint = l.asking, render.Warm
 	case l.ask != nil:
-		return render.Fit(" "+render.Bad(l.ask.text, t), w, t)
+		text = l.ask.text
+	default:
+		return nil
 	}
-	return ""
+	var lines []string
+	for _, part := range wrapWords(text, max(w-2, 8)) {
+		lines = append(lines, render.Fit(" "+paint(part, t), w, t))
+	}
+	return lines
 }
 
 // Filter field above the table with its count, shown once there is a query or more rows than fit, a short list needing none
 func (l *lister) field(w int) string {
-	if !l.bar.Shown() || len(l.data) == 0 || l.bar.pinned && l.roomy && l.bar.Query() == "" {
+	if !l.bar.Shown() || len(l.data) == 0 || l.bar.pinned && !l.always && l.roomy && l.bar.Query() == "" {
 		return ""
 	}
-	count := strconv.Itoa(len(l.data))
+	// A count says something only once a search narrowed the rows
+	count := ""
 	if l.bar.Query() != "" {
-		count = fmt.Sprintf("%d of %d", len(l.shown), len(l.data))
+		count = strconv.Itoa(len(l.shown)) + " found"
 	}
 	return l.bar.View(w, count, cmp.Or(l.search, "Search"), l.env.Theme)
+}
+
+// Lines above the rows: what failed to load, then what the list is
+func (l *lister) opening(w int) []string {
+	t := l.env.Theme
+	var lines []string
+	if l.banner != nil {
+		if text := l.banner(); text != "" {
+			for _, part := range wrapWords(text, max(w-2, 8)) {
+				lines = append(lines, render.Fit(" "+render.Warm(part, t), w, t))
+			}
+		}
+	}
+	if l.intro == nil {
+		return lines
+	}
+	said := false
+	for _, line := range l.intro() {
+		for _, part := range wrapWords(line, max(w-4, 8)) {
+			lines = append(lines, render.Fit("  "+render.Dim(part, t), w, t))
+			said = true
+		}
+	}
+	if said {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
+// One line under the head: a shown row, or between groups a heading or the gap over one
+type flowLine struct {
+	// Shown row on the line, -1 for a heading or a gap
+	row int
+	// Words of a heading, empty on a row and on a gap
+	heading string
+}
+
+// Lines under the head: every shown row, the heading of its group over the first row of each group and a gap over each heading but the
+// first. A filter drops the headings
+func (l *lister) flow() []flowLine {
+	lines := make([]flowLine, 0, len(l.shown))
+	grouped := l.group != nil && l.bar.Query() == ""
+	last := ""
+	for at, i := range l.shown {
+		if grouped {
+			if heading := l.group(i); heading != last {
+				if heading != "" {
+					if at > 0 {
+						lines = append(lines, flowLine{row: -1})
+					}
+					lines = append(lines, flowLine{row: -1, heading: heading})
+				}
+				last = heading
+			}
+		}
+		lines = append(lines, flowLine{row: at})
+	}
+	return lines
+}
+
+// First line of the flow to show in body lines so the cursor row is in view, with the heading over it when it leads its group
+func (l *lister) scroll(flow []flowLine, body int) int {
+	at := slices.IndexFunc(flow, func(line flowLine) bool { return line.row == l.sel })
+	if at < 0 || body <= 0 || len(flow) <= body {
+		return 0
+	}
+	top := min(l.top, len(flow)-body)
+	if at < top {
+		top = at
+	}
+	if at >= top+body {
+		top = at - body + 1
+	}
+	// A heading and the gap over it come into view with the first row under them
+	for lead := at; lead > 0 && flow[lead-1].row < 0 && at-(lead-1) < body; lead-- {
+		top = min(top, lead-1)
+	}
+	return max(top, 0)
 }
 
 func (l *lister) View(w, h int) string {
@@ -489,12 +625,7 @@ func (l *lister) View(w, h int) string {
 	if l.edit == nil {
 		l.refresh()
 	}
-	var head []string
-	if l.banner != nil {
-		if text := l.banner(); text != "" {
-			head = append(head, render.Fit(" "+render.Warm(text, t), w, t))
-		}
-	}
+	head := l.opening(w)
 	cols := l.cols
 	l.shift = 0
 	if l.quick != nil {
@@ -502,12 +633,20 @@ func (l *lister) View(w, h int) string {
 		cols = append([]render.Column{{Title: "#", Right: true}}, cols...)
 	}
 	l.head = render.Head(cols)
-	pane := l.paneRows(w, h-len(head))
-	whole := h - len(head)
-	if pane > 0 {
-		whole = max(whole-pane-1, l.head+2)
+	flow := l.flow()
+	// The widths of the columns are known before the detail of a row is asked for, which may say what its row had to cut
+	measured := make([][]string, len(l.shown))
+	for at, i := range l.shown {
+		measured[at] = l.data[i]
+		if l.shift > 0 {
+			measured[at] = append([]string{"0"}, l.data[i]...)
+		}
 	}
-	l.roomy = len(l.data)+l.head <= whole
+	l.xs, l.widths = render.Columns(cols, measured, w)
+	pane := l.paneRows(w, h-len(head))
+	// Whether the rows fit is told without the detail, which grows and shrinks with the row under the cursor, so the filter field does
+	// not come and go as the cursor moves
+	l.roomy = len(flow)+l.head <= h-len(head)
 	l.barred = false
 	if field := l.field(w); field != "" {
 		l.barred, l.barY = true, len(head)
@@ -515,21 +654,18 @@ func (l *lister) View(w, h int) string {
 	}
 	l.lead = len(head)
 	foot := l.foot(w)
-	body := h - l.lead
-	if foot != "" {
-		body--
-	}
+	body := h - l.lead - len(foot)
 	var rows [][]string
 	for _, i := range l.shown {
 		rows = append(rows, l.data[i])
 	}
 	if len(rows) == 0 {
 		l.pane.hide()
-		l.start, l.seen = 0, 0
-		empty := "Nothing here"
+		l.start, l.seen, l.lineRows = 0, 0, nil
+		empty := "Nothing here yet."
 		switch {
 		case l.bar.Query() != "":
-			empty = "No match"
+			empty = "Nothing matches “" + l.bar.Query() + "”. " + l.env.keyed("search.close", "clears the search.")
 		case l.empty != nil:
 			empty = l.empty()
 		}
@@ -540,12 +676,26 @@ func (l *lister) View(w, h int) string {
 	if pane > 0 {
 		room = max(body-pane-1, l.head+2)
 	}
+	l.top = l.scroll(flow, room-l.head)
+	shown := flow[l.top:min(l.top+max(room-l.head, 0), len(flow))]
+	l.lineRows = l.lineRows[:0]
+	l.start, l.seen, l.selY = len(l.shown), 0, 0
+	for y, line := range shown {
+		l.lineRows = append(l.lineRows, line.row)
+		if line.row < 0 {
+			continue
+		}
+		l.start = min(l.start, line.row)
+		l.seen++
+		if line.row == l.sel {
+			l.selY = y
+		}
+	}
 	if l.quick != nil {
-		first := windowStart(len(rows), l.sel, room, l.head)
 		numbered := make([][]string, len(rows))
 		for i, r := range rows {
 			digit := ""
-			if n := i - first + 1; n >= 1 && n <= 10 {
+			if n := i - l.start + 1; n >= 1 && n <= 10 {
 				digit = string(rune('0' + n%10))
 			}
 			numbered[i] = append([]string{digit}, r...)
@@ -557,19 +707,24 @@ func (l *lister) View(w, h int) string {
 	}
 	l.xs, l.widths = render.Columns(cols, rows, w)
 	table := strings.Split(render.TableEdit(cols, rows, w, l.sel, ed, t), "\n")
-	var lines []string
-	lines, l.start = window(table, l.sel, room, l.head)
-	l.seen = len(lines) - l.head
-	lines = append(head, lines...)
-	if !l.detailShown() {
+	lines := append(head, table[:l.head]...)
+	for _, line := range shown {
+		switch {
+		case line.row >= 0:
+			lines = append(lines, table[l.head+line.row])
+		case line.heading != "":
+			lines = append(lines, render.Fit("  "+render.Group(line.heading, t), w, t))
+		default:
+			lines = append(lines, "")
+		}
+	}
+	// A row with nothing to say under the list takes no rule and no room
+	if pane == 0 || !l.detailShown() {
 		l.pane.hide()
 		return footed(lines, foot, h)
 	}
 	lines = append(lines, render.Divider(w, t))
-	rest := h - len(lines)
-	if foot != "" {
-		rest--
-	}
+	rest := h - len(lines) - len(foot)
 	i := l.index()
 	if pane := l.pane.view(l.detail(i), i, len(lines), rest, w, l.env); rest > 0 {
 		lines = append(lines, strings.Split(pane, "\n")...)
@@ -610,7 +765,7 @@ func (l *lister) Cursor() *tea.Cursor {
 	if col >= len(l.xs) || l.widths[col] == 0 {
 		return nil
 	}
-	y := l.lead + l.head + l.sel - l.start
+	y := l.lead + l.head + l.selY
 	x := l.xs[col] + min(n, max(l.widths[col]-1, 0))
 	return tea.NewCursor(x, y)
 }

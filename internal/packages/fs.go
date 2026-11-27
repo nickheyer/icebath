@@ -16,7 +16,7 @@ func removeTree(path string) error {
 		return err
 	}
 	if st.Mode()&fs.ModeSymlink != 0 || junction(path) {
-		return &fs.PathError{Op: "remove", Path: path, Err: errors.New("is a link, not a folder")}
+		return &fs.PathError{Op: "remove", Path: path, Err: errors.New("it is a link, not a folder")}
 	}
 	return fsx.Retry(func() error { return os.RemoveAll(path) })
 }

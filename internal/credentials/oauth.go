@@ -46,7 +46,7 @@ func (r *Reply) JSON() (map[string]any, error) {
 func (r *Reply) Text(limit int) string {
 	text := strings.TrimSpace(strings.ToValidUTF8(string(r.Body), "�"))
 	if limit > 0 && len(text) > limit {
-		return text[:limit] + "...[truncated]"
+		return text[:limit] + "…"
 	}
 	return text
 }
@@ -78,7 +78,7 @@ func Do(client *http.Client, request *http.Request) (*Reply, error) {
 		return nil, err
 	}
 	if len(body) > maxReply {
-		return nil, fmt.Errorf("The answer from %s exceeded %d KiB, so it was not read.", request.URL.Host, maxReply>>10)
+		return nil, fmt.Errorf("The answer from %s was larger than %s, so it was not read.", request.URL.Host, strs.Size(float64(maxReply)))
 	}
 	return &Reply{Status: response.StatusCode, Header: response.Header, Body: body}, nil
 }

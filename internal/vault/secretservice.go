@@ -37,7 +37,7 @@ type secretService struct{}
 
 func nativeKeyring() (keyring, error) {
 	if err := viable(); err != nil {
-		return nil, fmt.Errorf("no OS keychain is reachable from this session: %v", err)
+		return nil, fmt.Errorf("No keychain can be reached from this session: %v", sentence(err.Error()))
 	}
 	return secretService{}, nil
 }
@@ -65,7 +65,7 @@ func viable() error {
 	if names, _ := out[0].([]any); slices.Contains(names, any(ssBus)) {
 		return nil
 	}
-	return errors.New("The Secret Service daemon is neither running nor activatable through D-Bus")
+	return errors.New("The Secret Service, the keychain of your desktop, is not running and can't be started.")
 }
 
 // Failures of the Secret Service under the classes they mean
@@ -76,10 +76,10 @@ func ssError(err error) error {
 	}
 	switch be.name {
 	case "org.freedesktop.DBus.Error.UnknownMethod", "org.freedesktop.Secret.Error.NoSuchObject":
-		return &keyringError{"ItemNotFoundException", "Item does not exist!"}
+		return &keyringError{"ItemNotFoundException", "The keychain has no such entry."}
 	case "org.freedesktop.DBus.Error.ServiceUnknown", "org.freedesktop.DBus.Error.Spawn.ExecFailed", "org.freedesktop.DBus.Error.NoReply",
 		"org.freedesktop.DBus.Error.Spawn.ChildExited":
-		return &keyringError{"SecretServiceNotAvailableException", "Secret Service is not available: " + be.Error()}
+		return &keyringError{"SecretServiceNotAvailableException", "The Secret Service is not available: " + sentence(be.Error())}
 	}
 	return err
 }
@@ -161,7 +161,7 @@ func ssOpenSession(c *busConn) (*ssSession, error) {
 	output, _ := out[0].(busVariant)
 	theirs, ok := output.val.([]byte)
 	if !ok || output.sig != "ay" {
-		return nil, errors.New("the Secret Service answered the key exchange with no public key")
+		return nil, errors.New("The Secret Service answered without the key that protects the transfer.")
 	}
 	shared := new(big.Int).Exp(new(big.Int).SetBytes(theirs), private, ssPrime).Bytes()
 	shared = append(bytes.Repeat([]byte{0}, 0x80-len(shared)), shared...)
@@ -195,14 +195,14 @@ func (s *ssSession) open(secret []any) ([]byte, error) {
 	}
 	iv, _ := secret[1].([]byte)
 	if len(iv) != 0x10 || len(value) == 0 || len(value)%0x10 != 0 {
-		return nil, errors.New("the Secret Service returned a malformed encrypted secret")
+		return nil, errors.New("The Secret Service returned a secret icebath can't read.")
 	}
 	block, _ := aes.NewCipher(s.key)
 	plain := make([]byte, len(value))
 	cipher.NewCBCDecrypter(block, iv).CryptBlocks(plain, value)
 	pad := int(plain[len(plain)-1])
 	if pad == 0 || pad > len(plain) {
-		return nil, errors.New("the Secret Service secret has bad padding")
+		return nil, errors.New("The Secret Service returned a damaged secret.")
 	}
 	return plain[:len(plain)-pad], nil
 }
@@ -213,21 +213,21 @@ func ssDefaultCollection(c *busConn) (objectPath, error) {
 	if _, err := ssProperty(c, path, ssCollection, "Label"); err != nil {
 		var ke *keyringError
 		if !errors.As(err, &ke) || ke.class != "ItemNotFoundException" {
-			return "", &keyringError{"InitError", fmt.Sprintf("Failed to create the collection: %s.", err)}
+			return "", &keyringError{"InitError", "The keychain was not created: " + sentence(err.Error())}
 		}
 		props := []busEntry{{"org.freedesktop.Secret.Collection.Label", busVariant{"s", "Default"}}}
 		out, err := ssCall(c, ssPath, ssService, "CreateCollection", "a{sv}s", props, "default")
 		if err != nil {
-			return "", &keyringError{"InitError", fmt.Sprintf("Failed to create the collection: %s.", err)}
+			return "", &keyringError{"InitError", "The keychain was not created: " + sentence(err.Error())}
 		}
 		path, _ = out[0].(objectPath)
 		if len(path) <= 1 {
 			dismissed, result, err := ssExecPrompt(c, out[1].(objectPath))
 			switch {
 			case err != nil:
-				return "", &keyringError{"InitError", fmt.Sprintf("Failed to create the collection: %s.", err)}
+				return "", &keyringError{"InitError", "The keychain was not created: " + sentence(err.Error())}
 			case dismissed:
-				return "", &keyringError{"InitError", "Failed to create the collection: Prompt dismissed.."}
+				return "", &keyringError{"InitError", "The keychain was not created, because its prompt was closed."}
 			}
 			path, _ = result.val.(objectPath)
 		}
@@ -244,7 +244,7 @@ func ssDefaultCollection(c *busConn) (objectPath, error) {
 			return "", err
 		}
 		if locked {
-			return "", &keyringError{"KeyringLocked", "Failed to unlock the collection!"}
+			return "", &keyringError{"KeyringLocked", "The keychain stayed locked."}
 		}
 	}
 	return path, nil
@@ -279,7 +279,7 @@ func (secretService) get(service, account string) (string, bool, error) {
 	}
 	if locked, err := ssLocked(c, item, ssItem); err != nil || locked {
 		if err == nil {
-			err = &keyringError{"KeyringLocked", "Failed to unlock the item!"}
+			err = &keyringError{"KeyringLocked", "The keychain entry stayed locked."}
 		}
 		return "", false, err
 	}
@@ -314,7 +314,7 @@ func (secretService) set(service, account, secret string) error {
 	}
 	attributes := map[string]string{"application": ssApplication, "service": service, "username": account}
 	props := []busEntry{
-		{"org.freedesktop.Secret.Item.Label", busVariant{"s", fmt.Sprintf("Password for '%s' on '%s'", account, service)}},
+		{"org.freedesktop.Secret.Item.Label", busVariant{"s", service + ", " + account}},
 		{"org.freedesktop.Secret.Item.Attributes", busVariant{"a{ss}", attributes}},
 	}
 	out, err := ssCall(c, collection, ssCollection, "CreateItem", "a{sv}(oayays)b", props, session.format([]byte(secret)), true)
@@ -326,7 +326,7 @@ func (secretService) set(service, account, secret string) error {
 	}
 	dismissed, _, err := ssExecPrompt(c, out[1].(objectPath))
 	if err == nil && dismissed {
-		err = &keyringError{"PromptDismissedException", "Prompt dismissed."}
+		err = &keyringError{"PromptDismissedException", "The keychain prompt was closed without an answer."}
 	}
 	return err
 }
@@ -342,12 +342,12 @@ func (secretService) remove(service, account string) error {
 		return err
 	}
 	if len(items) == 0 {
-		return &keyringError{"PasswordDeleteError", "No such password!"}
+		return &keyringError{"PasswordDeleteError", "The keychain has no such entry."}
 	}
 	item := items[0].(objectPath)
 	if locked, err := ssLocked(c, item, ssItem); err != nil || locked {
 		if err == nil {
-			err = &keyringError{"LockedException", "Item is locked!"}
+			err = &keyringError{"LockedException", "The keychain entry is locked."}
 		}
 		return err
 	}
@@ -358,7 +358,7 @@ func (secretService) remove(service, account string) error {
 	if prompt, _ := out[0].(objectPath); prompt != "/" {
 		dismissed, _, err := ssExecPrompt(c, prompt)
 		if err == nil && dismissed {
-			err = &keyringError{"PromptDismissedException", "Prompt dismissed."}
+			err = &keyringError{"PromptDismissedException", "The keychain prompt was closed without an answer."}
 		}
 		return err
 	}

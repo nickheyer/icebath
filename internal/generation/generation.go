@@ -356,7 +356,7 @@ func New(cfg *config.Config) *Generation {
 			return out
 		}
 	}
-	generationconfig.Register(cfg, options(Image, "The first service with a key."), options(Video, "The first available service."))
+	generationconfig.Register(cfg, options(Image, "The first service that is set up"), options(Video, "The first service that is set up"))
 	return g
 }
 

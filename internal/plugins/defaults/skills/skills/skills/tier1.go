@@ -150,26 +150,26 @@ func (r tier1Report) text(limit int) string {
 	var lines []string
 	if len(r.findings) == 0 {
 		if len(r.incomplete) > 0 {
-			lines = append(lines, "SkillEvaluator Tier 1: no findings from completed checks.")
+			lines = append(lines, "The quick advice check found nothing in the checks that ran.")
 		} else {
-			lines = append(lines, "SkillEvaluator Tier 1: no findings.")
+			lines = append(lines, "The quick advice check found nothing.")
 		}
 	} else {
-		lines = append(lines, fmt.Sprintf("SkillEvaluator Tier 1 (advisory): %d finding(s) — informational, verify before relying on this skill.", len(r.findings)))
+		lines = append(lines, fmt.Sprintf("The quick advice check found %s. They are only advice, so check them before you rely on this skill.", strs.Count(len(r.findings), "thing")))
 		shown := r.ordered()
 		for _, f := range head(shown, limit) {
-			label := strings.ToUpper(f.severity)
+			label := strings.ToUpper(f.severity[:min(1, len(f.severity))]) + f.severity[min(1, len(f.severity)):] + " risk"
 			if f.secret() {
-				label = "SECRETS"
+				label = "Possible secret"
 			}
-			lines = append(lines, fmt.Sprintf("  [%s] %s — %s", label, f.location(), f.message))
+			lines = append(lines, fmt.Sprintf("  %s at %s: %s", label, f.location(), f.message))
 		}
 		if len(shown) > limit {
-			lines = append(lines, fmt.Sprintf("  … and %d more", len(shown)-limit))
+			lines = append(lines, fmt.Sprintf("  And %s more.", strs.Number(float64(len(shown)-limit))))
 		}
 	}
 	if len(r.incomplete) > 0 {
-		lines = append(lines, fmt.Sprintf("  (not run: %s — no opinion from these checks)", strings.Join(r.incomplete, ", ")))
+		lines = append(lines, fmt.Sprintf("  These checks did not run, so they say nothing: %s.", strings.Join(r.incomplete, ", ")))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -193,9 +193,9 @@ func (r *run) advise(ctx context.Context, dir string) {
 	if secrets {
 		tone = Bad
 	}
-	r.line(Heading, "SkillEvaluator Tier 1 (advisory)")
+	r.line(Heading, "Quick advice check")
 	r.line(tone, text)
 	if secrets {
-		r.line(Bad, "Possible credentials detected above. Review the flagged lines before using this skill.")
+		r.line(Bad, "✗ The lines above may hold secrets. Check them before you use this skill.")
 	}
 }

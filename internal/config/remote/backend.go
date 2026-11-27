@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // How often a profile is polled, never more often than the floor
@@ -62,7 +64,7 @@ func (e *LockedError) Unwrap() error { return e.WriteError }
 
 func lockedError(lock Lock) *LockedError {
 	path := Encode(lock.Path)
-	return &LockedError{WriteError: &WriteError{Message: fmt.Sprintf("%s is locked by the %s level of Remote Config", path, lock.Level),
+	return &LockedError{WriteError: &WriteError{Message: fmt.Sprintf("%s can't be changed here. The %s level of the remote settings locks it.", path, lock.Level),
 		Code: "config_key_locked"}, Path: path, Level: lock.Level}
 }
 
@@ -133,12 +135,12 @@ func (b *Backend) Profile(ctx context.Context, name string, env Env) (*Profile, 
 
 func (b *Backend) boot(ctx context.Context, name string, env Env, lock *sync.Mutex) (*Profile, error) {
 	if !profileName.MatchString(name) {
-		return nil, &UnavailableError{Message: fmt.Sprintf("Remote Config: %q is not a profile the config plane serves "+
-			"(ICEBATH_CONFIG_BACKEND=remote serves profiles named with lowercase letters, digits, '-' and '_').", name)}
+		return nil, &UnavailableError{Message: fmt.Sprintf("%q can't be the name of a profile that keeps its settings on a server. Use lower case letters, digits, "+
+			"dashes and underscores.", name)}
 	}
 	if strings.TrimSpace(env(InstanceEnv)) == "" {
-		return nil, &UnavailableError{Message: "Remote Config: " + InstanceEnv + " is not set, so Icebath cannot identify this agent " +
-			"to the config plane. Icebath does not start without its remote config."}
+		return nil, &UnavailableError{Message: InstanceEnv + " is not set, so the server that keeps your remote settings can't tell which icebath this is. " +
+			"icebath does not start without its remote settings."}
 	}
 	delays := append([]time.Duration(nil), bootRetries...)
 	for {
@@ -185,8 +187,8 @@ func (b *Backend) boot(ctx context.Context, name string, env Env, lock *sync.Mut
 			}
 			continue
 		}
-		return nil, &UnavailableError{Message: fmt.Sprintf("Remote Config: cannot load the config for profile %s from %s: %s. Icebath does not "+
-			"start without its remote config (ICEBATH_CONFIG_BACKEND=remote has no local fallback).", strconv.Quote(name), shownURL(env), failed)}
+		return nil, &UnavailableError{Message: fmt.Sprintf("The remote settings of the profile %s could not be loaded from %s: %s. icebath does not "+
+			"start without them while ICEBATH_CONFIG_BACKEND is remote.", strconv.Quote(name), shownURL(env), failed)}
 	}
 }
 
@@ -268,13 +270,13 @@ func versionOf(v any) (int, bool) {
 // What makes an answer unusable, empty when it holds a config mapping, a whole number profileVersion and a list of locks
 func effectiveProblem(body map[string]any) string {
 	if _, ok := body["config"].(map[string]any); !ok {
-		return fmt.Sprintf("its config is %s where a mapping was expected", kind(body["config"]))
+		return fmt.Sprintf("its config is %s, not a set of named values", kind(body["config"]))
 	}
 	if _, ok := versionOf(body["profileVersion"]); !ok {
-		return fmt.Sprintf("its profileVersion is %s where a whole number was expected", kind(body["profileVersion"]))
+		return fmt.Sprintf("its profileVersion is %s, not a whole number", kind(body["profileVersion"]))
 	}
 	if _, ok := body["locks"].([]any); !ok {
-		return fmt.Sprintf("its locks are %s where a list was expected", kind(body["locks"]))
+		return fmt.Sprintf("its locks are %s, not a list", kind(body["locks"]))
 	}
 	return ""
 }
@@ -282,19 +284,19 @@ func effectiveProblem(body map[string]any) string {
 func kind(v any) string {
 	switch v.(type) {
 	case nil:
-		return "null"
+		return "nothing"
 	case map[string]any:
-		return "a mapping"
+		return "a set of named values"
 	case []any:
 		return "a list"
 	case string:
 		return "text"
 	case bool:
-		return "a boolean"
+		return "true or false"
 	case int, float64:
 		return "a number"
 	}
-	return fmt.Sprintf("%T", v)
+	return "something else"
 }
 
 // Takes an answer as the profile's settings, under p.mu, its malformed locks told and left out
@@ -381,7 +383,7 @@ func (p *Profile) Set(ctx context.Context, key string, value any) error {
 	token, err := p.backend.bearer(ctx, p.env)
 	if err != nil {
 		if _, ok := errors.AsType[*CredentialError](err); ok {
-			return &WriteError{Message: "Remote Config write failed: " + err.Error(), Code: "config_plane_unreachable"}
+			return &WriteError{Message: "The change did not reach the remote settings: " + err.Error(), Code: "config_plane_unreachable"}
 		}
 		return err
 	}
@@ -410,7 +412,7 @@ func (p *Profile) Set(ctx context.Context, key string, value any) error {
 			p.mu.Unlock()
 			_, credential := errors.AsType[*CredentialError](err)
 			if _, transport := errors.AsType[*TransportError](err); credential || transport {
-				return &WriteError{Message: "Remote Config write failed: " + err.Error(), Code: "config_plane_unreachable"}
+				return &WriteError{Message: "The change did not reach the remote settings: " + err.Error(), Code: "config_plane_unreachable"}
 			}
 			return err
 		}
@@ -430,7 +432,7 @@ func (p *Profile) Set(ctx context.Context, key string, value any) error {
 			p.mu.Unlock()
 			if err != nil {
 				if _, failed := errors.AsType[*fetchFailure](err); failed {
-					return &WriteError{Message: "Remote Config write conflict and re-read failed: " + err.Error(), Code: "config_version_conflict"}
+					return &WriteError{Message: "Someone else changed the remote settings at the same time, and reading them again failed: " + err.Error(), Code: "config_version_conflict"}
 				}
 				return err
 			}
@@ -473,8 +475,8 @@ func (p *Profile) change(keyed *pathMap, path Path, unset bool) (map[string]any,
 	}
 	for _, e := range sets.entries {
 		if bad, ok := secretLiteral(e.path, e.value); ok {
-			return nil, nil, &WriteError{Message: Encode(bad) + " is a secret-shaped key: Remote Config stores only a ${VAR} reference there, never the " +
-				"secret itself. Put the value in .env and set a ${VAR} reference.", Code: "config_secret_literal"}
+			return nil, nil, &WriteError{Message: Encode(bad) + " holds a secret, and the remote settings never keep the secret itself. Put the value in the keys file and " +
+				"set " + Encode(bad) + " to a ${VAR} reference to it.", Code: "config_secret_literal"}
 		}
 	}
 	if len(sets.entries) == 0 && len(removed) == 0 {
@@ -499,7 +501,7 @@ func writeError(resp response) error {
 		if level == "" {
 			level = "upper"
 		}
-		return &LockedError{WriteError: &WriteError{Message: "Remote Config refused the write: " + resp.message(), Code: "config_key_locked"}, Path: path,
+		return &LockedError{WriteError: &WriteError{Message: "The remote settings refused the change: " + resp.message(), Code: "config_key_locked"}, Path: path,
 			Level: level}
 	}
 	if valueRefusals[strconv.Itoa(resp.status)+" "+resp.code()] {
@@ -511,32 +513,32 @@ func writeError(resp response) error {
 			}
 		}
 		if len(extras) > 0 {
-			detail = fmt.Sprintf("%s (%s)", detail, strings.Join(extras, ", "))
+			detail = detail + ", " + strings.Join(extras, ", ")
 		}
-		return &WriteError{Message: "Remote Config refused the write: " + detail, Code: resp.code()}
+		return &WriteError{Message: "The remote settings refused the change: " + detail, Code: resp.code()}
 	}
-	return &WriteError{Message: fmt.Sprintf("Remote Config refused the write (%d %s): %s", resp.status, resp.code(), resp.message()), Code: resp.code()}
+	return &WriteError{Message: fmt.Sprintf("The remote settings refused the change with HTTP %d %s: %s", resp.status, resp.code(), resp.message()), Code: resp.code()}
 }
 
 // Where the profile's writes go, as a person reads it
 func (p *Profile) Destination() string {
-	return fmt.Sprintf("Remote Config (profile %s level)", strconv.Quote(p.name))
+	return "the remote settings of the profile " + p.name
 }
 
 // The plane, this agent and how the profile stands with it
 func (p *Profile) Describe() string {
 	instance := strings.TrimSpace(p.env(InstanceEnv))
 	if instance == "" {
-		instance = "<unset>"
+		instance = "an instance that is not set"
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	tail := ""
 	if p.failure != "" {
-		tail = ", last poll failed: " + p.failure
+		tail = " The last check for changes failed: " + strings.TrimSuffix(p.failure, ".") + "."
 	}
-	return fmt.Sprintf("Remote Config %s (instance %s): profile %s, profile level v%d, %d lock(s), fetched %ds ago%s", shownURL(p.env), instance,
-		strconv.Quote(p.name), p.version, len(p.locks), int(time.Since(p.fetched).Seconds()), tail)
+	return fmt.Sprintf("Remote settings at %s for %s: the profile %s at version %d with %s, read %s ago.%s", shownURL(p.env), instance,
+		p.name, p.version, strs.Count(len(p.locks), "lock"), strs.Span(time.Since(p.fetched).Truncate(time.Second)), tail)
 }
 
 // Starts the goroutine that polls every profile, unless one runs or the backend is closed

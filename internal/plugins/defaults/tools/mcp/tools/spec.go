@@ -503,8 +503,8 @@ func (e *unsetError) Error() string {
 	for i, ref := range e.refs {
 		parts[i] = "${" + ref + "}"
 	}
-	return fmt.Sprintf("MCP server '%s': %s in url/headers is not set in the environment or the profile's MCP values (tools.mcp.env)", e.server,
-		strings.Join(parts, ", "))
+	return fmt.Sprintf("The address or headers of the MCP server %s use %s, which is set neither in your environment nor in /settings under "+
+		"Tools › MCP servers › Values.", e.server, strings.Join(parts, ", "))
 }
 
 // Whether the tool is turned on by the server's tool filter

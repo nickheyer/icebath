@@ -29,7 +29,7 @@ var releaseTag = regexp.MustCompile(`^v?((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(
 // Download of a pinned archive: npm tarballs from the registry the user set, Termux pool archives with this release's copy as a mirror
 func pinnedSource(rawURL, dest, sha string) (Source, error) {
 	if !fullSHA256.MatchString(sha) {
-		return Source{}, errors.New("A pinned input requires a full lowercase SHA256")
+		return Source{}, errors.New("A pinned download needs its whole SHA-256 in lower case.")
 	}
 	source := Source{URL: npmRegistryURL(rawURL), Dest: dest, SHA256: sha}
 	if termuxPackage(rawURL) != "" {

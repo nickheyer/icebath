@@ -19,7 +19,7 @@ func (specs) Specs() []provider.Spec {
 		Shape:              shape,
 		Native:             provider.Unprefixed,
 		DisplayName:        zaiconfig.Title,
-		Description:        "GLM models from Zhipu AI",
+		Description:        "GLM models from Zhipu AI, with a Z.AI API key",
 		SignupURL:          "https://z.ai/",
 		BaseURL:            zaiconfig.BaseURL,
 		BaseURLEnv:         zaiconfig.BaseURLEnv,

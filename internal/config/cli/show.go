@@ -5,65 +5,44 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/internal/cli"
-	"github.com/nickheyer/icebath/internal/config"
 	skillsconfig "github.com/nickheyer/icebath/internal/skills/config"
 	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
 )
 
-// Value of a setting as config show prints it
-func words(setting *configv1.Setting) string {
-	var value any
-	yaml.Unmarshal([]byte(setting.GetValue()), &value)
-	if setting.GetSecret() {
-		if setting.GetValue() == "" {
-			return "not set"
-		}
-		return "set"
-	}
-	switch v := value.(type) {
-	case nil:
-		if unset := setting.GetUnset(); unset != "" {
-			return "not set (" + unset + ")"
-		}
-		return "not set"
-	case bool:
-		if v {
-			return "on"
-		}
-		return "off"
-	case string:
-		if v == "" {
-			return "not set"
-		}
-		return v
-	case []any:
-		if len(v) == 0 {
-			return "none"
-		}
-		items := make([]string, len(v))
-		for i, item := range v {
-			items[i] = fmt.Sprint(item)
-		}
-		return strings.Join(items, ", ")
-	case map[string]any:
-		return fmt.Sprintf("%d entries", len(v))
-	}
-	if unit := setting.GetUnit(); unit != "" {
-		return config.WithUnit(value, unit)
-	}
-	return fmt.Sprint(value)
+// Where a value comes from, as config show says it after a value not taken from the file or the default
+var sourceWords = map[configv1.Source]string{configv1.Source_SOURCE_ENVIRONMENT: "from an environment variable",
+	configv1.Source_SOURCE_MANAGED: "set by your administrator"}
+
+// Rows of a name and what is said of it, the names in one column as wide as the longest and a third cell dimmed after the second
+type table struct {
+	c    *cli.Console
+	rows [][3]string
 }
 
-// Where a value comes from, as config show notes it beside a value not taken from the file or the default
-var sourceWords = map[configv1.Source]string{configv1.Source_SOURCE_ENVIRONMENT: "env", configv1.Source_SOURCE_MANAGED: "managed"}
+func (t *table) add(name, value, note string) { t.rows = append(t.rows, [3]string{name, value, note}) }
 
-// Prints the profile's configuration: the administrator's banner, the files, the keys set, then every group of settings with its own and
-// the rest that are set
+func (t *table) print() {
+	names := 0
+	for _, row := range t.rows {
+		names = max(names, ansi.StringWidth(row[0]))
+	}
+	for _, row := range t.rows {
+		line := "  " + row[0] + strings.Repeat(" ", names-ansi.StringWidth(row[0])) + "   " + row[1]
+		if row[2] != "" {
+			line += "   " + t.c.Paint(row[2], cli.Dim)
+		}
+		fmt.Fprintln(t.c.Out(), line)
+	}
+	t.rows = t.rows[:0]
+}
+
+// Prints the profile's settings: what an administrator or a package manager decides, the files, the API keys set, then every section
+// with its own settings and those under it that are set, the chat apps, what the skills ask for, and how to change a setting
 func showConfig(cmd *cobra.Command, service configv1connect.ConfigServiceClient, profile string) error {
 	ctx := cmd.Context()
 	files, err := service.Files(ctx, &configv1.FilesRequest{Profile: profile})
@@ -79,102 +58,102 @@ func showConfig(cmd *cobra.Command, service configv1connect.ConfigServiceClient,
 		return refused(cmd, err)
 	}
 	c := cli.NewConsole(cmd)
-	section := func(title string) {
+	rows := &table{c: c}
+	heading := func(title string) {
 		c.Blank()
-		c.Say("◆ "+title, cli.Cyan, cli.Bold)
+		c.Say(title, cli.Cyan, cli.Bold)
 	}
 	c.Blank()
-	c.Say("┌─────────────────────────────────────────────────────────┐", cli.Cyan)
-	c.Say("│              󰆧 Icebath Configuration                    │", cli.Cyan)
-	c.Say("└─────────────────────────────────────────────────────────┘", cli.Cyan)
+	c.Say("Settings of the profile "+listed.GetProfile(), cli.Bold)
 	if keys, env := files.GetManagedKeys(), files.GetManagedEnv(); len(keys) > 0 || len(env) > 0 {
 		c.Blank()
-		c.Say("  ⚷ Some settings are managed by your administrator ("+files.GetManagedDir()+") and cannot be changed", cli.Yellow, cli.Bold)
+		c.Say("⚠ Your administrator sets some of these in "+files.GetManagedDir()+". They can't be changed here.", cli.Yellow)
 		if len(keys) > 0 {
-			c.Say("    Managed config keys: "+strings.Join(keys, ", "), cli.Yellow)
+			c.Say("  Settings: "+strings.Join(keys, ", "), cli.Yellow)
 		}
 		if len(env) > 0 {
-			c.Say("    Managed env keys: "+strings.Join(env, ", "), cli.Yellow)
+			c.Say("  Variables: "+strings.Join(env, ", "), cli.Yellow)
 		}
 	}
 	if system := files.GetManagedSystem(); system != "" {
 		c.Blank()
-		c.Say("  ⚷ This install is managed by "+system+"; change its settings through it", cli.Yellow, cli.Bold)
+		c.Say("⚠ This copy of icebath is managed by "+system+", which keeps its settings. Change them through "+system+".", cli.Yellow)
 	}
-	section("Paths")
-	own := files.GetOwn()
-	if own == "" {
-		own = files.GetRemote()
-	}
-	fmt.Fprintf(c.Out(), "  Config:       %s\n", own)
-	fmt.Fprintf(c.Out(), "  Shared:       %s\n", files.GetShared())
-	fmt.Fprintf(c.Out(), "  Secrets:      %s\n", files.GetEnv())
-	fmt.Fprintf(c.Out(), "  Install:      %s\n", extra.GetInstall())
-	section("API Keys")
-	notSet := c.Paint("(not set)", cli.Dim)
+	heading("Files")
+	rows.add("Settings file", cmp.Or(files.GetOwn(), files.GetRemote()), "")
+	rows.add("Shared settings file", files.GetShared(), "")
+	rows.add("Keys file", files.GetEnv(), "")
+	rows.add("Program folder", extra.GetInstall(), "")
+	rows.print()
+	heading("API keys")
+	notSet := c.Paint("Not set", cli.Dim)
 	for _, key := range extra.GetKeys() {
-		fmt.Fprintf(c.Out(), "  %-14s %s\n", key.GetLabel(), cmp.Or(key.GetValue(), notSet))
+		rows.add(key.GetLabel(), cmp.Or(key.GetValue(), notSet), "")
 	}
-	showGroups(c, listed)
-	section("Messaging Platforms")
-	for _, platform := range extra.GetPlatforms() {
-		state := c.Paint("not configured", cli.Dim)
-		if platform.GetSet() {
-			state = "configured"
+	rows.print()
+	showSections(c, listed)
+	heading("Chat apps")
+	for _, app := range extra.GetPlatforms() {
+		state := c.Paint("Not set up", cli.Dim)
+		if app.GetSet() {
+			state = "Set up"
 		}
-		fmt.Fprintf(c.Out(), "  %-13s %s\n", platform.GetLabel()+":", state)
+		rows.add(app.GetLabel(), state, "")
 	}
+	rows.print()
 	if skills := extra.GetSkills(); len(skills) > 0 {
-		section("Skill Settings")
+		heading("Skill options")
 		for _, skill := range skills {
-			fmt.Fprintf(c.Out(), "  %-20s %s  %s\n", skill.GetLabel(), cmp.Or(skill.GetValue(), notSet), c.Paint("["+skill.GetOwner()+"]", cli.Dim))
+			rows.add(skill.GetLabel(), cmp.Or(skill.GetValue(), notSet), "the "+skill.GetOwner()+" skill asks for this")
 		}
+		rows.print()
 	}
 	c.Blank()
-	c.Say(strings.Repeat("─", 60), cli.Dim)
-	c.Say("  icebath config edit    # Edit config file", cli.Dim)
+	c.Say("To change a setting:", cli.Dim)
 	c.Say("  icebath config set <key> <value>", cli.Dim)
-	c.Say("  icebath, type /settings   # Set up in the terminal UI", cli.Dim)
+	c.Say("  icebath config edit", cli.Dim)
+	c.Say("  /settings in the app", cli.Dim)
 	c.Blank()
 	return nil
 }
 
-// Every group of settings, a section at the top: its own settings, and those of the sections under it that are set
-func showGroups(c *cli.Console, listed *configv1.ListResponse) {
-	parents := map[string]string{}
+// Every section at the top with its own settings and those of the sections under it that are set, each of those under the trail of
+// sections that leads to it
+func showSections(c *cli.Console, listed *configv1.ListResponse) {
+	sections := map[string]*configv1.Section{}
 	for _, section := range listed.GetSections() {
-		parents[section.GetKey()] = section.GetParent()
+		sections[section.GetKey()] = section
 	}
-	top := func(key string) string {
-		for parents[key] != "" {
-			key = parents[key]
+	// Top section a section is under, and the titles from below the top down to the section
+	trail := func(key string) (string, []string) {
+		var titles []string
+		for sections[key] != nil && sections[key].GetParent() != "" {
+			titles = append([]string{sections[key].GetTitle()}, titles...)
+			key = sections[key].GetParent()
 		}
-		return key
+		return key, titles
 	}
-	rows := map[string][]string{}
+	rows := map[string]*table{}
 	for _, setting := range listed.GetSettings() {
-		// The values skills declare have a group of their own
+		// The values skills declare have a heading of their own
 		if setting.GetInternal() || setting.GetSection() == skillsconfig.Values {
 			continue
 		}
-		group := top(setting.GetSection())
-		if setting.GetSection() != group && setting.GetSource() == configv1.Source_SOURCE_DEFAULT {
+		top, under := trail(setting.GetSection())
+		if len(under) > 0 && setting.GetSource() == configv1.Source_SOURCE_DEFAULT {
 			continue
 		}
-		value := words(setting)
-		if note := sourceWords[setting.GetSource()]; note != "" {
-			value += c.Paint("  ("+note+")", cli.Dim)
+		if rows[top] == nil {
+			rows[top] = &table{c: c}
 		}
-		rows[group] = append(rows[group], fmt.Sprintf("  %-22s %s", setting.GetTitle()+":", value))
+		rows[top].add(strings.Join(append(under, setting.GetTitle()), " › "), setting.GetShown(), sourceWords[setting.GetSource()])
 	}
 	for _, section := range listed.GetSections() {
-		if section.GetParent() != "" || len(rows[section.GetKey()]) == 0 {
+		if section.GetParent() != "" || rows[section.GetKey()] == nil {
 			continue
 		}
 		c.Blank()
-		c.Say("◆ "+section.GetTitle(), cli.Cyan, cli.Bold)
-		for _, row := range rows[section.GetKey()] {
-			fmt.Fprintln(c.Out(), row)
-		}
+		c.Say(section.GetTitle(), cli.Cyan, cli.Bold)
+		rows[section.GetKey()].print()
 	}
 }

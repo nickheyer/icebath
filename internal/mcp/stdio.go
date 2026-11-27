@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Largest single line a stdio server may write
@@ -58,7 +59,7 @@ type StdioTransport struct {
 
 func StartStdio(p StdioParams) (*StdioTransport, error) {
 	if p.Command == "" {
-		return nil, errors.New("stdio transport needs a command")
+		return nil, errors.New("A server on this computer needs a command that starts it.")
 	}
 	cmd := exec.Command(p.Command, p.Args...)
 	cmd.Dir = p.Cwd
@@ -119,7 +120,7 @@ func (t *StdioTransport) pump(stdout io.Reader) {
 		if len(bytes.TrimSpace(line)) > 0 {
 			msgs, derr := DecodeMessages(bytes.ToValidUTF8(line, []byte("�")))
 			if derr != nil {
-				t.setErr(fmt.Errorf("stdio server sent a non JSON-RPC line: %w", derr))
+				t.setErr(fmt.Errorf("The server sent a line that is not MCP: %w", derr))
 			}
 			for _, m := range msgs {
 				select {
@@ -131,7 +132,7 @@ func (t *StdioTransport) pump(stdout io.Reader) {
 		}
 		if err != nil {
 			if err == io.EOF {
-				err = errors.New("Connection closed")
+				err = errors.New("The connection closed.")
 			}
 			t.setErr(err)
 			return
@@ -148,7 +149,7 @@ func longLine(r *bufio.Reader) ([]byte, error) {
 			return buf, err
 		}
 		if len(buf) > maxLineBytes {
-			return nil, fmt.Errorf("stdio line exceeds %d bytes", maxLineBytes)
+			return nil, fmt.Errorf("The server sent a line larger than %s.", strs.Size(float64(maxLineBytes)))
 		}
 	}
 }
@@ -169,13 +170,13 @@ func (t *StdioTransport) Send(_ context.Context, msg *Message) error {
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
 	if t.closed {
-		return errors.New("transport is closed")
+		return errors.New("The connection closed.")
 	}
 	if !t.Alive() {
-		return errors.New("Connection closed")
+		return errors.New("The connection closed.")
 	}
 	if _, err := t.stdin.Write(append(data, '\n')); err != nil {
-		return fmt.Errorf("broken pipe: %w", err)
+		return fmt.Errorf("The connection closed, as its pipe broke: %w", err)
 	}
 	return nil
 }

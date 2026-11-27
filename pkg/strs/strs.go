@@ -1,4 +1,5 @@
-// Text helpers every part of icebath shares: cuts by characters, grouped numbers, first filled values, sets and random tokens
+// Text helpers every part of icebath shares: cuts by characters, numbers, sizes and lengths of time in words, first filled values, sets and
+// random tokens
 package strs
 
 import (

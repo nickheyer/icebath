@@ -24,10 +24,15 @@ const rewatch = 3 * time.Second
 // States a connection target no longer waits in
 var resolved = map[string]bool{"connected": true, "skipped": true, "not_connected": true}
 
-var targetWords = map[string]string{"pending": "waiting for you", "initiated": "in progress", "connected": "connected", "skipped": "skipped",
-	"failed": "failed", "not_connected": "not connected"}
+// Words the states of a connection target are shown by
+var targetWords = map[string]string{"pending": "Waiting for you", "initiated": "Connecting", "connected": "Connected", "skipped": "Skipped",
+	"failed": "Failed", "not_connected": "Not connected"}
 
-var verbs = map[string]string{"install": "Install", "enable": "Enable", "authorize": "Sign in to"}
+// Words on the button that answers a target, by what the agent asked
+var verbs = map[string]string{"install": "Add", "enable": "Turn on", "authorize": "Sign in to"}
+
+// What a connection card is, said above its servers
+const asked = "The agent asked to connect these MCP servers, which give it more tools."
 
 // Connection cards of the operations the agent's manage_connections calls run, one per operation, drawn while it waits on the user
 type connections struct {
@@ -118,7 +123,7 @@ func (c *connections) update(op *mcpv1.Operation) tea.Cmd {
 				return nil
 			}
 			card.hidden = true
-			return c.kit.WM.Toast("The agent waits on the connection. /connections shows it again", wm.Info, wm.DefaultToastTTL)
+			return c.kit.WM.Toast("The agent is waiting for you to finish connecting. /connections shows it again.", wm.Info, wm.DefaultToastTTL)
 		})
 		return c.kit.WM.ShowOverlay(card.hub)
 	}
@@ -144,7 +149,7 @@ func (c *connections) reopen() tea.Cmd {
 		}
 	}
 	if len(cmds) == 0 {
-		return c.kit.WM.Toast("No connection waits on you", wm.Info, wm.DefaultToastTTL)
+		return c.kit.WM.Toast("No connection is waiting for you.", wm.Info, wm.DefaultToastTTL)
 	}
 	return tea.Batch(cmds...)
 }
@@ -159,23 +164,12 @@ func active(op *mcpv1.Operation) *mcpv1.Target {
 	return nil
 }
 
-// Line of each target: its mark, name, state and detail
+// What the card is, then a line for each target: its name, state and detail
 func (c *connections) lines(op *mcpv1.Operation) []string {
 	t := c.kit.Env.Theme
-	var out []string
+	out := []string{asked, ""}
 	for _, target := range op.GetTargets() {
-		mark := t.Glyphs.Hollow
-		switch target.GetState() {
-		case "connected":
-			mark = t.Glyphs.Check
-		case "skipped", "not_connected":
-			mark = t.Glyphs.Skip
-		case "initiated":
-			mark = t.Glyphs.Active
-		case "failed":
-			mark = t.Glyphs.Fail
-		}
-		line := mark + " " + target.GetName() + " · " + cmp.Or(targetWords[target.GetState()], target.GetState())
+		line := target.GetName() + " · " + cmp.Or(targetWords[target.GetState()], target.GetState())
 		if detail := strings.TrimSpace(target.GetDetail()); detail != "" {
 			line += " · " + detail
 		}
@@ -208,8 +202,12 @@ func (c *connections) view(card *connection) (wm.Card, string) {
 		}, func(*mcpv1.RespondResponse) tea.Cmd { return nil })
 	}
 	page := func(subject string, lines func() []string, hints []wm.Hint, actions map[string]func(*cards.Page) tea.Cmd) (wm.Card, string) {
+		// Enter, the key of going on, runs the first button where going on is not offered
+		if _, own := actions["mcp.connection.continue"]; !own && len(hints) > 0 {
+			actions["mcp.connection.continue"] = actions[hints[0].Action]
+		}
 		return cards.NewPage(c.kit.Env, cards.PageSpec{
-			Title:   "Connect",
+			Title:   "MCP connection",
 			Key:     Screen + ".connection:" + op.GetId() + ":" + subject,
 			Context: connectionContext,
 			Lines: func(int) []string {
@@ -238,13 +236,13 @@ func (c *connections) view(card *connection) (wm.Card, string) {
 		id := op.GetId()
 		return tui.Call(card.hub, func() (*mcpv1.WakeResponse, error) {
 			return c.service.Wake(c.kit.Env.Ctx, &mcpv1.WakeRequest{Id: id})
-		}, func(*mcpv1.WakeResponse) tea.Cmd { return card.hub.Say("Checking "+name+"…", cards.NoteInfo) })
+		}, func(*mcpv1.WakeResponse) tea.Cmd { return card.hub.Say("Checking "+name+" again…", cards.NoteInfo) })
 	}
 	link := strings.TrimSpace(target.GetConnectUrl())
 	switch {
 	case target.GetState() == "connected":
 		return page(subject, func() []string {
-			return append([]string{render.Good("Signed in to "+name+", but its tools could not be listed yet.", t)}, notes()...)
+			return append([]string{render.Good("Signed in to "+name+", but its tools aren't listed yet.", t)}, notes()...)
 		}, []wm.Hint{{Action: "mcp.connection.continue"}}, map[string]func(*cards.Page) tea.Cmd{
 			"mcp.connection.continue": func(*cards.Page) tea.Cmd { return answer("", nil, true) },
 		})
@@ -252,7 +250,7 @@ func (c *connections) view(card *connection) (wm.Card, string) {
 		return page(subject, func() []string {
 			out := notes()
 			if strings.TrimSpace(target.GetDetail()) == "" {
-				out = append(out, "Connecting "+name+" failed.")
+				out = append(out, "Couldn't connect "+name+".")
 			}
 			return out
 		}, []wm.Hint{{Action: "mcp.connection.retry"}, {Action: "mcp.connection.skip"}}, map[string]func(*cards.Page) tea.Cmd{
@@ -270,7 +268,7 @@ func (c *connections) view(card *connection) (wm.Card, string) {
 			hints = append(hints, wm.Hint{Action: "mcp.connection.paste"})
 		}
 		view, subject := page(subject, func() []string {
-			return append(notes(), "Finish connecting "+name+" in the browser:", render.Warm(link, t))
+			return append(notes(), "Finish connecting "+name+" in your browser at this link:", render.Warm(link, t))
 		}, hints, map[string]func(*cards.Page) tea.Cmd{
 			"mcp.connection.open":  func(*cards.Page) tea.Cmd { return open(c.kit, card.hub, link) },
 			"mcp.connection.copy":  func(*cards.Page) tea.Cmd { return copyLink(c.kit, card.hub, link) },
@@ -281,7 +279,7 @@ func (c *connections) view(card *connection) (wm.Card, string) {
 		return view, subject
 	case target.GetState() == "initiated":
 		return page(subject, func() []string {
-			return append(notes(), render.Dim("Working on "+name+"…", t))
+			return append(notes(), render.Dim("Connecting "+name+"…", t))
 		}, []wm.Hint{{Action: "mcp.connection.wake"}, {Action: "mcp.connection.skip"}}, map[string]func(*cards.Page) tea.Cmd{
 			"mcp.connection.wake": wake,
 			"mcp.connection.skip": skip,
@@ -293,15 +291,19 @@ func (c *connections) view(card *connection) (wm.Card, string) {
 		if spec.GetSecret() {
 			kind = cards.FieldSecret
 		}
-		fields = append(fields, cards.Field{ID: spec.GetName(), Label: cmp.Or(strings.TrimSpace(spec.GetPrompt()), spec.GetName()), Kind: kind,
-			Value: spec.GetDefault(), Required: spec.GetRequired(), Help: spec.GetName()})
+		help := sentence(spec.GetPrompt())
+		if !spec.GetRequired() {
+			help = strings.TrimSpace(help + "\nLeave empty to go without it.")
+		}
+		fields = append(fields, cards.Field{ID: spec.GetName(), Label: spec.GetName(), Kind: kind, Value: spec.GetDefault(), Required: spec.GetRequired(),
+			Help: help})
 	}
 	verb := cmp.Or(verbs[target.GetAction()], "Connect")
 	return cards.NewForm(c.kit.Env, cards.FormSpec{
-		Title:  verb + " " + name + "?",
-		Intro:  append(c.lines(op), notes()...),
+		Title:  verb + " " + name,
+		Intro:  append(append(c.lines(op), notes()...), "Esc goes on without "+name+"."),
 		Fields: fields,
-		Submit: verb + " " + name,
+		Submit: strings.TrimSuffix(verb, " to"),
 		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
 			env := map[string]string{}
 			for _, spec := range target.GetRequired() {

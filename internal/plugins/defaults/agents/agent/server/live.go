@@ -36,7 +36,7 @@ func (a *Agent) Shut(id string) error {
 	r, open := a.runs[id]
 	a.mu.Unlock()
 	if !open {
-		return connect.NewError(connect.CodeNotFound, "That session is not open.")
+		return connect.NewError(connect.CodeNotFound, "That session is not open, so there is nothing to close.")
 	}
 	r.mu.Lock()
 	watched := 0
@@ -45,7 +45,7 @@ func (a *Agent) Shut(id string) error {
 	}
 	if watched > 0 {
 		r.mu.Unlock()
-		return connect.NewError(connect.CodeFailedPrecondition, "That session is open in a window; close the window to close it.")
+		return connect.NewError(connect.CodeFailedPrecondition, "That session is open in a window. Close the window to close the session.")
 	}
 	if r.stop != nil {
 		r.stop()
@@ -69,7 +69,7 @@ func (a *Agent) Edit(ctx context.Context, id string, message int64, text string,
 	r.mu.Lock()
 	if r.busy {
 		r.mu.Unlock()
-		return 0, errors.New("Still replying. Stop the reply first, then rewind.")
+		return 0, errors.New("A reply is still running. Stop it first, then change your message.")
 	}
 	sent, err := a.sent(r)
 	if err != nil {
@@ -79,7 +79,7 @@ func (a *Agent) Edit(ctx context.Context, id string, message int64, text string,
 	at := slices.IndexFunc(sent, func(m *sessionsv1.Message) bool { return m.GetId() == message })
 	if at < 0 {
 		r.mu.Unlock()
-		return 0, connect.NewError(connect.CodeFailedPrecondition, "That message is no longer in the session; nothing was removed.")
+		return 0, connect.NewError(connect.CodeFailedPrecondition, "That message is no longer in the session, so nothing was changed.")
 	}
 	shown, err := store.Messages(a.ctx, id, sessions.Display)
 	if err != nil {

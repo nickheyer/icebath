@@ -297,7 +297,7 @@ func (p *Profiles) Export(name string) ([]byte, string, error) {
 func memberPath(name string) (string, error) {
 	cleaned := path.Clean(strings.ReplaceAll(name, `\`, "/"))
 	if path.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, "../") || filepath.VolumeName(cleaned) != "" {
-		return "", &ValueError{"Profile archive member escapes the archive: " + name}
+		return "", &ValueError{"The archive holds " + name + ", which points outside the archive, so nothing was imported."}
 	}
 	return cleaned, nil
 }
@@ -362,7 +362,7 @@ func clearTarget(target string) error {
 
 // Refusal of an archive member that would land or lead outside the folder it unpacks into
 func escapes(name string) error {
-	return &ValueError{fmt.Sprintf("Profile archive member %s leads outside the archive", name)}
+	return &ValueError{fmt.Sprintf("The archive holds %s, a link that leads outside the archive, so nothing was imported.", name)}
 }
 
 // Unpacks a profile archive into the folder: files, folders and links that stay inside it, every link checked again once all are in, and no
@@ -370,7 +370,7 @@ func escapes(name string) error {
 func unpack(data []byte, dest string) (map[string]bool, error) {
 	zr, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
-		return nil, &ValueError{"Not a profile archive (tar.gz): " + err.Error()}
+		return nil, &ValueError{"This is not a profile archive, which is a .tar.gz file: " + sentence(err.Error())}
 	}
 	root, err := filepath.EvalSymlinks(dest)
 	if err != nil {
@@ -391,7 +391,7 @@ func unpack(data []byte, dest string) (map[string]bool, error) {
 			break
 		}
 		if err != nil {
-			return nil, &ValueError{"Profile archive is unreadable: " + err.Error()}
+			return nil, &ValueError{"The profile archive can't be read: " + sentence(err.Error())}
 		}
 		if header.Typeflag == tar.TypeXGlobalHeader {
 			continue
@@ -425,7 +425,7 @@ func unpack(data []byte, dest string) (map[string]bool, error) {
 		case tar.TypeReg, tar.TypeCont, tar.TypeGNUSparse:
 			if space >= 0 {
 				if header.Size > space {
-					return nil, &ValueError{fmt.Sprintf("Profile archive member %s does not fit in the space left on the destination", header.Name)}
+					return nil, &ValueError{fmt.Sprintf("%s in the archive does not fit in the space left on this disk.", header.Name)}
 				}
 				space -= header.Size
 			}
@@ -476,7 +476,7 @@ func unpack(data []byte, dest string) (map[string]bool, error) {
 				return nil, err
 			}
 			if !info.Mode().IsRegular() {
-				return nil, &ValueError{fmt.Sprintf("Profile archive member %s links to what is not a file", header.Name)}
+				return nil, &ValueError{fmt.Sprintf("%s in the archive is a link to something that is not a file.", header.Name)}
 			}
 			if have, err := os.Lstat(target); err != nil || !os.SameFile(info, have) {
 				if err := clearTarget(target); err != nil {
@@ -490,7 +490,7 @@ func unpack(data []byte, dest string) (map[string]bool, error) {
 				return nil, err
 			}
 		default:
-			return nil, &ValueError{fmt.Sprintf("Profile archive member %s is neither a file, a folder nor a link", header.Name)}
+			return nil, &ValueError{fmt.Sprintf("%s in the archive is not a file, a folder or a link.", header.Name)}
 		}
 	}
 	// A later member can replace a folder a link passes through with a link of its own: every link must still lead inside
@@ -540,18 +540,18 @@ func (p *Profiles) Import(data []byte, name string) (string, error) {
 		inferred = root
 	}
 	if inferred == "" {
-		return "", &ValueError{"Cannot determine profile name from archive. Specify it explicitly: icebath profile import <archive> --name <name>"}
+		return "", &ValueError{"icebath can't tell the name of the profile from the archive. Give it with icebath profile import <archive> --name NAME."}
 	}
 	if root == "" {
-		return "", &ValueError{"Profile archive must contain exactly one top-level directory."}
+		return "", &ValueError{"A profile archive must hold exactly one folder at its top."}
 	}
 	canon, err := Canon(inferred)
 	if err != nil {
 		return "", err
 	}
 	if canon == Default {
-		return "", &ValueError{fmt.Sprintf("Cannot import as 'default' — that is the built-in profile (%s). Specify a different name: icebath profile "+
-			"import <archive> --name <name>", p.Dir(Default))}
+		return "", &ValueError{fmt.Sprintf("An archive can't be imported as default, the built-in profile in %s. Give another name with icebath "+
+			"profile import <archive> --name NAME.", p.Dir(Default))}
 	}
 	dir := p.Dir(canon)
 	if fsx.Lexists(dir) {
@@ -559,7 +559,7 @@ func (p *Profiles) Import(data []byte, name string) (string, error) {
 	}
 	extracted := filepath.Join(staging, root)
 	if !fsx.IsDir(extracted) {
-		return "", &ValueError{"Profile archive root is missing or invalid: " + root}
+		return "", &ValueError{"The folder at the top of the archive, " + root + ", is missing or is not a folder."}
 	}
 	for tree := range runtimeTrees {
 		if err := os.RemoveAll(filepath.Join(extracted, tree)); err != nil {
@@ -643,19 +643,17 @@ func ExportPath(root, name, stamp string) (string, error) {
 		}
 	}
 	if dir == "" {
-		return "", &ValueError{"No safe automatic export destination: every candidate directory is inside a Git checkout. Provide an explicit output " +
-			"path outside the checkout (CLI: -o /path/outside/repo/profile.tar.gz)."}
+		return "", &ValueError{"Every folder icebath would export to is inside a git repository, where the archive could be committed by mistake. " +
+			"Name a file outside the repository yourself, with -o on the command line, such as -o ~/profile.tar.gz."}
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	if info, err := os.Lstat(dir); err == nil && info.Mode()&fs.ModeSymlink != 0 {
-		return "", &ValueError{fmt.Sprintf("Export directory %s is a symlink; refusing to write a profile archive through it. Provide an explicit "+
-			"output path.", dir)}
+		return "", &ValueError{fmt.Sprintf("The export folder %s is a link, and icebath does not write an archive through a link. Name the file yourself, with -o on the command line.", dir)}
 	}
 	if owner, ok := ownerOf(dir); ok && owner != os.Getuid() {
-		return "", &ValueError{fmt.Sprintf("Export directory %s is owned by another user; refusing to write a profile archive there. Provide an "+
-			"explicit output path.", dir)}
+		return "", &ValueError{fmt.Sprintf("The export folder %s belongs to another user, so icebath does not write an archive there. Name the file yourself, with -o on the command line.", dir)}
 	}
 	return filepath.Join(dir, name+"-"+stamp+".tar.gz"), nil
 }

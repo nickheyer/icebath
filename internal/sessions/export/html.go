@@ -53,19 +53,19 @@ func HTML(transcripts []*sessionsv1.Transcript) ([]byte, error) {
 		Title, Layout, Generated, Nonce string
 		Multi                           bool
 		Sessions                        []htmlSession
-	}{Title: "Icebath Session Export", Layout: "layout-multi", Generated: time.Now().Format("2006-01-02 15:04:05"),
+	}{Title: "icebath sessions", Layout: "layout-multi", Generated: time.Now().Format("2006-01-02 15:04:05"),
 		Nonce: base64.RawURLEncoding.EncodeToString(nonce), Multi: len(transcripts) > 1}
 	if !data.Multi {
-		data.Title, data.Layout = cmp.Or(transcripts[0].GetSession().GetTitle(), "Icebath Session"), "layout-single"
+		data.Title, data.Layout = cmp.Or(transcripts[0].GetSession().GetTitle(), "Untitled session"), "layout-single"
 	}
 	for _, t := range transcripts {
 		s := t.GetSession()
-		link := cmp.Or(s.GetTitle(), cmp.Or(s.GetPreview(), "Untitled Session"))
+		link := cmp.Or(s.GetTitle(), cmp.Or(s.GetPreview(), "Untitled session"))
 		if runes := []rune(link); len(runes) > 50 {
-			link = string(runes[:47]) + "..."
+			link = string(runes[:49]) + "…"
 		}
-		view := htmlSession{ID: s.GetId(), Anchor: url.PathEscape(s.GetId()), Title: cmp.Or(s.GetTitle(), "Icebath Session"), Link: link,
-			Short: strs.Head(s.GetId(), 8), Date: "N/A", Model: cmp.Or(s.GetModel(), "Unknown"), Started: "N/A", Prompt: t.GetSystemPrompt()}
+		view := htmlSession{ID: s.GetId(), Anchor: url.PathEscape(s.GetId()), Title: cmp.Or(s.GetTitle(), "Untitled session"), Link: link,
+			Short: strs.Head(s.GetId(), 8), Date: "Unknown", Model: cmp.Or(s.GetModel(), "Unknown"), Started: "Unknown", Prompt: t.GetSystemPrompt()}
 		if s.GetCreated() != nil {
 			view.Date, view.Started = s.GetCreated().AsTime().Local().Format("2006-01-02"), s.GetCreated().AsTime().Local().Format("2006-01-02 15:04:05")
 		}
@@ -73,7 +73,7 @@ func HTML(transcripts []*sessionsv1.Transcript) ([]byte, error) {
 			role := Role(m)
 			icon := map[string]string{"user": "user", "assistant": "bot", "system": "shield"}[role]
 			entry := htmlMessage{Class: "message-" + roleClass.ReplaceAllString(strings.ToLower(role), "-"), Role: role, Icon: cmp.Or(icon, "terminal"),
-				Time: "N/A", Text: m.GetText(), Reasoning: m.GetReasoning(), Pre: role == "tool"}
+				Time: "Unknown", Text: m.GetText(), Reasoning: m.GetReasoning(), Pre: role == "tool"}
 			if m.GetTime() != nil {
 				entry.Time = m.GetTime().AsTime().Local().Format("2006-01-02 15:04:05")
 			}
@@ -81,7 +81,7 @@ func HTML(transcripts []*sessionsv1.Transcript) ([]byte, error) {
 				entry.Delay = strconv.FormatFloat(float64(i)*0.05, 'f', -1, 64) + "s"
 			}
 			for _, call := range m.GetToolCalls() {
-				entry.Calls = append(entry.Calls, htmlCall{Name: cmp.Or(call.GetName(), "unknown"), Arguments: cmp.Or(call.GetArguments(), "{}")})
+				entry.Calls = append(entry.Calls, htmlCall{Name: cmp.Or(call.GetName(), "Unknown tool"), Arguments: cmp.Or(call.GetArguments(), "{}")})
 			}
 			view.Messages = append(view.Messages, entry)
 		}

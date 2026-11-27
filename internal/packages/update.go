@@ -88,7 +88,7 @@ func fetchJSON(cfg *config.Config, rawURL string, into any) error {
 		return err
 	}
 	if err := json.Unmarshal(body, into); err != nil {
-		return fmt.Errorf("%s did not answer with the JSON expected: %w", rawURL, err)
+		return fmt.Errorf("%s did not answer with the JSON icebath expects: %w", rawURL, err)
 	}
 	return nil
 }
@@ -286,7 +286,7 @@ func resolveBest(name string, candidates []targetCandidates, locked *string, sty
 		}
 	}
 	if len(present) == 0 {
-		d.reason = "no source"
+		d.reason = "no versions found for any platform"
 		return d
 	}
 	if style == "minor" {
@@ -305,7 +305,7 @@ func resolveBest(name string, candidates []targetCandidates, locked *string, sty
 			maps.DeleteFunc(common, func(m string, _ bool) bool { return !set[m] })
 		}
 		if len(common) == 0 {
-			d.reason = "no shared minor"
+			d.reason = "no minor version is out for every platform"
 			return d
 		}
 		shared := slices.MaxFunc(slices.Collect(maps.Keys(common)), compareVersions)
@@ -329,7 +329,7 @@ func resolveBest(name string, candidates []targetCandidates, locked *string, sty
 		maps.DeleteFunc(common, func(v string, _ bool) bool { return !slices.Contains(c.versions, v) })
 	}
 	if len(common) == 0 {
-		d.reason = "no shared version"
+		d.reason = "no version is out for every platform"
 		return d
 	}
 	best := slices.MaxFunc(slices.Collect(maps.Keys(common)), compareVersions)
@@ -490,14 +490,14 @@ func (h *Packages) pinVersion(ctx context.Context, p *Package, version string, r
 					return nil, err
 				}
 			}
-			r.Line("      sha256 " + digest)
+			r.Line("      SHA-256 " + digest)
 			out = append(out, Artifact{URL: u, SHA256: digest})
 		}
 		return out, nil
 	}
 	artifacts := map[string]Archives{}
 	if len(plan) > 0 && len(distinct) == 1 {
-		r.Line("  any:")
+		r.Line("  Every platform:")
 		pinned, err := pin(plan[0].urls)
 		if err != nil {
 			return nil, err

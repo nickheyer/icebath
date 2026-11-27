@@ -92,10 +92,10 @@ func Collision(name string) (string, error) {
 		return err.Error(), nil
 	}
 	if reserved[canon] {
-		return fmt.Sprintf("'%s' is a reserved name", canon), nil
+		return fmt.Sprintf("%s is a name icebath keeps for itself.", canon), nil
 	}
 	if subcommands[canon] {
-		return fmt.Sprintf("'%s' conflicts with an icebath subcommand", canon), nil
+		return fmt.Sprintf("%s is the name of an icebath command.", canon), nil
 	}
 	tool := "which"
 	if runtime.GOOS == "windows" {
@@ -124,7 +124,7 @@ func Collision(name string) (string, error) {
 	if existing == expected && ours(expected) {
 		return "", nil
 	}
-	return fmt.Sprintf("'%s' conflicts with an existing command (%s)", canon, existing), nil
+	return fmt.Sprintf("%s is already a command on this computer, at %s.", canon, existing), nil
 }
 
 // Whether the folder of aliases is on the PATH
@@ -170,7 +170,7 @@ func MakeAlias(name, target string) (string, error) {
 		return "", err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("Could not create %s: %s", dir, failure(err))
+		return "", fmt.Errorf("The folder %s could not be made: %s.", dir, failure(err))
 	}
 	path, err := AliasPath(canon)
 	if err != nil {
@@ -189,7 +189,7 @@ func MakeAlias(name, target string) (string, error) {
 		}
 	}
 	if err != nil {
-		return "", fmt.Errorf("Could not create wrapper at %s: %s", path, failure(err))
+		return "", fmt.Errorf("The alias %s could not be written: %s.", path, failure(err))
 	}
 	return path, nil
 }
@@ -197,9 +197,9 @@ func MakeAlias(name, target string) (string, error) {
 // Reason a file operation failed followed by the path it failed on
 func failure(err error) string {
 	if pathErr, ok := errors.AsType[*fs.PathError](err); ok {
-		return pathErr.Err.Error() + ": " + pathErr.Path
+		return pathErr.Err.Error() + " at " + pathErr.Path
 	}
-	return err.Error()
+	return strings.TrimSuffix(strings.TrimSpace(err.Error()), ".")
 }
 
 // Removes the alias icebath wrote under the name, whether there was one
@@ -221,34 +221,34 @@ func RemoveAlias(name string) (bool, error) {
 // Moves the alias of a renamed profile to its new name, made for it even when the old name had none: the lines saying how that went
 func FollowAlias(old, renamed string) []string {
 	if _, err := RemoveAlias(old); err != nil {
-		return []string{"⚠ " + failure(err)}
+		return []string{"⚠ The alias " + old + " could not be removed: " + failure(err) + "."}
 	}
 	collision, err := Collision(renamed)
 	switch {
 	case err != nil:
-		return []string{"⚠ " + failure(err)}
+		return []string{"⚠ No alias named " + renamed + " was made: " + failure(err) + "."}
 	case collision != "":
-		return []string{fmt.Sprintf("⚠ Cannot create alias '%s' — %s", renamed, collision)}
+		return []string{"⚠ No alias named " + renamed + " was made. " + sentence(collision)}
 	}
 	if _, err := MakeAlias(renamed, ""); err != nil {
-		return []string{"⚠ " + err.Error()}
+		return []string{"⚠ " + sentence(err.Error())}
 	}
-	return []string{"✓ Alias updated: " + renamed}
+	return []string{"✓ The alias is now " + renamed + "."}
 }
 
 // Removes the alias icebath wrote for a deleted profile: the line saying it went, none when there was none
 func DropAlias(name string) []string {
 	path, err := OurAlias(name)
 	if err != nil {
-		return []string{"⚠ " + failure(err)}
+		return []string{"⚠ icebath could not look for the alias " + name + ": " + failure(err) + "."}
 	}
 	if path == "" {
 		return nil
 	}
 	if removed, err := RemoveAlias(name); err != nil || !removed {
-		return []string{fmt.Sprintf("⚠ Could not remove %s", path)}
+		return []string{"⚠ The alias " + path + " could not be removed."}
 	}
-	return []string{"✓ Removed " + path}
+	return []string{"✓ Removed the alias " + path + "."}
 }
 
 // Alias that opens the profile, empty when none does

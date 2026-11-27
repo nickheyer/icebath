@@ -33,6 +33,7 @@ import (
 	ironpackages "github.com/nickheyer/icebath/internal/plugins/defaults/egress/ironproxy/packages"
 	"github.com/nickheyer/icebath/internal/secrets"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -221,7 +222,7 @@ func (e *Egress) Authority(ctx context.Context, cfg *config.Config, force bool) 
 		return crt, key, nil
 	}
 	if _, err := exec.LookPath("openssl"); err != nil {
-		return "", "", errors.New("openssl not found on PATH. Install OpenSSL (apt: `openssl`, brew: `openssl`) to generate the iron-proxy CA cert.")
+		return "", "", errors.New("openssl is not on your PATH, and the CA certificate of the sandbox proxy needs it. Install OpenSSL, such as with `apt install openssl` or `brew install openssl`.")
 	}
 	scratch, err := os.MkdirTemp("", "icebath-proxy-ca-")
 	if err != nil {
@@ -230,11 +231,11 @@ func (e *Egress) Authority(ctx context.Context, cfg *config.Config, force bool) 
 	defer os.RemoveAll(scratch)
 	tmpKey, tmpCrt := filepath.Join(scratch, "ca.key"), filepath.Join(scratch, "ca.crt")
 	if out, err := quick(ctx, time.Minute, "openssl", "genrsa", "-out", tmpKey, "4096"); err != nil || out.Code != 0 {
-		return "", "", fmt.Errorf("openssl genrsa failed: %s", failed(out, err))
+		return "", "", fmt.Errorf("`openssl genrsa` failed: %s", failed(out, err))
 	}
 	if out, err := quick(ctx, time.Minute, "openssl", "req", "-x509", "-new", "-nodes", "-key", tmpKey, "-sha256", "-days", "3650", "-subj",
 		"/CN=icebath iron-proxy CA", "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign", "-out", tmpCrt); err != nil || out.Code != 0 {
-		return "", "", fmt.Errorf("openssl req failed: %s", failed(out, err))
+		return "", "", fmt.Errorf("`openssl req` failed: %s", failed(out, err))
 	}
 	keyBytes, err := os.ReadFile(tmpKey)
 	if err != nil {
@@ -341,22 +342,22 @@ func (e *Egress) target(cfg *config.Config) (string, int) {
 
 // Answers of the management API a reload explains
 var reloadErrors = map[int]string{
-	422: "iron-proxy rejected the new config (validation failed; the running ruleset is unchanged): {body}",
-	401: "management API rejected our key (401).  The running daemon was started with a different management.token — run `icebath egress restart`.",
+	422: "iron-proxy refused the new rules, so the rules it runs with stay as they were. It said: {body}",
+	401: "iron-proxy refused the key icebath manages it with, because it started with another one. Run `icebath egress restart`.",
 }
 
 // Reloads the running daemon's rules from proxy.yaml through its management API, a config it refuses leaving the running one in place
 func (e *Egress) Reload(ctx context.Context, cfg *config.Config) error {
 	if pid := e.pid(cfg); pid == 0 || !e.alive(cfg, pid) {
-		return errors.New("iron-proxy is not running — nothing to reload.  Run `icebath egress start`.")
+		return errors.New("The sandbox proxy is not running, so there is nothing to reload. Run `icebath egress start`.")
 	}
 	host, port, ok := configListen(e.configPath(cfg), "management", "listen")
 	if !ok {
-		return errors.New("The generated proxy.yaml has no management listener (written before reload support).  Re-run `icebath egress setup` and use `icebath egress restart` this one time.")
+		return errors.New("proxy.yaml was written before reloads worked, so the running proxy cannot reload. Run `icebath egress setup` again, then `icebath egress restart` this one time.")
 	}
 	token := textOf(e.managementPath(cfg))
 	if token == "" {
-		return errors.New("management.token is missing — re-run `icebath egress setup`, then `icebath egress restart`.")
+		return errors.New("The key icebath manages the proxy with is missing. Run `icebath egress setup` again, then `icebath egress restart`.")
 	}
 	ctx, cancel := context.WithTimeout(ctx, reloadTimeout)
 	defer cancel()
@@ -368,7 +369,7 @@ func (e *Egress) Reload(ctx context.Context, cfg *config.Config) error {
 	client := &http.Client{Transport: &http.Transport{Proxy: nil}}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("could not reach the management API at %s:%d (%v).  If the daemon was started before reload support, run `icebath egress restart` once.", host, port, err)
+		return fmt.Errorf("The sandbox proxy did not answer at %s:%d: %v. If it started before reloads worked, run `icebath egress restart` once.", host, port, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusOK {
@@ -378,11 +379,11 @@ func (e *Egress) Reload(ctx context.Context, cfg *config.Config) error {
 	if response.StatusCode >= 400 {
 		message, ok := reloadErrors[response.StatusCode]
 		if !ok {
-			message = "management reload failed (HTTP {code}): {body}"
+			message = "iron-proxy could not reload, and answered {code}: {body}"
 		}
 		return errors.New(strings.NewReplacer("{code}", strconv.Itoa(response.StatusCode), "{body}", string(body)).Replace(message))
 	}
-	return fmt.Errorf("management API returned unexpected status %d", response.StatusCode)
+	return fmt.Errorf("iron-proxy answered the reload with the unexpected status %d.", response.StatusCode)
 }
 
 // Where the daemon listens by default: the Docker bridge on Linux, so sandboxes reach it, else loopback; never every interface
@@ -510,7 +511,7 @@ func cmpPort(port int) int {
 func Audit(path string) error {
 	f, err := appendPrivate(path, true)
 	if err != nil {
-		return fmt.Errorf("Refusing to start: could not pre-create audit log %s with restrictive permissions (%v).  Move or chmod any existing file at that path and retry.", path, err)
+		return fmt.Errorf("The audit log %s could not be made readable only by you: %v. Move the file there, or change its permissions, then try again.", path, err)
 	}
 	return f.Close()
 }
@@ -784,11 +785,11 @@ func (e *Egress) Start(ctx context.Context, cfg *config.Config, start Start) (St
 	}
 	binary := e.Find(ctx, cfg, start.Install)
 	if binary == "" {
-		return Status{}, errors.New("iron-proxy binary not available — run `icebath egress install`.")
+		return Status{}, errors.New("iron-proxy is not installed. Run `icebath egress install`.")
 	}
 	path := e.configPath(cfg)
 	if !fsx.IsFile(path) {
-		return Status{}, fmt.Errorf("iron-proxy config not found at %s. Run `icebath egress setup` first.", path)
+		return Status{}, fmt.Errorf("There is no proxy.yaml at %s. Run `icebath egress setup` first.", path)
 	}
 	env, err := e.daemonEnv(ctx, cfg, start)
 	if err != nil {
@@ -834,18 +835,18 @@ func (e *Egress) Start(ctx context.Context, cfg *config.Config, start Start) (St
 			stopChild(cmd, 2*time.Second)
 		}
 		_ = os.Remove(pidfile)
-		return fmt.Errorf("%sLast log lines:\n%s", text, log)
+		return fmt.Errorf("%s The last lines of its log:\n%s", text, log)
 	}
 	host, port := e.target(cfg)
 	deadline := time.Now().Add(startupGrace)
 	for {
 		select {
 		case <-exited:
-			return Status{}, abort(fmt.Sprintf("iron-proxy exited immediately (code %d). ", cmd.ProcessState.ExitCode()), false)
+			return Status{}, abort(fmt.Sprintf("iron-proxy stopped as soon as it started, with exit code %d.", cmd.ProcessState.ExitCode()), false)
 		case <-ctx.Done():
 			stopChild(cmd, 2*time.Second)
 			_ = os.Remove(pidfile)
-			return Status{}, errors.New("interrupted while waiting for iron-proxy to start")
+			return Status{}, errors.New("The wait for iron-proxy to start was interrupted.")
 		default:
 		}
 		if listening(host, port) {
@@ -853,7 +854,7 @@ func (e *Egress) Start(ctx context.Context, cfg *config.Config, start Start) (St
 			return e.Status(ctx, cfg), nil
 		}
 		if !time.Now().Before(deadline) {
-			return Status{}, abort(fmt.Sprintf("iron-proxy did not bind %s:%d within %.0fs.  Process was killed.  ", host, port, startupGrace.Seconds()), true)
+			return Status{}, abort(fmt.Sprintf("iron-proxy did not listen on %s:%d within %s, so it was stopped.", host, port, strs.Span(startupGrace)), true)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -865,13 +866,13 @@ func (e *Egress) writePid(cfg *config.Config, pidfile string, pid int, nonce str
 	f, err := openNoFollow(pidfile, flags, 0o600)
 	if errors.Is(err, os.ErrExist) {
 		if existing := e.pid(cfg); existing != 0 && e.alive(cfg, existing) {
-			return fmt.Errorf("Another iron-proxy start appears to be in progress (pidfile %s -> pid %d).  Run `icebath egress stop` if that proxy is stuck.", pidfile, existing)
+			return fmt.Errorf("Another start of iron-proxy seems to be running as process %d, recorded in %s. Run `icebath egress stop` if that proxy is stuck.", existing, pidfile)
 		}
 		_ = os.Remove(pidfile)
 		f, err = openNoFollow(pidfile, flags, 0o600)
 	}
 	if err != nil {
-		return fmt.Errorf("Refusing to write pidfile %s: %v.  Remove that path manually and retry.", pidfile, err)
+		return fmt.Errorf("The process file %s could not be written: %v. Remove it yourself, then try again.", pidfile, err)
 	}
 	uid, ours, err := owner(f)
 	if err != nil {
@@ -880,7 +881,7 @@ func (e *Egress) writePid(cfg *config.Config, pidfile string, pid int, nonce str
 	}
 	if !ours {
 		f.Close()
-		return fmt.Errorf("pidfile %s has unexpected owner uid=%s", pidfile, uid)
+		return fmt.Errorf("The process file %s belongs to the user %s, not to you. Remove it, then try again.", pidfile, uid)
 	}
 	_, err = f.WriteString(strconv.Itoa(pid))
 	f.Close()
@@ -943,14 +944,14 @@ func (e *Egress) refresh(ctx context.Context, cfg *config.Config, env map[string
 	host := e.secrets.Host()
 	source, ok := host.Source(Bitwarden)
 	if !ok {
-		return shortfall(fallback, "Bitwarden is not available to refresh the proxy's keys (credential_source=bitwarden with proxy.allow_env_fallback: false).  "+
-			"Either switch to credential_source: env, or set `proxy.allow_env_fallback: true` to opt into the legacy fallback behaviour.",
+		return shortfall(fallback, "Bitwarden is not there to give the proxy its keys, and Fall back to environment is off. Set Key source to "+
+			"Environment in /settings under Sandbox proxy, or turn on Fall back to environment there.",
 			"Bitwarden is not available to refresh the proxy's keys, falling back to the profile's environment (allow_env_fallback=true).")
 	}
 	token := strings.TrimSpace(host.Existing(cfg)[host.TokenEnv(cfg, source.Spec())])
 	if configured, _ := host.Configured(cfg, source); token == "" || !configured {
-		return shortfall(fallback, "credential_source=bitwarden but the access-token env or project_id is empty.  Either set both, switch to credential_source: env, "+
-			"or set `proxy.allow_env_fallback: true` to opt into the legacy fallback behaviour.",
+		return shortfall(fallback, "Key source is Bitwarden, but its access token variable or its project is not set. Set both, set Key source to "+
+			"Environment in /settings under Sandbox proxy, or turn on Fall back to environment there.",
 			"credential_source=bitwarden but access-token env or project_id is empty — proxy will fall back to parent env (allow_env_fallback=true).")
 	}
 	result := host.Fetch(ctx, cfg, source, true)
@@ -967,8 +968,8 @@ func (e *Egress) refresh(ctx context.Context, cfg *config.Config, env map[string
 	}
 	slices.Sort(missing)
 	if len(missing) > 0 {
-		if err := shortfall(fallback, fmt.Sprintf("Bitwarden refresh did not return secrets for %v.  Either add the secrets to your BWS project, switch to "+
-			"credential_source: env via `icebath egress setup --no-bitwarden`, or set `proxy.allow_env_fallback: true` in the settings to opt into the legacy host-env fallback.", missing),
+		if err := shortfall(fallback, fmt.Sprintf("Bitwarden gave no secrets for %s. Add them to your Bitwarden project, read keys from the "+
+			"environment with `icebath egress setup --no-bitwarden`, or turn on Fall back to environment in /settings under Sandbox proxy.", strings.Join(missing, ", ")),
 			fmt.Sprintf("Bitwarden refresh did not return secrets for %v — falling back to host env for those names (allow_env_fallback=true).", missing)); err != nil {
 			return err
 		}
@@ -1074,7 +1075,7 @@ func appendPrivate(path string, strict bool) (*os.File, error) {
 func spawn(binary, path string, env map[string]string, logPath string) (*exec.Cmd, error) {
 	log, err := appendPrivate(logPath, false)
 	if err != nil {
-		return nil, fmt.Errorf("Refusing to write iron-proxy log %s: %v.  Remove that path manually and retry.", logPath, err)
+		return nil, fmt.Errorf("The log %s of iron-proxy could not be written: %v. Remove it yourself, then try again.", logPath, err)
 	}
 	defer log.Close()
 	uid, ours, err := owner(log)
@@ -1082,14 +1083,14 @@ func spawn(binary, path string, env map[string]string, logPath string) (*exec.Cm
 		return nil, err
 	}
 	if !ours {
-		return nil, fmt.Errorf("iron-proxy log %s has unexpected owner uid=%s; refusing to write.", logPath, uid)
+		return nil, fmt.Errorf("The log %s of iron-proxy belongs to the user %s, not to you, so icebath does not write it. Remove it, then try again.", logPath, uid)
 	}
 	cmd := exec.Command(binary, "-config", path)
 	cmd.Env = secrets.Pairs(env)
 	cmd.Stdout, cmd.Stderr = log, log
 	detach(cmd)
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to spawn iron-proxy: %v", err)
+		return nil, fmt.Errorf("iron-proxy could not be started: %v", err)
 	}
 	return cmd, nil
 }

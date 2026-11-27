@@ -20,7 +20,7 @@ func (s *Store) Rekey(oldRoot, newRoot string) (int, error) {
 		return 0, nil
 	}
 	if _, err := exec.LookPath("git"); err != nil {
-		return 0, errors.New("Cannot migrate checkpoint projects after profile rename: git not found")
+		return 0, errors.New("The checkpoints could not move with the renamed profile, because git is not installed or not on your PATH.")
 	}
 	release, err := lock(s.base)
 	if err != nil {
@@ -43,7 +43,7 @@ func (s *Store) Rekey(oldRoot, newRoot string) (int, error) {
 			continue
 		}
 		if err := s.rekeyProject(meta, normalize(meta.Workdir), normalize(workdir)); err != nil {
-			errs = append(errs, fmt.Errorf("Cannot migrate checkpoint project %s -> %s after profile rename: %w", meta.Workdir, workdir, err))
+			errs = append(errs, fmt.Errorf("The checkpoints of %s could not move to %s with the renamed profile: %w", meta.Workdir, workdir, err))
 			continue
 		}
 		migrated++
@@ -59,7 +59,7 @@ func (s *Store) rekeyProject(meta project, old, workdir string) error {
 	oldTip, newTip := s.tip(workdir, oldRef), s.tip(workdir, newRef)
 	if oldTip != "" && newTip != "" {
 		if ok, _, _ := s.git(workdir, step{allowed: []int{1}}, "merge-base", "--is-ancestor", oldTip, newTip); !ok {
-			return fmt.Errorf("target identity already exists: %s does not descend from %s", newRef, oldRef)
+			return fmt.Errorf("%s already exists and does not come from %s.", newRef, oldRef)
 		}
 	}
 	if !fsx.Exists(s.meta(newHash)) {
@@ -93,11 +93,11 @@ func (s *Store) rekeyProject(meta project, old, workdir string) error {
 	if oldTip != "" {
 		if newTip == "" {
 			if ok, _, errs := s.git(workdir, step{}, "update-ref", newRef, oldTip); !ok {
-				return fmt.Errorf("could not create %s: %s", newRef, errs)
+				return fmt.Errorf("%s could not be made: %s", newRef, errs)
 			}
 		}
 		if ok, _, _ := s.git(workdir, step{}, "update-ref", "-d", oldRef); !ok {
-			return fmt.Errorf("could not delete %s", oldRef)
+			return fmt.Errorf("%s could not be deleted.", oldRef)
 		}
 	}
 	for _, path := range []string{s.meta(meta.Hash), s.ledgerPath(meta.Hash), s.index(meta.Hash)} {

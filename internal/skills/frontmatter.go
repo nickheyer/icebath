@@ -347,7 +347,7 @@ func strictText(data []byte, path string) (string, error) {
 		}
 		at += size
 	}
-	return "", fmt.Errorf("%s is not valid UTF-8 at byte %d", path, at)
+	return "", fmt.Errorf("%s holds bytes that are not UTF-8 text, the first at byte %d", path, at)
 }
 
 // Declared name of a SKILL.md read from its first 4000 characters, the fallback when it has none

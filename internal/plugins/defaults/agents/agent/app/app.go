@@ -103,13 +103,15 @@ func (d *desk) Screens(conn *connect.Client) []tui.Screen {
 			return nil
 		}
 	}
-	chatPlaces := map[string]string{approvalContext: "approval prompt", questionContext: "agent's questions", rewindContext: "rewind picker",
-		pickerContext: "model picker", spawnContext: "spawn tree"}
+	chatPlaces := map[string]string{approvalContext: "approvals", questionContext: "agent's questions", rewindContext: "rewind list",
+		pickerContext: "model choice", spawnContext: "spawn tree"}
 	return []tui.Screen{
 		{
 			ID:      "chat",
+			Group:   tui.GroupSessions,
+			Order:   10,
 			Title:   "New chat",
-			Short:   "Open a new chat, on the profile in use or the one named",
+			Short:   "Open a new chat on this profile or another",
 			Slash:   []string{"new"},
 			Usage:   "[@profile]",
 			Keys:    []string{"alt+n"},
@@ -130,29 +132,35 @@ func (d *desk) Screens(conn *connect.Client) []tui.Screen {
 		},
 		{
 			ID:    "voice",
+			Group: tui.GroupVoice,
+			Order: 10,
 			Title: "Voice mode",
-			Short: "Talk instead of typing in this chat, and hear its replies; setup picks the voice",
+			Short: "Talk to the agent and hear its replies",
 			Slash: []string{"voice"},
 			Usage: "[on|off|tts|status|setup]",
 			Open:  func(kit *tui.Kit, argument string) tea.Cmd { return d.at(kit).voice.command(kit, argument) },
 		},
 		{
 			ID:    "wake",
+			Group: tui.GroupVoice,
+			Order: 20,
 			Title: "Wake word",
-			Short: "Toggle the wake word listener, which starts recording when you say its phrase",
+			Short: "Turn listening for the wake word on or off",
 			Slash: []string{"wake"},
 			Usage: "[on|off|status]",
 			Open:  func(kit *tui.Kit, argument string) tea.Cmd { return d.at(kit).voice.wake(kit, argument) },
 		},
 		{
 			ID:      sessionsScreen,
+			Group:   tui.GroupSessions,
+			Order:   20,
 			Title:   "Sessions",
-			Short:   "Every session, open or stored: open, rename, pin, archive, export",
+			Short:   "Find a session and open, rename or archive it",
 			Slash:   []string{"sessions", "switch", "session"},
 			Usage:   "[words to search]",
 			Keys:    []string{"alt+s"},
 			Actions: sessionsKeys,
-			Where:   map[string]string{sessionsContext: "sessions screen"},
+			Where:   map[string]string{sessionsContext: "sessions"},
 			Suggest: true,
 			Open: func(kit *tui.Kit, argument string) tea.Cmd {
 				from, _ := kit.Focused().(*chat)
@@ -166,6 +174,8 @@ func (d *desk) Screens(conn *connect.Client) []tui.Screen {
 		},
 		{
 			ID:    "model",
+			Group: tui.GroupModels,
+			Order: 10,
 			Title: "Model",
 			Short: "Change the model for this chat",
 			Keys:  []string{"alt+m"},

@@ -10,9 +10,11 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: webconfig.Key,
 		Title:  "Exa",
-		About:  "Exa's semantic web search and page reading: free and rate limited without a key, unthrottled with one",
+		About:  "Search by meaning and page reading, free with limits",
+		Order:  20,
 		Settings: []config.Setting{
-			{Key: APIKey, Title: "Exa key", About: "API key of Exa for AI-native web search and page contents, at https://exa.ai/", Default: "", Env: []string{"EXA_API_KEY"}, Secret: true},
+			{Key: APIKey, Title: "API key", About: "Your Exa API key.", Help: "Get one at exa.ai. Without a key, searches are free but slow down under heavy use.",
+				Default: "", Env: []string{"EXA_API_KEY"}, Secret: true},
 		},
 	}})
 }

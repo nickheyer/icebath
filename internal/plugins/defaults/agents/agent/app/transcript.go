@@ -172,7 +172,7 @@ func (c *chat) paint(w int) []row {
 		}
 		open := c.open(id, c.thinking == agentconfig.ThinkingOpen)
 		gap()
-		rows = append(rows, row{text: render.Dim(mark(open)+" Thinking", look), fold: id})
+		rows = append(rows, row{text: render.Dim(mark(open)+" Reasoning", look), fold: id})
 		if open {
 			for _, line := range c.markup(text, w) {
 				rows = append(rows, row{text: line})

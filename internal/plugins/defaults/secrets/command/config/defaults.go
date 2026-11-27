@@ -11,14 +11,20 @@ func Register(cfg *config.Config) {
 	cfg.Register(config.Sections{{
 		Key:    Key,
 		Parent: secretsconfig.Key,
-		Title:  "Command helper",
-		About:  "A fast, non-interactive command of your own that prints KEY=VALUE lines, run through /bin/sh as icebath starts",
+		Title:  "Your own command",
+		About:  "Load API keys from a command of yours when icebath starts",
+		Order:  30,
 		Settings: []config.Setting{
-			{Key: Enabled, Title: "Helper secrets", About: "Load secrets from the helper command at startup", Default: false},
-			{Key: Command, Title: "Helper command", About: "Command run through /bin/sh -c; it must print KEY=VALUE lines and nothing else, its errors are never shown", Default: ""},
-			{Key: Helper, Title: "Helper time limit", About: "Seconds one run of the helper may take", Default: 3 * time.Second},
-			{Key: Override, Title: "Helper wins", About: "Helper values replace matching values your shell or the .env set", Default: false},
-			{Key: Timeout, Title: "Helper fetch limit", About: "Seconds the whole fetch may take before icebath starts without it", Default: 2 * time.Minute},
+			{Key: Enabled, Title: "Load from a command", About: "Load API keys and other variables from your command when icebath starts.", Default: false,
+				Apply: config.Restart},
+			{Key: Command, Title: "Helper command", About: "The command that prints the variables, run through /bin/sh.",
+				Help: "It must be quick, ask nothing and print KEY=VALUE lines only. Its errors are never shown.", Default: "", Apply: config.Restart},
+			{Key: Override, Title: "Replace your values", About: "Replace values that your shell or keys file already set.", Default: false,
+				Apply: config.Restart},
+			{Key: Helper, Title: "Time per run", About: "How long one run of the command may take.", Default: 3 * time.Second, Zero: "3 seconds",
+				Apply: config.Restart, Advanced: true},
+			{Key: Timeout, Title: "Time limit", About: "How long loading may take before icebath starts without it.", Default: 2 * time.Minute,
+				Zero: "2 minutes", Apply: config.Restart, Advanced: true},
 		},
 	}})
 }

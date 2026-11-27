@@ -140,17 +140,17 @@ func (s *source) Report(ctx context.Context, account credentials.Account) ([]cre
 		return nil, true
 	}
 	region := s.Region(account)
-	details := []credentials.Detail{{Name: "Auth", Value: name}, {Name: "Region", Value: region}}
+	details := []credentials.Detail{{Name: "Sign-in", Value: name}, {Name: "Region", Value: region}}
 	if p := profile(account); p != "" {
 		details = append(details, credentials.Detail{Name: "Profile", Value: p})
 	}
-	identity := "(could not resolve — STS call failed)"
+	identity := "Not known, because AWS STS did not answer"
 	if keys, err := s.chain(account).Retrieve(ctx); err == nil {
 		if arn, err := aws.Identity(ctx, keys, region); err == nil {
 			identity = arn
 		}
 	} else if needed, ok := errors.AsType[*aws.LoginNeeded](err); ok {
-		identity = "(" + needed.Error() + ")"
+		identity = needed.Error()
 	}
 	return append(details, credentials.Detail{Name: "Identity", Value: identity}), true
 }
@@ -166,11 +166,11 @@ func (s *source) Why(account credentials.Account) (string, bool) {
 	id := account.Provider.ID
 	switch name := s.detect(account); {
 	case name == "":
-		return fmt.Sprintf("Bedrock needs AWS credentials: run `aws sso login` or `aws configure` (or set AWS_PROFILE or providers.%s.%s), or add a "+
-			"Bedrock API key with `icebath auth add %s --type api-key`.", id, bedrockconfig.Profile, id), true
+		return fmt.Sprintf("Bedrock needs an AWS sign-in. Run `aws sso login` or `aws configure`, set AWS_PROFILE or AWS profile in /providers, "+
+			"or add a Bedrock API key with `icebath auth add %s --type api-key`.", id), true
 	case account.Ignores(name):
-		return fmt.Sprintf("The AWS sign-in of %s is ignored by this provider; take it off providers.%s.%s, or add a Bedrock API key with "+
-			"`icebath auth add %s --type api-key`.", name, id, providerconfig.Ignored, id), true
+		return fmt.Sprintf("This provider ignores the AWS sign-in of %s. Run `icebath auth add %s` to use it again, or add a Bedrock API key "+
+			"with `icebath auth add %s --type api-key`.", name, id, id), true
 	}
 	return "", false
 }

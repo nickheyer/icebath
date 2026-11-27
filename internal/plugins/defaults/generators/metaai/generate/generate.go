@@ -35,15 +35,15 @@ func (s services) route(cfg *config.Config) (provider.Route, bool) {
 func (s services) Services() []generation.Service {
 	return []generation.Service{{
 		Name:  metaaiconfig.Name,
-		Title: "Meta Model API",
+		Title: "Meta AI",
 		Ready: func(cfg *config.Config) bool { _, ok := s.route(cfg); return ok },
-		Setup: generation.Setup{Badge: "paid", Prompt: "Meta Model API key (LLM|... token)", Link: "https://api.meta.ai", Provider: metaaiprovider.Name},
+		Setup: generation.Setup{Badge: "paid", Prompt: "Meta Model API key", Link: "https://api.meta.ai", Provider: metaaiprovider.Name},
 		Images: &generation.Images{
-			About:    "Muse Image via Meta Model API (api.meta.ai)",
+			About:    "Images from Meta's Muse model, needs a Meta API key",
 			Settings: []string{metaaiconfig.Model},
 			Model:    metaaiconfig.Model,
 			Models: func(context.Context, *config.Config) []generation.Model {
-				return []generation.Model{{ID: metaaiconfig.DefaultModel, Title: "Muse Image 1.0", Speed: "~10s", Strengths: "Meta Model API image generation", Price: "$0.01/image"}}
+				return []generation.Model{{ID: metaaiconfig.DefaultModel, Title: "Muse Image 1.0", Speed: "About 10 seconds", Strengths: "Images from the Meta Model API", Price: "$0.01 an image"}}
 			},
 			Default:  func(context.Context, *config.Config) string { return metaaiconfig.DefaultModel },
 			Takes:    func(*config.Config) generation.ImageTakes { return generation.ImageTakes{} },

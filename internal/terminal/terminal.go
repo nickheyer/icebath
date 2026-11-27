@@ -56,15 +56,14 @@ func (r *Registry) Backend(name string) (Backend, bool) {
 	return Backend{}, false
 }
 
-// Every backend as a value terminal.backend may take, with why it can't run when it can't
+// Every backend as a value terminal.backend may take, one that can't run yet saying so. Why it can't, and what it needs, is what the
+// backends screen is for: the reason of its check is written for the model and runs past any row
 func (r *Registry) Options(cfg *config.Config) []config.Option {
 	var options []config.Option
 	for _, backend := range r.Backends() {
 		about := backend.About
-		if backend.Check != nil {
-			if err := backend.Check(cfg); err != nil {
-				about += " (unavailable: " + err.Error() + ")"
-			}
+		if backend.Check != nil && backend.Check(cfg) != nil {
+			about += " · Not ready"
 		}
 		options = append(options, config.Option{Value: backend.Name, Title: backend.Title, About: about})
 	}
@@ -217,11 +216,23 @@ func (t *Terminal) Configured(cfg *config.Config) (Backend, error) {
 	if backend, ok := t.Named(cfg, name); ok {
 		return backend, nil
 	}
-	var names []string
-	for _, backend := range t.Backends() {
-		names = append(names, "'"+backend.Name+"'")
+	return Backend{}, fmt.Errorf("icebath has no place to run commands named %q. Choose one of %s in /backends, or in /settings under Terminal › Where "+
+		"commands run.", name, t.titles())
+}
+
+// Titles of every backend as one list, the last after "or"
+func (r *Registry) titles() string {
+	var titles []string
+	for _, backend := range r.Backends() {
+		titles = append(titles, backend.Title)
 	}
-	return Backend{}, fmt.Errorf("Unknown terminal backend '%s' (terminal.backend). Use one of %s, picked in /settings under Terminal.", name, strings.Join(names, ", "))
+	switch len(titles) {
+	case 0:
+		return "the places that are installed"
+	case 1:
+		return titles[0]
+	}
+	return strings.Join(titles[:len(titles)-1], ", ") + " or " + titles[len(titles)-1]
 }
 
 // Backend of the name as the profile's settings have it, not isolated when they hand its sandbox the folders of the host
@@ -369,7 +380,7 @@ func (t *Terminal) Acquire(ctx context.Context, cfg *config.Config, session, dir
 	if lease := t.hold(key, cfg, backend, session); lease != nil {
 		return lease, nil
 	}
-	return nil, errors.New("The terminal environment was removed while it was being made. Run the command again.")
+	return nil, errors.New("The place where commands run was removed while icebath was setting it up. Run the command again.")
 }
 
 // Records the home a backend declared on its environment, ~ meaning the folder it started in, unless the environment found its home itself

@@ -19,6 +19,7 @@ import (
 	vercelconfig "github.com/nickheyer/icebath/internal/plugins/defaults/terminals/vercel/config"
 	"github.com/nickheyer/icebath/internal/skills"
 	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -94,7 +95,7 @@ func waitRunning(ctx context.Context, c *client, s *session) error {
 		return nil
 	}
 	if ended(s.Status) {
-		return fmt.Errorf("Sandbox entered terminal state: %s", s.Status)
+		return fmt.Errorf("The Vercel sandbox stopped with the status %s before it was running.", s.Status)
 	}
 	for deadline := time.Now().Add(runningWait); time.Now().Before(deadline); {
 		time.Sleep(runningPoll)
@@ -107,10 +108,10 @@ func waitRunning(ctx context.Context, c *client, s *session) error {
 			return nil
 		}
 		if ended(s.Status) {
-			return fmt.Errorf("Sandbox entered terminal state: %s", s.Status)
+			return fmt.Errorf("The Vercel sandbox stopped with the status %s before it was running.", s.Status)
 		}
 	}
-	return fmt.Errorf("Sandbox did not reach running state (last status: %s)", s.Status)
+	return fmt.Errorf("The Vercel sandbox was not running after %s. Its last status was %s.", strs.Span(runningWait), s.Status)
 }
 
 // Stops the session and waits for it to say it stopped

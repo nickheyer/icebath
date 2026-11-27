@@ -47,14 +47,14 @@ func appPath(binary string) string {
 func (d *Driver) verifyApp(ctx context.Context, cfg *config.Config, app string) error {
 	codesign, err := exec.LookPath("codesign")
 	if err != nil {
-		return errors.New("codesign is required to verify CuaDriver.app before launching it.")
+		return errors.New("Checking the CuaDriver app before it starts needs codesign, which was not found.")
 	}
 	out, err := run(ctx, []string{codesign, "-dv", app}, 15*time.Second, nil, nil)
 	if err != nil {
-		return fmt.Errorf("could not verify CuaDriver.app signature: %v", err)
+		return fmt.Errorf("Could not check the signature of the CuaDriver app: %v.", err)
 	}
 	if out.code != 0 {
-		return fmt.Errorf("CuaDriver.app at %s is not code-signed; refusing to launch it (%s)", app, strings.TrimSpace(out.stderr))
+		return fmt.Errorf("The CuaDriver app at %s is not signed, so icebath does not start it. codesign said: %s", app, strings.TrimSpace(out.stderr))
 	}
 	fields := map[string]string{}
 	lines := strings.Split(out.stderr, "\n")
@@ -65,13 +65,13 @@ func (d *Driver) verifyApp(ctx context.Context, cfg *config.Config, app string) 
 	}
 	identifier, team := fields["Identifier"], fields["TeamIdentifier"]
 	if identifier != bundleID {
-		return fmt.Errorf("CuaDriver.app at %s has identifier '%s', expected '%s'; refusing to launch it.", app, identifier, bundleID)
+		return fmt.Errorf("The CuaDriver app at %s has the ID “%s” instead of “%s”, so icebath does not start it.", app, identifier, bundleID)
 	}
 	if slices.Contains(teams, team) || (team == "" || team == "not set") && cfg.GetBool(cuconfig.AllowUnsignedDriver) {
 		return nil
 	}
-	return fmt.Errorf("CuaDriver.app at %s is signed by team '%s', expected one of ('4YEC26S9KF', 'YCK386LBJ7'); refusing to launch it. (Set "+
-		"computer_use.allow_unsigned_driver in /settings under Computer use only for local unsigned driver builds.)", app, team)
+	return fmt.Errorf("The CuaDriver app at %s is signed by the team “%s” instead of its makers, 4YEC26S9KF or YCK386LBJ7, so icebath does not "+
+		"start it. Only for a driver you built yourself, turn on Allow unsigned driver in /settings under Tools › Computer use.", app, team)
 }
 
 // Whether a capability manifest is version 3 or newer, which bounds any permission mode
@@ -113,7 +113,7 @@ func newDaemon(d *Driver, cfg *config.Config, mode, manifest string) (*daemon, e
 	}
 	manifest = strings.TrimSpace(manifest)
 	if manifest == "" && mode == cuconfig.Bounded {
-		return nil, errors.New("bounded permission mode requires computer_use.capability_manifest")
+		return nil, errors.New("bounded permission mode requires tools.computer_use.capability_manifest")
 	}
 	if manifest != "" {
 		abs, err := filepath.Abs(terminal.ExpandUser(manifest))

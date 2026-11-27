@@ -3,7 +3,7 @@
  "python": "3.14",
  "extras": {
   "silk": {
-   "feature": "QQ voice messages (SILK audio decoding)",
+   "feature": "the reader of SILK voice notes from QQ and WeChat",
    "anchors": [
     "pilk"
    ],

@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	dockerconfig "github.com/nickheyer/icebath/internal/plugins/defaults/terminals/docker/config"
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/pkg/fsx"
 )
@@ -57,14 +56,14 @@ func egressOf(proxy terminal.Proxy) (egress, error) {
 	}
 	switch {
 	case !proxy.Configured:
-		return degraded("proxy.enabled is true but iron-proxy is not configured. Run `icebath egress setup` to mint tokens and write proxy.yaml.")
+		return degraded("The sandbox proxy is on but not set up. Run `icebath egress setup` to make its tokens and write proxy.yaml.")
 	case !proxy.Running:
-		return degraded(fmt.Sprintf("iron-proxy is enabled but not running on port %d. Start it with `icebath egress start`.", proxy.Port))
+		return degraded(fmt.Sprintf("The sandbox proxy is on but not running on port %d. Start it with `icebath egress start`.", proxy.Port))
 	case proxy.CA == "" || !fsx.IsFile(proxy.CA):
-		return degraded(fmt.Sprintf("iron-proxy CA cert vanished from %s. Re-run `icebath egress setup` to regenerate it.", proxy.CA))
+		return degraded(fmt.Sprintf("The CA certificate of the sandbox proxy is missing from %s. Run `icebath egress setup` again to make a new one.", proxy.CA))
 	case len(proxy.Tokens) == 0:
-		return degraded("iron-proxy is configured but mappings.json is empty or corrupt.  Re-run `icebath egress setup` to mint provider tokens before " +
-			"starting a sandbox.")
+		return degraded("The sandbox proxy is set up, but its mappings.json is empty or damaged. Run `icebath egress setup` again to make provider " +
+			"tokens before a sandbox starts.")
 	}
 	secure, plain := fmt.Sprintf("http://host.docker.internal:%d", proxy.Port), fmt.Sprintf("http://host.docker.internal:%d", proxy.Port+1)
 	overrides := map[string]string{
@@ -110,15 +109,10 @@ func (e egress) critical() map[string]bool {
 
 // A collision of the settings with the proxy: refused when it is enforced, warned of otherwise
 func collision(text string, enforce bool, remedy, consequence string) error {
-	state := "disabled"
 	if enforce {
-		state = "enabled"
+		return errors.New(text + " " + remedy)
 	}
-	text += "; enforce_on_docker is " + state + "."
-	if enforce {
-		return errors.New(text + "  " + remedy)
-	}
-	slog.Warn(text + "  " + consequence)
+	slog.Warn(text+" Required for Docker is off under Sandbox proxy. "+consequence, "enforce_on_docker", false)
 	return nil
 }
 
@@ -135,9 +129,10 @@ func (e egress) checkForward(forward []string) error {
 		return nil
 	}
 	slices.Sort(hit)
-	return collision(fmt.Sprintf("%s would inject real egress-protected variables %s", dockerconfig.ForwardEnv, listOf(hit)), e.enforce,
-		"Remove these names from Docker forwarded variables or turn off enforce_on_docker to opt out of egress isolation.",
-		"Explicit forwarded values will override egress tokens.")
+	return collision(fmt.Sprintf("Passed-in variables in /settings under Terminal › Docker would hand the sandbox the real values of %s, which the "+
+		"sandbox proxy keeps out.", listOf(hit)), e.enforce,
+		"Remove them from Passed-in variables, or turn off Required for Docker under Sandbox proxy to let the sandbox have them.",
+		"The values passed in win over the tokens of the proxy.")
 }
 
 // Refuses variables of the settings that would undo what the proxy sets
@@ -172,9 +167,9 @@ func (e egress) checkEnv(env map[string]string) error {
 		return nil
 	}
 	slices.Sort(hit)
-	return collision(fmt.Sprintf("%s overrides egress-proxy variables %s", dockerconfig.Env, listOf(hit)), e.enforce,
-		"Remove these keys from Docker variables or turn off enforce_on_docker to opt out of egress isolation.",
-		"Falling back to the Docker variables; sandbox traffic will NOT route through the proxy.")
+	return collision(fmt.Sprintf("Variables in /settings under Terminal › Docker set %s, which the sandbox proxy sets itself.", listOf(hit)), e.enforce,
+		"Remove them from Variables, or turn off Required for Docker under Sandbox proxy to let your values win.",
+		"Your values win, so sandbox traffic does not go through the proxy.")
 }
 
 // Shorthand flags of docker run taking no value, which may lead a cluster ending in e
@@ -254,8 +249,9 @@ func (e egress) checkExtra(extra []string) error {
 		hit = append(hit, name)
 	}
 	slices.Sort(hit)
-	return collision(fmt.Sprintf("%s would override egress-proxy controls %s", dockerconfig.ExtraArgs, listOf(hit)), e.enforce,
-		"Remove these flags or turn off enforce_on_docker to opt out of egress isolation.", "Extra Docker flags may bypass egress isolation.")
+	return collision(fmt.Sprintf("Extra flags in /settings under Terminal › Docker set %s, which the sandbox proxy controls.", listOf(hit)), e.enforce,
+		"Remove those flags, or turn off Required for Docker under Sandbox proxy to let them through.",
+		"The extra flags may send sandbox traffic around the proxy.")
 }
 
 // Variables of the settings merged with the proxy's, the proxy's winning when it is enforced, and the NODE_OPTIONS flag it needs put in
@@ -303,11 +299,14 @@ func (e egress) merge(env map[string]string) map[string]string {
 	return merged
 }
 
-// A list of names as messages show it
+// A list of names as messages show it, each quoted, the last after "and"
 func listOf(items []string) string {
 	quoted := make([]string, len(items))
 	for i, item := range items {
 		quoted[i] = strconv.Quote(item)
 	}
-	return "[" + strings.Join(quoted, ", ") + "]"
+	if len(quoted) < 2 {
+		return strings.Join(quoted, "")
+	}
+	return strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
 }

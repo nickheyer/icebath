@@ -308,7 +308,7 @@ func (r *Registrant) Accept(_ context.Context, cfg *config.Config) error {
 func (r *Registrant) Approve(cfg *config.Config, event, command string) error {
 	spec, ok := r.Find(cfg, event, command)
 	if !ok {
-		return &Refusal{Message: "no such hook: " + event + " " + command}
+		return &Refusal{Message: "There is no hook " + command + " on " + event + "."}
 	}
 	return r.record(cfg, spec.Event, spec.Command)
 }

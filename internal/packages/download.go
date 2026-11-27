@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Ranges one download fetches at once
@@ -94,21 +95,22 @@ func unreachable(rawURL string, cause error) *DownloadError {
 	_, unresolved := errors.AsType[*net.DNSError](cause)
 	reason := cause.Error()
 	if he, ok := errors.AsType[*HTTPError](cause); ok {
-		reason = he.Error()
+		reason = fmt.Sprintf("the server answered %d %s", he.Code, he.Reason)
 	} else if ue, ok := errors.AsType[*url.Error](cause); ok {
 		reason = ue.Err.Error()
 		if ue.Timeout() {
-			reason = "the connection timed out"
+			reason = "the connection took too long"
 		}
 	}
+	message := fmt.Sprintf("The download from %s failed: %s.", rawURL, strings.TrimRight(reason, "."))
 	refused := edgeBlock(cause)
 	if refused == "" && (status == 401 || status == 403) {
-		refused = "the host refused access"
+		refused = "The server refused access."
 	}
 	if refused != "" {
-		reason += "; " + refused
+		message += " " + refused
 	}
-	return &DownloadError{Kind: Unreachable, Message: fmt.Sprintf("download failed from %s: %s", rawURL, reason), URL: rawURL, Status: status,
+	return &DownloadError{Kind: Unreachable, Message: message, URL: rawURL, Status: status,
 		Fallback: status == 401 || status == 403 || status == 404 || status == 410 || status >= 500 || unresolved || transient(cause), Err: cause}
 }
 
@@ -168,11 +170,11 @@ func (d *Download) Run(ctx context.Context, progress Progress) ([]string, error)
 	}
 	for _, s := range d.Sources {
 		if len(s.Fallbacks) > 0 && !fullSHA256.MatchString(s.SHA256) {
-			return nil, errors.New("mirror fallback requires a full lowercase SHA256")
+			return nil, errors.New("A download with mirrors needs its whole SHA-256 in lower case.")
 		}
 		for _, u := range append([]string{s.URL}, s.Fallbacks...) {
 			if !strings.HasPrefix(u, "https://") && !loopback(u) {
-				return nil, fmt.Errorf("refusing non-https url: %s", u)
+				return nil, fmt.Errorf("icebath downloads only from https addresses, and %s is not one.", u)
 			}
 		}
 	}
@@ -274,7 +276,7 @@ func (d *Download) Run(ctx context.Context, progress Progress) ([]string, error)
 // Paused failure once the caller stopped the download
 func paused(ctx context.Context) error {
 	if ctx.Err() != nil {
-		return &DownloadError{Kind: Paused, Message: "download paused", Err: ctx.Err()}
+		return &DownloadError{Kind: Paused, Message: "The download is paused.", Err: ctx.Err()}
 	}
 	return nil
 }
@@ -313,7 +315,7 @@ func (d *Download) trying(ctx context.Context, s Source, operation func(Source) 
 		}
 		slog.Debug(fmt.Sprintf("%s; trying pinned mirror %s", de, urls[i+1]))
 	}
-	return Source{}, downloadError(Failed, "no download url for %s", s.Dest)
+	return Source{}, downloadError(Failed, "There is no download address for %s.", s.Dest)
 }
 
 // Whether the destination already holds the wanted bytes, a pinned one hashed again
@@ -323,7 +325,7 @@ func present(s Source) (bool, error) {
 		return false, nil
 	}
 	if !st.Mode().IsRegular() {
-		return false, fmt.Errorf("download destination is not a file: %s", s.Dest)
+		return false, fmt.Errorf("The download should go to %s, which is not a file.", s.Dest)
 	}
 	if s.SHA256 == "" {
 		return true, nil
@@ -359,10 +361,10 @@ func (d *Download) probe(ctx context.Context, rawURL string) (remote, error) {
 			case 1:
 				return remote{total: total, ranged: true, etag: etag}, nil
 			}
-			return remote{}, downloadError(RangeChanged, "range probe returned the wrong byte count")
+			return remote{}, downloadError(RangeChanged, "The server answered a request for part of the file with the wrong number of bytes.")
 		}
 		if resp.StatusCode != 200 {
-			return remote{}, downloadError(Failed, "unexpected download probe status: %d", resp.StatusCode)
+			return remote{}, downloadError(Failed, "The server answered the first request of the download with the status %d.", resp.StatusCode)
 		}
 		total, _ := strconv.ParseInt(strings.TrimSpace(resp.Header.Get("Content-Length")), 10, 64)
 		return remote{total: total, etag: etag}, nil
@@ -388,21 +390,21 @@ func strongETag(value string) string {
 func validRange(resp *http.Response, start, end, total int64, haveTotal bool) (int64, error) {
 	m := contentRange.FindStringSubmatch(resp.Header.Get("Content-Range"))
 	if resp.StatusCode != 206 || m == nil {
-		return 0, downloadError(RangeChanged, "server did not honor the requested byte range")
+		return 0, downloadError(RangeChanged, "The server sent another part of the file than the one asked for.")
 	}
 	first, _ := strconv.ParseInt(m[1], 10, 64)
 	last, _ := strconv.ParseInt(m[2], 10, 64)
 	length, _ := strconv.ParseInt(m[3], 10, 64)
 	if first != start || last != end-1 || length < end || (haveTotal && length != total) {
-		return 0, downloadError(RangeChanged, "server returned a different byte range or representation size")
+		return 0, downloadError(RangeChanged, "The server sent another part of the file, or a file of another size.")
 	}
 	if values := resp.Header.Values("Content-Length"); len(values) > 0 {
 		if n, err := strconv.ParseInt(values[0], 10, 64); err != nil || n != end-start {
-			return 0, downloadError(RangeChanged, "range Content-Length does not match its bounds")
+			return 0, downloadError(RangeChanged, "The size the server gave for part of the file does not match that part.")
 		}
 	}
 	if enc := resp.Header.Get("Content-Encoding"); enc != "" && !strings.EqualFold(enc, "identity") {
-		return 0, downloadError(RangeChanged, "encoded response cannot be written into an identity byte range")
+		return 0, downloadError(RangeChanged, "The server compressed part of the file, so it cannot be put in place.")
 	}
 	return length, nil
 }
@@ -749,7 +751,7 @@ func (d *Download) read(ctx context.Context, s Source, info remote, part string,
 		return err
 	}
 	if info.etag != "" && strongETag(resp.Header.Get("ETag")) != info.etag {
-		return downloadError(RangeChanged, "remote representation changed during download")
+		return downloadError(RangeChanged, "The file on the server changed during the download.")
 	}
 	f, err := os.OpenFile(part, os.O_RDWR, 0)
 	if err != nil {
@@ -778,7 +780,7 @@ func (d *Download) read(ctx context.Context, s Source, info remote, part string,
 			if extra, err := readUpTo(resp.Body, 1); err != nil {
 				return err
 			} else if len(extra) > 0 {
-				return downloadError(RangeChanged, "range body exceeds its declared bounds")
+				return downloadError(RangeChanged, "The server sent more of the file than the part asked for.")
 			}
 		}
 		record(start, position)
@@ -803,10 +805,10 @@ func (d *Download) single(ctx context.Context, s Source, info remote, tick func(
 	}
 	defer resp.Body.Close()
 	if info.etag != "" && strongETag(resp.Header.Get("ETag")) != info.etag {
-		return 0, downloadError(RangeChanged, "remote representation changed during download")
+		return 0, downloadError(RangeChanged, "The file on the server changed during the download.")
 	}
 	if enc := resp.Header.Get("Content-Encoding"); enc != "" && !strings.EqualFold(enc, "identity") {
-		return 0, downloadError(Failed, "encoded response cannot be used as an identity download")
+		return 0, downloadError(Failed, "The server compressed the file, so it cannot be used as it is.")
 	}
 	declared, _ := strconv.ParseInt(strings.TrimSpace(resp.Header.Get("Content-Length")), 10, 64)
 	f, err := os.OpenFile(part, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o666)
@@ -843,7 +845,7 @@ func (d *Download) single(ctx context.Context, s Source, info remote, tick func(
 		return 0, &shortRead{expected: expected - position}
 	}
 	if (declared != 0 && position != declared) || (info.total != 0 && position != info.total) {
-		return 0, downloadError(Failed, "download incomplete (%d bytes, expected %d)", position, expected)
+		return 0, downloadError(Failed, "The download stopped at %s of %s.", strs.Size(float64(position)), strs.Size(float64(expected)))
 	}
 	return position, nil
 }
@@ -862,7 +864,7 @@ func (d *Download) finish(ctx context.Context, s Source, part, side string) erro
 			if err := os.Remove(part); err == nil || os.IsNotExist(err) {
 				os.Remove(side)
 			}
-			return downloadError(HashMismatch, "sha256 mismatch for %s: pinned %s, got %s", s.URL, s.SHA256, actual)
+			return downloadError(HashMismatch, "The file from %s is not the one pinned: its SHA-256 is %s, not %s.", s.URL, actual, s.SHA256)
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(s.Dest), 0o777); err != nil {
@@ -911,7 +913,7 @@ func placeWhenReleased(tmp, dest string) error {
 			return err
 		}
 		if !time.Now().Before(deadline) {
-			return fmt.Errorf("The download finished, but another program (usually an antivirus scan) kept %s open and it could not be renamed into place. Please try again: %w", filepath.Base(tmp), err)
+			return fmt.Errorf("The download finished, but another program, usually an antivirus scan, kept %s open, so it could not be put in place. Try again: %w", filepath.Base(tmp), err)
 		}
 		time.Sleep(delay)
 		delay = min(2*delay, 2*time.Second)

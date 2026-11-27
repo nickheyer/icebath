@@ -21,7 +21,7 @@ func Register(registry *speech.Registry, catalog *models.Models) {
 	setup := speech.Setup{Keys: []string{deepinfraconfig.KeyEnv}, SignIn: deepinfraconfig.Name, Link: deepinfraconfig.Link, Badge: "paid"}
 	registry.Register(speech.Services{
 		Speakers: []speech.Voice{{
-			Name: deepinfraconfig.Name, Title: "DeepInfra TTS", About: "Chatterbox, Qwen3-TTS, … — live catalog from api.deepinfra.com",
+			Name: deepinfraconfig.Name, Title: "DeepInfra TTS", About: "Open voice models, needs a DeepInfra API key",
 			Ready:      func(job *speech.Job) bool { return key(job) != "" },
 			Synthesize: d.synthesize,
 			Setup:      setup,
@@ -30,11 +30,11 @@ func Register(registry *speech.Registry, catalog *models.Models) {
 			}}},
 		}},
 		Recognizing: []speech.Recognizer{{
-			Name: deepinfraconfig.Name, Title: "DeepInfra", About: "Live STT catalog from api.deepinfra.com", Cloud: true, Rank: 8, Whisper: true,
+			Name: deepinfraconfig.Name, Title: "DeepInfra", About: "Open speech to text models, needs a DeepInfra API key", Cloud: true, Rank: 8, Whisper: true,
 			Detected: "DeepInfra Whisper API", Warning: "STT provider 'deepinfra' configured but " + deepinfraconfig.KeyEnv + " not set",
 			Missing: func(_ context.Context, job *speech.Job) string {
 				if key(job) == "" {
-					return deepinfraconfig.KeyEnv + " not set"
+					return "DeepInfra needs an API key. Set " + deepinfraconfig.KeyEnv + " in your keys file."
 				}
 				return ""
 			},

@@ -26,12 +26,12 @@ func Register(registry *packages.Registry) {
 func bws(pin packages.Pin) packages.Package {
 	return packages.Package{
 		Name: Bws, Pin: pin, Optional: true,
-		Gaps:   map[string]string{packages.Bionic: "upstream does not ship an Android binary"},
+		Gaps:   map[string]string{packages.Bionic: "Bitwarden makes no build of bws for Android."},
 		Binary: map[string]string{"posix": "bws", "win32": "bws.exe"},
 		URLs: func(version, target string) ([]string, error) {
 			triple, ok := packages.RustTriple[target]
 			if !ok {
-				return nil, fmt.Errorf("no download for target %s", target)
+				return nil, fmt.Errorf("There is no download of bws for %s.", target)
 			}
 			platform := strings.ReplaceAll(triple, "linux-gnu", "linux-musl")
 			if strings.HasPrefix(target, "darwin") {

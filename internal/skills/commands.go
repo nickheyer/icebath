@@ -204,18 +204,27 @@ func (s *Scope) missingLabel(ctx context.Context, identifier string) string {
 
 // Skills that could not be loaded as the user reads them: the ambiguous ones each, then the unknown ones in a line
 func Missing(missing []string) string {
-	var ambiguous, unknown []string
+	var clauses, unknown []string
 	for _, m := range missing {
-		if strings.HasPrefix(m, AmbiguousPrefix) {
-			ambiguous = append(ambiguous, m)
-		} else {
+		rest, ambiguous := strings.CutPrefix(m, AmbiguousPrefix)
+		if !ambiguous {
 			unknown = append(unknown, m)
+			continue
+		}
+		if name, names, ok := strings.Cut(rest, ": use one of "); ok {
+			clauses = append(clauses, "the skill name "+name+" could be "+strings.Join(strings.Split(names, ", "), " or "))
+		} else {
+			clauses = append(clauses, "the skill name "+rest+" matches more than one skill")
 		}
 	}
-	if len(unknown) > 0 {
-		ambiguous = append(ambiguous, "Unknown skill(s): "+strings.Join(unknown, ", "))
+	switch len(unknown) {
+	case 0:
+	case 1:
+		clauses = append(clauses, "there is no skill named "+unknown[0])
+	default:
+		clauses = append(clauses, "there are no skills named "+strings.Join(unknown[:len(unknown)-1], ", ")+" and "+unknown[len(unknown)-1])
 	}
-	return strings.Join(ambiguous, "; ")
+	return strings.Join(clauses, ", and ")
 }
 
 // Supporting files of a loaded skill, from its view or from its support folders

@@ -26,23 +26,21 @@ const tokenSends = 3
 
 // Guidance a refusal of Google's API is given, by what went wrong
 const (
-	freeTier = "\n\nYour Google API key is on the free tier (a few hundred requests/day for Gemini Flash models). Icebath typically makes " +
-		"3-10 API calls per user turn, so the free tier is exhausted in a handful of messages and cannot sustain an agent session. Enable " +
-		"billing on your Google Cloud project and regenerate the key in a billing-enabled project: https://aistudio.google.com/apikey"
-	standardKey = "\n\nGoogle Gemini rejected this API key's type — you do NOT need OAuth. Google began rejecting legacy 'Standard' Google " +
-		"Cloud keys for the Gemini API on June 19, 2026, and all Standard keys stop working in September 2026. Open " +
-		"https://aistudio.google.com/api-keys, check the key's type and status, and create a replacement Gemini API key (or, as a temporary " +
-		"bridge, restrict the Standard key to generativelanguage.googleapis.com). Then update GEMINI_API_KEY / GOOGLE_API_KEY in the " +
-		"profile's .env, delete any leftover Windows/system copy of those variables, and restart. A stale shell key can hide the .env value. " +
-		"Details: https://ai.google.dev/gemini-api/docs/api-key"
-	expressOnStudio = "\n\nGoogle issues 'AQ.' keys for both Google AI Studio and Vertex AI express mode, and each surface only accepts its " +
-		"own keys: a Vertex express key always gets 403 PERMISSION_DENIED on generativelanguage.googleapis.com. If this key came from Google " +
-		"Cloud / Vertex (express mode), point the provider at the express surface, e.g. set base_url / GEMINI_BASE_URL to " +
-		"https://aiplatform.googleapis.com/v1beta1."
-	studioOnExpress = "\n\nIf this 'AQ.' key came from Google AI Studio (https://aistudio.google.com/apikey), it only works on the default " +
-		"generativelanguage.googleapis.com host — remove the explicit aiplatform base_url so the default surface is used."
-	missingKey = "Gemini native client requires an API key, but none was provided. Set GOOGLE_API_KEY or GEMINI_API_KEY in your environment " +
-		"or the profile's .env (get one at https://aistudio.google.com/app/apikey), or connect the Google provider with /providers."
+	freeTier = "\n\nYour Google API key is on the free tier, which allows only a few hundred requests a day for Gemini Flash models. The " +
+		"agent makes several requests for each message, so the free tier runs out within a few messages.\nTurn on billing for your Google " +
+		"Cloud project and make a new key there: https://aistudio.google.com/apikey"
+	standardKey = "\n\nGoogle refused this kind of API key, and you don't need to sign in instead. Since June 19, 2026, Google refuses older " +
+		"Standard Google Cloud keys for Gemini, and all of them stop working in September 2026.\nOpen https://aistudio.google.com/api-keys, " +
+		"check the key's type, and make a new Gemini API key. For now you can also limit the Standard key to generativelanguage.googleapis.com. " +
+		"Put the new key in GEMINI_API_KEY or GOOGLE_API_KEY in your keys file, remove older copies of those variables from your system, and " +
+		"restart icebath, because a key left in your shell hides the one in the keys file. Details: https://ai.google.dev/gemini-api/docs/api-key"
+	expressOnStudio = "\n\nGoogle gives keys that start with AQ. for both Google AI Studio and Vertex AI express mode, and each takes only " +
+		"its own, so a Vertex express key is always refused at generativelanguage.googleapis.com.\nIf this key came from Google Cloud or " +
+		"Vertex express mode, set the provider's Base URL or GEMINI_BASE_URL to https://aiplatform.googleapis.com/v1beta1."
+	studioOnExpress = "\n\nIf this key starting with AQ. came from Google AI Studio at https://aistudio.google.com/apikey, it works only " +
+		"at generativelanguage.googleapis.com. Clear the provider's aiplatform Base URL to use that address."
+	missingKey = "Gemini needs an API key, and none is set. Connect Google AI Studio in /providers, or set GOOGLE_API_KEY or GEMINI_API_KEY " +
+		"in your keys file.\nGet a key at https://aistudio.google.com/app/apikey."
 )
 
 type registrant struct {
@@ -130,9 +128,9 @@ func (c *client) refusal(p *prepared, status int, header http.Header, data []byt
 			reason = transport.Text(detail["reason"])
 		}
 	}
-	text := fmt.Sprintf("Gemini returned HTTP %d: %s", status, strings.ToValidUTF8(string(data), "�"))
+	text := fmt.Sprintf("HTTP %d: %s", status, strings.ToValidUTF8(string(data), "�"))
 	if message != "" {
-		text = fmt.Sprintf("Gemini HTTP %d (%s): %s", status, cmpString(state, "error"), message)
+		text = fmt.Sprintf("HTTP %d: %s, %s", status, cmpString(state, "error"), message)
 	}
 	probe := cmpString(message, string(data))
 	key := strings.TrimSpace(c.route.APIKey)
@@ -243,7 +241,7 @@ func (s *source) close() {
 func (s *source) open() (*http.Response, error) {
 	data, err := json.Marshal(s.body)
 	if err != nil {
-		return nil, fmt.Errorf("The Gemini request couldn't be encoded: %w", err)
+		return nil, fmt.Errorf("The request to Gemini could not be built: %w", err)
 	}
 	call, err := http.NewRequestWithContext(s.ctx, http.MethodPost, s.c.base+"/models/"+s.p.model+":streamGenerateContent?alt=sse", bytes.NewReader(data))
 	if err != nil {
@@ -307,7 +305,7 @@ func (s *source) next() (*transport.Frame, error) {
 		}
 		if !errors.Is(err, io.EOF) {
 			if s.resume == "" || s.sends >= tokenSends {
-				return nil, fmt.Errorf("Gemini streaming request failed: %w", err)
+				return nil, fmt.Errorf("The request to Gemini failed: %w", err)
 			}
 			slog.Warn(fmt.Sprintf("Gemini stream dropped (%s); resuming from its last checkpoint", err))
 		}

@@ -53,8 +53,8 @@ const (
 	awsSubjectType = "urn:ietf:params:aws:token-type:aws4_request"
 	awsVerify      = "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
 	generateToken  = "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken"
-	missingADC     = "Your default credentials were not found. To set up Application Default Credentials, see " +
-		"https://cloud.google.com/docs/authentication/external/set-up-adc for more information."
+	missingADC     = "No Google sign-in was found on this computer. Run `gcloud auth application-default login`, or see " +
+		"https://cloud.google.com/docs/authentication/external/set-up-adc."
 	quotaWarning = "Your application has authenticated using end user credentials from Google Cloud SDK without a quota project. You might " +
 		"receive a \"quota exceeded\" or \"API not enabled\" error. See the following page for troubleshooting: " +
 		"https://cloud.google.com/docs/authentication/adc-troubleshooting/user-creds. "
@@ -155,7 +155,7 @@ func (e *refusal) Error() string { return e.message }
 func signerOf(pemText string) (crypto.Signer, error) {
 	block, _ := pem.Decode([]byte(pemText))
 	if block == nil {
-		return nil, errors.New("No key could be detected.")
+		return nil, errors.New("No Google key was found.")
 	}
 	switch block.Type {
 	case "RSA PRIVATE KEY":
@@ -169,7 +169,7 @@ func signerOf(pemText string) (crypto.Signer, error) {
 	}
 	signer, ok := key.(crypto.Signer)
 	if !ok {
-		return nil, errors.New("No key could be detected.")
+		return nil, errors.New("No Google key was found.")
 	}
 	return signer, nil
 }
@@ -313,7 +313,7 @@ func expiryOf(data map[string]any, now time.Time) (time.Time, error) {
 		}
 		return now.Add(time.Duration(n) * time.Second), nil
 	}
-	return time.Time{}, fmt.Errorf("invalid expires_in %v", data["expires_in"])
+	return time.Time{}, fmt.Errorf("Google gave a token whose lifetime %v can't be read.", data["expires_in"])
 }
 
 // Access token of an answer with its expiry
@@ -329,11 +329,11 @@ func minted(data map[string]any) (string, time.Time, error) {
 // Service account key: a JWT grant at its token_uri, or a self-signed JWT outside Google's default universe
 func serviceAccount(info map[string]any, scopes []string) (*google, error) {
 	if m := missing(info, "client_email", "token_uri"); len(m) > 0 {
-		return nil, fmt.Errorf("Service account info was not in the expected format, missing fields %s.", strings.Join(m, ", "))
+		return nil, fmt.Errorf("The service account key lacks %s.", strings.Join(m, ", "))
 	}
 	pk, ok := info["private_key"].(string)
 	if !ok {
-		return nil, errors.New("The private_key field was not found in the service account info.")
+		return nil, errors.New("The service account key lacks private_key.")
 	}
 	signer, err := signerOf(pk)
 	if err != nil {
@@ -370,7 +370,7 @@ func serviceAccount(info map[string]any, scopes []string) (*google, error) {
 // End user credentials renewed with their refresh token, every scope asked for required to be granted
 func authorizedUser(info map[string]any, scopes []string) (*google, error) {
 	if m := missing(info, "refresh_token", "client_id", "client_secret"); len(m) > 0 {
-		return nil, fmt.Errorf("Authorized user info was not in the expected format, missing fields %s.", strings.Join(m, ", "))
+		return nil, fmt.Errorf("The Google user credentials lack %s.", strings.Join(m, ", "))
 	}
 	tokenURI := cmp.Or(text(info, "token_uri"), tokenEndpoint)
 	id, secret, refresh, rapt := text(info, "client_id"), text(info, "client_secret"), text(info, "refresh_token"), text(info, "rapt_token")
@@ -496,18 +496,18 @@ func metadata(ctx context.Context, e environment, path string, params url.Values
 			continue
 		case http.StatusOK:
 		default:
-			return nil, fmt.Errorf("Failed to retrieve %s from the Google Compute Engine metadata service. Status: %d Response:\n%s", target, resp.StatusCode, body)
+			return nil, fmt.Errorf("The Google Compute Engine metadata service did not give %s, and answered with HTTP status %d:\n%s", target, resp.StatusCode, body)
 		}
 		if kind, _, _ := mime.ParseMediaType(resp.Header.Get("content-type")); kind == "application/json" {
 			var out any
 			if err := json.Unmarshal(body, &out); err != nil {
-				return nil, fmt.Errorf("Received invalid JSON from the Google Compute Engine metadata service: %.20s", body)
+				return nil, fmt.Errorf("The Google Compute Engine metadata service gave an answer that can't be read: %.20s", body)
 			}
 			return out, nil
 		}
 		return string(body), nil
 	}
-	return nil, fmt.Errorf("Failed to retrieve %s from the Google Compute Engine metadata service. Compute Engine Metadata server unavailable due to %s", target, failure)
+	return nil, fmt.Errorf("The Google Compute Engine metadata service could not be reached for %s: %s", target, failure)
 }
 
 // Default service account of the Compute Engine machine, its tokens minted by the metadata server
@@ -589,14 +589,14 @@ func fromFile(ctx context.Context, e environment, path string, scopes []string) 
 	}
 	var info map[string]any
 	if json.Unmarshal(raw, &info) != nil || info == nil {
-		return nil, "", fmt.Errorf("File %s is not a valid json file.", path)
+		return nil, "", fmt.Errorf("File %s is not valid JSON.", path)
 	}
 	return fromInfo(ctx, e, info, path, scopes)
 }
 
 func fromInfo(ctx context.Context, e environment, info map[string]any, source string, scopes []string) (*google, string, error) {
 	wrap := func(kind string, err error) error {
-		return fmt.Errorf("Failed to load %s credentials from %s: %v", kind, source, err)
+		return fmt.Errorf("The %s credentials in %s can't be used: %v", kind, source, err)
 	}
 	switch kind := text(info, "type"); kind {
 	case "authorized_user":
@@ -637,7 +637,7 @@ func fromInfo(ctx context.Context, e environment, info map[string]any, source st
 		}
 		return g, text(info, "project"), nil
 	default:
-		return nil, "", fmt.Errorf("The file %s does not have a valid type. Type is %s, expected one of ('%s').", source, kind, strings.Join(types, "', '"))
+		return nil, "", fmt.Errorf("The file %s has the type %s, but it must be one of %s.", source, kind, strings.Join(types, ", "))
 	}
 }
 
@@ -757,7 +757,7 @@ func impersonatedFrom(e environment, info map[string]any, scopes []string) (*goo
 	endpoint := text(info, "service_account_impersonation_url")
 	source, ok := info["source_credentials"].(map[string]any)
 	if endpoint == "" || !ok {
-		return nil, errors.New("The provided entry is missing required fields: source_credentials, service_account_impersonation_url")
+		return nil, errors.New("The credentials file lacks source_credentials or service_account_impersonation_url.")
 	}
 	var base *google
 	var err error
@@ -771,14 +771,14 @@ func impersonatedFrom(e environment, info map[string]any, scopes []string) (*goo
 	case "external_account_authorized_user":
 		base, err = externalUser(source, nil)
 	default:
-		return nil, fmt.Errorf("source credential of type %s is not supported.", kind)
+		return nil, fmt.Errorf("Source credentials of the type %s are not supported.", kind)
 	}
 	if err != nil {
 		return nil, err
 	}
 	target, ok := principal(endpoint)
 	if !ok {
-		return nil, fmt.Errorf("Cannot extract target principal from %s", endpoint)
+		return nil, fmt.Errorf("The service account to act as can't be read from %s.", endpoint)
 	}
 	var delegates []string
 	for _, d := range anySlice(info["delegates"]) {
@@ -794,10 +794,10 @@ func impersonatedFrom(e environment, info map[string]any, scopes []string) (*goo
 // Google Distributed Cloud Hosted service account, an ES256 self-signed JWT exchanged at its token_uri
 func gdch(info map[string]any) (*google, error) {
 	if text(info, "format_version") != "1" {
-		return nil, errors.New("Only format version 1 is supported")
+		return nil, errors.New("Only version 1 of this file format is supported.")
 	}
 	if m := missing(info, "project", "private_key_id", "private_key", "name", "token_uri"); len(m) > 0 {
-		return nil, fmt.Errorf("Service account info was not in the expected format, missing fields %s.", strings.Join(m, ", "))
+		return nil, fmt.Errorf("The service account key lacks %s.", strings.Join(m, ", "))
 	}
 	signer, err := signerOf(text(info, "private_key"))
 	if err != nil {
@@ -887,13 +887,13 @@ func externalAccount(e environment, info map[string]any, scopes []string) (*goog
 	audience, subjectType := text(info, "audience"), text(info, "subject_token_type")
 	source, _ := info["credential_source"].(map[string]any)
 	if audience == "" || subjectType == "" || source == nil {
-		return nil, errors.New("Error code invalid_request: the external account info is missing audience, subject_token_type or credential_source")
+		return nil, errors.New("The external account file lacks audience, subject_token_type or credential_source.")
 	}
 	universe := cmp.Or(text(info, "universe_domain"), defaultUniverse)
 	tokenURL := cmp.Or(text(info, "token_url"), "https://sts."+universe+"/v1/token")
 	workforceProject := text(info, "workforce_pool_user_project")
 	if workforceProject != "" && !workforceAudience.MatchString(audience) {
-		return nil, errors.New("workforce_pool_user_project should not be set for non-workforce pool credentials.")
+		return nil, errors.New("workforce_pool_user_project is set, but these credentials are not of a workforce pool. Remove it.")
 	}
 	id, secret := text(info, "client_id"), text(info, "client_secret")
 	impersonation := text(info, "service_account_impersonation_url")
@@ -947,7 +947,7 @@ func externalAccount(e environment, info map[string]any, scopes []string) (*goog
 	if impersonation != "" {
 		target, ok := principal(impersonation)
 		if !ok {
-			return nil, errors.New("Unable to determine target principal from service account impersonation URL.")
+			return nil, errors.New("The service account to act as can't be read from service_account_impersonation_url.")
 		}
 		base := &google{kind: "external_account", scopes: []string{cloudPlatform}}
 		base.mint = func(ctx context.Context) (string, time.Time, error) { return exchange(ctx, base.scopes) }
@@ -1021,7 +1021,7 @@ func subjectOf(payload []byte, format map[string]any, where string) (string, err
 // Identity pool subject token of a file, an address or an X.509 workload certificate, the last with its mTLS STS client
 func poolSubject(e environment, source map[string]any) (func(context.Context) (string, error), *http.Client, error) {
 	if _, ok := source["environment_id"]; ok {
-		return nil, nil, errors.New("Invalid Identity Pool credential_source field 'environment_id'")
+		return nil, nil, errors.New("The credential_source of an identity pool can't hold environment_id.")
 	}
 	path, address := text(source, "file"), text(source, "url")
 	certificate, hasCertificate := source["certificate"].(map[string]any)
@@ -1033,16 +1033,16 @@ func poolSubject(e environment, source map[string]any) (func(context.Context) (s
 	}
 	switch {
 	case count > 1:
-		return nil, nil, errors.New("Ambiguous credential_source. 'file', 'url', and 'certificate' are mutually exclusive..")
+		return nil, nil, errors.New("The credential_source sets more than one of file, url and certificate. Keep only one.")
 	case count == 0:
-		return nil, nil, errors.New("Missing credential_source. A 'file', 'url', or 'certificate' must be provided.")
+		return nil, nil, errors.New("The credential_source sets none of file, url and certificate. Set one.")
 	}
 	format, _ := source["format"].(map[string]any)
 	if kind := text(format, "type"); kind != "" && kind != "text" && kind != "json" {
-		return nil, nil, fmt.Errorf("Invalid credential_source format '%s'", kind)
+		return nil, nil, fmt.Errorf("The credential_source format %q is not one Google knows.", kind)
 	}
 	if text(format, "type") == "json" && text(format, "subject_token_field_name") == "" {
-		return nil, nil, errors.New("Missing subject_token_field_name for JSON credential_source format")
+		return nil, nil, errors.New("A JSON credential_source needs subject_token_field_name.")
 	}
 	switch {
 	case path != "":
@@ -1084,9 +1084,9 @@ func certificateSubject(e environment, certificate map[string]any) (func(context
 	location := text(certificate, "certificate_config_location")
 	switch {
 	case useDefault && location != "":
-		return nil, nil, errors.New("Invalid certificate configuration, certificate_config_location cannot be specified when use_default_certificate_config = true.")
+		return nil, nil, errors.New("certificate_config_location can't be set when use_default_certificate_config is true.")
 	case !useDefault && location == "":
-		return nil, nil, errors.New("Invalid certificate configuration, use_default_certificate_config should be true if no certificate_config_location is provided.")
+		return nil, nil, errors.New("Set use_default_certificate_config to true, or set certificate_config_location.")
 	}
 	location = cmp.Or(location, e.get("GOOGLE_API_CERTIFICATE_CONFIG"), filepath.Join(cloudSDK(e), "certificate_config.json"))
 	raw, err := os.ReadFile(location)
@@ -1102,7 +1102,7 @@ func certificateSubject(e environment, certificate map[string]any) (func(context
 		} `json:"cert_configs"`
 	}
 	if err := json.Unmarshal(raw, &config); err != nil || config.Configs.Workload.Cert == "" || config.Configs.Workload.Key == "" {
-		return nil, nil, fmt.Errorf("Certificate config file %s does not contain a workload cert_path and key_path.", location)
+		return nil, nil, fmt.Errorf("The certificate config file %s lacks a workload cert_path and key_path.", location)
 	}
 	pair, err := tls.LoadX509KeyPair(config.Configs.Workload.Cert, config.Configs.Workload.Key)
 	if err != nil {
@@ -1112,7 +1112,7 @@ func certificateSubject(e environment, certificate map[string]any) (func(context
 	if trust := text(certificate, "trust_chain_path"); trust != "" {
 		pemChain, err := os.ReadFile(trust)
 		if err != nil {
-			return nil, nil, fmt.Errorf("Trust chain file '%s' was not found.", trust)
+			return nil, nil, fmt.Errorf("The trust chain file %s was not found.", trust)
 		}
 		for i := 0; ; i++ {
 			var block *pem.Block
@@ -1121,7 +1121,7 @@ func certificateSubject(e environment, certificate map[string]any) (func(context
 			}
 			if bytes.Equal(block.Bytes, pair.Certificate[0]) {
 				if i != 0 {
-					return nil, nil, errors.New("The leaf certificate must be at the top of the trust chain file")
+					return nil, nil, errors.New("The leaf certificate must come first in the trust chain file.")
 				}
 				continue
 			}
@@ -1138,10 +1138,10 @@ func certificateSubject(e environment, certificate map[string]any) (func(context
 func awsSubject(e environment, source map[string]any, audience string) (func(context.Context) (string, error), error) {
 	m := awsEnvironment.FindStringSubmatch(text(source, "environment_id"))
 	if m == nil {
-		return nil, errors.New("No valid AWS 'credential_source' provided")
+		return nil, errors.New("The AWS credential_source is missing or can't be read.")
 	}
 	if m[1] != "1" {
-		return nil, fmt.Errorf("aws version '%s' is not supported in the current build.", m[1])
+		return nil, fmt.Errorf("Version %s of AWS credentials is not supported.", m[1])
 	}
 	regionURL, keysURL, sessionURL := text(source, "region_url"), text(source, "url"), text(source, "imdsv2_session_token_url")
 	verify := cmp.Or(text(source, "regional_cred_verification_url"), awsVerify)
@@ -1236,20 +1236,19 @@ func programSubject(e environment, source map[string]any, audience, subjectType,
 	program, _ := source["executable"].(map[string]any)
 	command := text(program, "command")
 	if command == "" {
-		return nil, errors.New("Missing command field. Executable command must be provided.")
+		return nil, errors.New("The credential program is not named. Set its command.")
 	}
 	timeout := 30 * time.Second
 	if ms, ok := program["timeout_millis"].(float64); ok {
 		if ms < 5000 || ms > 120000 {
-			return nil, errors.New("Timeout must be between 5 and 120 seconds.")
+			return nil, errors.New("The time limit of the credential program must be from 5 to 120 seconds.")
 		}
 		timeout = time.Duration(ms) * time.Millisecond
 	}
 	output := text(program, "output_file")
 	return func(ctx context.Context) (string, error) {
 		if e.get("GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES") != "1" {
-			return "", errors.New("Pluggable Auth executables need to be explicitly allowed to run by setting the GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES " +
-				"environment Variable to 1.")
+			return "", errors.New("A credential program may run only when GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES is set to 1. Set it to allow it.")
 		}
 		if output != "" {
 			if raw, err := os.ReadFile(output); err == nil {
@@ -1268,7 +1267,7 @@ func programSubject(e environment, source map[string]any, audience, subjectType,
 		}
 		argv, err := terminal.Split(command)
 		if err != nil || len(argv) == 0 {
-			return "", errors.New("Missing command field. Executable command must be provided.")
+			return "", errors.New("The credential program is not named. Set its command.")
 		}
 		run, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
@@ -1292,7 +1291,7 @@ func programSubject(e environment, source map[string]any, audience, subjectType,
 		}
 		var response map[string]any
 		if err := json.Unmarshal(out.Bytes(), &response); err != nil {
-			return "", fmt.Errorf("Unable to parse the executable response: %s", out.String())
+			return "", fmt.Errorf("The credential program's answer can't be read: %s", out.String())
 		}
 		token, err := programToken(response)
 		if err != nil {
@@ -1322,7 +1321,7 @@ func programToken(response map[string]any) (string, error) {
 		code, hasCode := response["code"]
 		message, hasMessage := response["message"]
 		if !hasCode || !hasMessage {
-			return "", errors.New("Error code and message fields are required in the response.")
+			return "", errors.New("The credential program failed without giving its code and message.")
 		}
 		return "", &refusal{message: fmt.Sprintf("Executable returned unsuccessful response: code: %v, message: %v.", code, message)}
 	}
@@ -1345,8 +1344,7 @@ func programToken(response map[string]any) (string, error) {
 // Workforce identity end user renewed at its token_url with basic client authentication
 func externalUser(info map[string]any, scopes []string) (*google, error) {
 	if len(missing(info, "audience", "refresh_token", "token_url", "client_id", "client_secret")) == 5 {
-		return nil, errors.New("Token should be created with fields to make it valid (`token` and `expiry`), or fields to allow it to refresh " +
-			"(`refresh_token`, `token_url`, `client_id`, `client_secret`).")
+		return nil, errors.New("The credentials need token and expiry, or refresh_token, token_url, client_id and client_secret to renew.")
 	}
 	refresh, tokenURL, id, secret := text(info, "refresh_token"), text(info, "token_url"), text(info, "client_id"), text(info, "client_secret")
 	g := &google{kind: "external_account_authorized_user", quota: text(info, "quota_project_id"), scopes: scopes}

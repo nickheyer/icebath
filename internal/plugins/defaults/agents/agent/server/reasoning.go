@@ -56,16 +56,16 @@ func (a *Agent) refuseReasoning(r *run, route provider.Route, err error) bool {
 	switch {
 	case sent != "" && sent != "none" && !f.effort:
 		f.effort = true
-		note = fmt.Sprintf("⚠️  %s rejects reasoning effort %s — using the route's default for this session, retrying...", route.Model, sent)
+		note = fmt.Sprintf("⚠ %s does not take reasoning effort %s, so this session uses the model's default. Trying again.", route.Model, sent)
 		slog.Warn(fmt.Sprintf("Reasoning-effort recovery: dropping reasoning config for %s", route.Model))
 	case f.disable:
 		return false
 	default:
 		f.disable, f.floor = true, auxiliary.ReasoningRequired(err)
-		note = fmt.Sprintf("⚠️  %s rejects disabling reasoning — using the route's default for this session, retrying...", route.Model)
+		note = fmt.Sprintf("⚠ %s won't turn reasoning off, so this session uses the model's default. Trying again.", route.Model)
 		slog.Warn(fmt.Sprintf("Reasoning-disable recovery: dropping reasoning disable for %s", route.Model))
 		if f.floor {
-			note = fmt.Sprintf("⚠️  %s cannot disable reasoning — using effort=%s for this session, retrying...", route.Model, floorEffort)
+			note = fmt.Sprintf("⚠ %s can't turn reasoning off, so this session uses %s reasoning effort. Trying again.", route.Model, floorEffort)
 			slog.Warn(fmt.Sprintf("Reasoning-disable recovery: stepping reasoning up to %s for %s", floorEffort, route.Model))
 		}
 	}

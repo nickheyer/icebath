@@ -20,7 +20,16 @@ import (
 	"github.com/nickheyer/icebath/internal/skills"
 	skillsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/skills/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/skills/v1/skillsv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
+
+// Count with its verb: 1 bundle is, 2 bundles are
+func agreeing(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strs.Number(float64(n)) + " " + many
+}
 
 type commands struct{}
 
@@ -34,17 +43,30 @@ func here() *skillsv1.Scope {
 	return &skillsv1.Scope{Directory: dir}
 }
 
-// Asks to go ahead after the lines, true for yes; the end of the input is no
-func confirm(cmd *cobra.Command, lines ...string) bool {
+// Asks the question after the lines, true for yes; the end of the input is no, which says that nothing changed
+func confirm(cmd *cobra.Command, question string, lines ...string) bool {
 	c := cli.NewConsole(cmd)
 	for _, line := range lines {
 		fmt.Fprintln(c.Out(), line)
 	}
-	if c.Agree("Confirm [y/N]: ", false) {
+	if c.Agree(question+" [y/N] ", false) {
 		return true
 	}
-	fmt.Fprintln(c.Out(), "Cancelled.")
+	fmt.Fprintln(c.Out(), "Nothing changed.")
 	return false
+}
+
+// Where a listed skill comes from, in words
+func sourceWord(source string) string {
+	switch source {
+	case "hub":
+		return "Skills hub"
+	case "builtin":
+		return "Built in"
+	case "plugin":
+		return "Plugin"
+	}
+	return "Your own"
 }
 
 // One line naming the items when there are any
@@ -56,9 +78,11 @@ func listed(out io.Writer, label string, items []string) {
 
 func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	service := skillsv1connect.NewSkillsServiceClient(conn)
-	root := &cobra.Command{Use: "skills", Short: "Search, install, configure, and manage skills"}
+	root := &cobra.Command{Use: "skills", GroupID: cli.GroupAbilities, Short: "Find, install and manage skills"}
 	root.AddCommand(list(service), configure(service), reset(service), modified(service), diff(service), optOut(service), optIn(service), repair(service))
-	root.Long = "Search, install, inspect, audit, configure, and manage skills from skills.sh, well-known agent skill endpoints, GitHub, ClawHub, and other registries."
+	root.Long = "Skills are instructions the agent loads for certain kinds of work. Use these commands to find skills on skills.sh, GitHub, " +
+		"ClawHub and other registries, install them, scan them for risks and turn them on or off. icebath also comes with built-in skills, " +
+		"which it copies into each profile."
 	root.AddCommand(hubCommands(service)...)
 	return []*cobra.Command{root, bundles(service)}
 }
@@ -77,24 +101,25 @@ func list(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 	var enabledOnly bool
 	command := &cobra.Command{
 		Use:   "list",
-		Short: "List installed skills",
+		Short: "List the installed skills",
+		Long:  "Lists every installed skill with its category, where it came from and whether it is on.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !slices.Contains([]string{"all", "hub", "builtin", "local"}, source) {
-				return fmt.Errorf("--source must be one of all, hub, builtin, local")
+				return fmt.Errorf("--source takes all, hub, builtin or local, not “%s”.", source)
 			}
 			response, err := service.List(cmd.Context(), &skillsv1.ListRequest{Scope: here()})
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			title := "Installed Skills"
+			title := "Installed skills"
 			if enabledOnly {
-				title += " (enabled only)"
+				title = "Installed skills that are on"
 			}
 			fmt.Fprintln(out, title)
 			table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(table, "NAME\tCATEGORY\tSOURCE\tTRUST\tSTATUS")
+			fmt.Fprintln(table, "Name\tCategory\tFrom\tTrust\tState")
 			counts := map[string]int{}
 			enabled, disabled := 0, 0
 			for _, skill := range response.GetSkills() {
@@ -102,38 +127,37 @@ func list(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 					continue
 				}
 				counts[kind(skill)]++
-				status := "disabled"
+				status := "Off"
 				if skill.GetEnabled() {
-					status = "enabled"
+					status = "On"
 					enabled++
 				} else {
 					disabled++
 				}
 				if off := skill.GetDisabledOn(); len(off) > 0 {
-					status += " (off on " + strings.Join(off, ", ") + ")"
+					status += ", off in " + strings.Join(off, ", ")
 				}
 				if note := skill.GetCommandNote(); note != "" {
-					status += "; " + note
+					status += ". " + note
 				}
 				trust := skill.GetTrust()
 				if trust == "builtin" && skill.GetSource() == "hub" {
 					trust = "official"
 				}
-				fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", skill.GetName(), cmp.Or(skill.GetCategory(), "-"), skill.GetSource(), trust, status)
+				fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", skill.GetName(), cmp.Or(skill.GetCategory(), "None"), sourceWord(skill.GetSource()),
+					cmp.Or(strings.ToUpper(trust[:min(1, len(trust))])+trust[min(1, len(trust)):], "Unknown"), status)
 			}
 			if err := table.Flush(); err != nil {
 				return err
 			}
-			tail := fmt.Sprintf("%d enabled, %d disabled", enabled, disabled)
-			if enabledOnly {
-				tail = fmt.Sprintf("%d enabled shown", enabled)
-			}
-			_, err = fmt.Fprintf(out, "%d hub-installed, %d builtin, %d local — %s\n", counts["hub"], counts["builtin"], counts["local"], tail)
+			_, err = fmt.Fprintf(out, "\n%s from the skills hub, %s built in and %s of your own. On: %s. Off: %s.\n",
+				strs.Number(float64(counts["hub"])), strs.Number(float64(counts["builtin"])), strs.Number(float64(counts["local"])),
+				strs.Number(float64(enabled)), strs.Number(float64(disabled)))
 			return err
 		},
 	}
-	command.Flags().StringVar(&source, "source", "all", "skills of one source: all, hub, builtin or local")
-	command.Flags().BoolVar(&enabledOnly, "enabled-only", false, "only the skills that are on")
+	command.Flags().StringVar(&source, "source", "all", "Source to list: all, hub, builtin or local")
+	command.Flags().BoolVar(&enabledOnly, "enabled-only", false, "List only the skills that are on")
 	return command
 }
 
@@ -144,17 +168,17 @@ func selection(text string, n int) ([]int, error) {
 		from, to, ranged := strings.Cut(part, "-")
 		a, err := strconv.Atoi(from)
 		if err != nil {
-			return nil, fmt.Errorf("%q is not a number", part)
+			return nil, fmt.Errorf("“%s” is not a number.", part)
 		}
 		b := a
 		if ranged {
 			if b, err = strconv.Atoi(to); err != nil {
-				return nil, fmt.Errorf("%q is not a range", part)
+				return nil, fmt.Errorf("“%s” is not a range such as 3-5.", part)
 			}
 		}
 		for i := min(a, b); i <= max(a, b); i++ {
 			if i < 1 || i > n {
-				return nil, fmt.Errorf("%d is not on the list", i)
+				return nil, fmt.Errorf("%s is not on the list.", strs.Number(float64(i)))
 			}
 			out = append(out, i-1)
 		}
@@ -173,9 +197,9 @@ func checklist(cmd *cobra.Command, input *cli.Console, title string, labels []st
 			if on[i] {
 				mark = "x"
 			}
-			fmt.Fprintf(out, "  %3d. [%s] %s\n", i+1, mark, label)
+			fmt.Fprintf(out, "  %3d [%s] %s\n", i+1, mark, label)
 		}
-		line, ok := input.Answer("\nToggle numbers (e.g. 1 3-5), a for all, n for none, enter to save, q to cancel: ")
+		line, ok := input.Answer("\nType numbers such as 1 3-5 to turn them on or off, a for all, n for none, enter to save or q to cancel: ")
 		switch {
 		case !ok || line == "q":
 			return nil, false
@@ -201,11 +225,14 @@ func checklist(cmd *cobra.Command, input *cli.Console, title string, labels []st
 func configure(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 	return &cobra.Command{
 		Use:   "config",
-		Short: "Interactive skill configuration — enable/disable individual skills",
-		Args:  cobra.NoArgs,
+		Short: "Turn skills on or off in a list",
+		Long: "Opens a list of the installed skills in this terminal, where you turn each skill on or off. config needs a terminal, so it does " +
+			"not run through a pipe.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if cmd.InOrStdin() == os.Stdin && !term.IsTerminal(os.Stdin.Fd()) {
-				fmt.Fprint(cmd.ErrOrStderr(), "Error: 'icebath skills config' requires an interactive terminal.\nIt cannot be run through a pipe or non-interactive subprocess.\nRun it directly in your terminal instead.\n")
+				fmt.Fprint(cmd.ErrOrStderr(), "✗ icebath skills config needs a terminal to ask in, so it can't run through a pipe or from another program. "+
+					"Run it in your terminal.\n")
 				return cli.Exit(1)
 			}
 			out := cmd.OutOrStdout()
@@ -220,20 +247,20 @@ func configure(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				}
 			}
 			if len(installed) == 0 {
-				fmt.Fprintln(out, "No skills installed.")
+				fmt.Fprintln(out, "No skills are installed yet. Find one with icebath skills search <query>, then install it with icebath skills install <identifier>.")
 				return nil
 			}
 			input := cli.NewConsole(cmd)
-			fmt.Fprintln(out, "\nConfigure skills for:")
-			fmt.Fprintln(out, "  1. All platforms (global default)")
+			fmt.Fprintln(out, "\nWhere should the change apply?")
+			fmt.Fprintln(out, "  1. Everywhere, as the default")
 			for i, surface := range response.GetSurfaces() {
 				fmt.Fprintf(out, "  %d. %s\n", i+2, surface.GetTitle())
 			}
-			choice, ok := input.Answer("\nSelect [1]: ")
+			choice, ok := input.Answer("\nNumber [1]: ")
 			if !ok {
 				return nil
 			}
-			surface, label := "", "All platforms"
+			surface, label := "", "Everywhere"
 			if n, err := strconv.Atoi(choice); err == nil && n >= 2 && n-2 < len(response.GetSurfaces()) {
 				surface, label = response.GetSurfaces()[n-2].GetName(), response.GetSurfaces()[n-2].GetTitle()
 			}
@@ -243,8 +270,8 @@ func configure(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				}
 				return skill.GetEssential() || !slices.Contains(skill.GetDisabledOn(), surface)
 			}
-			fmt.Fprintf(out, "\nConfigure for: %s\n\n  1. Toggle individual skills\n  2. Toggle by category\n", label)
-			mode, ok := input.Answer("\nSelect [1]: ")
+			fmt.Fprintf(out, "\nChanging skills for: %s\n\n  1. Turn single skills on or off\n  2. Turn whole categories on or off\n", label)
+			mode, ok := input.Answer("\nNumber [1]: ")
 			if !ok {
 				return nil
 			}
@@ -256,7 +283,7 @@ func configure(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				var categories []string
 				members := map[string][]string{}
 				for _, skill := range installed {
-					category := cmp.Or(skill.GetCategory(), "uncategorized")
+					category := cmp.Or(skill.GetCategory(), "No category")
 					if !slices.Contains(categories, category) {
 						categories = append(categories, category)
 					}
@@ -265,12 +292,12 @@ func configure(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				slices.Sort(categories)
 				labels, on := make([]string, len(categories)), make([]bool, len(categories))
 				for i, category := range categories {
-					labels[i] = fmt.Sprintf("%s (%d skills)", category, len(members[category]))
+					labels[i] = category + ", " + strs.Count(len(members[category]), "skill")
 					on[i] = slices.ContainsFunc(members[category], func(name string) bool { return wanted[name] })
 				}
-				chosen, ok := checklist(cmd, input, "Categories — toggle entire categories", labels, on)
+				chosen, ok := checklist(cmd, input, "Categories. Turning one on or off changes every skill in it.", labels, on)
 				if !ok {
-					fmt.Fprintln(out, "Cancelled.")
+					fmt.Fprintln(out, "Nothing changed.")
 					return nil
 				}
 				for i, category := range categories {
@@ -283,12 +310,12 @@ func configure(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			} else {
 				labels, on := make([]string, len(installed)), make([]bool, len(installed))
 				for i, skill := range installed {
-					labels[i] = fmt.Sprintf("%s  (%s)  —  %s", skill.GetName(), cmp.Or(skill.GetCategory(), "uncategorized"), strings.Join(strings.Fields(skill.GetDescription()), " "))
+					labels[i] = fmt.Sprintf("%s, %s: %s", skill.GetName(), cmp.Or(skill.GetCategory(), "no category"), strings.Join(strings.Fields(skill.GetDescription()), " "))
 					on[i] = wanted[skill.GetName()]
 				}
 				chosen, ok := checklist(cmd, input, "Skills for "+label, labels, on)
 				if !ok {
-					fmt.Fprintln(out, "Cancelled.")
+					fmt.Fprintln(out, "Nothing changed.")
 					return nil
 				}
 				for i, skill := range installed {
@@ -305,7 +332,7 @@ func configure(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				}
 			}
 			if len(turnOn)+len(turnOff) == 0 {
-				fmt.Fprintln(out, "No changes.")
+				fmt.Fprintln(out, "Nothing changed.")
 				return nil
 			}
 			var counts *skillsv1.ToggleResponse
@@ -320,7 +347,8 @@ func configure(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 					return err
 				}
 			}
-			_, err = fmt.Fprintf(out, "✓ Saved: %d enabled, %d disabled (%s).\n", counts.GetEnabled(), counts.GetDisabled(), label)
+			_, err = fmt.Fprintf(out, "✓ Saved for %s. On: %s. Off: %s.\n", label, strs.Number(float64(counts.GetEnabled())),
+				strs.Number(float64(counts.GetDisabled())))
 			return err
 		},
 	}
@@ -330,10 +358,12 @@ func reset(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 	var restore, yes bool
 	command := &cobra.Command{
 		Use:   "reset <name>",
-		Short: "Reset a bundled skill — clears 'user-modified' tracking so updates work again",
-		Args:  cobra.ExactArgs(1),
+		Short: "Let a built-in skill you edited take updates again",
+		Long: "icebath stops updating a built-in skill once you edit it. reset clears that mark, so updates reach the skill again, and keeps " +
+			"your copy. With --restore, reset replaces your copy with the built-in version.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if restore && !yes && !confirm(cmd, fmt.Sprintf("\nRestore '%s' from bundled source?", args[0]), "This will DELETE your current copy and re-copy the bundled version.") {
+			if restore && !yes && !confirm(cmd, fmt.Sprintf("\nReplace your copy of %s with the built-in version? Your changes to it are deleted.", args[0])) {
 				return nil
 			}
 			response, err := service.Reset(cmd.Context(), &skillsv1.ResetRequest{Scope: here(), Name: args[0], Restore: restore})
@@ -347,8 +377,8 @@ func reset(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			return nil
 		},
 	}
-	command.Flags().BoolVar(&restore, "restore", false, "replace your copy with the bundled version")
-	command.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask to confirm")
+	command.Flags().BoolVar(&restore, "restore", false, "Replace your copy with the built-in version")
+	command.Flags().BoolVarP(&yes, "yes", "y", false, "Go ahead without asking first")
 	return command
 }
 
@@ -356,7 +386,8 @@ func modified(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 	var asJSON bool
 	command := &cobra.Command{
 		Use:   "list-modified",
-		Short: "List bundled skills you've edited (which syncs keep)",
+		Short: "List the built-in skills you edited",
+		Long:  "Lists the built-in skills you changed. Updates leave these skills alone until you reset them.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			response, err := service.Modified(cmd.Context(), &skillsv1.ModifiedRequest{Scope: here()})
@@ -377,27 +408,28 @@ func modified(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				return err
 			}
 			if len(names) == 0 {
-				fmt.Fprintln(out, "No user-modified bundled skills — everything tracks upstream.")
+				fmt.Fprintln(out, "You have not edited any built-in skill, so every one takes updates.")
 				return nil
 			}
-			fmt.Fprintf(out, "\n%d user-modified bundled skill(s) (kept as-is by syncs):\n", len(names))
+			fmt.Fprintf(out, "\nYou edited %s, which updates leave as they are:\n", strs.Count(len(names), "built-in skill"))
 			for _, name := range names {
-				fmt.Fprintln(out, "  ~ "+name)
+				fmt.Fprintln(out, "  "+name)
 			}
-			fmt.Fprintln(out, "\nSee changes:    icebath skills diff <name>")
-			fmt.Fprintln(out, "Resume updates: icebath skills reset <name>          (keep your copy, re-baseline)")
-			fmt.Fprintln(out, "Revert to stock: icebath skills reset <name> --restore")
+			fmt.Fprintln(out, "\nSee your changes:         icebath skills diff <name>")
+			fmt.Fprintln(out, "Take updates again:       icebath skills reset <name>, which keeps your copy")
+			fmt.Fprintln(out, "Go back to the built-in:  icebath skills reset <name> --restore")
 			return nil
 		},
 	}
-	command.Flags().BoolVar(&asJSON, "json", false, "print the names as JSON")
+	command.Flags().BoolVar(&asJSON, "json", false, "Print the names as JSON")
 	return command
 }
 
 func diff(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 	return &cobra.Command{
 		Use:   "diff <name>",
-		Short: "Show how your copy of a bundled skill differs from the stock version",
+		Short: "Show how your copy of a built-in skill differs",
+		Long:  "Shows the changes between your copy of a built-in skill and the version that comes with icebath.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			response, err := service.Diff(cmd.Context(), &skillsv1.DiffRequest{Scope: here(), Name: args[0]})
@@ -407,23 +439,23 @@ func diff(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			out := cmd.OutOrStdout()
 			files := response.GetFiles()
 			if len(files) == 0 {
-				fmt.Fprintf(out, "'%s' matches the stock version.\n", args[0])
+				fmt.Fprintf(out, "%s is the same as the built-in version.\n", args[0])
 				return nil
 			}
-			fmt.Fprintf(out, "\n'%s' differs from the stock version in %d file(s).\n\n", args[0], len(files))
+			fmt.Fprintf(out, "\n%s differs from the built-in version in %s.\n\n", args[0], strs.Count(len(files), "file"))
 			for _, file := range files {
 				switch file.GetStatus() {
 				case "modified":
 					fmt.Fprint(out, file.GetDiff())
 				case "added":
-					fmt.Fprintln(out, "+ only in your copy: "+file.GetPath())
+					fmt.Fprintln(out, "Only in your copy: "+file.GetPath())
 				case "removed":
-					fmt.Fprintln(out, "- only in stock: "+file.GetPath())
+					fmt.Fprintln(out, "Only in the built-in version: "+file.GetPath())
 				default:
-					fmt.Fprintf(out, "~ %s: binary file differs\n", file.GetPath())
+					fmt.Fprintf(out, "%s differs, and it is not text, so no change is shown.\n", file.GetPath())
 				}
 			}
-			fmt.Fprintf(out, "\nRevert with: icebath skills reset %s --restore\n", args[0])
+			fmt.Fprintf(out, "\nTo go back to the built-in version, run icebath skills reset %s --restore.\n", args[0])
 			return nil
 		},
 	}
@@ -433,8 +465,10 @@ func optOut(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 	var remove, yes bool
 	command := &cobra.Command{
 		Use:   "opt-out",
-		Short: "Stop bundled skills from being seeded into this profile",
-		Args:  cobra.NoArgs,
+		Short: "Stop copying built-in skills into this profile",
+		Long: "Stops icebath from copying its built-in skills into this profile. Skills already copied stay, unless you pass --remove to " +
+			"delete the ones you never edited. Skills you edited, and skills from the hub or your own folders, are never touched.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 			response, err := service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(), Out: true})
@@ -442,9 +476,9 @@ func optOut(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				return err
 			}
 			fmt.Fprintln(out, response.GetMessage())
-			fmt.Fprintln(out, "Marker: "+response.GetMarker())
+			fmt.Fprintln(out, "The marker file is "+response.GetMarker()+".")
 			if !remove {
-				fmt.Fprintln(out, "Existing skills on disk were left in place. Re-run with --remove to also delete unmodified bundled skills.")
+				fmt.Fprintln(out, "The skills already copied stay. Run the command again with --remove to also delete the built-in skills you never edited.")
 				return nil
 			}
 			preview, err := service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(), Out: true, Dry: true})
@@ -452,28 +486,30 @@ func optOut(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				return err
 			}
 			if len(preview.GetRemoved()) == 0 {
-				fmt.Fprintln(out, "No pristine bundled skills to remove (nothing tracked, or all are user-modified/local).")
+				fmt.Fprintln(out, "There is no unedited built-in skill to remove. Every one is edited, your own, or not copied.")
 				return nil
 			}
-			fmt.Fprintf(out, "\nWill remove %d unmodified bundled skill(s):\n%s\n", len(preview.GetRemoved()), strings.Join(preview.GetRemoved(), ", "))
+			fmt.Fprintf(out, "\nThis removes %s you never edited:\n%s\n", strs.Count(len(preview.GetRemoved()), "built-in skill"), strings.Join(preview.GetRemoved(), ", "))
 			if kept := preview.GetKept(); len(kept) > 0 {
-				fmt.Fprintf(out, "Keeping %d (user-modified or non-bundled).\n", len(kept))
+				fmt.Fprintf(out, "It keeps %s that you edited or that are not built in.\n", strs.Count(len(kept), "skill"))
 			}
-			if !yes && !confirm(cmd, "This deletes the on-disk copies. User-edited and hub/local skills are NOT touched.") {
-				fmt.Fprintln(out, "Marker kept; no skills deleted.")
+			if !yes && !confirm(cmd, fmt.Sprintf("Delete these %s? Skills you edited, and skills from the hub or your own folders, stay.",
+				strs.Count(len(preview.GetRemoved()), "skill"))) {
+				fmt.Fprintln(out, "No skill was deleted, and built-in skills are still not copied.")
 				return nil
 			}
 			response, err = service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(), Out: true, Remove: true})
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(out, "Removed %d pristine bundled skill(s); kept %d.\n", len(response.GetRemoved()), len(response.GetKept()))
+			fmt.Fprintf(out, "✓ Removed %s you never edited, and kept %s.\n", strs.Count(len(response.GetRemoved()), "built-in skill"),
+				strs.Number(float64(len(response.GetKept()))))
 			listed(out, "Removed", response.GetRemoved())
 			return nil
 		},
 	}
-	command.Flags().BoolVar(&remove, "remove", false, "also delete the bundled skills still as they were copied")
-	command.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask to confirm")
+	command.Flags().BoolVar(&remove, "remove", false, "Also delete the built-in skills you never edited")
+	command.Flags().BoolVarP(&yes, "yes", "y", false, "Go ahead without asking first")
 	return command
 }
 
@@ -481,7 +517,8 @@ func optIn(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 	var sync bool
 	command := &cobra.Command{
 		Use:   "opt-in",
-		Short: "Re-enable bundled-skill seeding (undo opt-out)",
+		Short: "Copy built-in skills into this profile again",
+		Long:  "Undoes opt-out, so icebath copies its built-in skills into this profile again. With --sync, opt-in copies them now.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			response, err := service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(), Sync: sync})
@@ -491,12 +528,12 @@ func optIn(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			out := cmd.OutOrStdout()
 			fmt.Fprintln(out, response.GetMessage())
 			if sync {
-				fmt.Fprintf(out, "Re-seeded %d bundled skill(s).\n", len(response.GetSynced().GetCopied()))
+				fmt.Fprintf(out, "✓ Copied %s into this profile.\n", strs.Count(len(response.GetSynced().GetCopied()), "built-in skill"))
 			}
 			return nil
 		},
 	}
-	command.Flags().BoolVar(&sync, "sync", false, "seed the bundled skills now")
+	command.Flags().BoolVar(&sync, "sync", false, "Copy the built-in skills now")
 	return command
 }
 
@@ -504,10 +541,12 @@ func repair(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 	var restore, yes bool
 	command := &cobra.Command{
 		Use:   "repair-official <name>",
-		Short: "Backfill or restore official optional skills from repo source",
-		Args:  cobra.ExactArgs(1),
+		Short: "Repair an official optional skill from its source",
+		Long: "Records where an official optional skill came from, when that record is missing. With --restore, repair-official also puts the official " +
+			"copy in place and moves matching copies aside as a backup.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if restore && !yes && !confirm(cmd, fmt.Sprintf("\nRestore official optional skill '%s' from repo source?", args[0]), "Existing matching active copies will be moved to a restore backup before copying the official source.") {
+			if restore && !yes && !confirm(cmd, fmt.Sprintf("\nPut the official copy of %s in place? Copies of it you have are moved to a backup first.", args[0])) {
 				return nil
 			}
 			response, err := service.Repair(cmd.Context(), &skillsv1.RepairRequest{Scope: here(), Name: args[0], Restore: restore})
@@ -515,18 +554,18 @@ func repair(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, "Official optional skill repair complete.")
-			listed(out, "Restored", response.GetRestored())
-			listed(out, "Backfilled provenance", response.GetBackfilled())
+			fmt.Fprintf(out, "✓ Repaired the optional skill %s.\n", args[0])
+			listed(out, "Put in place", response.GetRestored())
+			listed(out, "Recorded where it came from", response.GetBackfilled())
 			if backed := response.GetBackedUp(); len(backed) > 0 {
 				fmt.Fprintln(out, "Backed up: "+strings.Join(backed, ", "))
-				fmt.Fprintln(out, "Backup dir: "+response.GetBackupDir())
+				fmt.Fprintln(out, "Backup folder: "+response.GetBackupDir())
 			}
 			return nil
 		},
 	}
-	command.Flags().BoolVar(&restore, "restore", false, "put the official copy in place, moving matching copies aside")
-	command.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask to confirm")
+	command.Flags().BoolVar(&restore, "restore", false, "Put the official copy in place, moving matching copies aside")
+	command.Flags().BoolVarP(&yes, "yes", "y", false, "Go ahead without asking first")
 	return command
 }
 
@@ -538,44 +577,50 @@ func bundles(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 		}
 		out := cmd.OutOrStdout()
 		if len(response.GetBundles()) == 0 {
-			fmt.Fprintf(out, "No bundles installed yet. Create one with:\n  icebath bundles create <name> --skill skill1 --skill skill2\nBundles directory: %s\n", response.GetDir())
+			fmt.Fprintf(out, "You have no skill bundles yet. Make one with:\n  icebath bundles create <name> --skill skill1 --skill skill2\nBundles are kept in %s.\n",
+				response.GetDir())
 			return nil
 		}
-		fmt.Fprintf(out, "Skill Bundles (%d)\n", len(response.GetBundles()))
+		fmt.Fprintf(out, "%s:\n", strs.Count(len(response.GetBundles()), "skill bundle"))
 		table := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(table, "COMMAND\tNAME\tSKILLS\tDESCRIPTION")
+		fmt.Fprintln(table, "Command\tName\tSkills\tWhat it is for")
 		for _, b := range response.GetBundles() {
-			fmt.Fprintf(table, "/%s\t%s\t%d\t%s\n", b.GetSlug(), b.GetName(), len(b.GetSkills()), b.GetDescription())
+			fmt.Fprintf(table, "/%s\t%s\t%s\t%s\n", b.GetSlug(), b.GetName(), strs.Number(float64(len(b.GetSkills()))), cmp.Or(b.GetDescription(), "No description"))
 		}
 		if err := table.Flush(); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintf(out, "\nBundles directory: %s\n", response.GetDir())
+		_, err = fmt.Fprintf(out, "\nBundles are kept in %s.\n", response.GetDir())
 		return err
 	}
 	root := &cobra.Command{
-		Use:   "bundles",
-		Short: "Create, list, and manage skill bundles (aliases for multiple skills)",
-		Args:  cobra.NoArgs,
-		RunE:  func(cmd *cobra.Command, _ []string) error { return show(cmd) },
+		Use:     "bundles",
+		GroupID: cli.GroupAbilities,
+		Short:   "Create and manage skill bundles",
+		Long:    "A bundle loads several skills at once with one slash command, /name. With no subcommand, bundles lists your bundles.",
+		Args:    cobra.NoArgs,
+		RunE:    func(cmd *cobra.Command, _ []string) error { return show(cmd) },
 	}
 	var skillNames []string
 	var description, instruction string
 	var force bool
 	create := &cobra.Command{
 		Use:   "create <name>",
-		Short: "Create a new skill bundle",
-		Args:  cobra.ExactArgs(1),
+		Short: "Create a skill bundle",
+		Long: "Creates a bundle that loads the skills you name with --skill. The bundle's slash command is its name in lower case with " +
+			"hyphens. Without --skill, create asks for the skills one per line.",
+		Example: "  icebath bundles create review --skill code-review --skill security -d \"Review a change\"",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			names := slices.Clone(skillNames)
 			if len(names) == 0 {
-				fmt.Fprintln(out, "No skills passed via --skill. Enter one skill name per line.\nSubmit an empty line to finish.")
+				fmt.Fprintln(out, "No skills were given with --skill. Type one skill name per line, and an empty line to finish.")
 				input := cli.NewConsole(cmd)
 				for {
-					line, ok := input.Answer("skill> ")
+					line, ok := input.Answer("Skill: ")
 					if !ok {
-						return errors.New("Cancelled.")
+						return errors.New("No bundle was made.")
 					}
 					if line == "" {
 						break
@@ -584,35 +629,37 @@ func bundles(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				}
 			}
 			if len(names) == 0 {
-				return errors.New("A bundle must reference at least one skill.")
+				return errors.New("A bundle needs at least one skill.")
 			}
 			response, err := service.SaveBundle(cmd.Context(), &skillsv1.SaveBundleRequest{Scope: here(), Name: args[0], Skills: names, Description: description, Instruction: instruction, Overwrite: force})
-			if connect.CodeOf(err) == connect.CodeAlreadyExists {
-				return fmt.Errorf("%w\nPass --force to overwrite.", err)
+			if failure, ok := errors.AsType[*connect.Error](err); ok && failure.Code() == connect.CodeAlreadyExists {
+				return fmt.Errorf("%s Pass --force to replace it.", strings.TrimSuffix(failure.Message(), ".")+".")
 			}
 			if err != nil {
 				return err
 			}
 			b := response.GetBundle()
-			fmt.Fprintln(out, "Created bundle: "+b.GetPath())
-			_, err = fmt.Fprintf(out, "  Invoke with: /%s  (loads %d skills)\n", b.GetSlug(), len(b.GetSkills()))
+			fmt.Fprintln(out, "✓ Made the bundle "+b.GetPath()+".")
+			_, err = fmt.Fprintf(out, "  Load it with /%s, which loads %s.\n", b.GetSlug(), strs.Count(len(b.GetSkills()), "skill"))
 			return err
 		},
 	}
-	create.Flags().StringArrayVarP(&skillNames, "skill", "s", nil, "a skill of the bundle, repeated for each")
-	create.Flags().StringVarP(&description, "description", "d", "", "what the bundle is for")
-	create.Flags().StringVarP(&instruction, "instruction", "i", "", "told to the model along with the skills")
-	create.Flags().BoolVarP(&force, "force", "f", false, "replace a bundle of the name")
+	create.Flags().StringArrayVarP(&skillNames, "skill", "s", nil, "Skill to put in the bundle, repeat for each")
+	create.Flags().StringVarP(&description, "description", "d", "", "What the bundle is for, shown with its command")
+	create.Flags().StringVarP(&instruction, "instruction", "i", "", "Instruction the model gets along with the skills")
+	create.Flags().BoolVarP(&force, "force", "f", false, "Replace a bundle that has this name")
 	root.AddCommand(
 		&cobra.Command{
 			Use:   "list",
-			Short: "List installed skill bundles",
+			Short: "List the skill bundles",
+			Long:  "Lists every bundle with its slash command, how many skills it loads and what it is for.",
 			Args:  cobra.NoArgs,
 			RunE:  func(cmd *cobra.Command, _ []string) error { return show(cmd) },
 		},
 		&cobra.Command{
 			Use:   "show <name>",
-			Short: "Show one bundle's contents",
+			Short: "Show what a skill bundle holds",
+			Long:  "Shows one bundle's slash command, description, file, skills and instruction.",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				response, err := service.Bundles(cmd.Context(), &skillsv1.BundlesRequest{Scope: here()})
@@ -628,35 +675,37 @@ func bundles(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 					if b.GetDescription() != "" {
 						fmt.Fprintln(out, "  "+b.GetDescription())
 					}
-					fmt.Fprintf(out, "  File: %s\n  Skills (%d):\n", b.GetPath(), len(b.GetSkills()))
+					fmt.Fprintf(out, "  File: %s\n  It loads %s:\n", b.GetPath(), strs.Count(len(b.GetSkills()), "skill"))
 					for _, skill := range b.GetSkills() {
-						fmt.Fprintln(out, "    - "+skill)
+						fmt.Fprintln(out, "    "+skill)
 					}
 					if b.GetInstruction() != "" {
 						fmt.Fprintln(out, "  Instruction:\n    "+b.GetInstruction())
 					}
 					return nil
 				}
-				return fmt.Errorf("Bundle %q not found.", args[0])
+				return fmt.Errorf("There is no bundle named %s. Run icebath bundles to see your bundles.", args[0])
 			},
 		},
 		create,
 		&cobra.Command{
 			Use:   "delete <name>",
 			Short: "Delete a skill bundle",
+			Long:  "Deletes the bundle and its slash command. The skills it loaded stay installed.",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				response, err := service.DeleteBundle(cmd.Context(), &skillsv1.DeleteBundleRequest{Scope: here(), Name: args[0]})
 				if err != nil {
 					return err
 				}
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Deleted bundle: "+response.GetPath())
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "✓ Deleted the bundle "+response.GetPath()+".")
 				return err
 			},
 		},
 		&cobra.Command{
 			Use:   "reload",
-			Short: "Re-scan the bundles directory and report changes",
+			Short: "Read the bundles folder again and report changes",
+			Long:  "Reads the bundles folder again, for bundles you added or removed by hand, and reports what changed.",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, _ []string) error {
 				response, err := service.Reload(cmd.Context(), &skillsv1.ReloadRequest{Scope: here()})
@@ -665,21 +714,21 @@ func bundles(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				}
 				out := cmd.OutOrStdout()
 				if len(response.GetAdded()) > 0 {
-					fmt.Fprintf(out, "Added (%d):\n", len(response.GetAdded()))
+					fmt.Fprintf(out, "Added %s:\n", strs.Count(len(response.GetAdded()), "bundle"))
 					for _, c := range response.GetAdded() {
-						fmt.Fprintf(out, "  + %s — %s\n", c.GetName(), c.GetDescription())
+						fmt.Fprintf(out, "  %s: %s\n", c.GetName(), cmp.Or(c.GetDescription(), "No description"))
 					}
 				}
 				if len(response.GetRemoved()) > 0 {
-					fmt.Fprintf(out, "Removed (%d):\n", len(response.GetRemoved()))
+					fmt.Fprintf(out, "Removed %s:\n", strs.Count(len(response.GetRemoved()), "bundle"))
 					for _, c := range response.GetRemoved() {
-						fmt.Fprintln(out, "  - "+c.GetName())
+						fmt.Fprintln(out, "  "+c.GetName())
 					}
 				}
 				if len(response.GetAdded())+len(response.GetRemoved()) == 0 {
-					_, err = fmt.Fprintf(out, "No changes. %d command(s) loaded.\n", response.GetTotal())
+					_, err = fmt.Fprintf(out, "Nothing changed. %s loaded.\n", agreeing(int(response.GetTotal()), "bundle is", "bundles are"))
 				} else {
-					_, err = fmt.Fprintf(out, "Total now: %d\n", response.GetTotal())
+					_, err = fmt.Fprintf(out, "%s loaded now.\n", agreeing(int(response.GetTotal()), "bundle is", "bundles are"))
 				}
 				return err
 			},

@@ -336,7 +336,7 @@ func decrypt(algorithm pkix.AlgorithmIdentifier, data []byte, password string) (
 	cipher.NewCBCDecrypter(block, iv).CryptBlocks(out, data)
 	pad := int(out[len(out)-1])
 	if pad == 0 || pad > size || pad > len(out) || !bytes.Equal(out[len(out)-pad:], bytes.Repeat([]byte{byte(pad)}, pad)) {
-		return nil, errors.New("Invalid password or PKCS12 data")
+		return nil, errors.New("the password is wrong or the PFX file is damaged")
 	}
 	return out[:len(out)-pad], nil
 }
@@ -382,7 +382,7 @@ func pkcs12(raw []byte, password string) (any, []*x509.Certificate, error) {
 			}
 		}
 		if !ok {
-			return nil, nil, errors.New("Invalid password or PKCS12 data")
+			return nil, nil, errors.New("the password is wrong or the PFX file is damaged")
 		}
 	}
 	var contents []contentInfo

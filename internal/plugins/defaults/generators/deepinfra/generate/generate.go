@@ -47,7 +47,7 @@ func (s *services) Services() []generation.Service {
 		Ready: func(cfg *config.Config) bool { _, ok := s.route(cfg); return ok },
 		Setup: generation.Setup{Badge: "paid", Prompt: "DeepInfra API key", Link: "https://deepinfra.com/dash/api_keys", Provider: deepinfraprovider.Name},
 		Images: &generation.Images{
-			About:    "FLUX, Qwen-Image, … — live catalog from api.deepinfra.com",
+			About:    "Open image models, needs a DeepInfra API key",
 			Settings: []string{deepinfraconfig.Model, deepinfraconfig.BaseURL},
 			Model:    deepinfraconfig.Model,
 			Models:   s.imageModels,
@@ -56,7 +56,7 @@ func (s *services) Services() []generation.Service {
 			Generate: s.draw,
 		},
 		Videos: &generation.Videos{
-			About:   "Wan, p-video, … — live catalog from api.deepinfra.com; text-to-video & image-to-video",
+			About:   "Open video models from text or an image, needs a DeepInfra API key",
 			Models:  s.videoModels,
 			Default: s.videoDefault,
 			Takes: func(*config.Config) generation.VideoTakes {

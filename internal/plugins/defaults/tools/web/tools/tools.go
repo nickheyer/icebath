@@ -46,6 +46,8 @@ func (r *registrant) Tools() []tools.Def {
 			Name:    "web_search",
 			Toolset: toolset,
 			Title:   "Web search",
+			About:   "Search the web",
+			Group:   "Web",
 			Icon:    tools.IconSearch,
 			Subject: "query",
 			Schema: tools.Schema(
@@ -68,6 +70,8 @@ func (r *registrant) Tools() []tools.Def {
 			Name:    "web_extract",
 			Toolset: toolset,
 			Title:   "Read web page",
+			About:   "Read the text of web pages and online PDFs",
+			Group:   "Web",
 			Icon:    tools.IconFetch,
 			Schema: tools.Schema(
 				"Extract content from web page URLs. Returns clean page content in markdown/text (no LLM summarization — fast). Also works with PDF URLs (arxiv papers, documents) — pass the PDF link directly. Pages within the char budget (default 15000) return whole; larger pages return a head+tail window with a footer telling you the full text's saved file path and the read_file call to page through the omitted middle. Inline images appear as [IMAGE: alt] placeholders; real image URLs are kept as links. If a URL fails, times out, or needs JS, login or clicks, use a browser tool instead.",

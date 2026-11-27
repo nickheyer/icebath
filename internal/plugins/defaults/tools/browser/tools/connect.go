@@ -177,15 +177,14 @@ func hint(attempts []*attempt) string {
 	for _, a := range attempts {
 		if a.state == "exited" && a.code != nil && *a.code == 0 {
 			name := filepath.Base(a.binary)
-			return name + " exited immediately without opening the debug port — an already-running " + name + " instance likely absorbed the " +
-				"launch (Chromium's single-instance behavior). Close ALL of its processes (including background/tray instances) and retry /browser " +
-				"connect."
+			return name + " closed at once without opening its debugging port, most likely because a copy of it was already running. Close every " +
+				name + " window, including any left running in the background, then run /browser connect again."
 		}
 	}
 	for _, a := range attempts {
 		if a.state == "exited" && a.tail != "" {
 			lines := strings.Split(a.tail, "\n")
-			return filepath.Base(a.binary) + " exited before the debug port opened: " + strings.TrimSpace(lines[len(lines)-1])
+			return filepath.Base(a.binary) + " closed before its debugging port opened. It last printed: " + strings.TrimSpace(lines[len(lines)-1])
 		}
 	}
 	return ""
@@ -313,16 +312,16 @@ func httpReachable(u *url.URL, timeout time.Duration) bool {
 // Finds or launches the default local debug browser, telling each step; empty when none answers
 func (b *Browser) localDefault(ctx context.Context, cfg *config.Config, port int, say func(message, level string)) string {
 	if found := discoverLocal(ctx, port, 2*time.Second); found != "" {
-		say("Chromium-family browser is already listening at "+found, "info")
+		say("Found a browser with remote debugging at "+found+".", "info")
 		return found
 	}
 	launch := port
 	if portInUse(port, 500*time.Millisecond) {
 		launch = freeDebugPort(port, 10)
-		say(fmt.Sprintf("Port %d is occupied by another application that isn't a CDP browser (an IDE debugger or dev server may be using it) — "+
-			"launching a debug browser on port %d instead...", port, launch), "info")
+		say(fmt.Sprintf("Another program uses port %d, such as a code editor's debugger or a development server. Starting a browser with remote "+
+			"debugging on port %d instead.", port, launch), "info")
 	} else {
-		say("Chromium-family browser isn't running with remote debugging — attempting to launch...", "info")
+		say("No browser with remote debugging is running, so icebath is starting one.", "info")
 	}
 	launched, attempts := launchDebug(ctx, cfg, launch)
 	found := ""
@@ -338,7 +337,7 @@ func (b *Browser) localDefault(ctx context.Context, cfg *config.Config, port int
 		}
 	}
 	if found != "" {
-		say(fmt.Sprintf("Chromium-family browser launched and listening on port %d", launch), "info")
+		say(fmt.Sprintf("Started a browser with remote debugging on port %d.", launch), "info")
 		return found
 	}
 	if h := hint(attempts); h != "" {
@@ -346,12 +345,12 @@ func (b *Browser) localDefault(ctx context.Context, cfg *config.Config, port int
 	}
 	var lines []string
 	if command := manualCommand(cfg, launch); command != "" {
-		lines = []string{"Start a Chromium-family browser with remote debugging, then retry /browser connect:", command}
+		lines = []string{"Start a browser with remote debugging with this command, then run /browser connect again:", command}
 	} else {
-		lines = []string{"No supported Chromium-family browser executable was found in this environment.",
-			fmt.Sprintf("Install one or start a Chromium-family browser with --remote-debugging-port=%d, then retry /browser connect.", launch)}
+		lines = []string{"No Chrome, Edge, Brave or other Chromium browser was found on this computer.",
+			fmt.Sprintf("Install one, or start one with --remote-debugging-port=%d, then run /browser connect again.", launch)}
 	}
-	lines = append(lines, "Browser not connected — start a Chromium-family browser with remote debugging and retry /browser connect")
+	lines = append(lines, "The browser is not connected yet. Start one with remote debugging, then run /browser connect again.")
 	for _, line := range lines {
 		say(line, "error")
 	}
@@ -376,20 +375,20 @@ func (b *Browser) Connect(ctx context.Context, cfg *config.Config, address strin
 	}
 	u, err := url.Parse(target)
 	if err != nil {
-		return false, "", &BadAddress{"invalid browser url: " + address}
+		return false, "", &BadAddress{"“" + address + "” is not an address. Give one such as " + DefaultURL + "."}
 	}
 	switch u.Scheme {
 	case "http", "https", "ws", "wss":
 	default:
-		return false, "", &BadAddress{"unsupported browser url: " + address}
+		return false, "", &BadAddress{"“" + address + "” is not a browser address. It must start with http://, https://, ws:// or wss://."}
 	}
 	if u.Hostname() == "" {
-		return false, "", &BadAddress{"missing host in browser url: " + address}
+		return false, "", &BadAddress{"“" + address + "” names no computer. Give one such as " + DefaultURL + "."}
 	}
 	port := 80
 	if p := u.Port(); p != "" {
 		if port, err = strconv.Atoi(p); err != nil || port <= 0 || port > 65535 {
-			return false, "", &BadAddress{"invalid port in browser url: " + address}
+			return false, "", &BadAddress{"The port in “" + address + "” is not a number from 1 to 65,535."}
 		}
 	} else if u.Scheme == "https" || u.Scheme == "wss" {
 		port = 443
@@ -403,7 +402,9 @@ func (b *Browser) Connect(ctx context.Context, cfg *config.Config, address strin
 	case (u.Scheme == "ws" || u.Scheme == "wss") && strings.HasPrefix(u.Path, "/devtools/browser/"):
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(u.Hostname(), strconv.Itoa(port)), 2*time.Second)
 		if err != nil {
-			return false, "", fmt.Errorf("could not reach browser CDP at %s: %s", redactEndpoint(address), err)
+			slog.Debug("browser connect: dial failed", "address", redactEndpoint(address), "error", err)
+			return false, "", fmt.Errorf("Could not reach a browser at %s. Check that it is running with remote debugging on and that the address is "+
+				"right.", redactEndpoint(address))
 		}
 		conn.Close()
 	case local:
@@ -414,7 +415,8 @@ func (b *Browser) Connect(ctx context.Context, cfg *config.Config, address strin
 		address = found
 		u, _ = url.Parse(found)
 	case !httpReachable(u, 2*time.Second):
-		return false, "", errors.New("could not reach browser CDP at " + redactEndpoint(address))
+		return false, "", errors.New("Could not reach a browser at " + redactEndpoint(address) + ". Check that it is running with remote debugging " +
+			"on and that the address is right.")
 	}
 	normalized := u.String()
 	if !strings.HasPrefix(u.Path, "/devtools/browser/") {

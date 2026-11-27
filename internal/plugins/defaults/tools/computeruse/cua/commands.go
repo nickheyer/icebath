@@ -25,8 +25,8 @@ func Unknown(cfg *config.Config) error {
 	if name == "" || name == cuconfig.Cua {
 		return nil
 	}
-	return fmt.Errorf("computer_use.backend is '%s', but that computer-use provider is not installed (available: %s). Pick a backend in /settings "+
-		"under Computer use.", name, cuconfig.Cua)
+	return fmt.Errorf("Computer use is set to the driver “%s”, which icebath does not have. Choose cua-driver in /settings under "+
+		"Tools › Computer use › Driver.", name)
 }
 
 // One probe of the driver's own doctor
@@ -122,9 +122,9 @@ func textField(m map[string]any, key string) string {
 func (d *Driver) grants(ctx context.Context, cfg *config.Config, binary string, st *Status) {
 	out, err := d.run(ctx, cfg, binary, 10*time.Second, "permissions", "status", "--json")
 	if err != nil {
-		text := "cua-driver permissions status failed: " + err.Error()
+		text := "Could not read the permissions from cua-driver: " + err.Error() + "."
 		if _, timedOut := errors.AsType[*timeoutError](err); timedOut {
-			text = "cua-driver permissions status timed out"
+			text = "cua-driver took too long to report its permissions."
 		}
 		st.Error = &text
 		return
@@ -157,14 +157,14 @@ func staleGrantHint(missing ...string) string {
 	if len(resets) == 0 {
 		return ""
 	}
-	return "If System Settings already shows CuaDriver ON, the stored grant is stale (it no longer matches the installed driver's signature): run `" +
-		strings.Join(resets, " && ") + "`, then `icebath computer-use permissions grant`."
+	return "If System Settings already shows CuaDriver as on, that grant belongs to an older copy of the driver. Run " +
+		strings.Join(resets, " && ") + ", then icebath computer-use permissions grant."
 }
 
 // Says what a provider other than the driver is, ending the command, false for the driver
 func unknownProvider(cfg *config.Config, out io.Writer) (int, bool) {
 	if err := Unknown(cfg); err != nil {
-		fmt.Fprintln(out, "Computer Use: "+err.Error())
+		fmt.Fprintln(out, "✗ "+err.Error())
 		return 2, true
 	}
 	return 0, false
@@ -190,28 +190,28 @@ func (d *Driver) StatusCommand(ctx context.Context, cfg *config.Config, out io.W
 	}
 	override := d.Override()
 	if binary == "" {
-		fmt.Fprintln(out, "cua-driver: not installed")
-		fmt.Fprintln(out, "  Run: icebath computer-use install")
+		fmt.Fprintln(out, "✗ cua-driver is not installed. Install it with icebath computer-use install.")
 		return 1, nil
 	}
 	c, err := d.Contract(ctx, cfg, binary)
 	if err != nil {
 		return 0, err
 	}
-	line := "cua-driver: installed at " + binary
-	if override != "" {
-		line += " [custom binary from " + cuconfig.DriverCommandEnv + "]"
-	}
+	line := "cua-driver is installed at " + binary + "."
 	if version := firstLine(c.Version, 120); version != "" {
-		line += " (" + version + ")"
+		line = "cua-driver " + version + " is installed at " + binary + "."
 	}
 	fmt.Fprintln(out, line)
+	if override != "" {
+		fmt.Fprintln(out, "  It is your own copy, named by the variable "+cuconfig.DriverCommandEnv+".")
+	}
 	if !c.Ready {
-		fmt.Fprintln(out, "  ⚠ Repair required: "+cmp.Or(c.Reason, "runtime contract is incomplete"))
+		fmt.Fprintln(out, "  ⚠ cua-driver cannot be used yet: "+cmp.Or(c.Reason, "it does not offer everything icebath needs")+".")
 		if override != "" {
-			fmt.Fprintln(out, "    Update the binary selected by "+cuconfig.DriverCommandEnv+", or unset the override and run: icebath computer-use install --upgrade")
+			fmt.Fprintln(out, "    Update the program "+cuconfig.DriverCommandEnv+" names, or unset "+cuconfig.DriverCommandEnv+
+				" and run icebath computer-use install --upgrade.")
 		} else {
-			fmt.Fprintln(out, "    Run: icebath computer-use install")
+			fmt.Fprintln(out, "    Repair it with icebath computer-use install.")
 		}
 		return 1, nil
 	}
@@ -223,16 +223,16 @@ func (d *Driver) StatusCommand(ctx context.Context, cfg *config.Config, out io.W
 			}
 			if listening, known := d.listening(ctx, cfg, binary, u.socket); known && !listening {
 				where := cmp.Or(u.socket, "the default socket")
-				fmt.Fprintf(out, "  ✗ Daemon unit %s: no `cua-driver serve` is listening on %s\n", u.unit, where)
-				fmt.Fprintf(out, "    Check: systemctl --user status %s  (reinstalling the driver does not start it)\n", u.unit)
+				fmt.Fprintf(out, "  ✗ The background service %s is not running. Nothing answers on %s.\n", u.unit, where)
+				fmt.Fprintf(out, "    Check it with systemctl --user status %s. Installing the driver again does not start it.\n", u.unit)
 				code = 1
 			}
 		}
 	}
 	if override != "" {
-		fmt.Fprintln(out, "  ✓ Runtime contract ready (externally managed).")
+		fmt.Fprintln(out, "  ✓ cua-driver is ready. You keep this copy up to date yourself.")
 	} else {
-		fmt.Fprintln(out, "  ✓ Runtime contract ready (Icebath PM pin).")
+		fmt.Fprintln(out, "  ✓ cua-driver is ready. It is the version icebath installs and keeps up to date.")
 	}
 	return code, nil
 }
@@ -265,14 +265,30 @@ func (d *Driver) listening(ctx context.Context, cfg *config.Config, binary, sock
 	return false, false
 }
 
-func glyph(v *bool) string {
+// Line saying whether macOS granted a permission, marked done, failed or unknown
+func granted(name string, v *bool) string {
 	switch {
 	case v == nil:
-		return "•"
+		return "⚠ Could not tell whether " + name + " is granted."
 	case *v:
-		return "✅"
+		return "✓ " + name + " is granted."
 	}
-	return "❌"
+	return "✗ " + name + " is not granted."
+}
+
+// Name of an operating system as a person knows it
+func system(goos string) string {
+	switch goos {
+	case "darwin":
+		return "macOS"
+	case "linux":
+		return "Linux"
+	case "windows":
+		return "Windows"
+	case "freebsd":
+		return "FreeBSD"
+	}
+	return goos
 }
 
 // `computer-use permissions status`: the grants of the provider as JSON or as a checklist
@@ -300,23 +316,23 @@ func (d *Driver) PermissionsCommand(ctx context.Context, cfg *config.Config, out
 		return code, nil
 	}
 	if !st.PlatformSupported {
-		fmt.Fprintln(out, "Computer Use is not supported on "+st.Platform+".")
+		fmt.Fprintln(out, "✗ Computer use does not work on "+system(st.Platform)+".")
 		return 1, nil
 	}
 	if !st.Installed {
-		fmt.Fprintln(out, "cua-driver: not installed. Run: icebath computer-use install")
+		fmt.Fprintln(out, "✗ cua-driver is not installed. Install it with icebath computer-use install.")
 		return 1, nil
 	}
-	version := "installed"
 	if st.Version != nil {
-		version = *st.Version
+		fmt.Fprintf(out, "cua-driver %s is installed on %s.\n", *st.Version, system(st.Platform))
+	} else {
+		fmt.Fprintf(out, "cua-driver is installed on %s.\n", system(st.Platform))
 	}
-	fmt.Fprintf(out, "cua-driver: %s (%s)\n", version, st.Platform)
 	if st.CanGrant {
-		fmt.Fprintf(out, "  %s Accessibility\n", glyph(st.Accessibility))
-		fmt.Fprintf(out, "  %s Screen Recording\n", glyph(st.ScreenRecording))
+		fmt.Fprintln(out, "  "+granted("Accessibility", st.Accessibility))
+		fmt.Fprintln(out, "  "+granted("Screen Recording", st.ScreenRecording))
 		if !ready {
-			fmt.Fprintln(out, "  Grant: icebath computer-use permissions grant")
+			fmt.Fprintln(out, "  Grant them with icebath computer-use permissions grant.")
 			var missing []string
 			for field, v := range map[string]*bool{"accessibility": st.Accessibility, "screen_recording": st.ScreenRecording} {
 				if v != nil && !*v {
@@ -328,7 +344,15 @@ func (d *Driver) PermissionsCommand(ctx context.Context, cfg *config.Config, out
 			}
 		}
 	} else {
-		fmt.Fprintf(out, "  %s driver health (no permission toggles on %s)\n", glyph(st.Ready), st.Platform)
+		switch {
+		case st.Ready == nil:
+			fmt.Fprintf(out, "  ⚠ Could not tell whether cua-driver works. %s has no permissions to grant.\n", system(st.Platform))
+		case *st.Ready:
+			fmt.Fprintf(out, "  ✓ cua-driver works. %s has no permissions to grant.\n", system(st.Platform))
+		default:
+			fmt.Fprintf(out, "  ✗ cua-driver does not work. %s has no permissions to grant, so run icebath computer-use doctor to see why.\n",
+				system(st.Platform))
+		}
 	}
 	for _, c := range st.Checks {
 		if c.Status != "ok" {
@@ -373,7 +397,7 @@ func (d *Driver) GrantCommand(ctx context.Context, cfg *config.Config, out, errO
 		return code, nil
 	}
 	if !darwin {
-		fmt.Fprintln(out, "Computer Use permissions are a macOS concept; nothing to grant here.")
+		fmt.Fprintln(out, "Only macOS asks for permissions for computer use, so there is nothing to grant here.")
 		return 64, nil
 	}
 	binary, err := d.Command("")
@@ -381,11 +405,11 @@ func (d *Driver) GrantCommand(ctx context.Context, cfg *config.Config, out, errO
 		return 0, err
 	}
 	if binary == "" {
-		fmt.Fprintln(out, "cua-driver: not installed. Run: icebath computer-use install")
+		fmt.Fprintln(out, "✗ cua-driver is not installed. Install it with icebath computer-use install.")
 		return 2, nil
 	}
-	fmt.Fprintln(out, "Requesting Accessibility + Screen Recording for CuaDriver.\nmacOS will show a dialog attributed to CuaDriver ("+bundleID+
-		") — approve it, then return here.")
+	fmt.Fprintln(out, "Asking macOS to grant Accessibility and Screen Recording to CuaDriver.")
+	fmt.Fprintln(out, "macOS shows a dialog from CuaDriver, whose ID is "+bundleID+". Approve it, then come back here.")
 	cmd := exec.CommandContext(ctx, binary, "permissions", "grant")
 	cmd.Env = terminal.Environ(d.Env(cfg))
 	cmd.Stdout, cmd.Stderr = out, errOut
@@ -394,7 +418,7 @@ func (d *Driver) GrantCommand(ctx context.Context, cfg *config.Config, out, errO
 		return proc.ExitCode(exit.ProcessState), nil
 	}
 	if err != nil {
-		fmt.Fprintf(errOut, "cua-driver permissions grant failed: %s\n", err)
+		fmt.Fprintf(errOut, "✗ Could not run cua-driver to ask for the permissions: %s.\n", err)
 		return 2, nil
 	}
 	return 0, nil

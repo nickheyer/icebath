@@ -12,11 +12,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/models"
 	"github.com/nickheyer/icebath/internal/provider"
 	"github.com/nickheyer/icebath/internal/transport"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Carrier of the replies of this API in a stored message
@@ -145,8 +147,8 @@ func (c *client) unsign(p *prepared) {
 func (c *client) recover(p *prepared, err error, fn provider.StreamFunc) (bool, bool) {
 	if slow, ok := errors.AsType[*slowError](err); ok {
 		c.r.slowModels.Store(p.request.SessionID+"\x00"+p.model, true)
-		transport.Say(fn, provider.EventStatus, fmt.Sprintf("⚠️  Fast mode isn't available for %s on this Anthropic organization — using "+
-			"standard speed for this session, retrying...", p.model))
+		transport.Say(fn, provider.EventStatus, fmt.Sprintf("⚠ Your Anthropic organization can't use fast mode with %s, so this session uses "+
+			"standard speed. Trying again.", p.model))
 		slog.Warn(fmt.Sprintf("Fast mode: %s has a fast-mode limit of 0; standard speed for this session", p.model), "error", slow.failure)
 		return true, false
 	}
@@ -298,7 +300,7 @@ func (c *client) once(ctx context.Context, p *prepared, address string, payload 
 	}
 	timedOut := func(err error) error {
 		if ctx.Err() == nil && errors.Is(bounded.Err(), context.DeadlineExceeded) {
-			return &transport.TimeoutError{Phase: transport.PhaseRead, Err: fmt.Errorf("Request timed out after %.0fs.", limit.Seconds())}
+			return &transport.TimeoutError{Phase: transport.PhaseRead, Err: fmt.Errorf("The request took longer than its time limit of %s.", strs.Span(max(limit.Round(time.Second), time.Second)))}
 		}
 		return err
 	}
@@ -342,7 +344,7 @@ func (c *client) request(ctx context.Context, p *prepared, address string, paylo
 	}
 	if c.route.Sign != nil {
 		if err := c.route.Sign(call, payload); err != nil {
-			return nil, fmt.Errorf("The request to %s couldn't be signed: %w", c.route.Provider, err)
+			return nil, fmt.Errorf("The request to %s could not be signed: %w", c.route.Provider, err)
 		}
 	}
 	return call, nil

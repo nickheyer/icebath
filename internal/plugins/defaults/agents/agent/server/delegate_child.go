@@ -285,7 +285,7 @@ func (c *child) progress(names []string) {
 		prefix = "[" + tag + "] "
 	}
 	event := c.event("progress")
-	event.Text = "🔀 " + prefix + strings.Join(names, ", ")
+	event.Text = prefix + "Ran together: " + strings.Join(names, ", ")
 	c.publish(event)
 }
 
@@ -887,13 +887,17 @@ func (c *child) heartbeat(ctx context.Context) func() {
 				return
 			}
 			c.mu.Lock()
-			desc := fmt.Sprintf("delegate_task: subagent %d working", c.index)
+			desc := fmt.Sprintf("Subagent %d is working.", c.index)
 			maxIter := c.a.settings(c.r).GetInt(agentconfig.MaxTurns)
+			step := fmt.Sprintf("step %d", c.calls)
+			if maxIter > 0 {
+				step += fmt.Sprintf(" of %d", maxIter)
+			}
 			switch {
 			case c.tool != "":
-				desc = fmt.Sprintf("delegate_task: subagent running %s (iteration %d/%d)", c.tool, c.calls, maxIter)
+				desc = fmt.Sprintf("Subagent %d is running %s, %s.", c.index, c.tool, step)
 			case c.doing != "":
-				desc = fmt.Sprintf("delegate_task: subagent %s (iteration %d/%d)", c.doing, c.calls, maxIter)
+				desc = fmt.Sprintf("Subagent %d: %s, %s.", c.index, c.doing, step)
 			}
 			c.mu.Unlock()
 			if store, err := c.a.store(); err == nil {
@@ -1014,17 +1018,17 @@ func (c *child) await(ctx context.Context, text string, media []*sessionsv1.Medi
 	var reason string
 	switch {
 	case staleAfter != 0:
-		reason = fmt.Sprintf("Subagent stopped making progress after %d API call(s) — no activity for %ss (heartbeat stale threshold); the pending worker "+
-			"was abandoned.", calls, formatG(staleAfter.Seconds()))
+		reason = fmt.Sprintf("The subagent stopped making progress after %s, with no activity for %s, so it was given up.",
+			strs.Count(calls, "model call"), strs.Span(rounded(staleAfter)))
 	case calls == 0:
-		reason = fmt.Sprintf("Subagent timed out after %ss without making any API call — the child never reached its first LLM request (prompt "+
-			"construction, credential resolution, or transport may be stuck).", formatG(limit.Seconds()))
+		reason = fmt.Sprintf("The subagent ran out of time after %s, before its first model call. Building its prompt, finding its account or "+
+			"connecting to the provider may be stuck.", strs.Span(rounded(limit)))
 	default:
-		reason = fmt.Sprintf("Subagent timed out after %ss with %d API call(s) completed — no progress in that window (no completed call, tool change, "+
-			"or activity-clock tick): a stalled provider request or an unresponsive network request.", formatG(limit.Seconds()), calls)
+		reason = fmt.Sprintf("The subagent ran out of time after %s and %s, with no progress in that time. A request to the provider or the "+
+			"network probably stalled.", strs.Span(rounded(limit)), strs.Count(calls, "model call"))
 	}
 	if diagnostic != "" {
-		reason += " Diagnostic: " + diagnostic
+		reason += " Details are in " + diagnostic + "."
 	}
 	e := &entry{TaskIndex: c.index, Status: "timeout", Error: reason, ExitReason: "timeout", APICalls: calls, Duration: duration, role: c.role,
 		TimeoutSeconds: new(cause.Seconds()), TimedOutAfter: new(duration), DiagnosticPath: diagnostic}
@@ -1035,7 +1039,7 @@ func (c *child) await(ctx context.Context, text string, media []*sessionsv1.Medi
 	if last := c.fingerprint().last; !last.IsZero() {
 		e.LastEventAge = new(math.Round(time.Since(last).Seconds()*100) / 100)
 	}
-	return turned{}, c.finishFailed(e, late, fmt.Sprintf("Timed out after %ss", formatG(duration)))
+	return turned{}, c.finishFailed(e, late, "Ran out of time after "+strs.Span(rounded(time.Duration(duration*float64(time.Second))))+".")
 }
 
 // Shortest of the plain and exponent forms of a number, as limits are told

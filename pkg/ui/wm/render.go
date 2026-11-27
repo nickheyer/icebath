@@ -638,16 +638,16 @@ func (m *Model) paintBackdrop(amount float64) {
 	}
 }
 
-// Draws toasts stacked under the bar at the right, sliding and fading in and out at the edge
+// Draws toasts stacked under the bar at the right, sliding and fading in and out at the edge. A toast says its whole sentence: one wider
+// than half the screen goes on in the rows under its first
 func (m *Model) paintToasts() {
 	if len(m.toasts) == 0 || m.width < 12 {
 		return
 	}
 	t := m.theme
-	limit := max(10, m.width/2)
 	base := lipgloss.NewStyle().Background(t.Surface)
-	for i, tt := range m.toasts {
-		y := barHeight + i*toastGap
+	y := barHeight
+	for _, tt := range m.toasts {
 		if y >= m.height {
 			break
 		}
@@ -660,17 +660,34 @@ func (m *Model) paintToasts() {
 		case Error:
 			glyph, fg = t.Glyphs.Fail, t.Alarm
 		}
-		text := ansi.Truncate(tt.text, limit-4, t.Glyphs.Ellipsis)
-		label := base.Render(" ") + base.Foreground(fg).Bold(true).Render(glyph) + base.Render(" ") + base.Foreground(t.Text).Render(text) + base.Render(" ")
-		lw := ansi.StringWidth(label)
+		lines := m.toastLines(tt.text)
+		width := 0
+		for _, line := range lines {
+			width = max(width, ansi.StringWidth(line))
+		}
+		mark := ansi.StringWidth(glyph) + 1
+		lw := 1 + mark + width + 1
 		slide := min(max(tt.x.Pos, 0), 1)
 		x := m.width - m.gapOutX - lw + int(math.Round(tt.x.Pos*float64(lw+m.gapOutX)))
 		alpha := 1 - slide
-		m.pad(x-1, y, lw+2, alpha)
-		face := m.face(lw, 1)
-		uv.NewStyledString(label).Draw(face, uv.Rect(0, 0, lw, 1))
-		m.stamp(face, placed{x: x, y: y, w: lw, h: 1, alpha: alpha})
+		face := m.face(lw, len(lines))
+		for row, line := range lines {
+			lead := base.Render(strings.Repeat(" ", mark))
+			if row == 0 {
+				lead = base.Foreground(fg).Bold(true).Render(glyph) + base.Render(" ")
+			}
+			label := base.Render(" ") + lead + base.Foreground(t.Text).Render(line) + base.Render(strings.Repeat(" ", width-ansi.StringWidth(line)+1))
+			m.pad(x-1, y+row, lw+2, alpha)
+			uv.NewStyledString(label).Draw(face, uv.Rect(0, row, lw, 1))
+		}
+		m.stamp(face, placed{x: x, y: y, w: lw, h: len(lines), alpha: alpha})
+		y += len(lines) + toastGap - 1
 	}
+}
+
+// Text of a toast in the rows it takes, none wider than half the screen less its mark and edges
+func (m *Model) toastLines(text string) []string {
+	return strings.Split(ansi.Wordwrap(text, max(10, m.width/2)-4, ""), "\n")
 }
 
 // Pads a one row surface with a blank surface cell at each end
@@ -961,8 +978,8 @@ func (m *Model) frame() screen {
 func (screen) WidthMethod() uv.WidthMethod { return uv.WidthMethod(ansi.GraphemeWidth) }
 
 // Paints the buttons of the card into its bottom edge and records the columns each covers. The one enter presses is lit, and each names its
-// key after its label while every button fits with its key. When the edge is too narrow for all of them the row slides to keep the lit one
-// in view, an arrow on each side that has more
+// key after its label while every button fits with its key; in a narrower edge the first and the last keep their keys the longest. When
+// the edge is too narrow for the labels alone the row slides to keep the lit one in view, an arrow on each side that has more
 func (m *Model) paintHints(face screen, e *entry, x0, y, sx, w int) {
 	e.hints, e.buttons = e.hints[:0], e.buttons[:0]
 	var labels, chords []string
@@ -987,6 +1004,14 @@ func (m *Model) paintHints(face screen, e *entry, x0, y, sx, w int) {
 		keyed += ansi.StringWidth(labels[i]) + 2
 		if chords[i] != "" {
 			keyed += ansi.StringWidth(chords[i]) + 1
+		}
+	}
+	// Too narrow for every key: the first button, which enter presses, and the last, which is the way out, keep theirs while the ones
+	// between give theirs up from the right until the row fits. Every key goes only when even that is too wide
+	for i := n - 2; i >= 1 && keyed > room; i-- {
+		if chords[i] != "" {
+			keyed -= ansi.StringWidth(chords[i]) + 1
+			chords[i] = ""
 		}
 	}
 	if keyed > room {

@@ -41,7 +41,7 @@ func (h *Packages) Provide(ctx context.Context, cfg *config.Config, name string)
 		return "", err
 	}
 	if got == nil || got.Binary == "" {
-		return "", fmt.Errorf("%s was installed but its program is not where the package says", name)
+		return "", fmt.Errorf("%s is installed, but its program is not where the package says. Run `icebath pm install %s` to install it again.", name, name)
 	}
 	return got.Binary, nil
 }

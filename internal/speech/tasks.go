@@ -14,8 +14,8 @@ type tasks struct{}
 
 func (tasks) Tasks() []auxiliary.Task {
 	return []auxiliary.Task{
-		{Name: speechconfig.AudioTags, Title: "Speech tags", About: "Model that adds tone and speech tags to text before a voice reads it", Timeout: 30},
-		{Name: speechconfig.VoiceChat, Title: "Voice chat", About: "Model that answers the turns you speak, thinking little so it answers sooner", Timeout: 120, Effort: "none"},
+		{Name: speechconfig.VoiceChat, Title: "Voice chat", About: "The model that answers what you say in voice mode", Order: 100, Timeout: 120, Effort: "none"},
+		{Name: speechconfig.AudioTags, Title: "Speech tags", About: "The model that adds tone marks to text read aloud", Order: 110, Timeout: 30},
 	}
 }
 

@@ -125,8 +125,8 @@ func (r *registrant) resourceArgs(ctx context.Context, docker string, o *options
 		case !set:
 			args = append(args, "--network=none")
 		case mode != "none":
-			return nil, fmt.Errorf("%s is off (air-gapped) but %s asks for --network=%s. Remove the --network entry from Docker extra flags, or turn on "+
-				"Docker network to opt into that network.", dockerconfig.Network, dockerconfig.ExtraArgs, strconv.Quote(mode))
+			return nil, fmt.Errorf("Network access is off in /settings under Terminal › Docker, but Extra flags there ask for --network=%s. Remove "+
+				"that flag from Extra flags, or turn on Network access to use that network.", strconv.Quote(mode))
 		}
 	}
 	return args, nil

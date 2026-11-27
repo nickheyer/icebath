@@ -613,7 +613,7 @@ func waitGone(pids []int, timeout time.Duration) []int {
 func closeHolding(cfg *config.Config, src string, timeout time.Duration) (bool, string) {
 	procs := holdingProfile(src)
 	if len(procs) == 0 {
-		return false, "no matching browser process found holding the profile."
+		return false, "Your browser is not running, so there was nothing to close."
 	}
 	targets := slices.Clone(procs)
 	for _, pid := range procs {
@@ -637,10 +637,11 @@ func closeHolding(cfg *config.Config, src string, timeout time.Duration) (bool, 
 	}
 	for deadline := time.Now().Add(timeout); ; time.Sleep(500 * time.Millisecond) {
 		if !profileLocked(src, source) {
-			return true, "closed the browser and the profile lock released."
+			return true, "Closed your browser. The agent can now copy your sign-ins from it."
 		}
 		if !time.Now().Before(deadline) {
-			return false, "closed the browser processes but the profile is still locked — another instance may have relaunched (background/tray mode)."
+			return false, "Closed your browser, but its profile is still in use, perhaps because it started again in the background. Quit it from " +
+				"the system tray as well, then try again."
 		}
 	}
 }
@@ -649,11 +650,15 @@ func closeHolding(cfg *config.Config, src string, timeout time.Duration) (bool, 
 func CloseProfile(cfg *config.Config, browser string) (bool, string) {
 	browser = cmp.Or(browser, defaultChromium())
 	if browser == "" || browser == preRelease {
-		return false, "No supported Chromium default browser detected."
+		return false, "Your default browser is not a stable Chrome, Edge, Brave or Chromium, so there is no browser profile to close."
 	}
 	src := realDataDir(browser)
 	if src == "" {
-		return false, fmt.Sprintf("Could not resolve the %s profile directory.", browser)
+		keys := make([]string, len(products))
+		for i, b := range products {
+			keys[i] = b.key
+		}
+		return false, fmt.Sprintf("No browser is called “%s”. Name one of %s.", browser, strings.Join(keys, ", "))
 	}
 	return closeHolding(cfg, src, 15*time.Second)
 }

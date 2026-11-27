@@ -6,12 +6,15 @@ import (
 )
 
 func Register(cfg *config.Config) {
-	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.TTS, Title: "NeuTTS speech", About: "A voice cloning model that runs on this machine; copies a sample " +
-		"recording you give it", Settings: []config.Setting{
-		{Key: Device, Title: "NeuTTS device", About: "Where NeuTTS runs, such as cpu, cuda or mps", Default: DefaultDevice},
-		{Key: Model, Title: "NeuTTS model", About: "On-device speech model used with NeuTTS", Default: DefaultModel},
-		{Key: RefAudio, Title: "NeuTTS sample audio", About: "Path to a sample recording of the voice to copy; empty uses the bundled sample", Default: ""},
-		{Key: RefText, Title: "NeuTTS sample text", About: "Path to the transcript of the sample recording; empty uses the bundled sample's", Default: ""},
-		{Key: MaxTextLength, Title: "NeuTTS text limit", About: "Most characters one NeuTTS request takes, longer text split into several; 0 uses 2000", Default: 0},
-	}}})
+	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.TTS, Title: "NeuTTS", About: "Copies a voice from a sample, on this computer",
+		Order: 110, Settings: []config.Setting{
+			{Key: RefAudio, Title: "Sample recording", About: "The recording of the voice to copy.", Default: "", Zero: "The bundled sample"},
+			{Key: RefText, Title: "Sample transcript", About: "The file that holds the words of the sample recording.", Default: "",
+				Zero: "The bundled transcript"},
+			{Key: Model, Title: "Model", About: "The NeuTTS model that speaks.", Default: DefaultModel},
+			{Key: Device, Title: "Device", About: "The part of this computer that NeuTTS runs on.", Help: "Such as cpu, cuda or mps.", Default: DefaultDevice,
+				Advanced: true},
+			{Key: MaxTextLength, Title: "Text limit", About: "The most characters one request to NeuTTS takes.", Help: "Longer text is split into several requests.",
+				Default: 0, Zero: "2,000 characters", Counts: "characters", Least: config.Num(1), Advanced: true},
+		}}})
 }

@@ -77,7 +77,7 @@ func checkURL(url string) error {
 	}
 	if i := strings.LastIndexByte(host, ':'); i >= 0 {
 		if port := host[i+1:]; port != "" && strings.Trim(port, "0123456789") != "" {
-			return fmt.Errorf("readiness URL port %s is not a number", port)
+			return fmt.Errorf("The port %s of the address to check is not a number.", port)
 		}
 	}
 	if i := strings.IndexByte(path, '#'); i >= 0 {
@@ -86,9 +86,9 @@ func checkURL(url string) error {
 	for i, c := range []rune(path) {
 		switch {
 		case c <= 0x20 || c == 0x7f:
-			return fmt.Errorf("readiness URL path %s holds a space or control character", path)
+			return fmt.Errorf("The path %s of the address to check holds a space or a control character.", path)
 		case c > 0x7f:
-			return fmt.Errorf("readiness URL path holds the non-ASCII character %c at position %d, which a request line cannot carry", c, i)
+			return fmt.Errorf("The path of the address to check holds the character %c at position %d, which a request cannot carry.", c, i)
 		}
 	}
 	return nil
@@ -131,9 +131,9 @@ func reason(err error) string {
 	var timeout net.Error
 	switch {
 	case errors.Is(err, os.ErrDeadlineExceeded) || errors.As(err, &timeout) && timeout.Timeout():
-		return "timed out"
+		return "the request timed out"
 	case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
-		return "Remote end closed connection without response"
+		return "the app closed the connection without an answer"
 	case errors.As(err, &errno):
 		return errno.Error()
 	}

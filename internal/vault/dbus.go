@@ -48,11 +48,6 @@ func (e *busError) Error() string {
 	return e.name
 }
 
-func isBusError(err error) bool {
-	var be *busError
-	return errors.As(err, &be)
-}
-
 const (
 	busMethodCall   = 1
 	busMethodReturn = 2
@@ -64,7 +59,7 @@ const (
 // First complete type of a signature and the rest
 func nextType(sig string) (string, string, error) {
 	if sig == "" {
-		return "", "", errors.New("empty signature")
+		return "", "", errors.New("A D-Bus message has an empty type signature.")
 	}
 	switch sig[0] {
 	case 'a':
@@ -84,13 +79,13 @@ func nextType(sig string) (string, string, error) {
 			i = len(sig) - len(rest)
 		}
 		if i >= len(sig) {
-			return "", "", fmt.Errorf("unterminated %q", sig)
+			return "", "", fmt.Errorf("The D-Bus type signature %q is not closed.", sig)
 		}
 		return sig[:i+1], sig[i+1:], nil
 	case 'y', 'b', 'n', 'q', 'i', 'u', 'x', 't', 'd', 's', 'o', 'g', 'v', 'h':
 		return sig[:1], sig[1:], nil
 	}
-	return "", "", fmt.Errorf("bad signature %q", sig)
+	return "", "", fmt.Errorf("%q is not a D-Bus type signature.", sig)
 }
 
 // Complete types of a signature
@@ -155,7 +150,7 @@ func (e *encoder) encode(sig string, v any) error {
 	case 'y':
 		b, ok := v.(byte)
 		if !ok {
-			return fmt.Errorf("want byte for y, got %T", v)
+			return fmt.Errorf("A D-Bus byte was expected, not %T.", v)
 		}
 		e.buf = append(e.buf, b)
 	case 'b':
@@ -183,7 +178,7 @@ func (e *encoder) encode(sig string, v any) error {
 	case 'v':
 		dv, ok := v.(busVariant)
 		if !ok {
-			return fmt.Errorf("want variant, got %T", v)
+			return fmt.Errorf("A D-Bus variant was expected, not %T.", v)
 		}
 		if err := e.encode("g", dv.sig); err != nil {
 			return err
@@ -198,7 +193,7 @@ func (e *encoder) encode(sig string, v any) error {
 		}
 		vals, ok := v.([]any)
 		if !ok || len(vals) != len(fields) {
-			return fmt.Errorf("struct %s wants %d fields", sig, len(fields))
+			return fmt.Errorf("The D-Bus struct %s takes %d fields.", sig, len(fields))
 		}
 		for i, f := range fields {
 			if err := e.encode(f, vals[i]); err != nil {
@@ -208,18 +203,18 @@ func (e *encoder) encode(sig string, v any) error {
 	case '{':
 		fields, err := splitTypes(sig[1 : len(sig)-1])
 		if err != nil || len(fields) != 2 {
-			return fmt.Errorf("bad dict entry %s", sig)
+			return fmt.Errorf("%s is not a D-Bus dictionary entry.", sig)
 		}
 		entry, ok := v.(busEntry)
 		if !ok {
-			return fmt.Errorf("want dict entry, got %T", v)
+			return fmt.Errorf("A D-Bus dictionary entry was expected, not %T.", v)
 		}
 		if err := e.encode(fields[0], entry.k); err != nil {
 			return err
 		}
 		return e.encode(fields[1], entry.v)
 	default:
-		return fmt.Errorf("cannot encode %s", sig)
+		return fmt.Errorf("icebath can't write the D-Bus type %s.", sig)
 	}
 	return nil
 }
@@ -247,7 +242,7 @@ func (e *encoder) array(elem string, v any) error {
 		}
 	case nil:
 	default:
-		return fmt.Errorf("cannot encode %T as a%s", v, elem)
+		return fmt.Errorf("icebath can't write %T as the D-Bus type a%s.", v, elem)
 	}
 	e.u32(0)
 	lenAt := len(e.buf) - 4
@@ -370,7 +365,7 @@ func (d *decoder) decode(sig string) (any, error) {
 		}
 		inner := string(s.(busSignature))
 		if _, rest, err := nextType(inner); err != nil || rest != "" {
-			return nil, fmt.Errorf("bad variant signature %q", inner)
+			return nil, fmt.Errorf("%q is not the type signature of a D-Bus variant.", inner)
 		}
 		val, err := d.decode(inner)
 		return busVariant{sig: inner, val: val}, err
@@ -426,7 +421,7 @@ func (d *decoder) decode(sig string) (any, error) {
 		}
 		return vals, nil
 	}
-	return nil, fmt.Errorf("cannot decode %s", sig)
+	return nil, fmt.Errorf("icebath can't read the D-Bus type %s.", sig)
 }
 
 type busMessage struct {
@@ -452,7 +447,7 @@ func (m *busMessage) marshal() ([]byte, error) {
 		return nil, err
 	}
 	if len(types) != len(m.body) {
-		return nil, fmt.Errorf("signature %q wants %d values, got %d", m.signature, len(types), len(m.body))
+		return nil, fmt.Errorf("The D-Bus type signature %q takes %d values, and the message has %d.", m.signature, len(types), len(m.body))
 	}
 	for i, t := range types {
 		if err := body.encode(t, m.body[i]); err != nil {
@@ -505,14 +500,14 @@ func readMessage(r io.Reader) (*busMessage, error) {
 	if fixed[0] == 'B' {
 		order = binary.BigEndian
 	} else if fixed[0] != 'l' {
-		return nil, fmt.Errorf("bad endianness byte %q", fixed[0])
+		return nil, fmt.Errorf("A D-Bus message starts with %q, which names no byte order.", fixed[0])
 	}
 	bodyLen := order.Uint32(fixed[4:8])
 	fieldsLen := order.Uint32(fixed[12:16])
 	headLen := 16 + int(fieldsLen)
 	total := headLen + (8-headLen%8)%8 + int(bodyLen)
 	if total > 128<<20 {
-		return nil, errors.New("D-Bus message too large")
+		return nil, errors.New("A D-Bus message is too large to read.")
 	}
 	buf := make([]byte, total)
 	copy(buf, fixed)
@@ -598,14 +593,14 @@ func socketOf(addr string) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("no connectable address in %q", addr)
+	return "", fmt.Errorf("DBUS_SESSION_BUS_ADDRESS holds no address icebath can connect to: %q.", addr)
 }
 
 // Connects to the session bus DBUS_SESSION_BUS_ADDRESS names
 func dialSession() (*busConn, error) {
 	addr := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
 	if addr == "" {
-		return nil, errors.New("DBUS_SESSION_BUS_ADDRESS is not set, so the session D-Bus cannot be reached")
+		return nil, errors.New("DBUS_SESSION_BUS_ADDRESS is not set, so icebath can't reach the message bus of your desktop.")
 	}
 	path, err := socketOf(addr)
 	if err != nil {
@@ -624,7 +619,7 @@ func dialSession() (*busConn, error) {
 	line, err := c.r.ReadString('\n')
 	if err != nil || !strings.HasPrefix(line, "OK ") {
 		conn.Close()
-		return nil, fmt.Errorf("D-Bus authentication failed: %q", strings.TrimSpace(line))
+		return nil, fmt.Errorf("The message bus of your desktop refused icebath: %q.", strings.TrimSpace(line))
 	}
 	if _, err := io.WriteString(conn, "BEGIN\r\n"); err != nil {
 		conn.Close()

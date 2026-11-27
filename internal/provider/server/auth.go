@@ -68,7 +68,7 @@ func (s *service) named(profile, name, account string) (provider.Instance, crede
 		return instance, credentials.Account{}, err
 	}
 	if account != "" && !slices.Contains(instance.Accounts, account) {
-		return instance, credentials.Account{}, connect.NewError(connect.CodeNotFound, instance.Label()+" has no account named "+account)
+		return instance, credentials.Account{}, connect.NewError(connect.CodeNotFound, instance.Label()+" has no account named "+account+".")
 	}
 	return instance, credentials.Of(instance, account), nil
 }
@@ -108,7 +108,7 @@ func (s *service) Reset(_ context.Context, request *providerv1.ResetRequest) (*p
 	names := instance.Accounts
 	if name := request.GetAccount(); name != "" {
 		if !slices.Contains(names, name) {
-			return nil, connect.NewError(connect.CodeNotFound, instance.Label()+" has no account named "+name)
+			return nil, connect.NewError(connect.CodeNotFound, instance.Label()+" has no account named "+name+".")
 		}
 		names = []string{name}
 	}
@@ -171,18 +171,18 @@ func (s *service) Status(ctx context.Context, request *providerv1.StatusRequest)
 	case err != nil:
 		response.Error = err.Error()
 	case !ok && !instance.Spec.Local:
-		response.Error = "no credential"
+		response.Error = "No API key or sign-in was found."
 	default:
 		response.LoggedIn = true
 		account = credentials.Of(instance, route.Account)
-		detail("auth_type", string(cmp.Or(found.Auth, instance.Spec.Auth)))
-		detail("account", route.Account)
-		detail("source", found.Source)
-		detail("identity", found.Identity)
+		detail("Sign-in", authWords[cmp.Or(found.Auth, instance.Spec.Auth)])
+		detail("Account", route.Account)
+		detail("Key from", found.Source)
+		detail("Signed in as", found.Identity)
 		if !found.Expires.IsZero() {
-			detail("expires_at", found.Expires.UTC().Format(time.RFC3339))
+			detail("Expires", found.Expires.Local().Format("2006-01-02 15:04"))
 		}
-		detail("api_base_url", route.BaseURL)
+		detail("Address", route.BaseURL)
 	}
 	reportCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -201,11 +201,11 @@ func (s *service) KeepKey(_ context.Context, request *providerv1.KeepKeyRequest)
 	}
 	variable := account.Fields.GetString(providerconfig.KeyEnv)
 	if account.Name == "" || variable == "" {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, "The account doesn't read its key from an environment variable.")
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "This account doesn't read its API key from an environment variable, so there is nothing to keep.")
 	}
 	found, ok := account.Lookup(providerconfig.APIKeyField)
 	if !ok || strings.TrimSpace(found.APIKey) == "" {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, variable+" is empty, nothing to keep.")
+		return nil, connect.NewError(connect.CodeFailedPrecondition, variable+" is empty, so there is nothing to keep.")
 	}
 	if err := account.Fields.Set(providerconfig.APIKeyField, strings.TrimSpace(found.APIKey)); err != nil {
 		return nil, err
@@ -215,3 +215,7 @@ func (s *service) KeepKey(_ context.Context, request *providerv1.KeepKeyRequest)
 	}
 	return &providerv1.KeepKeyResponse{Account: s.account(instance, account.Name)}, nil
 }
+
+// How an account signs in, in words
+var authWords = map[provider.AuthKind]string{provider.AuthAPIKey: "API key", provider.AuthOAuth: "Signed in to the provider",
+	provider.AuthNone: "None needed", provider.AuthAWSSigV4: "AWS credentials", provider.AuthGCPOAuth: "Google Cloud credentials"}

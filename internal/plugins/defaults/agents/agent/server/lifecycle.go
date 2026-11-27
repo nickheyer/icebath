@@ -17,6 +17,7 @@ import (
 	sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
 	"github.com/nickheyer/icebath/internal/tools"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -209,15 +210,15 @@ func (a *Agent) attach(r *run, client string) error {
 		name := a.named(r, "the new session")
 		hint := ""
 		if oldest != nil {
-			hint = " (the oldest idle one is " + a.named(oldest, oldest.sessionID()) + ")"
+			hint = "\nThe one idle longest is " + a.named(oldest, oldest.sessionID()) + "."
 		}
 		switch {
 		case windowCount >= perWindow:
-			return fmt.Errorf("This window already has %d sessions open, so %s was not opened. Close a session first%s, or raise Sessions per window "+
-				"in /settings under Sessions.", windowCount, name, hint)
+			return fmt.Errorf("This window already has %s open, so %s was not opened. Close a session first, or raise Open per window in "+
+				"/settings under Sessions.%s", strs.Count(windowCount, "session"), name, hint)
 		case !watched && profileCount >= perProfile:
-			return fmt.Errorf("This profile already has %d sessions open, so %s was not opened. Close a session first%s, or raise Open session limit "+
-				"in /settings under Sessions.", profileCount, name, hint)
+			return fmt.Errorf("This profile already has %s open, so %s was not opened. Close a session first, or raise Open per profile in "+
+				"/settings under Sessions.%s", strs.Count(profileCount, "session"), name, hint)
 		}
 	}
 	r.mu.Lock()
@@ -345,8 +346,8 @@ func (a *Agent) blocked(ctx context.Context, r *run) error {
 	if len(lost) == 0 {
 		return nil
 	}
-	return fmt.Errorf("A turn of this session was lost when icebath stopped in the middle of it (%s), so the session waits until it is "+
-		"acknowledged. Acknowledge it with /discard, or `icebath sessions discard %s`; the lost message is not sent again.", strings.Join(lost, ", "), r.sessionID())
+	return fmt.Errorf("A reply in this session was cut off when icebath stopped, so the session waits until you clear it. Clear it with /discard "+
+		"or `icebath sessions discard %s`, and the lost message is not sent again.", r.sessionID())
 }
 
 // Takes the session for one turn: a slot under the active session limit, the turn lease other processes respect, and the admission of the
@@ -368,8 +369,8 @@ func (a *Agent) enter(ctx context.Context, r *run, admission string) (func(outco
 		count := len(a.life.turns)
 		a.mu.Unlock()
 		refuse(store, admission)
-		return nil, fmt.Errorf("Icebath is at the active session limit (%d/%d). Held by: %d session(s), oldest %s ago. Try again when another session "+
-			"finishes.", count, limit, count, time.Since(oldest).Round(time.Minute))
+		return nil, fmt.Errorf("icebath is already replying in %s, as many as Working at once in /settings under Sessions allows, the oldest for "+
+			"%s. Try again when one of them finishes.", strs.Count(count, "session"), strs.Span(rounded(time.Since(oldest))))
 	}
 	a.life.turns[r.sessionID()] = time.Now()
 	a.mu.Unlock()
@@ -384,14 +385,14 @@ func (a *Agent) enter(ctx context.Context, r *run, admission string) (func(outco
 		leave()
 		refuse(store, admission)
 		if err == nil {
-			err = errors.New("⏳ Another Icebath process kept this session busy too long. Your message was not processed - wait for the other process " +
-				"to finish, then send it again.")
+			err = errors.New("Another running icebath kept this session busy too long, so your message was not sent. Wait for it to finish, " +
+				"then send your message again.")
 		}
 		return nil, err
 	}
 	if waited {
 		r.mu.Lock()
-		a.notify(r, "Session is free; loading the latest transcript...")
+		a.notify(r, "The session is free again. Loading its latest messages.")
 		r.mu.Unlock()
 	}
 	if admission != "" {
@@ -473,9 +474,9 @@ func (a *Agent) lease(ctx context.Context, r *run, store sessions.Store, holder 
 			started = now
 		}
 		if told.IsZero() || now.Sub(told) >= waitNotices {
-			text := "⏳ Another Icebath process is using this session; waiting for it to finish before starting your turn..."
+			text := "Another running icebath is using this session. Your message waits until it finishes."
 			if !told.IsZero() {
-				text = fmt.Sprintf("⏳ Still waiting for the other Icebath process on this session (%ds)...", int(now.Sub(started).Seconds()))
+				text = "Still waiting for the other icebath on this session, for " + strs.Span(rounded(now.Sub(started))) + " now."
 			}
 			r.mu.Lock()
 			a.notify(r, text)
@@ -484,7 +485,7 @@ func (a *Agent) lease(ctx context.Context, r *run, store sessions.Store, holder 
 		}
 		select {
 		case <-ctx.Done():
-			return false, true, errors.New("Stopped waiting for another Icebath process on this session. Your message was not processed.")
+			return false, true, errors.New("Stopped waiting for the other icebath on this session, so your message was not sent.")
 		case <-time.After(time.Second):
 		}
 	}

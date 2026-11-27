@@ -16,7 +16,7 @@ func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               huggingfaceconfig.Name,
 		DisplayName:        huggingfaceconfig.Title,
-		Description:        "Inference API",
+		Description:        "Open models through Hugging Face, with a Hugging Face token",
 		SignupURL:          "https://huggingface.co/settings/tokens",
 		BaseURL:            base,
 		BaseURLEnv:         huggingfaceconfig.BaseURLEnv,

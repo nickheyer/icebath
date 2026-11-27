@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Defaults of the longest one phase command may take and of the wait for the started app to answer, in seconds
@@ -290,15 +291,14 @@ func composeLive(root string) string {
 	cmd.WaitDelay = time.Second
 	err := cmd.Run()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return "docker compose ps timed out after 15s; live containers cannot be ruled out"
+		return "docker compose ps did not answer within 15 seconds, so running containers cannot be ruled out"
 	}
 	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 		text := cmp.Or(strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String()))
-		last := "no output"
 		if parts := strings.Split(text, "\n"); text != "" {
-			last = strings.TrimSpace(parts[len(parts)-1])
+			return fmt.Sprintf("docker compose ps failed with exit code %d, saying “%s”", exit.ExitCode(), strings.TrimSpace(parts[len(parts)-1]))
 		}
-		return fmt.Sprintf("docker compose ps failed (exit %d): %s", exit.ExitCode(), last)
+		return fmt.Sprintf("docker compose ps failed with exit code %d and printed nothing", exit.ExitCode())
 	}
 	if err != nil {
 		// docker is not installed, so nothing of the project runs
@@ -313,7 +313,7 @@ func composeLive(root string) string {
 	if len(names) == 0 {
 		return ""
 	}
-	return "this compose project already has running container(s): " + strings.Join(names, ", ")
+	return "this compose project already has " + strs.Count(len(names), "running container") + ", " + strings.Join(names, ", ")
 }
 
 func (r *Recipe) commands(phase string) []string {
@@ -343,8 +343,9 @@ func Run(ctx context.Context, root string, recipe *Recipe, o Options) (*Result, 
 			}
 			one := 1
 			result.Phases = append(result.Phases, &PhaseResult{Phase: "build", Command: command, ExitCode: &one,
-				Tail: "Refusing to run: " + reason + ". `docker compose build` + `up` would replace live containers on an image-hash change, destroying " +
-					"any container-local state they carry. If you intend to rebuild this live deployment, run `docker compose build`/`up` yourself."})
+				Tail: "Nothing was run, because " + reason + ". Building and starting would replace the running containers whenever their image " +
+					"changed, losing what is kept only inside them. To rebuild this running deployment, run docker compose build and docker compose up " +
+					"yourself."})
 			return result, nil
 		}
 	}

@@ -32,7 +32,7 @@ const (
 	grant     = "urn:ietf:params:oauth:grant-type:device_code"
 	// How long before its expiry a Qwen token is renewed
 	skew  = 2 * time.Minute
-	rerun = "Re-run 'qwen auth qwen-oauth'."
+	rerun = "Sign in again with `icebath auth add qwen-oauth`, or with `qwen auth qwen-oauth` for the Qwen CLI."
 )
 
 // Program a borrowed sign-in comes from, as its source reads
@@ -66,14 +66,14 @@ func readCLI() (Tokens, error) {
 	path := CLIPath()
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Tokens{}, failed("Qwen CLI credentials not found. Run 'qwen auth qwen-oauth' first.", "qwen_auth_missing", nil)
+		return Tokens{}, failed("No Qwen CLI sign-in was found on this computer. Run `qwen auth qwen-oauth` first.", "qwen_auth_missing", nil)
 	}
 	var tokens Tokens
 	if err == nil {
 		err = json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &tokens)
 	}
 	if err != nil {
-		return Tokens{}, failed(fmt.Sprintf("Failed to read Qwen CLI credentials from %s: %s", path, err), "qwen_auth_read_failed", err)
+		return Tokens{}, failed(fmt.Sprintf("The Qwen CLI sign-in in %s can't be read: %s.", path, err), "qwen_auth_read_failed", err)
 	}
 	return tokens, nil
 }
@@ -187,25 +187,25 @@ func (t Tokens) fields() map[string]any {
 func Refresh(ctx context.Context, tokens Tokens) (Tokens, error) {
 	refresh := strings.TrimSpace(tokens.Refresh)
 	if refresh == "" {
-		return Tokens{}, failed("Qwen OAuth refresh token missing. "+rerun, "qwen_refresh_token_missing", nil)
+		return Tokens{}, failed("This Qwen sign-in keeps no way to renew itself. "+rerun, "qwen_refresh_token_missing", nil)
 	}
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}, "client_id": {ClientID}}
 	reply, err := credentials.PostForm(ctx, credentials.Client(20*time.Second), TokenURL, form, map[string]string{"Accept": "application/json"})
 	if err != nil {
-		return Tokens{}, failed(fmt.Sprintf("Qwen OAuth refresh failed: %s", err), "qwen_refresh_failed", err)
+		return Tokens{}, failed(fmt.Sprintf("icebath could not reach Qwen to renew the sign-in: %s.", err), "qwen_refresh_failed", err)
 	}
 	if reply.Status >= 400 {
 		suffix := ""
 		if body := reply.Text(500); body != "" {
-			suffix = " Response: " + body
+			suffix = " Qwen said: " + strings.TrimSuffix(body, ".") + "."
 		}
-		failure := failed("Qwen OAuth refresh failed. "+rerun+suffix, "qwen_refresh_failed", nil)
+		failure := failed("Qwen refused to renew the sign-in. "+rerun+suffix, "qwen_refresh_failed", nil)
 		failure.Relogin = reply.Status == 400 || reply.Status == 401
 		return Tokens{}, failure
 	}
 	payload, err := reply.JSON()
 	if err != nil {
-		return Tokens{}, failed(fmt.Sprintf("Qwen OAuth refresh returned invalid JSON: %s", err), "qwen_refresh_invalid_json", err)
+		return Tokens{}, failed(fmt.Sprintf("Qwen's answer to renewing the sign-in can't be read: %s.", err), "qwen_refresh_invalid_json", err)
 	}
 	return issued(payload, tokens)
 }
@@ -214,7 +214,7 @@ func Refresh(ctx context.Context, tokens Tokens) (Tokens, error) {
 func issued(payload map[string]any, before Tokens) (Tokens, error) {
 	access := credentials.Text(payload["access_token"])
 	if access == "" {
-		return Tokens{}, failed("Qwen OAuth refresh response missing access_token.", "qwen_refresh_invalid_response", nil)
+		return Tokens{}, failed("Qwen renewed the sign-in without sending a new token. "+rerun, "qwen_refresh_invalid_response", nil)
 	}
 	seconds, ok := config.Whole(payload["expires_in"])
 	if !ok {
@@ -230,7 +230,7 @@ func issued(payload map[string]any, before Tokens) (Tokens, error) {
 var SignIn = credentials.SignIn{Spec: qwenoauthconfig.Name, Title: "Qwen account", Type: credentials.OAuth, Run: signIn}
 
 // The Qwen CLI's sign-in on this computer, used as it renews it
-var QwenCLI = credentials.SignIn{Spec: qwenoauthconfig.Name, Title: "Qwen CLI login on this computer", Type: "qwen-cli", Run: borrowed}
+var QwenCLI = credentials.SignIn{Spec: qwenoauthconfig.Name, Title: "Qwen CLI sign-in on this computer", Type: "qwen-cli", Run: borrowed}
 
 func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 	ctx := p.Ctx
@@ -240,18 +240,18 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 	reply, err := credentials.PostForm(ctx, client, DeviceURL, url.Values{"client_id": {ClientID}, "scope": {scope}, "code_challenge": {challenge},
 		"code_challenge_method": {"S256"}}, header)
 	if err != nil {
-		return credentials.Signed{}, failed(fmt.Sprintf("Qwen device authorization failed: %s", err), "qwen_device_code_failed", err)
+		return credentials.Signed{}, failed(fmt.Sprintf("icebath could not ask Qwen for a sign-in code: %s.", err), "qwen_device_code_failed", err)
 	}
 	device, err := reply.JSON()
 	if reply.Status != 200 || err != nil || credentials.Text(device["device_code"]) == "" || credentials.Text(device["user_code"]) == "" {
-		return credentials.Signed{}, failed(fmt.Sprintf("Qwen device authorization returned status %d.", reply.Status), "qwen_device_code_failed", nil)
+		return credentials.Signed{}, failed(fmt.Sprintf("Qwen refused to hand out a sign-in code, with HTTP status %d. Try again later.", reply.Status), "qwen_device_code_failed", nil)
 	}
 	p.Instructions(strs.Filled(credentials.Text(device["verification_uri_complete"]), credentials.Text(device["verification_uri"])), credentials.Text(device["user_code"]))
 	expires, ok := config.Whole(device["expires_in"])
 	if !ok || expires <= 0 {
 		expires = 600
 	}
-	p.Say("Waiting for approval...")
+	p.Pending("Waiting for you to approve the sign-in.")
 	deadline := time.Now().Add(time.Duration(expires) * time.Second)
 	interval := 2 * time.Second
 	for time.Now().Before(deadline) {
@@ -264,7 +264,7 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 			if ctx.Err() != nil {
 				return credentials.Signed{}, errors.Join(credentials.ErrCancelled, ctx.Err())
 			}
-			return credentials.Signed{}, failed(fmt.Sprintf("Qwen token polling failed: %s", err), "qwen_device_token_failed", err)
+			return credentials.Signed{}, failed(fmt.Sprintf("The connection to Qwen failed while waiting for your approval: %s.", err), "qwen_device_token_failed", err)
 		}
 		body, _ := poll.JSON()
 		switch code := credentials.Text(body["error"]); {
@@ -274,7 +274,8 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 			interval = min(interval*3/2, 10*time.Second)
 			continue
 		case poll.Status != 200 || credentials.Text(body["access_token"]) == "":
-			return credentials.Signed{}, failed("Qwen sign in did not complete: "+strs.Filled(credentials.Text(body["error_description"]), code), "qwen_device_token_failed", nil)
+			return credentials.Signed{}, failed("Qwen ended the sign-in. It said: "+strings.TrimSuffix(strs.Filled(credentials.Text(body["error_description"]), code), ".")+".",
+				"qwen_device_token_failed", nil)
 		}
 		tokens := Tokens{Access: credentials.Text(body["access_token"]), Refresh: credentials.Text(body["refresh_token"]), Type: credentials.Text(body["token_type"]),
 			Resource: credentials.Text(body["resource_url"])}
@@ -285,10 +286,10 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 		if err != nil {
 			return credentials.Signed{}, err
 		}
-		p.Say("Login successful!\n  Qwen credentials: %s", path)
+		p.Say("✓ You are signed in to Qwen. The Qwen CLI can use this sign-in too, kept in %s.", path)
 		return credentials.Signed{Fields: tokens.fields(), Identity: credentials.Identity(tokens.Access)}, nil
 	}
-	return credentials.Signed{}, failed("Timed out waiting for Qwen device authorization.", credentials.Expired, nil)
+	return credentials.Signed{}, failed("The sign-in was not approved in time.", credentials.Expired, nil)
 }
 
 // Clears what the account keeps, so its credential is the Qwen CLI's sign-in on this computer

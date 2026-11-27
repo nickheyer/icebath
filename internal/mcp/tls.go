@@ -32,15 +32,15 @@ func tlsConfig(server string, verify, cert, key any) (*tls.Config, error) {
 		path := terminal.ExpandUser(strings.TrimSpace(v))
 		bundle, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("MCP server '%s': ssl_verify CA bundle not readable at %q: %w", server, path, err)
+			return nil, fmt.Errorf("The CA certificate file %s that ssl_verify names for the MCP server %s cannot be read: %w", path, server, err)
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(bundle) {
-			return nil, fmt.Errorf("MCP server '%s': ssl_verify CA bundle at %q holds no certificates", server, path)
+			return nil, fmt.Errorf("The file %s that ssl_verify names for the MCP server %s holds no certificates.", path, server)
 		}
 		config.RootCAs = pool
 	default:
-		return nil, fmt.Errorf("MCP server '%s': ssl_verify must be a boolean or a CA bundle path", server)
+		return nil, fmt.Errorf("ssl_verify of the MCP server %s must be true, false or the path of a CA certificate file.", server)
 	}
 	certificate, err := clientCertificate(server, cert, key)
 	if err != nil {
@@ -57,15 +57,14 @@ func clientCertificate(server string, rawCert, rawKey any) (*tls.Certificate, er
 	if rawCert == nil && rawKey == nil {
 		return nil, nil
 	}
-	prefix := fmt.Sprintf("MCP server '%s': ", server)
 	file := func(v any, label string) (string, error) {
 		text, ok := v.(string)
 		if !ok || strings.TrimSpace(text) == "" {
-			return "", fmt.Errorf("%s%s must be a non-empty path", prefix, label)
+			return "", fmt.Errorf("%s of the MCP server %s must be the path of a file.", label, server)
 		}
 		path := terminal.ExpandUser(strings.TrimSpace(text))
 		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-			return "", fmt.Errorf("%s%s not found at %q: %w", prefix, label, path, os.ErrNotExist)
+			return "", fmt.Errorf("%s of the MCP server %s names %s, which was not found: %w", label, server, path, os.ErrNotExist)
 		}
 		return path, nil
 	}
@@ -84,10 +83,10 @@ func clientCertificate(server string, rawCert, rawKey any) (*tls.Certificate, er
 		return keyPair(certPath, keyPath, "")
 	}
 	if rawKey != nil {
-		return nil, fmt.Errorf("%sspecify either client_cert as a list [cert, key] OR client_cert + client_key, not both", prefix)
+		return nil, fmt.Errorf("Give the MCP server %s either client_cert as a list of the certificate and the key, or client_cert and client_key, not both.", server)
 	}
 	if len(list) != 2 && len(list) != 3 {
-		return nil, fmt.Errorf("%sclient_cert list form must have 2 or 3 elements (got %d)", prefix, len(list))
+		return nil, fmt.Errorf("client_cert of the MCP server %s must list 2 or 3 items, the certificate, the key and its passphrase, not %d.", server, len(list))
 	}
 	certPath, err := file(list[0], "client_cert[0]")
 	if err != nil {
@@ -101,7 +100,7 @@ func clientCertificate(server string, rawCert, rawKey any) (*tls.Certificate, er
 	if len(list) == 3 {
 		text, ok := list[2].(string)
 		if !ok {
-			return nil, fmt.Errorf("%sclient_cert[2] (key passphrase) must be a string", prefix)
+			return nil, fmt.Errorf("The third item of client_cert of the MCP server %s, the passphrase of the key, must be text.", server)
 		}
 		password = text
 	}

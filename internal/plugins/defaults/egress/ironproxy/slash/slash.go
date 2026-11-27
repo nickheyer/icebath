@@ -22,12 +22,12 @@ func Register(registry *slash.Registry, cfg *config.Config, egress *ironterminal
 }
 
 func (c commands) Commands() []slash.Command {
-	return []slash.Command{{Name: "egress", Usage: "[status]", Help: "Show Docker egress proxy status", Run: c.status}}
+	return []slash.Command{{Name: "egress", Usage: "[status]", Help: "Show the state of the sandbox proxy", Run: c.status}}
 }
 
 func (c commands) status(ctx context.Context, call *slash.Call) (string, error) {
 	if argument := strings.ToLower(strings.TrimSpace(call.Argument)); argument != "" && argument != "status" {
-		return "", errors.New("Usage: /egress [status]")
+		return "", errors.New("/egress takes nothing, or the word status.\nUsage: /egress [status]")
 	}
 	cfg, err := c.sessions.Profile(ctx, c.config, call.SessionID)
 	if err != nil {

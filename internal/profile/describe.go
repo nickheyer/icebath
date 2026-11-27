@@ -91,11 +91,11 @@ func (p *Profiles) Describe(ctx context.Context, name string, overwrite bool, co
 	}
 	fail := func(reason string) (Outcome, error) { return Outcome{Name: canon, Reason: reason}, nil }
 	if !p.Exists(canon) {
-		return fail("profile not found")
+		return fail("There is no profile named " + canon + ".")
 	}
 	dir := p.Dir(canon)
 	if meta := ReadMeta(dir); meta.Description != "" && !meta.DescriptionAuto && !overwrite {
-		return fail("profile already has a user-authored description (use --overwrite to replace)")
+		return fail("The profile already has a description you wrote. Add --overwrite to replace it.")
 	}
 	summary := p.Summarize(p.config.In(canon))
 	skills := slices.Clone(summary.Skills)
@@ -114,7 +114,7 @@ func (p *Profiles) Describe(ctx context.Context, name string, overwrite bool, co
 	if err != nil {
 		slog.Info(fmt.Sprintf("describe: API call failed for %s (%v)", canon, err))
 		// The whole failure, not only its kind, with what looks like a secret masked
-		return fail("LLM error: " + redact.File(err.Error(), true))
+		return fail("The helper model could not write a description: " + sentence(redact.File(err.Error(), true)))
 	}
 	description := ""
 	stripped := fence.ReplaceAllString(strings.TrimSpace(raw), "")
@@ -123,24 +123,24 @@ func (p *Profiles) Describe(ctx context.Context, name string, overwrite bool, co
 	if first >= 0 && last > first && json.Unmarshal([]byte(stripped[first:last+1]), &parsed) == nil {
 		value, ok := parsed["description"].(string)
 		if !ok || strings.TrimSpace(value) == "" {
-			return fail("LLM response missing 'description' field")
+			return fail("The answer of the helper model held no description.")
 		}
 		description = firstRunes(strings.TrimSpace(value), 280)
 	} else {
 		if strings.HasPrefix(stripped, "{") {
 			slog.Info(fmt.Sprintf("describe: %s aux response looked JSON-shaped but failed to parse (likely truncated) -- refusing to persist the raw "+
 				"fragment", canon))
-			return fail("LLM returned malformed/truncated JSON response")
+			return fail("The answer of the helper model was cut off or broken, so nothing was kept.")
 		}
 		paragraph, _, _ := strings.Cut(strings.TrimSpace(raw), "\n\n")
 		if paragraph == "" {
-			return fail("LLM returned an empty response")
+			return fail("The helper model gave an empty answer.")
 		}
 		description = firstRunes(paragraph, 280)
 	}
 	auto := true
 	if err := WriteMeta(dir, MetaUpdate{Description: &description, DescriptionAuto: &auto}); err != nil {
-		return fail("failed to write profile.yaml: " + err.Error())
+		return fail("The description could not be saved in profile.yaml: " + sentence(err.Error()))
 	}
 	return Outcome{Name: canon, OK: true, Reason: "described", Description: description}, nil
 }

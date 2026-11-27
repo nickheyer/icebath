@@ -6,16 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/internal/cli"
-	toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
+	lspconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/lsp/config"
 	lspv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/lsp/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/lsp/v1/lspv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Exit status a command ends with, its lines already printed
@@ -34,13 +35,16 @@ func Register(registry *cli.Registry) {
 func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	service := lspv1connect.NewLspServiceClient(conn)
 	root := &cobra.Command{
-		Use:   "lsp",
-		Short: "Language Server Protocol management",
-		Long:  "Manage the LSP layer that powers post-write semantic diagnostics in write_file/patch.",
-		Args:  cobra.ArbitraryArgs,
+		Use:     "lsp",
+		GroupID: cli.GroupAbilities,
+		Short:   "Install and check the language servers",
+		Long: "After the agent writes a file, a language server for that language checks it and reports errors back to the agent. Use " +
+			"these commands to see which language servers are installed, install them and restart them. With no subcommand, lsp shows " +
+			"the status.",
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
-				fmt.Fprintf(cmd.ErrOrStderr(), "unknown lsp subcommand: %s\n", args[0])
+				fmt.Fprintf(cmd.ErrOrStderr(), "✗ There is no lsp command called “%s”. Run icebath lsp --help to see them.\n", args[0])
 				return exit(2)
 			}
 			return status(cmd, service, false)
@@ -49,73 +53,89 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	var asJSON, installedOnly, includeManual bool
 	statusCmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show LSP service status",
+		Short: "Show which language servers run",
+		Long:  "Shows whether the language servers are on, which ones run and which failed or were left out.",
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return status(cmd, service, asJSON) },
 	}
-	statusCmd.Flags().BoolVar(&asJSON, "json", false, "Emit machine-readable JSON")
+	statusCmd.Flags().BoolVar(&asJSON, "json", false, "Print the result as JSON")
 	list := &cobra.Command{
 		Use:   "list",
-		Short: "List supported language servers",
+		Short: "List the language servers icebath knows",
+		Long:  "Lists every language server icebath knows, whether it is installed and the file extensions it checks.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			response, err := service.Status(cmd.Context(), &lspv1.StatusRequest{})
 			if err != nil {
 				return err
 			}
+			var rows [][]string
 			for _, srv := range response.GetServers() {
 				if !installedOnly || srv.GetStatus() == "installed" {
-					fmt.Fprintf(cmd.OutOrStdout(), "%s [%s] %s\n", cli.Pad(srv.GetId(), 24), cli.Pad(srv.GetStatus(), 11), strings.Join(srv.GetExtensions(), ","))
+					rows = append(rows, []string{srv.GetId(), state(srv.GetStatus()), strings.Join(srv.GetExtensions(), ", ")})
 				}
 			}
+			c := cli.NewConsole(cmd)
+			if len(rows) == 0 {
+				c.Say("No language server is installed yet. Install one with icebath lsp install <server>.")
+				return nil
+			}
+			c.Table([]string{"Server", "State", "Files it checks"}, rows)
 			return nil
 		},
 	}
-	list.Flags().BoolVar(&installedOnly, "installed-only", false, "Only show servers whose binary is currently available")
+	list.Flags().BoolVar(&installedOnly, "installed-only", false, "List only the language servers that are installed")
 	install := &cobra.Command{
-		Use:   "install <server>",
-		Short: "Install a server binary",
-		Args:  cobra.ExactArgs(1),
+		Use:     "install <server>",
+		Short:   "Install a language server",
+		Long:    "Installs the language server you name, as lsp list names it.",
+		Example: "  icebath lsp install gopls",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return installed(cmd, service, &lspv1.InstallRequest{Server: args[0]})
 		},
 	}
 	all := &cobra.Command{
 		Use:   "install-all",
-		Short: "Install every server with a known auto-install recipe",
-		Args:  cobra.NoArgs,
+		Short: "Install every language server icebath can install",
+		Long: "Installs every language server that icebath knows how to install. With --include-manual, install-all also tries the ones you would " +
+			"normally install yourself.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return installed(cmd, service, &lspv1.InstallRequest{All: true, IncludeManual: includeManual})
 		},
 	}
-	all.Flags().BoolVar(&includeManual, "include-manual", false, "Even attempt servers marked manual-install (best effort)")
+	all.Flags().BoolVar(&includeManual, "include-manual", false, "Also try the language servers that you would install yourself")
 	restart := &cobra.Command{
 		Use:   "restart",
-		Short: "Tear down running LSP clients (next edit re-spawns)",
+		Short: "Stop the running language servers",
+		Long:  "Stops every running language server. The next edit starts them again.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if _, err := service.Restart(cmd.Context(), &lspv1.RestartRequest{}); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "LSP service shut down. Next edit will respawn clients.")
+			cli.NewConsole(cmd).Success("Stopped every language server. The next edit starts them again.")
 			return nil
 		},
 	}
 	which := &cobra.Command{
-		Use:   "which <server>",
-		Short: "Print binary path for a server",
-		Args:  cobra.ExactArgs(1),
+		Use:     "which <server>",
+		Short:   "Print where a language server is installed",
+		Long:    "Prints the path of the language server's program, or says that it is not installed.",
+		Example: "  icebath lsp which gopls",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			response, err := service.Which(cmd.Context(), &lspv1.WhichRequest{Server: args[0]})
 			if failure, ok := errors.AsType[*connect.Error](err); ok && failure.Code() == connect.CodeNotFound {
-				fmt.Fprintln(cmd.ErrOrStderr(), failure.Message())
+				fmt.Fprintln(cmd.ErrOrStderr(), "✗ "+failure.Message())
 				return exit(2)
 			}
 			if err != nil {
 				return err
 			}
 			if response.GetPath() == "" {
-				fmt.Fprintf(cmd.ErrOrStderr(), "%s: not installed\n", args[0])
+				fmt.Fprintf(cmd.ErrOrStderr(), "✗ %s is not installed. Install it with icebath lsp install %s.\n", args[0], args[0])
 				return exit(1)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), response.GetPath())
@@ -150,7 +170,7 @@ func installed(cmd *cobra.Command, service lspv1connect.LspServiceClient, reques
 	for {
 		event, err := stream.Receive()
 		if errors.Is(err, io.EOF) {
-			return errors.New("the server ended the install without saying how it went")
+			return errors.New("The install ended without saying whether it worked.")
 		}
 		if err != nil {
 			return err
@@ -169,7 +189,43 @@ func installed(cmd *cobra.Command, service lspv1connect.LspServiceClient, reques
 	}
 }
 
-var markers = map[string]string{"installed": "✓", "missing": "·", "manual-only": "?"}
+// State of a language server's program in words
+func state(status string) string {
+	switch status {
+	case "installed":
+		return "Installed"
+	case "missing":
+		return "Not installed"
+	case "manual-only":
+		return "Install it yourself"
+	}
+	return status
+}
+
+// State of a running language server in words
+func running(state string) string {
+	switch state {
+	case "running":
+		return "Running"
+	case "starting":
+		return "Starting"
+	case "stopped":
+		return "Stopped"
+	case "error":
+		return "Failed"
+	}
+	return state
+}
+
+// Title of a choice of the language server settings, the value itself for one not known
+func choice(value string) string {
+	titles := map[string]string{lspconfig.WaitDocument: "Edited file", lspconfig.WaitFull: "Full result", lspconfig.InstallAuto: "Automatic",
+		lspconfig.InstallManual: "Manual"}
+	if title, ok := titles[value]; ok {
+		return title
+	}
+	return value
+}
 
 func status(cmd *cobra.Command, service lspv1connect.LspServiceClient, asJSON bool) error {
 	response, err := service.Status(cmd.Context(), &lspv1.StatusRequest{})
@@ -179,62 +235,76 @@ func status(cmd *cobra.Command, service lspv1connect.LspServiceClient, asJSON bo
 	if asJSON {
 		return statusJSON(cmd.OutOrStdout(), response)
 	}
+	c := cli.NewConsole(cmd)
 	st := response.GetService()
-	out := []string{"LSP Service", "===========", "  enabled:         " + strconv.FormatBool(st != nil)}
-	if st != nil {
-		out = append(out, "  wait_mode:       "+st.GetWaitMode(), "  wait_timeout:    "+strconv.FormatFloat(st.GetWaitTimeout(), 'f', -1, 64)+"s",
-			"  install_strategy:"+st.GetInstallStrategy())
-		if clients := st.GetClients(); len(clients) > 0 {
-			out = append(out, fmt.Sprintf("  active clients:  %d", len(clients)))
-		} else {
-			out = append(out, "  active clients:  none")
+	if st == nil {
+		c.Pairs("Language servers", [][2]string{{"Check code", "Off"}})
+		c.Say("Turn on Check code in /settings under Tools › Language servers to have the agent's edits checked.")
+	} else {
+		clients := "None"
+		if n := len(st.GetClients()); n > 0 {
+			clients = strs.Count(n, "server")
 		}
-		for _, c := range st.GetClients() {
-			out = append(out, "    - "+cli.Pad(c.GetServer(), 20)+" state="+cli.Pad(c.GetState(), 10)+" root="+c.GetRoot())
+		c.Pairs("Language servers", [][2]string{
+			{"Check code", "On"},
+			{"What to wait for", choice(st.GetWaitMode())},
+			{"Check wait", strs.Span(time.Duration(st.GetWaitTimeout() * float64(time.Second)))},
+			{"Install servers", choice(st.GetInstallStrategy())},
+			{"Running now", clients},
+		})
+		if clients := st.GetClients(); len(clients) > 0 {
+			var rows [][]string
+			for _, client := range clients {
+				rows = append(rows, []string{client.GetServer(), running(client.GetState()), client.GetRoot()})
+			}
+			c.Blank()
+			c.Table([]string{"Server", "State", "Folder"}, rows)
 		}
 		if broken := st.GetBroken(); len(broken) > 0 {
-			out = append(out, fmt.Sprintf("  broken pairs:    %d", len(broken)))
+			c.Blank()
+			c.Warning(strs.Count(len(broken), "server") + " failed and will be tried again later:")
+			var rows [][]string
 			for _, b := range broken {
-				out = append(out, "    - "+cli.Pad(b.GetServer(), 20)+" root="+b.GetRoot())
+				rows = append(rows, []string{b.GetServer(), b.GetRoot()})
 			}
+			c.Table([]string{"Server", "Folder"}, rows)
 		}
 		if disabled := st.GetDisabled(); len(disabled) > 0 {
-			out = append(out, "  disabled in cfg: "+strings.Join(disabled, ", "))
+			c.Blank()
+			c.Say("Turned off in /settings under Tools › Language servers › Servers: " + strings.Join(disabled, ", "))
 		}
 		if skipped := st.GetUntrustedSkipped(); len(skipped) > 0 {
-			out = append(out, fmt.Sprintf("  untrusted skips: %d (add the workspace to %s)", len(skipped), toolsconfig.TrustedWorkspaces))
+			c.Blank()
+			c.Warning(strs.Count(len(skipped), "server") + " did not start, because the folder is not trusted. Add it in /settings under " +
+				"Tools › Trusted folders.")
+			var rows [][]string
 			for _, u := range skipped {
-				out = append(out, "    - "+cli.Pad(u.GetServer(), 20)+" root="+u.GetRoot())
+				rows = append(rows, []string{u.GetServer(), u.GetRoot()})
 			}
+			c.Table([]string{"Server", "Folder"}, rows)
 		}
 	}
 	if warnings := response.GetWarnings(); len(warnings) > 0 {
-		out = append(out, "", "Backend warnings", "================")
+		c.Blank()
 		for _, w := range warnings {
-			out = append(out, "  ! "+w)
+			c.Warning(w)
 		}
 	}
-	out = append(out, "", "Registered Servers", "==================")
+	var rows [][]string
 	for _, srv := range response.GetServers() {
 		extensions := srv.GetExtensions()
 		summary := strings.Join(extensions[:min(len(extensions), 5)], ", ")
 		if len(extensions) > 5 {
-			summary += fmt.Sprintf(", … (+%d)", len(extensions)-5)
+			summary += " and " + strs.Number(float64(len(extensions)-5)) + " more"
 		}
-		marker, ok := markers[srv.GetStatus()]
-		if !ok {
-			marker = " "
+		about := srv.GetDescription()
+		if !srv.GetUntrustedSafe() {
+			about = strings.TrimSpace(about + ". Starts only in trusted folders")
 		}
-		out = append(out, "  "+marker+" "+cli.Pad(srv.GetId(), 24)+" ["+cli.Pad(srv.GetStatus(), 11)+"] "+summary)
-		if description := srv.GetDescription(); description != "" {
-			gate := "  [trusted workspaces only]"
-			if srv.GetUntrustedSafe() {
-				gate = ""
-			}
-			out = append(out, "      "+description+gate)
-		}
+		rows = append(rows, []string{srv.GetId(), state(srv.GetStatus()), summary, about})
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), strings.Join(out, "\n"))
+	c.Blank()
+	c.Table([]string{"Server", "State", "Files it checks", "About"}, rows)
 	return nil
 }
 

@@ -35,8 +35,8 @@ const (
 )
 
 var chatModels = []generation.Model{
-	{ID: chatDefault, Title: "OpenAI GPT-5.4 Image 2", Strengths: "Highest fidelity; best prompt adherence; slower on OpenRouter"},
-	{ID: chatFallback, Title: "Gemini 3 Pro Image", Strengths: "Fast, reliable fallback with good layout adherence"},
+	{ID: chatDefault, Title: "OpenAI GPT-5.4 Image 2", Strengths: "The most faithful, follows prompts best, slower on OpenRouter"},
+	{ID: chatFallback, Title: "Gemini 3 Pro Image", Strengths: "A fast, reliable second choice that keeps layouts well"},
 }
 
 // Knobs an Image API model takes, an empty list meaning it has no such knob
@@ -73,25 +73,25 @@ var imageAPIOrder = []string{"google/gemini-3.1-flash-lite-image", "google/gemin
 	"microsoft/mai-image-2.5", "microsoft/mai-image-2.5-pro", "x-ai/grok-imagine-image-2.0", "krea/krea-2-medium", "krea/krea-2-medium-turbo", "qwen/qwen-image-3-pro"}
 
 var imageAPI = map[string]knobs{
-	"google/gemini-3.1-flash-lite-image": {title: "Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)", strengths: "Cheap and fast; 14 exact aspect ratios; 14 reference images",
+	"google/gemini-3.1-flash-lite-image": {title: "Nano Banana 2 Lite", strengths: "Gemini 3.1 Flash Lite Image, cheap and fast, 14 exact aspect ratios and 14 reference images",
 		aspects: geminiRatios, resolutions: []string{"1K"}, maxN: 1, maxRefs: 14},
-	"google/gemini-3.1-flash-image": {title: "Nano Banana 2 (Gemini 3.1 Flash Image)", strengths: "Same ratios as Lite plus resolution control (512/1K/2K/4K)",
+	"google/gemini-3.1-flash-image": {title: "Nano Banana 2", strengths: "Gemini 3.1 Flash Image, the aspect ratios of Lite, and a choice of 512, 1K, 2K or 4K",
 		aspects: geminiRatios, resolutions: []string{"512", "1K", "2K", "4K"}, maxN: 1, maxRefs: 14},
-	"openai/gpt-image-2": {title: "OpenAI GPT Image 2", strengths: "Best editing fidelity; up to 16 references; strongest prompt adherence",
+	"openai/gpt-image-2": {title: "OpenAI GPT Image 2", strengths: "The most faithful edits, up to 16 reference images, follows prompts most closely",
 		aspects: []string{"1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9", "auto"}, quality: openAIQuality, background: []string{"auto", "opaque"},
 		compression: true, maxN: 10, maxRefs: 16},
-	"openai/gpt-image-1-mini": {title: "OpenAI GPT Image 1 Mini", strengths: "The only model here with background=transparent (cut-out PNG)",
+	"openai/gpt-image-1-mini": {title: "OpenAI GPT Image 1 Mini", strengths: "The only model here that makes a transparent background, a cut-out PNG",
 		aspects: []string{"1:1", "3:2", "2:3", "auto"}, quality: openAIQuality, background: []string{"auto", "transparent", "opaque"}, compression: true, maxN: 10, maxRefs: 16},
-	"microsoft/mai-image-2.5":     {title: "Microsoft MAI-Image-2.5", strengths: "Standard ratios; a good second opinion next to Gemini", aspects: maiRatios, maxN: 1, maxRefs: 1},
-	"microsoft/mai-image-2.5-pro": {title: "Microsoft MAI-Image-2.5 Pro", strengths: "Reach for it when gpt-image-2 misses the brief", aspects: maiRatios, maxN: 1, maxRefs: 1},
-	"x-ai/grok-imagine-image-2.0": {title: "Grok Imagine Image 2.0", strengths: "Photoreal; widest exotic-ratio set (9:19.5, 20:9, 2:1 …); 1K/2K; low/medium quality",
+	"microsoft/mai-image-2.5":     {title: "Microsoft MAI-Image-2.5", strengths: "The usual aspect ratios, a good second opinion beside Gemini", aspects: maiRatios, maxN: 1, maxRefs: 1},
+	"microsoft/mai-image-2.5-pro": {title: "Microsoft MAI-Image-2.5 Pro", strengths: "Try it when GPT Image 2 misses what you asked for", aspects: maiRatios, maxN: 1, maxRefs: 1},
+	"x-ai/grok-imagine-image-2.0": {title: "Grok Imagine Image 2.0", strengths: "Photoreal, the most unusual aspect ratios such as 9:19.5, 20:9 and 2:1, 1K or 2K, low or medium quality",
 		aspects:     []string{"1:1", "3:4", "4:3", "9:16", "16:9", "2:3", "3:2", "9:19.5", "19.5:9", "9:20", "20:9", "1:2", "2:1", "auto"},
 		resolutions: []string{"1K", "2K"}, quality: []string{"low", "medium"}, maxN: 1, maxRefs: 3},
-	"krea/krea-2-medium": {title: "Krea 2 Medium", strengths: "Realistic, expressive styles; deterministic via seed", aspects: kreaRatios, resolutions: []string{"1K"},
+	"krea/krea-2-medium": {title: "Krea 2 Medium", strengths: "Realistic and expressive styles, repeatable with a seed", aspects: kreaRatios, resolutions: []string{"1K"},
 		seed: true, maxN: 1, maxRefs: 1},
-	"krea/krea-2-medium-turbo": {title: "Krea 2 Medium Turbo", strengths: "Cheapest here — bulk content, cards, thumbnails; seed support", aspects: kreaRatios,
+	"krea/krea-2-medium-turbo": {title: "Krea 2 Medium Turbo", strengths: "The cheapest here, for many images, cards and thumbnails, takes a seed", aspects: kreaRatios,
 		resolutions: []string{"1K"}, seed: true, maxN: 1, maxRefs: 1},
-	"qwen/qwen-image-3-pro": {title: "Qwen Image 3 Pro", strengths: "Precise small text and detail rendering; n up to 6; 1K/2K; seed",
+	"qwen/qwen-image-3-pro": {title: "Qwen Image 3 Pro", strengths: "Precise small text and detail, up to 6 images at once, 1K or 2K, takes a seed",
 		aspects:     []string{"1:1", "1:2", "1:4", "2:1", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "9:16", "16:9"},
 		resolutions: []string{"1K", "2K"}, seed: true, maxN: 6, maxRefs: 4},
 }

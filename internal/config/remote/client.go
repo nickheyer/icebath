@@ -72,7 +72,7 @@ func baseURL(env Env) string {
 // Address of the plane as messages show it, naming the variable when none is set
 func shownURL(env Env) string {
 	if baseURL(env) == "" {
-		return "(" + URLEnv + " not set)"
+		return "the address in " + URLEnv + ", which is not set"
 	}
 	return DisplayURL(baseURL(env))
 }
@@ -80,7 +80,7 @@ func shownURL(env Env) string {
 // Address of the plane once it passes the transport policy; Remote Config has no default plane
 func planeURL(env Env) (string, error) {
 	if baseURL(env) == "" {
-		return "", destinationError(URLEnv + " is not set; Remote Config has no default plane, so set it to the https:// address of the config plane you run")
+		return "", destinationError(URLEnv + " is not set. Set it to the https:// address of the server that keeps your remote settings.")
 	}
 	return checkedURL(baseURL(env), URLEnv)
 }
@@ -103,14 +103,14 @@ func (p *phase) reason(err error) string {
 	if netErr, ok := errors.AsType[net.Error](err); errors.Is(err, context.DeadlineExceeded) || ok && netErr.Timeout() {
 		switch {
 		case p.connected.Load():
-			return "timed out reading the response"
+			return "the server did not finish its answer in time"
 		case p.tls.Load():
-			return "TLS handshake timed out"
+			return "the secure connection was not set up in time"
 		}
-		return "timed out connecting"
+		return "the connection was not made in time"
 	}
 	if p.connected.Load() && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
-		return "server closed the connection without a response"
+		return "the server closed the connection without an answer"
 	}
 	if ue, ok := errors.AsType[*url.Error](err); ok && ue.Err != nil {
 		err = ue.Err

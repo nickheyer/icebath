@@ -2,8 +2,10 @@ package auxiliary
 
 import (
 	"cmp"
-	"strconv"
+	"slices"
+	"strings"
 	"time"
+	"unicode"
 
 	auxiliaryconfig "github.com/nickheyer/icebath/internal/auxiliary/config"
 	"github.com/nickheyer/icebath/internal/config"
@@ -19,6 +21,8 @@ type Task struct {
 	Name  string
 	Title string
 	About string
+	// Place of its section among the helper models, lowest first; one of no place after the rest
+	Order int
 	// Seconds a call may go without output when the task's timeout is not set, 30 when none is given
 	Timeout int
 	// Least seconds a call gets whatever the timeout says, unless the caller names its own
@@ -122,55 +126,90 @@ func (s sections) Sections(values *config.Config) []config.Section {
 	var out []config.Section
 	for _, task := range s.tasks.Tasks() {
 		out = append(out, config.Section{Key: auxiliaryconfig.Key + "." + task.Name, Parent: auxiliaryconfig.Key, Title: task.Title, About: task.About,
-			Settings: s.settings(values, task)})
+			Order: cmp.Or(task.Order, unplaced), Settings: s.settings(values, task)})
 	}
 	return out
 }
 
-// Settings every task keeps, then the task's own, each keyed below the task
+// Place of the section of a task that names none, after those that do
+const unplaced = 1000
+
+// Stall limit of a call when its task sets none
+const unsetStall = time.Minute
+
+// Settings of the task, each keyed below it: its own everyday ones, the provider and model every task keeps, then those every task keeps
+// behind Advanced, then its own behind Advanced
 func (s sections) settings(values *config.Config, task Task) []config.Setting {
-	title := task.Title
-	choice, timeout, timeoutAbout := auxiliaryconfig.Auto, cmp.Or(task.Timeout, 30), "Seconds a call may go without output"
-	first := config.Option{Value: auxiliaryconfig.Auto, Title: "Auto", About: "The session's model first, then the fallbacks"}
+	choice, timeout := auxiliaryconfig.Auto, cmp.Or(task.Timeout, 30)
+	first := config.Option{Value: auxiliaryconfig.Auto, Title: "Automatic", About: "The session's model first, then the fallback models"}
+	effort := config.Option{Title: "The model's default"}
+	format := config.Option{Title: "From the address", About: "Told from the Base URL"}
+	// What each setting left empty comes to
+	model, address, limit, stalls, follows := "Automatic", "The provider's address", config.Span(time.Duration(timeout)*time.Second), config.Span(unsetStall), ""
 	if task.Inherit != "" {
 		base, _ := s.tasks.Task(task.Inherit)
-		choice, timeout, timeoutAbout = "", 0, "Seconds a call may go without output; 0 uses those of "+cmp.Or(base.Title, task.Inherit)
-		first = config.Option{Title: "Same as " + cmp.Or(base.Title, task.Inherit)}
+		name := cmp.Or(base.Title, task.Inherit)
+		choice, timeout, follows = "", 0, as(name)
+		first = config.Option{Title: "Same as " + name, About: "What " + name + " uses, for each setting left empty"}
+		effort, format = config.Option{Title: "Same as " + name}, config.Option{Title: "Same as " + name}
+		model, address, limit, stalls = follows, follows, follows, follows
 	}
+	help := ""
 	if task.MinTimeout > 0 {
-		timeoutAbout += ", at least " + strconv.Itoa(task.MinTimeout)
+		help = "A call always gets at least " + config.Span(time.Duration(task.MinTimeout)*time.Second) + "."
 	}
 	options := s.providers.Options(values)
-	efforts := []config.Option{{Title: "Model default"}}
-	for _, effort := range provider.Efforts {
-		efforts = append(efforts, config.Option{Value: effort, Title: effort})
-	}
-	settings := []config.Setting{
-		{Key: auxiliaryconfig.Provider, Title: title + " provider", About: "Provider of the profile " + title + " runs on", Default: choice, Options: func() []config.Option {
+	efforts := provider.EffortOptions(effort)
+	common := []config.Setting{
+		{Key: auxiliaryconfig.Provider, Title: "Provider", About: "Which provider runs this job.", Default: choice, Options: func() []config.Option {
 			return append([]config.Option{first,
-				{Value: auxiliaryconfig.Main, Title: "Main", About: "The session's provider"},
-				{Value: auxiliaryconfig.Custom, Title: "Custom endpoint", About: "The base URL below"}}, options()...)
+				{Value: auxiliaryconfig.Main, Title: "The session's provider", About: "The provider of the session the job is for"},
+				{Value: auxiliaryconfig.Custom, Title: "Your own server", About: "The server at Base URL, under Advanced"}}, options()...)
 		}},
-		{Key: auxiliaryconfig.Model, Title: title + " model", About: "Model of " + title + "; empty picks one for you", Default: ""},
-		{Key: auxiliaryconfig.BaseURL, Title: title + " URL", About: "Endpoint of " + title + ", which then runs there with the key below", Default: ""},
-		{Key: auxiliaryconfig.APIKey, Title: title + " key", About: "API key of the endpoint; empty uses the provider's account", Default: "", Secret: true},
-		{Key: auxiliaryconfig.KeyEnv, Title: title + " key variable", About: "Environment variable the key is read from when none is kept", Default: ""},
-		{Key: auxiliaryconfig.APIMode, Title: title + " API", About: "API the endpoint speaks; empty tells it from the URL", Default: "", Options: config.Options(
-			config.Option{Title: "From the URL"},
-			config.Option{Value: string(provider.ModeChatCompletions), Title: "Chat Completions"},
-			config.Option{Value: string(provider.ModeAnthropicMessages), Title: "Anthropic Messages"},
-			config.Option{Value: string(provider.ModeCodexResponses), Title: "Responses"},
-		)},
-		{Key: auxiliaryconfig.Timeout, Title: title + " timeout", About: timeoutAbout, Default: time.Duration(timeout) * time.Second},
-		{Key: auxiliaryconfig.NoProgressTimeout, Title: title + " stall limit", About: "Seconds a reply may stop sending once it started; 0 for 60",
-			Default: time.Duration(0)},
-		{Key: auxiliaryconfig.ReasoningEffort, Title: title + " thinking", About: "How hard the model of " + title + " thinks", Default: task.Effort, Options: func() []config.Option { return efforts }},
-		{Key: auxiliaryconfig.ExtraBody, Title: title + " fields", About: "Extra request fields of " + title, Default: map[string]any{}},
-		{Key: auxiliaryconfig.FallbackChain, Title: title + " fallbacks", About: "Models tried in turn when " + title + " fails, each provider:model with the provider named as in this profile", Default: []string{}},
+		{Key: auxiliaryconfig.Model, Title: "Model", About: "The model that does this job.", Default: "", Zero: model},
+		{Key: auxiliaryconfig.BaseURL, Title: "Base URL", About: "The address of a server of your own that does this job.",
+			Help: "When set, the job runs on this server whatever the provider says.", Default: "", Zero: address, Advanced: true},
+		{Key: auxiliaryconfig.APIKey, Title: "API key", About: "Your API key for the server at Base URL.", Help: "Left empty, the account of the provider is used.",
+			Default: "", Secret: true, Advanced: true},
+		{Key: auxiliaryconfig.KeyEnv, Title: "Key variable", About: "The environment variable that holds the API key.", Help: "Read when no API key is kept here.",
+			Default: "", Zero: follows, Advanced: true},
+		{Key: auxiliaryconfig.APIMode, Title: "Request format", About: "Which API the server at Base URL speaks.", Default: "", Advanced: true,
+			Options: config.Options(format,
+				config.Option{Value: string(provider.ModeChatCompletions), Title: "OpenAI chat completions"},
+				config.Option{Value: string(provider.ModeAnthropicMessages), Title: "Anthropic messages"},
+				config.Option{Value: string(provider.ModeCodexResponses), Title: "OpenAI responses"},
+			)},
+		{Key: auxiliaryconfig.Timeout, Title: "Time limit", About: "How long a call may wait for the first output of the model.", Help: help,
+			Default: time.Duration(timeout) * time.Second, Zero: limit, Advanced: true},
+		{Key: auxiliaryconfig.NoProgressTimeout, Title: "Stall limit", About: "How long a reply may pause once it has started.", Default: time.Duration(0),
+			Zero: stalls, Advanced: true},
+		{Key: auxiliaryconfig.ReasoningEffort, Title: "Reasoning effort", About: "How much the model thinks before it answers.", Default: task.Effort,
+			Options: func() []config.Option { return efforts }, Advanced: true},
+		{Key: auxiliaryconfig.ExtraBody, Title: "Extra request fields", About: "Fields added as they are to every request of this job.",
+			Default: map[string]any{}, Zero: follows, Entry: &config.Entry{Noun: "field", Name: "Field name"}, Advanced: true},
+		{Key: auxiliaryconfig.FallbackChain, Title: "Fallback models", About: "Models to try in order when this job fails.",
+			Help: "Write each as provider:model, with the name the provider has in this profile.", Default: []string{}, Zero: follows, Advanced: true},
 	}
-	settings = append(settings, task.Settings...)
+	var everyday, advanced []config.Setting
+	for _, setting := range task.Settings {
+		if setting.Advanced {
+			advanced = append(advanced, setting)
+		} else {
+			everyday = append(everyday, setting)
+		}
+	}
+	settings := slices.Concat(everyday, common, advanced)
 	for i := range settings {
 		settings[i].Key = task.Key(settings[i].Key)
 	}
 	return settings
+}
+
+// Words for what a task takes from the task it follows, such as As image analysis: the title of that task, its first letter lower case
+// unless it begins a name in capitals
+func as(title string) string {
+	if len(title) > 1 && unicode.IsUpper(rune(title[1])) {
+		return "As " + title
+	}
+	return "As " + strings.ToLower(title[:1]) + title[1:]
 }

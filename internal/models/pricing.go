@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/provider"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Note of a cost a subscription covers
@@ -332,26 +333,19 @@ func fixed(r *big.Rat, places int) string {
 	return digits
 }
 
-// Tokens shortened as 200K or 1.05M, empty when not known
+// Count of tokens in digits grouped in thousands, empty when not known
 func Tokens(n int64) string {
-	switch {
-	case n <= 0:
+	if n <= 0 {
 		return ""
-	case n >= 1_000_000 && n%1_000_000 == 0:
-		return strconv.FormatInt(n/1_000_000, 10) + "M"
-	case n >= 1_000_000:
-		return strings.TrimRight(strings.TrimRight(strconv.FormatFloat(float64(n)/1_000_000, 'f', 2, 64), "0"), ".") + "M"
-	case n >= 1_000:
-		return strconv.FormatInt(n/1_000, 10) + "K"
 	}
-	return strconv.FormatInt(n, 10)
+	return strs.Thousands(n)
 }
 
 // Price for a million tokens as dollars, free for nothing and enough places to show a tiny one; ? when it is not a number
 func PerMillion(price string) string {
 	value, err := strconv.ParseFloat(strings.TrimSpace(price), 64)
 	if err != nil {
-		return "?"
+		return "unknown"
 	}
 	if value == 0 {
 		return "free"

@@ -142,6 +142,60 @@ func (Source) EnumDescriptor() ([]byte, []int) {
 	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{1}
 }
 
+// When a change of a setting takes hold
+type Apply int32
+
+const (
+	// Nothing is said of it
+	Apply_APPLY_UNSPECIFIED  Apply = 0
+	Apply_APPLY_NEXT_MESSAGE Apply = 1
+	Apply_APPLY_NEW_SESSIONS Apply = 2
+	Apply_APPLY_RESTART      Apply = 3
+)
+
+// Enum value maps for Apply.
+var (
+	Apply_name = map[int32]string{
+		0: "APPLY_UNSPECIFIED",
+		1: "APPLY_NEXT_MESSAGE",
+		2: "APPLY_NEW_SESSIONS",
+		3: "APPLY_RESTART",
+	}
+	Apply_value = map[string]int32{
+		"APPLY_UNSPECIFIED":  0,
+		"APPLY_NEXT_MESSAGE": 1,
+		"APPLY_NEW_SESSIONS": 2,
+		"APPLY_RESTART":      3,
+	}
+)
+
+func (x Apply) Enum() *Apply {
+	p := new(Apply)
+	*p = x
+	return p
+}
+
+func (x Apply) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Apply) Descriptor() protoreflect.EnumDescriptor {
+	return file_icebath_config_v1_config_proto_enumTypes[2].Descriptor()
+}
+
+func (Apply) Type() protoreflect.EnumType {
+	return &file_icebath_config_v1_config_proto_enumTypes[2]
+}
+
+func (x Apply) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Apply.Descriptor instead.
+func (Apply) EnumDescriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{2}
+}
+
 type Option struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
@@ -222,7 +276,37 @@ type Setting struct {
 	// Unit the number of a length of time counts, such as s or min
 	Unit string `protobuf:"bytes,15,opt,name=unit,proto3" json:"unit,omitempty"`
 	// What the setting left unset means, such as no limit, when it has no default
-	Unset         string `protobuf:"bytes,16,opt,name=unset,proto3" json:"unset,omitempty"`
+	Unset string `protobuf:"bytes,16,opt,name=unset,proto3" json:"unset,omitempty"`
+	// Up to two sentences more than the description
+	Help string `protobuf:"bytes,17,opt,name=help,proto3" json:"help,omitempty"`
+	// Changed by few people, and listed behind Advanced
+	Advanced bool `protobuf:"varint,18,opt,name=advanced,proto3" json:"advanced,omitempty"`
+	// When a change takes hold
+	Apply Apply `protobuf:"varint,19,opt,name=apply,proto3,enum=icebath.config.v1.Apply" json:"apply,omitempty"`
+	// Command that changes it as well, without its slash
+	Slash string `protobuf:"bytes,20,opt,name=slash,proto3" json:"slash,omitempty"`
+	// What is in effect while it holds zero_value, such as No limit, empty when that value means nothing of its own
+	Zero string `protobuf:"bytes,21,opt,name=zero,proto3" json:"zero,omitempty"`
+	// Value zero speaks of, as YAML
+	ZeroValue string `protobuf:"bytes,22,opt,name=zero_value,json=zeroValue,proto3" json:"zero_value,omitempty"`
+	// What a number counts, in the plural
+	Counts string `protobuf:"bytes,23,opt,name=counts,proto3" json:"counts,omitempty"`
+	// Least and most a number or a length of time may be, as YAML numbers, a length of time counting its unit; empty for no bound
+	Least string `protobuf:"bytes,24,opt,name=least,proto3" json:"least,omitempty"`
+	Most  string `protobuf:"bytes,25,opt,name=most,proto3" json:"most,omitempty"`
+	// Bounds in words, such as From 1 to 8, empty for none
+	Bounds string `protobuf:"bytes,26,opt,name=bounds,proto3" json:"bounds,omitempty"`
+	// Value and default in words, as a row shows them: what is in effect rather than the value that stands for it
+	Shown        string `protobuf:"bytes,27,opt,name=shown,proto3" json:"shown,omitempty"`
+	DefaultShown string `protobuf:"bytes,28,opt,name=default_shown,json=defaultShown,proto3" json:"default_shown,omitempty"`
+	// What one entry of a table holds, unset for a table whose entries are free
+	Entry *Entry `protobuf:"bytes,29,opt,name=entry,proto3" json:"entry,omitempty"`
+	// Skill that asks for the value, for a setting a skill declares
+	Skill string `protobuf:"bytes,30,opt,name=skill,proto3" json:"skill,omitempty"`
+	// A field of an entry that the entry is nothing without
+	Need bool `protobuf:"varint,31,opt,name=need,proto3" json:"need,omitempty"`
+	// What text must start with, one of them; any text when empty
+	Starts        []string `protobuf:"bytes,32,rep,name=starts,proto3" json:"starts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -369,6 +453,200 @@ func (x *Setting) GetUnset() string {
 	return ""
 }
 
+func (x *Setting) GetHelp() string {
+	if x != nil {
+		return x.Help
+	}
+	return ""
+}
+
+func (x *Setting) GetAdvanced() bool {
+	if x != nil {
+		return x.Advanced
+	}
+	return false
+}
+
+func (x *Setting) GetApply() Apply {
+	if x != nil {
+		return x.Apply
+	}
+	return Apply_APPLY_UNSPECIFIED
+}
+
+func (x *Setting) GetSlash() string {
+	if x != nil {
+		return x.Slash
+	}
+	return ""
+}
+
+func (x *Setting) GetZero() string {
+	if x != nil {
+		return x.Zero
+	}
+	return ""
+}
+
+func (x *Setting) GetZeroValue() string {
+	if x != nil {
+		return x.ZeroValue
+	}
+	return ""
+}
+
+func (x *Setting) GetCounts() string {
+	if x != nil {
+		return x.Counts
+	}
+	return ""
+}
+
+func (x *Setting) GetLeast() string {
+	if x != nil {
+		return x.Least
+	}
+	return ""
+}
+
+func (x *Setting) GetMost() string {
+	if x != nil {
+		return x.Most
+	}
+	return ""
+}
+
+func (x *Setting) GetBounds() string {
+	if x != nil {
+		return x.Bounds
+	}
+	return ""
+}
+
+func (x *Setting) GetShown() string {
+	if x != nil {
+		return x.Shown
+	}
+	return ""
+}
+
+func (x *Setting) GetDefaultShown() string {
+	if x != nil {
+		return x.DefaultShown
+	}
+	return ""
+}
+
+func (x *Setting) GetEntry() *Entry {
+	if x != nil {
+		return x.Entry
+	}
+	return nil
+}
+
+func (x *Setting) GetSkill() string {
+	if x != nil {
+		return x.Skill
+	}
+	return ""
+}
+
+func (x *Setting) GetNeed() bool {
+	if x != nil {
+		return x.Need
+	}
+	return false
+}
+
+func (x *Setting) GetStarts() []string {
+	if x != nil {
+		return x.Starts
+	}
+	return nil
+}
+
+// What one entry of a table setting holds
+type Entry struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What one entry is, singular and lower case
+	Noun string `protobuf:"bytes,1,opt,name=noun,proto3" json:"noun,omitempty"`
+	// What the name of an entry is called where one is asked for
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// Fields of an entry, each keyed by its name inside the entry; a single field with an empty key for an entry that is one value
+	Fields []*Setting `protobuf:"bytes,3,rep,name=fields,proto3" json:"fields,omitempty"`
+	// The names of the entries are names of variables, shown in capitals whatever case they are kept in
+	Capitals bool `protobuf:"varint,4,opt,name=capitals,proto3" json:"capitals,omitempty"`
+	// The names an entry may have, each with what a person calls it; any name when empty
+	Names         []*Option `protobuf:"bytes,5,rep,name=names,proto3" json:"names,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Entry) Reset() {
+	*x = Entry{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Entry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Entry) ProtoMessage() {}
+
+func (x *Entry) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Entry.ProtoReflect.Descriptor instead.
+func (*Entry) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Entry) GetNoun() string {
+	if x != nil {
+		return x.Noun
+	}
+	return ""
+}
+
+func (x *Entry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Entry) GetFields() []*Setting {
+	if x != nil {
+		return x.Fields
+	}
+	return nil
+}
+
+func (x *Entry) GetCapitals() bool {
+	if x != nil {
+		return x.Capitals
+	}
+	return false
+}
+
+func (x *Entry) GetNames() []*Option {
+	if x != nil {
+		return x.Names
+	}
+	return nil
+}
+
 type Section struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Key         string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -376,14 +654,16 @@ type Section struct {
 	Title       string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
 	Description string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
 	// Kept once for every profile rather than in the profile in use
-	Global        bool `protobuf:"varint,5,opt,name=global,proto3" json:"global,omitempty"`
+	Global bool `protobuf:"varint,5,opt,name=global,proto3" json:"global,omitempty"`
+	// Group of the first settings screen a section at the top is listed under
+	Group         string `protobuf:"bytes,6,opt,name=group,proto3" json:"group,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Section) Reset() {
 	*x = Section{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[2]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -395,7 +675,7 @@ func (x *Section) String() string {
 func (*Section) ProtoMessage() {}
 
 func (x *Section) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[2]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -408,7 +688,7 @@ func (x *Section) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Section.ProtoReflect.Descriptor instead.
 func (*Section) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{2}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Section) GetKey() string {
@@ -446,6 +726,66 @@ func (x *Section) GetGlobal() bool {
 	return false
 }
 
+func (x *Section) GetGroup() string {
+	if x != nil {
+		return x.Group
+	}
+	return ""
+}
+
+// Heading the first settings screen lists sections under
+type Group struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Group) Reset() {
+	*x = Group{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Group) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Group) ProtoMessage() {}
+
+func (x *Group) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Group.ProtoReflect.Descriptor instead.
+func (*Group) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Group) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Group) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
 type ListRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Profile to act on, the one in use when empty
@@ -458,7 +798,7 @@ type ListRequest struct {
 
 func (x *ListRequest) Reset() {
 	*x = ListRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[3]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -470,7 +810,7 @@ func (x *ListRequest) String() string {
 func (*ListRequest) ProtoMessage() {}
 
 func (x *ListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[3]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -483,7 +823,7 @@ func (x *ListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
 func (*ListRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{3}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListRequest) GetProfile() string {
@@ -505,14 +845,16 @@ type ListResponse struct {
 	Sections []*Section             `protobuf:"bytes,1,rep,name=sections,proto3" json:"sections,omitempty"`
 	Settings []*Setting             `protobuf:"bytes,2,rep,name=settings,proto3" json:"settings,omitempty"`
 	// Profile whose settings are listed, those every profile shares aside
-	Profile       string `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+	Profile string `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Groups of the sections at the top, in the order they are listed
+	Groups        []*Group `protobuf:"bytes,4,rep,name=groups,proto3" json:"groups,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListResponse) Reset() {
 	*x = ListResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[4]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -524,7 +866,7 @@ func (x *ListResponse) String() string {
 func (*ListResponse) ProtoMessage() {}
 
 func (x *ListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[4]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -537,7 +879,7 @@ func (x *ListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
 func (*ListResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{4}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListResponse) GetSections() []*Section {
@@ -561,6 +903,13 @@ func (x *ListResponse) GetProfile() string {
 	return ""
 }
 
+func (x *ListResponse) GetGroups() []*Group {
+	if x != nil {
+		return x.Groups
+	}
+	return nil
+}
+
 type GetRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Key   string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -572,7 +921,7 @@ type GetRequest struct {
 
 func (x *GetRequest) Reset() {
 	*x = GetRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[5]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -584,7 +933,7 @@ func (x *GetRequest) String() string {
 func (*GetRequest) ProtoMessage() {}
 
 func (x *GetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[5]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -597,7 +946,7 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
 func (*GetRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{5}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetRequest) GetKey() string {
@@ -623,7 +972,7 @@ type GetResponse struct {
 
 func (x *GetResponse) Reset() {
 	*x = GetResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[6]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -635,7 +984,7 @@ func (x *GetResponse) String() string {
 func (*GetResponse) ProtoMessage() {}
 
 func (x *GetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[6]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -648,7 +997,7 @@ func (x *GetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
 func (*GetResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{6}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetResponse) GetSetting() *Setting {
@@ -670,7 +1019,7 @@ type SetRequest struct {
 
 func (x *SetRequest) Reset() {
 	*x = SetRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[7]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -682,7 +1031,7 @@ func (x *SetRequest) String() string {
 func (*SetRequest) ProtoMessage() {}
 
 func (x *SetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[7]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -695,7 +1044,7 @@ func (x *SetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRequest.ProtoReflect.Descriptor instead.
 func (*SetRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{7}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SetRequest) GetKey() string {
@@ -727,7 +1076,7 @@ type SetResponse struct {
 
 func (x *SetResponse) Reset() {
 	*x = SetResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[8]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -739,7 +1088,7 @@ func (x *SetResponse) String() string {
 func (*SetResponse) ProtoMessage() {}
 
 func (x *SetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[8]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -752,7 +1101,7 @@ func (x *SetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetResponse.ProtoReflect.Descriptor instead.
 func (*SetResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{8}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{10}
 }
 
 type ValueRequest struct {
@@ -767,7 +1116,7 @@ type ValueRequest struct {
 
 func (x *ValueRequest) Reset() {
 	*x = ValueRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[9]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -779,7 +1128,7 @@ func (x *ValueRequest) String() string {
 func (*ValueRequest) ProtoMessage() {}
 
 func (x *ValueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[9]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -792,7 +1141,7 @@ func (x *ValueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValueRequest.ProtoReflect.Descriptor instead.
 func (*ValueRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{9}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ValueRequest) GetKey() string {
@@ -832,7 +1181,7 @@ type ValueResponse struct {
 
 func (x *ValueResponse) Reset() {
 	*x = ValueResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[10]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -844,7 +1193,7 @@ func (x *ValueResponse) String() string {
 func (*ValueResponse) ProtoMessage() {}
 
 func (x *ValueResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[10]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -857,7 +1206,7 @@ func (x *ValueResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValueResponse.ProtoReflect.Descriptor instead.
 func (*ValueResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{10}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ValueResponse) GetFound() bool {
@@ -900,7 +1249,7 @@ type PutRequest struct {
 
 func (x *PutRequest) Reset() {
 	*x = PutRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[11]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -912,7 +1261,7 @@ func (x *PutRequest) String() string {
 func (*PutRequest) ProtoMessage() {}
 
 func (x *PutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[11]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -925,7 +1274,7 @@ func (x *PutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutRequest.ProtoReflect.Descriptor instead.
 func (*PutRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{11}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *PutRequest) GetKey() string {
@@ -967,7 +1316,7 @@ type PutResponse struct {
 
 func (x *PutResponse) Reset() {
 	*x = PutResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[12]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -979,7 +1328,7 @@ func (x *PutResponse) String() string {
 func (*PutResponse) ProtoMessage() {}
 
 func (x *PutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[12]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -992,7 +1341,7 @@ func (x *PutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutResponse.ProtoReflect.Descriptor instead.
 func (*PutResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{12}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *PutResponse) GetShown() string {
@@ -1040,7 +1389,7 @@ type UnsetRequest struct {
 
 func (x *UnsetRequest) Reset() {
 	*x = UnsetRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[13]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1052,7 +1401,7 @@ func (x *UnsetRequest) String() string {
 func (*UnsetRequest) ProtoMessage() {}
 
 func (x *UnsetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[13]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1065,7 +1414,7 @@ func (x *UnsetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnsetRequest.ProtoReflect.Descriptor instead.
 func (*UnsetRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{13}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UnsetRequest) GetKey() string {
@@ -1093,7 +1442,7 @@ type UnsetResponse struct {
 
 func (x *UnsetResponse) Reset() {
 	*x = UnsetResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[14]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1105,7 +1454,7 @@ func (x *UnsetResponse) String() string {
 func (*UnsetResponse) ProtoMessage() {}
 
 func (x *UnsetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[14]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1118,7 +1467,7 @@ func (x *UnsetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnsetResponse.ProtoReflect.Descriptor instead.
 func (*UnsetResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{14}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UnsetResponse) GetFound() bool {
@@ -1144,7 +1493,7 @@ type FilesRequest struct {
 
 func (x *FilesRequest) Reset() {
 	*x = FilesRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[15]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1156,7 +1505,7 @@ func (x *FilesRequest) String() string {
 func (*FilesRequest) ProtoMessage() {}
 
 func (x *FilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[15]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1169,7 +1518,7 @@ func (x *FilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilesRequest.ProtoReflect.Descriptor instead.
 func (*FilesRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{15}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *FilesRequest) GetProfile() string {
@@ -1209,7 +1558,7 @@ type FilesResponse struct {
 
 func (x *FilesResponse) Reset() {
 	*x = FilesResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[16]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1221,7 +1570,7 @@ func (x *FilesResponse) String() string {
 func (*FilesResponse) ProtoMessage() {}
 
 func (x *FilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[16]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1234,7 +1583,7 @@ func (x *FilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilesResponse.ProtoReflect.Descriptor instead.
 func (*FilesResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{16}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *FilesResponse) GetShared() string {
@@ -1337,7 +1686,7 @@ type CheckRequest struct {
 
 func (x *CheckRequest) Reset() {
 	*x = CheckRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[17]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1349,7 +1698,7 @@ func (x *CheckRequest) String() string {
 func (*CheckRequest) ProtoMessage() {}
 
 func (x *CheckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[17]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1362,7 +1711,7 @@ func (x *CheckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckRequest.ProtoReflect.Descriptor instead.
 func (*CheckRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{17}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CheckRequest) GetProfile() string {
@@ -1387,7 +1736,7 @@ type Variable struct {
 
 func (x *Variable) Reset() {
 	*x = Variable{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[18]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1399,7 +1748,7 @@ func (x *Variable) String() string {
 func (*Variable) ProtoMessage() {}
 
 func (x *Variable) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[18]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1412,7 +1761,7 @@ func (x *Variable) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Variable.ProtoReflect.Descriptor instead.
 func (*Variable) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{18}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Variable) GetName() string {
@@ -1459,7 +1808,7 @@ type ShowRequest struct {
 
 func (x *ShowRequest) Reset() {
 	*x = ShowRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[19]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1471,7 +1820,7 @@ func (x *ShowRequest) String() string {
 func (*ShowRequest) ProtoMessage() {}
 
 func (x *ShowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[19]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1484,7 +1833,7 @@ func (x *ShowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShowRequest.ProtoReflect.Descriptor instead.
 func (*ShowRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{19}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ShowRequest) GetProfile() string {
@@ -1509,7 +1858,7 @@ type Shown struct {
 
 func (x *Shown) Reset() {
 	*x = Shown{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[20]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1521,7 +1870,7 @@ func (x *Shown) String() string {
 func (*Shown) ProtoMessage() {}
 
 func (x *Shown) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[20]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1534,7 +1883,7 @@ func (x *Shown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Shown.ProtoReflect.Descriptor instead.
 func (*Shown) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{20}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Shown) GetLabel() string {
@@ -1581,7 +1930,7 @@ type ShowResponse struct {
 
 func (x *ShowResponse) Reset() {
 	*x = ShowResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[21]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1593,7 +1942,7 @@ func (x *ShowResponse) String() string {
 func (*ShowResponse) ProtoMessage() {}
 
 func (x *ShowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[21]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1606,7 +1955,7 @@ func (x *ShowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShowResponse.ProtoReflect.Descriptor instead.
 func (*ShowResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{21}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ShowResponse) GetKeys() []*Shown {
@@ -1649,7 +1998,7 @@ type CheckResponse struct {
 
 func (x *CheckResponse) Reset() {
 	*x = CheckResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[22]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1661,7 +2010,7 @@ func (x *CheckResponse) String() string {
 func (*CheckResponse) ProtoMessage() {}
 
 func (x *CheckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[22]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1674,7 +2023,7 @@ func (x *CheckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckResponse.ProtoReflect.Descriptor instead.
 func (*CheckResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{22}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *CheckResponse) GetRequired() []*Variable {
@@ -1709,7 +2058,7 @@ type ReadRequest struct {
 
 func (x *ReadRequest) Reset() {
 	*x = ReadRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[23]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1721,7 +2070,7 @@ func (x *ReadRequest) String() string {
 func (*ReadRequest) ProtoMessage() {}
 
 func (x *ReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[23]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1734,7 +2083,7 @@ func (x *ReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadRequest.ProtoReflect.Descriptor instead.
 func (*ReadRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{23}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ReadRequest) GetPath() string {
@@ -1762,7 +2111,7 @@ type ReadResponse struct {
 
 func (x *ReadResponse) Reset() {
 	*x = ReadResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[24]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1774,7 +2123,7 @@ func (x *ReadResponse) String() string {
 func (*ReadResponse) ProtoMessage() {}
 
 func (x *ReadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[24]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1787,7 +2136,7 @@ func (x *ReadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadResponse.ProtoReflect.Descriptor instead.
 func (*ReadResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{24}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ReadResponse) GetText() string {
@@ -1815,7 +2164,7 @@ type WriteRequest struct {
 
 func (x *WriteRequest) Reset() {
 	*x = WriteRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[25]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1827,7 +2176,7 @@ func (x *WriteRequest) String() string {
 func (*WriteRequest) ProtoMessage() {}
 
 func (x *WriteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[25]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1840,7 +2189,7 @@ func (x *WriteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteRequest.ProtoReflect.Descriptor instead.
 func (*WriteRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{25}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *WriteRequest) GetPath() string {
@@ -1874,7 +2223,7 @@ type WriteResponse struct {
 
 func (x *WriteResponse) Reset() {
 	*x = WriteResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[26]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1886,7 +2235,7 @@ func (x *WriteResponse) String() string {
 func (*WriteResponse) ProtoMessage() {}
 
 func (x *WriteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[26]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1899,7 +2248,7 @@ func (x *WriteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteResponse.ProtoReflect.Descriptor instead.
 func (*WriteResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{26}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *WriteResponse) GetProblem() string {
@@ -1920,7 +2269,7 @@ type SeedRequest struct {
 
 func (x *SeedRequest) Reset() {
 	*x = SeedRequest{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[27]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1932,7 +2281,7 @@ func (x *SeedRequest) String() string {
 func (*SeedRequest) ProtoMessage() {}
 
 func (x *SeedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[27]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1945,7 +2294,7 @@ func (x *SeedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SeedRequest.ProtoReflect.Descriptor instead.
 func (*SeedRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{27}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SeedRequest) GetPath() string {
@@ -1972,7 +2321,7 @@ type SeedResponse struct {
 
 func (x *SeedResponse) Reset() {
 	*x = SeedResponse{}
-	mi := &file_icebath_config_v1_config_proto_msgTypes[28]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1984,7 +2333,7 @@ func (x *SeedResponse) String() string {
 func (*SeedResponse) ProtoMessage() {}
 
 func (x *SeedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_config_v1_config_proto_msgTypes[28]
+	mi := &file_icebath_config_v1_config_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1997,7 +2346,7 @@ func (x *SeedResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SeedResponse.ProtoReflect.Descriptor instead.
 func (*SeedResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{28}
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SeedResponse) GetSeeded() bool {
@@ -2015,7 +2364,7 @@ const file_icebath_config_v1_config_proto_rawDesc = "" +
 	"\x06Option\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\"\xe1\x03\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\"\x91\a\n" +
 	"\aSetting\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x18\n" +
 	"\asection\x18\x02 \x01(\tR\asection\x12\x14\n" +
@@ -2033,20 +2382,48 @@ const file_icebath_config_v1_config_proto_rawDesc = "" +
 	"\aoptions\x18\r \x03(\v2\x19.icebath.config.v1.OptionR\aoptions\x12\x16\n" +
 	"\x06locked\x18\x0e \x01(\tR\x06locked\x12\x12\n" +
 	"\x04unit\x18\x0f \x01(\tR\x04unit\x12\x14\n" +
-	"\x05unset\x18\x10 \x01(\tR\x05unset\"\x83\x01\n" +
+	"\x05unset\x18\x10 \x01(\tR\x05unset\x12\x12\n" +
+	"\x04help\x18\x11 \x01(\tR\x04help\x12\x1a\n" +
+	"\badvanced\x18\x12 \x01(\bR\badvanced\x12.\n" +
+	"\x05apply\x18\x13 \x01(\x0e2\x18.icebath.config.v1.ApplyR\x05apply\x12\x14\n" +
+	"\x05slash\x18\x14 \x01(\tR\x05slash\x12\x12\n" +
+	"\x04zero\x18\x15 \x01(\tR\x04zero\x12\x1d\n" +
+	"\n" +
+	"zero_value\x18\x16 \x01(\tR\tzeroValue\x12\x16\n" +
+	"\x06counts\x18\x17 \x01(\tR\x06counts\x12\x14\n" +
+	"\x05least\x18\x18 \x01(\tR\x05least\x12\x12\n" +
+	"\x04most\x18\x19 \x01(\tR\x04most\x12\x16\n" +
+	"\x06bounds\x18\x1a \x01(\tR\x06bounds\x12\x14\n" +
+	"\x05shown\x18\x1b \x01(\tR\x05shown\x12#\n" +
+	"\rdefault_shown\x18\x1c \x01(\tR\fdefaultShown\x12.\n" +
+	"\x05entry\x18\x1d \x01(\v2\x18.icebath.config.v1.EntryR\x05entry\x12\x14\n" +
+	"\x05skill\x18\x1e \x01(\tR\x05skill\x12\x12\n" +
+	"\x04need\x18\x1f \x01(\bR\x04need\x12\x16\n" +
+	"\x06starts\x18  \x03(\tR\x06starts\"\xb0\x01\n" +
+	"\x05Entry\x12\x12\n" +
+	"\x04noun\x18\x01 \x01(\tR\x04noun\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x122\n" +
+	"\x06fields\x18\x03 \x03(\v2\x1a.icebath.config.v1.SettingR\x06fields\x12\x1a\n" +
+	"\bcapitals\x18\x04 \x01(\bR\bcapitals\x12/\n" +
+	"\x05names\x18\x05 \x03(\v2\x19.icebath.config.v1.OptionR\x05names\"\x99\x01\n" +
 	"\aSection\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x16\n" +
 	"\x06parent\x18\x02 \x01(\tR\x06parent\x12\x14\n" +
 	"\x05title\x18\x03 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x16\n" +
-	"\x06global\x18\x05 \x01(\bR\x06global\";\n" +
+	"\x06global\x18\x05 \x01(\bR\x06global\x12\x14\n" +
+	"\x05group\x18\x06 \x01(\tR\x05group\"-\n" +
+	"\x05Group\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\";\n" +
 	"\vListRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
-	"\x04bare\x18\x02 \x01(\bR\x04bare\"\x98\x01\n" +
+	"\x04bare\x18\x02 \x01(\bR\x04bare\"\xca\x01\n" +
 	"\fListResponse\x126\n" +
 	"\bsections\x18\x01 \x03(\v2\x1a.icebath.config.v1.SectionR\bsections\x126\n" +
 	"\bsettings\x18\x02 \x03(\v2\x1a.icebath.config.v1.SettingR\bsettings\x12\x18\n" +
-	"\aprofile\x18\x03 \x01(\tR\aprofile\"8\n" +
+	"\aprofile\x18\x03 \x01(\tR\aprofile\x120\n" +
+	"\x06groups\x18\x04 \x03(\v2\x18.icebath.config.v1.GroupR\x06groups\"8\n" +
 	"\n" +
 	"GetRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x18\n" +
@@ -2162,7 +2539,12 @@ const file_icebath_config_v1_config_proto_rawDesc = "" +
 	"\x0eSOURCE_DEFAULT\x10\x01\x12\x0f\n" +
 	"\vSOURCE_FILE\x10\x02\x12\x16\n" +
 	"\x12SOURCE_ENVIRONMENT\x10\x03\x12\x12\n" +
-	"\x0eSOURCE_MANAGED\x10\x042\x81\a\n" +
+	"\x0eSOURCE_MANAGED\x10\x04*a\n" +
+	"\x05Apply\x12\x15\n" +
+	"\x11APPLY_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12APPLY_NEXT_MESSAGE\x10\x01\x12\x16\n" +
+	"\x12APPLY_NEW_SESSIONS\x10\x02\x12\x11\n" +
+	"\rAPPLY_RESTART\x10\x032\x81\a\n" +
 	"\rConfigService\x12G\n" +
 	"\x04List\x12\x1e.icebath.config.v1.ListRequest\x1a\x1f.icebath.config.v1.ListResponse\x12D\n" +
 	"\x03Get\x12\x1d.icebath.config.v1.GetRequest\x1a\x1e.icebath.config.v1.GetResponse\x12D\n" +
@@ -2190,82 +2572,90 @@ func file_icebath_config_v1_config_proto_rawDescGZIP() []byte {
 	return file_icebath_config_v1_config_proto_rawDescData
 }
 
-var file_icebath_config_v1_config_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_icebath_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_icebath_config_v1_config_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_icebath_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_icebath_config_v1_config_proto_goTypes = []any{
 	(Kind)(0),             // 0: icebath.config.v1.Kind
 	(Source)(0),           // 1: icebath.config.v1.Source
-	(*Option)(nil),        // 2: icebath.config.v1.Option
-	(*Setting)(nil),       // 3: icebath.config.v1.Setting
-	(*Section)(nil),       // 4: icebath.config.v1.Section
-	(*ListRequest)(nil),   // 5: icebath.config.v1.ListRequest
-	(*ListResponse)(nil),  // 6: icebath.config.v1.ListResponse
-	(*GetRequest)(nil),    // 7: icebath.config.v1.GetRequest
-	(*GetResponse)(nil),   // 8: icebath.config.v1.GetResponse
-	(*SetRequest)(nil),    // 9: icebath.config.v1.SetRequest
-	(*SetResponse)(nil),   // 10: icebath.config.v1.SetResponse
-	(*ValueRequest)(nil),  // 11: icebath.config.v1.ValueRequest
-	(*ValueResponse)(nil), // 12: icebath.config.v1.ValueResponse
-	(*PutRequest)(nil),    // 13: icebath.config.v1.PutRequest
-	(*PutResponse)(nil),   // 14: icebath.config.v1.PutResponse
-	(*UnsetRequest)(nil),  // 15: icebath.config.v1.UnsetRequest
-	(*UnsetResponse)(nil), // 16: icebath.config.v1.UnsetResponse
-	(*FilesRequest)(nil),  // 17: icebath.config.v1.FilesRequest
-	(*FilesResponse)(nil), // 18: icebath.config.v1.FilesResponse
-	(*CheckRequest)(nil),  // 19: icebath.config.v1.CheckRequest
-	(*Variable)(nil),      // 20: icebath.config.v1.Variable
-	(*ShowRequest)(nil),   // 21: icebath.config.v1.ShowRequest
-	(*Shown)(nil),         // 22: icebath.config.v1.Shown
-	(*ShowResponse)(nil),  // 23: icebath.config.v1.ShowResponse
-	(*CheckResponse)(nil), // 24: icebath.config.v1.CheckResponse
-	(*ReadRequest)(nil),   // 25: icebath.config.v1.ReadRequest
-	(*ReadResponse)(nil),  // 26: icebath.config.v1.ReadResponse
-	(*WriteRequest)(nil),  // 27: icebath.config.v1.WriteRequest
-	(*WriteResponse)(nil), // 28: icebath.config.v1.WriteResponse
-	(*SeedRequest)(nil),   // 29: icebath.config.v1.SeedRequest
-	(*SeedResponse)(nil),  // 30: icebath.config.v1.SeedResponse
+	(Apply)(0),            // 2: icebath.config.v1.Apply
+	(*Option)(nil),        // 3: icebath.config.v1.Option
+	(*Setting)(nil),       // 4: icebath.config.v1.Setting
+	(*Entry)(nil),         // 5: icebath.config.v1.Entry
+	(*Section)(nil),       // 6: icebath.config.v1.Section
+	(*Group)(nil),         // 7: icebath.config.v1.Group
+	(*ListRequest)(nil),   // 8: icebath.config.v1.ListRequest
+	(*ListResponse)(nil),  // 9: icebath.config.v1.ListResponse
+	(*GetRequest)(nil),    // 10: icebath.config.v1.GetRequest
+	(*GetResponse)(nil),   // 11: icebath.config.v1.GetResponse
+	(*SetRequest)(nil),    // 12: icebath.config.v1.SetRequest
+	(*SetResponse)(nil),   // 13: icebath.config.v1.SetResponse
+	(*ValueRequest)(nil),  // 14: icebath.config.v1.ValueRequest
+	(*ValueResponse)(nil), // 15: icebath.config.v1.ValueResponse
+	(*PutRequest)(nil),    // 16: icebath.config.v1.PutRequest
+	(*PutResponse)(nil),   // 17: icebath.config.v1.PutResponse
+	(*UnsetRequest)(nil),  // 18: icebath.config.v1.UnsetRequest
+	(*UnsetResponse)(nil), // 19: icebath.config.v1.UnsetResponse
+	(*FilesRequest)(nil),  // 20: icebath.config.v1.FilesRequest
+	(*FilesResponse)(nil), // 21: icebath.config.v1.FilesResponse
+	(*CheckRequest)(nil),  // 22: icebath.config.v1.CheckRequest
+	(*Variable)(nil),      // 23: icebath.config.v1.Variable
+	(*ShowRequest)(nil),   // 24: icebath.config.v1.ShowRequest
+	(*Shown)(nil),         // 25: icebath.config.v1.Shown
+	(*ShowResponse)(nil),  // 26: icebath.config.v1.ShowResponse
+	(*CheckResponse)(nil), // 27: icebath.config.v1.CheckResponse
+	(*ReadRequest)(nil),   // 28: icebath.config.v1.ReadRequest
+	(*ReadResponse)(nil),  // 29: icebath.config.v1.ReadResponse
+	(*WriteRequest)(nil),  // 30: icebath.config.v1.WriteRequest
+	(*WriteResponse)(nil), // 31: icebath.config.v1.WriteResponse
+	(*SeedRequest)(nil),   // 32: icebath.config.v1.SeedRequest
+	(*SeedResponse)(nil),  // 33: icebath.config.v1.SeedResponse
 }
 var file_icebath_config_v1_config_proto_depIdxs = []int32{
 	0,  // 0: icebath.config.v1.Setting.kind:type_name -> icebath.config.v1.Kind
 	1,  // 1: icebath.config.v1.Setting.source:type_name -> icebath.config.v1.Source
-	2,  // 2: icebath.config.v1.Setting.options:type_name -> icebath.config.v1.Option
-	4,  // 3: icebath.config.v1.ListResponse.sections:type_name -> icebath.config.v1.Section
-	3,  // 4: icebath.config.v1.ListResponse.settings:type_name -> icebath.config.v1.Setting
-	3,  // 5: icebath.config.v1.GetResponse.setting:type_name -> icebath.config.v1.Setting
-	22, // 6: icebath.config.v1.ShowResponse.keys:type_name -> icebath.config.v1.Shown
-	22, // 7: icebath.config.v1.ShowResponse.platforms:type_name -> icebath.config.v1.Shown
-	22, // 8: icebath.config.v1.ShowResponse.skills:type_name -> icebath.config.v1.Shown
-	20, // 9: icebath.config.v1.CheckResponse.required:type_name -> icebath.config.v1.Variable
-	20, // 10: icebath.config.v1.CheckResponse.optional:type_name -> icebath.config.v1.Variable
-	5,  // 11: icebath.config.v1.ConfigService.List:input_type -> icebath.config.v1.ListRequest
-	7,  // 12: icebath.config.v1.ConfigService.Get:input_type -> icebath.config.v1.GetRequest
-	9,  // 13: icebath.config.v1.ConfigService.Set:input_type -> icebath.config.v1.SetRequest
-	11, // 14: icebath.config.v1.ConfigService.Value:input_type -> icebath.config.v1.ValueRequest
-	13, // 15: icebath.config.v1.ConfigService.Put:input_type -> icebath.config.v1.PutRequest
-	15, // 16: icebath.config.v1.ConfigService.Unset:input_type -> icebath.config.v1.UnsetRequest
-	17, // 17: icebath.config.v1.ConfigService.Files:input_type -> icebath.config.v1.FilesRequest
-	19, // 18: icebath.config.v1.ConfigService.Check:input_type -> icebath.config.v1.CheckRequest
-	21, // 19: icebath.config.v1.ConfigService.Show:input_type -> icebath.config.v1.ShowRequest
-	25, // 20: icebath.config.v1.ConfigService.Read:input_type -> icebath.config.v1.ReadRequest
-	27, // 21: icebath.config.v1.ConfigService.Write:input_type -> icebath.config.v1.WriteRequest
-	29, // 22: icebath.config.v1.ConfigService.Seed:input_type -> icebath.config.v1.SeedRequest
-	6,  // 23: icebath.config.v1.ConfigService.List:output_type -> icebath.config.v1.ListResponse
-	8,  // 24: icebath.config.v1.ConfigService.Get:output_type -> icebath.config.v1.GetResponse
-	10, // 25: icebath.config.v1.ConfigService.Set:output_type -> icebath.config.v1.SetResponse
-	12, // 26: icebath.config.v1.ConfigService.Value:output_type -> icebath.config.v1.ValueResponse
-	14, // 27: icebath.config.v1.ConfigService.Put:output_type -> icebath.config.v1.PutResponse
-	16, // 28: icebath.config.v1.ConfigService.Unset:output_type -> icebath.config.v1.UnsetResponse
-	18, // 29: icebath.config.v1.ConfigService.Files:output_type -> icebath.config.v1.FilesResponse
-	24, // 30: icebath.config.v1.ConfigService.Check:output_type -> icebath.config.v1.CheckResponse
-	23, // 31: icebath.config.v1.ConfigService.Show:output_type -> icebath.config.v1.ShowResponse
-	26, // 32: icebath.config.v1.ConfigService.Read:output_type -> icebath.config.v1.ReadResponse
-	28, // 33: icebath.config.v1.ConfigService.Write:output_type -> icebath.config.v1.WriteResponse
-	30, // 34: icebath.config.v1.ConfigService.Seed:output_type -> icebath.config.v1.SeedResponse
-	23, // [23:35] is the sub-list for method output_type
-	11, // [11:23] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	3,  // 2: icebath.config.v1.Setting.options:type_name -> icebath.config.v1.Option
+	2,  // 3: icebath.config.v1.Setting.apply:type_name -> icebath.config.v1.Apply
+	5,  // 4: icebath.config.v1.Setting.entry:type_name -> icebath.config.v1.Entry
+	4,  // 5: icebath.config.v1.Entry.fields:type_name -> icebath.config.v1.Setting
+	3,  // 6: icebath.config.v1.Entry.names:type_name -> icebath.config.v1.Option
+	6,  // 7: icebath.config.v1.ListResponse.sections:type_name -> icebath.config.v1.Section
+	4,  // 8: icebath.config.v1.ListResponse.settings:type_name -> icebath.config.v1.Setting
+	7,  // 9: icebath.config.v1.ListResponse.groups:type_name -> icebath.config.v1.Group
+	4,  // 10: icebath.config.v1.GetResponse.setting:type_name -> icebath.config.v1.Setting
+	25, // 11: icebath.config.v1.ShowResponse.keys:type_name -> icebath.config.v1.Shown
+	25, // 12: icebath.config.v1.ShowResponse.platforms:type_name -> icebath.config.v1.Shown
+	25, // 13: icebath.config.v1.ShowResponse.skills:type_name -> icebath.config.v1.Shown
+	23, // 14: icebath.config.v1.CheckResponse.required:type_name -> icebath.config.v1.Variable
+	23, // 15: icebath.config.v1.CheckResponse.optional:type_name -> icebath.config.v1.Variable
+	8,  // 16: icebath.config.v1.ConfigService.List:input_type -> icebath.config.v1.ListRequest
+	10, // 17: icebath.config.v1.ConfigService.Get:input_type -> icebath.config.v1.GetRequest
+	12, // 18: icebath.config.v1.ConfigService.Set:input_type -> icebath.config.v1.SetRequest
+	14, // 19: icebath.config.v1.ConfigService.Value:input_type -> icebath.config.v1.ValueRequest
+	16, // 20: icebath.config.v1.ConfigService.Put:input_type -> icebath.config.v1.PutRequest
+	18, // 21: icebath.config.v1.ConfigService.Unset:input_type -> icebath.config.v1.UnsetRequest
+	20, // 22: icebath.config.v1.ConfigService.Files:input_type -> icebath.config.v1.FilesRequest
+	22, // 23: icebath.config.v1.ConfigService.Check:input_type -> icebath.config.v1.CheckRequest
+	24, // 24: icebath.config.v1.ConfigService.Show:input_type -> icebath.config.v1.ShowRequest
+	28, // 25: icebath.config.v1.ConfigService.Read:input_type -> icebath.config.v1.ReadRequest
+	30, // 26: icebath.config.v1.ConfigService.Write:input_type -> icebath.config.v1.WriteRequest
+	32, // 27: icebath.config.v1.ConfigService.Seed:input_type -> icebath.config.v1.SeedRequest
+	9,  // 28: icebath.config.v1.ConfigService.List:output_type -> icebath.config.v1.ListResponse
+	11, // 29: icebath.config.v1.ConfigService.Get:output_type -> icebath.config.v1.GetResponse
+	13, // 30: icebath.config.v1.ConfigService.Set:output_type -> icebath.config.v1.SetResponse
+	15, // 31: icebath.config.v1.ConfigService.Value:output_type -> icebath.config.v1.ValueResponse
+	17, // 32: icebath.config.v1.ConfigService.Put:output_type -> icebath.config.v1.PutResponse
+	19, // 33: icebath.config.v1.ConfigService.Unset:output_type -> icebath.config.v1.UnsetResponse
+	21, // 34: icebath.config.v1.ConfigService.Files:output_type -> icebath.config.v1.FilesResponse
+	27, // 35: icebath.config.v1.ConfigService.Check:output_type -> icebath.config.v1.CheckResponse
+	26, // 36: icebath.config.v1.ConfigService.Show:output_type -> icebath.config.v1.ShowResponse
+	29, // 37: icebath.config.v1.ConfigService.Read:output_type -> icebath.config.v1.ReadResponse
+	31, // 38: icebath.config.v1.ConfigService.Write:output_type -> icebath.config.v1.WriteResponse
+	33, // 39: icebath.config.v1.ConfigService.Seed:output_type -> icebath.config.v1.SeedResponse
+	28, // [28:40] is the sub-list for method output_type
+	16, // [16:28] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_icebath_config_v1_config_proto_init() }
@@ -2278,8 +2668,8 @@ func file_icebath_config_v1_config_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_config_v1_config_proto_rawDesc), len(file_icebath_config_v1_config_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   29,
+			NumEnums:      3,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

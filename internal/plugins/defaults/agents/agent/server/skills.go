@@ -25,7 +25,7 @@ func (a *Agent) Submit(ctx context.Context, id, text, display string) error {
 		return err
 	}
 	if text = strings.TrimSpace(text); text == "" {
-		return connect.NewError(connect.CodeInvalidArgument, "Nothing to send")
+		return connect.NewError(connect.CodeInvalidArgument, "Your message is empty. Type something to send.")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -36,7 +36,7 @@ func (a *Agent) Submit(ctx context.Context, id, text, display string) error {
 	r.queue = append(r.queue, queued{text: text, display: strings.TrimSpace(display)})
 	if r.busy {
 		r.yield.Store(true)
-		a.notify(r, "Queued. It sends when the current reply finishes.")
+		a.notify(r, queuedNote)
 		return nil
 	}
 	return a.start(r)

@@ -47,7 +47,7 @@ func (s *Speech) Fetched(a Asset) bool {
 // Path of the verified asset, downloaded on first use
 func (s *Speech) File(ctx context.Context, a Asset) (string, error) {
 	if len(a.SHA256) != sha256.Size*2 || a.Name == "" || a.Name != filepath.Base(a.Name) {
-		return "", fmt.Errorf("asset %q is not pinned by a file name and a sha256", a.Name)
+		return "", fmt.Errorf("The download %s has no file name and checksum to check it by.", a.Name)
 	}
 	defer lockAsset(a.SHA256)()
 	path := filepath.Join(s.assets(), a.SHA256, a.Name)
@@ -57,7 +57,7 @@ func (s *Speech) File(ctx context.Context, a Asset) (string, error) {
 	slog.Info("downloading "+a.Name, "bytes", a.Size, "url", a.URL)
 	download := s.packages.Download([]packages.Source{{URL: a.URL, Dest: path, SHA256: strings.ToLower(a.SHA256)}})
 	if _, err := download.Run(ctx, nil); err != nil {
-		return "", fmt.Errorf("download of %s from %s failed: %w", a.Name, a.URL, err)
+		return "", fmt.Errorf("%s could not be downloaded from %s: %w", a.Name, a.URL, err)
 	}
 	return path, nil
 }
@@ -79,7 +79,7 @@ func (s *Speech) Tree(ctx context.Context, a Asset) (string, error) {
 	}
 	defer os.RemoveAll(staging)
 	if err := packages.Extract(archive, staging); err != nil {
-		return "", fmt.Errorf("%s does not unpack: %w", a.Name, err)
+		return "", fmt.Errorf("%s could not be unpacked: %w", a.Name, err)
 	}
 	if err := os.Rename(staging, tree); err != nil && !fsx.IsDir(tree) {
 		return "", err

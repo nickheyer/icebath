@@ -176,7 +176,7 @@ func (r *registrant) launchLightpanda(ctx context.Context, cfg *config.Config, s
 	binary := findLightpanda(cfg)
 	if binary == "" {
 		if runtime.GOOS == "windows" {
-			return nil, "browser.engine is 'lightpanda' but Lightpanda has no Windows build. Set browser.engine to auto (or run Icebath under WSL2)."
+			return nil, "browser.engine is 'lightpanda' but Lightpanda has no Windows build. Set browser.engine to auto (or run icebath under WSL2)."
 		}
 		return nil, "browser.engine is 'lightpanda' but no lightpanda binary was found on PATH, ~/.lightpanda or ~/.local/bin. " + lightpandaHint +
 			", or set browser.engine to auto."
@@ -376,5 +376,5 @@ func (r *registrant) lightpandaStatus(cfg *config.Config) (bool, string) {
 	if r.browserUseByKey(cfg) {
 		return false, "Browser Use cloud (BROWSER_USE_API_KEY) is selected"
 	}
-	return true, "Icebath spawns `lightpanda serve` per browser session"
+	return true, "icebath spawns `lightpanda serve` per browser session"
 }

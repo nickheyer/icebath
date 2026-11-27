@@ -49,7 +49,7 @@ func (d *Desktop) Idle(ctx context.Context, args []string, out io.Writer) error 
 	detach()
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)).With("component", "idle-watch"))
 	if len(args) < 1 {
-		return errors.New("the idle check names no profile")
+		return errors.New("The idle check names no profile.")
 	}
 	cfg, err := d.config.Of(args[0])
 	if err != nil {

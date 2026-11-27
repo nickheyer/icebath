@@ -57,10 +57,10 @@ func Carried[T any](m *sessionsv1.Message, key string) T {
 func Endpoint(base, path string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(base))
 	if err != nil {
-		return "", fmt.Errorf("The base URL %s can't be read: %w", base, err)
+		return "", fmt.Errorf("The Base URL %s can't be read: %w", base, err)
 	}
 	if parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("The base URL must be absolute, as https://host/v1: %s", base)
+		return "", fmt.Errorf("The Base URL %s must be a full address, such as https://host/v1.", base)
 	}
 	parsed.Fragment = ""
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + path

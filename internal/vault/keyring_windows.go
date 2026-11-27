@@ -171,9 +171,7 @@ func (winKeyring) remove(service, account string) error {
 		}
 	}
 	if !deleted {
-		return &keyringError{"PasswordDeleteError", service}
+		return &keyringError{"PasswordDeleteError", "The keychain has no entry for " + service + "."}
 	}
 	return nil
 }
-
-func isBusError(error) bool { return false }

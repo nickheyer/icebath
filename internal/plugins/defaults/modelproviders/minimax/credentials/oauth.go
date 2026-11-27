@@ -57,7 +57,7 @@ func (oauth) Renew(ctx context.Context, account credentials.Account) (bool, erro
 	}
 	refresh := account.Fields.GetString(minimaxconfig.RefreshToken)
 	if refresh == "" {
-		return true, failed("The MiniMax login has no refresh token; sign in again.", "no_refresh_token", true)
+		return true, failed("This MiniMax sign-in keeps no way to renew itself. Sign in again.", "no_refresh_token", true)
 	}
 	portal := strs.Filled(account.Fields.GetString(minimaxconfig.Portal), minimaxconfig.OAuthPortal)
 	client := strs.Filled(account.Fields.GetString(minimaxconfig.Client), minimaxconfig.OAuthClientID)
@@ -67,17 +67,17 @@ func (oauth) Renew(ctx context.Context, account credentials.Account) (bool, erro
 		return true, err
 	}
 	if reply.Status != 200 {
-		body := strs.Filled(reply.Text(errorLimit), fmt.Sprintf("HTTP %d", reply.Status))
+		body := strs.Filled(reply.Text(errorLimit), fmt.Sprintf("HTTP status %d", reply.Status))
 		lower := strings.ToLower(body)
 		relogin := strings.Contains(lower, "invalid_grant") || strings.Contains(lower, "refresh_token_reused") || strings.Contains(lower, "invalid_refresh_token")
-		return true, failed("MiniMax OAuth refresh failed: "+body, "refresh_failed", relogin)
+		return true, failed("MiniMax refused to renew the sign-in: "+strings.TrimSuffix(body, ".")+".", "refresh_failed", relogin)
 	}
 	payload, err := reply.JSON()
 	if err != nil {
 		return true, err
 	}
 	if payload["status"] != "success" {
-		return true, failed("MiniMax OAuth refresh did not return success.", "refresh_failed", true)
+		return true, failed("MiniMax did not renew the sign-in. Sign in again.", "refresh_failed", true)
 	}
 	expires, err := expiry(payload["expired_in"])
 	if err != nil {
@@ -100,7 +100,7 @@ func failed(message, code string, relogin bool) *credentials.AuthError {
 func expiry(value any) (time.Time, error) {
 	n, ok := config.Whole(value)
 	if !ok {
-		return time.Time{}, fmt.Errorf("The MiniMax token lifetime %v is not a whole number.", value)
+		return time.Time{}, fmt.Errorf("MiniMax gave a sign-in that can't be used, because its lifetime %v is not a whole number.", value)
 	}
 	now := time.Now()
 	if int64(n) > now.UnixMilli()/2 {
@@ -112,7 +112,7 @@ func expiry(value any) (time.Time, error) {
 // Sign-ins at MiniMax's global and China portals, by a code typed on the portal's page
 var (
 	SignIn   = credentials.SignIn{Spec: minimaxconfig.OAuthName, Title: "MiniMax account", Type: credentials.OAuth, Run: signIn}
-	SignInCN = credentials.SignIn{Spec: minimaxconfig.OAuthName, Title: "MiniMax account (China)", Type: "oauth-cn",
+	SignInCN = credentials.SignIn{Spec: minimaxconfig.OAuthName, Title: "MiniMax account in China", Type: "oauth-cn",
 		Run: func(p *credentials.Prompter) (credentials.Signed, error) {
 			p.Options["region"] = "cn"
 			return signIn(p)
@@ -121,17 +121,17 @@ var (
 
 func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 	region := strs.Filled(p.Option("region"), "global")
-	portal, inference := minimaxconfig.OAuthPortal, minimaxconfig.OAuthBaseURL
+	portal, inference, where := minimaxconfig.OAuthPortal, minimaxconfig.OAuthBaseURL, "outside China"
 	if region == "cn" {
-		portal, inference = minimaxconfig.OAuthCNPortal, minimaxconfig.OAuthCNBaseURL
+		portal, inference, where = minimaxconfig.OAuthCNPortal, minimaxconfig.OAuthCNBaseURL, "in China"
 	}
 	verifier, challenge := credentials.PKCE(64)
 	if len(verifier) > 96 {
 		verifier = verifier[:96]
 	}
 	state := strs.Token(16)
-	p.Say("Starting Icebath login via MiniMax (%s) OAuth...", region)
-	p.Say("Portal: %s", portal)
+	p.Say("Signing in to your MiniMax account %s.", where)
+	p.Say("MiniMax sign-in page: %s", portal)
 	client := credentials.Client(p.Wait(15 * time.Second))
 	header := map[string]string{"x-request-id": uuid.NewString(), "Accept": "application/json"}
 	reply, err := credentials.PostForm(p.Ctx, client, portal+"/oauth/code", url.Values{"response_type": {"code"}, "client_id": {minimaxconfig.OAuthClientID},
@@ -140,7 +140,8 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 		return credentials.Signed{}, err
 	}
 	if reply.Status != 200 {
-		return credentials.Signed{}, failed("MiniMax OAuth authorization failed: "+strs.Filled(reply.Text(errorLimit), fmt.Sprintf("HTTP %d", reply.Status)), "authorization_failed", false)
+		return credentials.Signed{}, failed("MiniMax refused to start the sign-in: "+strings.TrimSuffix(strs.Filled(reply.Text(errorLimit),
+			fmt.Sprintf("HTTP status %d", reply.Status)), ".")+".", "authorization_failed", false)
 	}
 	var code map[string]any
 	if err := json.Unmarshal(reply.Body, &code); err != nil {
@@ -148,18 +149,18 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 	}
 	for _, field := range []string{"user_code", "verification_uri", "expired_in"} {
 		if _, ok := code[field]; !ok {
-			return credentials.Signed{}, failed("MiniMax OAuth response missing field: "+field, "authorization_incomplete", false)
+			return credentials.Signed{}, failed("MiniMax started the sign-in without sending "+field+". Start the sign-in again.", "authorization_incomplete", false)
 		}
 	}
 	if got, _ := code["state"].(string); got != state {
-		return credentials.Signed{}, failed("MiniMax OAuth state mismatch (possible CSRF).", "state_mismatch", false)
+		return credentials.Signed{}, failed("MiniMax's answer did not come from this sign-in, so it was refused. Start the sign-in again.", "state_mismatch", false)
 	}
 	p.Instructions(credentials.Text(code["verification_uri"]), credentials.Text(code["user_code"]))
 	interval := 2 * time.Second
 	if raw, ok := code["interval"]; ok && raw != nil {
 		ms, ok := config.Whole(raw)
 		if !ok {
-			return credentials.Signed{}, fmt.Errorf("The MiniMax device code value %v is not a whole number.", raw)
+			return credentials.Signed{}, fmt.Errorf("MiniMax gave a sign-in code that can't be used, because %v is not a whole number.", raw)
 		}
 		interval = max(2*time.Second, time.Duration(ms)*time.Millisecond)
 	}
@@ -167,7 +168,7 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 	if err != nil {
 		return credentials.Signed{}, err
 	}
-	p.Say("Waiting for approval...")
+	p.Pending("Waiting for you to approve the sign-in.")
 	for time.Now().Before(deadline) {
 		poll, err := credentials.PostForm(p.Ctx, client, portal+"/oauth/token", url.Values{"grant_type": {grant}, "client_id": {minimaxconfig.OAuthClientID},
 			"user_code": {credentials.Text(code["user_code"])}, "code_verifier": {verifier}}, map[string]string{"Accept": "application/json"})
@@ -187,25 +188,26 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 			if json.Unmarshal(poll.Body, &refused) == nil && refused.Base.Message != "" {
 				message = refused.Base.Message
 			}
-			return credentials.Signed{}, failed("MiniMax OAuth error: "+strs.Filled(message, "unknown"), "token_exchange_failed", false)
+			return credentials.Signed{}, failed("MiniMax ended the sign-in. It said: "+strings.TrimSuffix(strs.Filled(message, "nothing more"), ".")+".",
+				"token_exchange_failed", false)
 		}
 		payload, _ := poll.JSON()
 		switch payload["status"] {
 		case "error":
-			return credentials.Signed{}, failed("MiniMax OAuth reported an error. Please try again later.", "authorization_denied", false)
+			return credentials.Signed{}, failed("MiniMax turned the sign-in down. Try again later.", "authorization_denied", false)
 		case "success":
 			for _, field := range []string{"access_token", "refresh_token", "expired_in"} {
 				if payload[field] == nil || payload[field] == "" {
-					return credentials.Signed{}, failed("MiniMax OAuth success payload missing required token fields.", "token_incomplete", false)
+					return credentials.Signed{}, failed("MiniMax approved the sign-in without sending its tokens. Start the sign-in again.", "token_incomplete", false)
 				}
 			}
 			expires, err := expiry(payload["expired_in"])
 			if err != nil {
 				return credentials.Signed{}, err
 			}
-			p.Say("✓ MiniMax OAuth login successful.")
+			p.Say("✓ You are signed in to MiniMax.")
 			if note := credentials.Text(payload["notification_message"]); note != "" {
-				p.Say("Note from MiniMax: %s", note)
+				p.Say("MiniMax says: %s", note)
 			}
 			return credentials.Signed{Fields: map[string]any{minimaxconfig.AccessToken: credentials.Text(payload["access_token"]),
 				minimaxconfig.RefreshToken: credentials.Text(payload["refresh_token"]), minimaxconfig.Expiry: expires.UnixMilli(),
@@ -216,5 +218,5 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 			return credentials.Signed{}, err
 		}
 	}
-	return credentials.Signed{}, failed("MiniMax OAuth timed out before authorization completed.", credentials.Expired, false)
+	return credentials.Signed{}, failed("The sign-in was not approved in time.", credentials.Expired, false)
 }

@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/spf13/cast"
 
@@ -435,7 +437,7 @@ func pick(instance provider.Instance, usable []Account) Account {
 func refusal(instance provider.Instance, stopped []blocked, reason string) error {
 	label := instance.Label()
 	if len(stopped) == 0 && reason != "" {
-		return fmt.Errorf("%s is not connected: %s", label, reason)
+		return fmt.Errorf("%s is not connected. %s", label, sentence(reason))
 	}
 	if len(stopped) == 0 {
 		return fmt.Errorf("%s is not connected. Connect it with /providers.", label)
@@ -446,11 +448,12 @@ func refusal(instance provider.Instance, stopped []blocked, reason string) error
 	if len(stopped) == 1 && instance.Pinned {
 		b := stopped[0]
 		if b.status.State == Dead {
-			return fmt.Errorf("The sign-in of the account %s of %s no longer works (%s). Sign in again with /providers or `icebath auth add %s`.",
-				b.account, label, why(b), instance.ID)
+			return fmt.Errorf("The account %s of %s can't sign in any more: %s. Sign in again with /providers or `icebath auth add %s`.",
+				b.account, label, strings.TrimSuffix(why(b), "."), instance.ID)
 		}
-		return fmt.Errorf("The account %s of %s reached its limit (%s) until %s. Pick another account with /providers or `icebath auth use %s <account>`, "+
-			"or let it move on to the others with `icebath auth rotation %s --on-exhausted rotate`.", b.account, label, why(b), b.until.Local().Format("15:04"), instance.ID, instance.ID)
+		return fmt.Errorf("The account %s of %s has reached its limit until %s: %s. Pick another account with /providers or `icebath auth use %s "+
+			"<account>`, or let icebath move on to the others with `icebath auth rotation %s --on-exhausted rotate`.", b.account, label,
+			b.until.Local().Format("15:04"), strings.TrimSuffix(why(b), "."), instance.ID, instance.ID)
 	}
 	var next time.Time
 	for _, b := range stopped {
@@ -459,17 +462,18 @@ func refusal(instance provider.Instance, stopped []blocked, reason string) error
 		}
 	}
 	if next.IsZero() {
-		return fmt.Errorf("No account of %s can be used: each sign-in was refused for good. Sign in again with /providers or `icebath auth add %s`.", label, instance.ID)
+		return fmt.Errorf("No account of %s can be used, because the sign-in of each was refused for good. Sign in again with /providers or "+
+			"`icebath auth add %s`.", label, instance.ID)
 	}
-	return fmt.Errorf("Every account of %s is at its limit; the first frees up at %s. Add another with /providers, or clear the limits with `icebath auth reset %s`.",
-		label, next.Local().Format("15:04"), instance.ID)
+	return fmt.Errorf("Every account of %s is at its limit, and the first frees up at %s. Add another with /providers, or clear the limits with "+
+		"`icebath auth reset %s`.", label, next.Local().Format("15:04"), instance.ID)
 }
 
 func statusText(code int) string {
 	if code == 0 {
-		return "refused"
+		return "the provider refused it"
 	}
-	return "HTTP " + strconv.Itoa(code)
+	return "the provider answered with HTTP status " + strconv.Itoa(code)
 }
 
 // Renews the account's credential when its registrant says it is about to expire, keeping a failure on the account
@@ -530,7 +534,7 @@ func (r *Registry) Restored(ctx context.Context, account Account) bool {
 }
 
 // Error of an account whose credential nothing renews
-var ErrNotRenewable = errors.New("Nothing renews this credential: it is a key, or a sign-in that keeps no refresh token.")
+var ErrNotRenewable = errors.New("Nothing renews this account, because it is an API key or a sign-in that can't renew itself.")
 
 // Renews the account's credential when it is due, or now when forced, one renewal at a time across processes. What another process
 // renewed meanwhile is taken instead of renewing again. A refusal that only signing in again fixes leaves the account dead
@@ -588,7 +592,7 @@ type episode struct {
 func (r *Registry) Route(instance provider.Instance, model string) (provider.Route, error) {
 	route := base(instance, model)
 	if !instance.Known {
-		return route, fmt.Errorf("%s is a kind of provider icebath doesn't know (%s).", instance.Label(), instance.Spec.Name)
+		return route, fmt.Errorf("%s is a kind of provider, %s, that no plugin of icebath knows.", instance.Label(), instance.Spec.Name)
 	}
 	account, credential, err := r.choose(instance, route.Model)
 	if err != nil {
@@ -601,7 +605,7 @@ func (r *Registry) Route(instance provider.Instance, model string) (provider.Rou
 func (r *Registry) RouteWith(instance provider.Instance, model, name string) (provider.Route, error) {
 	route := base(instance, model)
 	if !instance.Known {
-		return route, fmt.Errorf("%s is a kind of provider icebath doesn't know (%s).", instance.Label(), instance.Spec.Name)
+		return route, fmt.Errorf("%s is a kind of provider, %s, that no plugin of icebath knows.", instance.Label(), instance.Spec.Name)
 	}
 	if !slices.Contains(instance.Accounts, name) {
 		return route, fmt.Errorf("%s has no account named %s.", instance.Label(), name)
@@ -645,7 +649,7 @@ func (r *Registry) routed(instance provider.Instance, route provider.Route, acco
 		route = instance.Spec.Route(route, instance.Settings)
 	}
 	if route.BaseURL == "" {
-		return route, fmt.Errorf("%s has no base URL.", instance.Label())
+		return route, fmt.Errorf("%s has no address set. Set its Base URL in /providers.", instance.Label())
 	}
 	if credential.APIKey != "" || credential.Sign != nil {
 		model := route.Model
@@ -926,4 +930,20 @@ func (r *Registry) Lease(instance provider.Instance, model, name string) (provid
 			}
 		})
 	}, nil
+}
+
+// Text as a sentence: its first letter in capitals, icebath left in lower case, and a period at its end unless it ends one already
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	if !strings.HasPrefix(text, "icebath") {
+		first, size := utf8.DecodeRuneInString(text)
+		text = string(unicode.ToUpper(first)) + text[size:]
+	}
+	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
+		text += "."
+	}
+	return text
 }

@@ -10,9 +10,11 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: skillsconfig.Key,
 		Title:  "Bundled skills",
-		About:  "The skills icebath ships, copied into each profile's skills folder and kept up to date there",
+		About:  "Skills that come with icebath and stay up to date",
+		Order:  40,
 		Settings: []config.Setting{
-			{Key: Path, Title: "Source folder", About: "Folder to seed bundled skills from instead of the copy built into icebath", Default: "", Env: []string{"ICEBATH_BUNDLED_SKILLS"}},
+			{Key: Path, Title: "Source folder", About: "The folder that bundled skills are copied from.", Default: "", Zero: "Built-in copy",
+				Env: []string{"ICEBATH_BUNDLED_SKILLS"}, Advanced: true},
 		},
 	}})
 }

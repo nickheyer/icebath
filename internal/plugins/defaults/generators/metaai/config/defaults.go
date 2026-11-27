@@ -9,10 +9,11 @@ func Register(cfg *config.Config) {
 	cfg.Register(config.Sections{{
 		Key:    Key,
 		Parent: generationconfig.ImageKey,
-		Title:  "Meta AI images",
-		About:  "Pictures Muse Image draws through the Meta Model API, with the Meta key connected in /providers",
+		Title:  "Meta AI",
+		About:  "Images from Meta, with the Meta account in Providers",
+		Order:  80,
 		Settings: []config.Setting{
-			{Key: Model, Title: "Meta AI model", About: "Model Meta AI draws with. Empty uses Image model, else " + DefaultModel, Default: "", Env: []string{"META_IMAGE_MODEL"}},
+			{Key: Model, Title: "Model", About: "The Meta model that makes images.", Default: "", Zero: "Muse Image 1.0", Env: []string{"META_IMAGE_MODEL"}},
 		},
 	}})
 }

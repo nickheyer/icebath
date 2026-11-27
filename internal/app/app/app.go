@@ -2,6 +2,7 @@ package app
 
 import (
 	"strconv"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect/v2"
@@ -32,9 +33,9 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 			_, err := settings.Set(kit.Env.Ctx, &configv1.SetRequest{Key: appconfig.Skin, Value: value})
 			return func() tea.Cmd {
 				if err != nil {
-					return kit.WM.Toast("Couldn't save skin: "+tui.Reason(err), wm.Error, wm.DefaultToastTTL)
+					return kit.WM.Toast("The color theme was not saved: "+strings.TrimSuffix(tui.Reason(err), ".")+".", wm.Error, wm.DefaultToastTTL)
 				}
-				return kit.Changed(appconfig.Skin, value)
+				return tea.Batch(kit.Changed(appconfig.Skin, value), kit.WM.Toast("The color theme is now "+title(name)+".", wm.Success, wm.DefaultToastTTL))
 			}
 		})
 	}
@@ -47,7 +48,9 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 		},
 		{
 			ID:    "skin",
-			Title: "Skin",
+			Group: tui.GroupApp,
+			Order: 70,
+			Title: "Color theme",
 			Short: "Change the color theme",
 			Slash: []string{"skin"},
 			Usage: "[name]",
@@ -56,7 +59,7 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 					return kit.Open(configapp.Edit, appconfig.Skin)
 				}
 				if _, known := theme.Named(name); !known {
-					return kit.WM.Toast("No skin named "+name, wm.Warn, wm.DefaultToastTTL)
+					return kit.WM.Toast("There is no color theme named "+name+". /skin alone lists them all.", wm.Warn, wm.DefaultToastTTL)
 				}
 				return wear(kit, name)
 			},
@@ -70,10 +73,12 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 		},
 		{
 			ID:    "keys",
+			Group: tui.GroupApp,
+			Order: 60,
 			Title: "Keys",
 			Short: "View and change keyboard shortcuts",
 			Slash: []string{"keys", "keybindings"},
-			Usage: "[search|reload|reset|option on|off]",
+			Usage: "[words to search|reload|reset|option on|off]",
 			Open: func(kit *tui.Kit, argument string) tea.Cmd {
 				return (&bindings{kit: kit, settings: settings}).open(argument)
 			},
@@ -88,8 +93,10 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 		},
 		{
 			ID:    "redraw",
-			Title: "Redraw",
-			Short: "Redraw the screen",
+			Group: tui.GroupApp,
+			Order: 80,
+			Title: "Screen redraw",
+			Short: "Draw the whole screen again",
 			Slash: []string{"redraw"},
 			Open: func(kit *tui.Kit, _ string) tea.Cmd {
 				kit.WM.Repaint()
@@ -97,4 +104,12 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 			},
 		},
 	}
+}
+
+// Name of a color theme as its choice is titled, with a capital first letter
+func title(name string) string {
+	if name == "" {
+		return ""
+	}
+	return strings.ToUpper(name[:1]) + name[1:]
 }

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -19,17 +20,17 @@ import (
 const approvalContext = "agent.approval"
 
 var approvalKeys = []keys.Action{
-	{ID: "agent.approve", Context: approvalContext, Label: "allow", Doc: "allow this command once", Default: []string{"y"}},
-	{ID: "agent.deny", Context: approvalContext, Label: "deny", Doc: "deny this command", Default: []string{"n"}},
-	{ID: "agent.approve.session", Context: approvalContext, Label: "allow for session", Doc: "allow commands like this for the rest of the session", Default: []string{"s"}},
-	{ID: "agent.approve.always", Context: approvalContext, Label: "always allow", Doc: "always allow commands like this, saving an allow rule", Default: []string{"a"}},
-	{ID: "agent.approval.page", Context: approvalContext, Label: "more", Doc: "show the next page of a long command, the first one after the last", Default: []string{"v", "V"}},
-	{ID: "agent.approval.top", Context: approvalContext, Label: "top", Doc: "show the first page of a long command", Default: []string{"g", "home"}, Quiet: true},
-	{ID: "agent.approval.down", Context: approvalContext, Label: "down", Doc: "move to the next answer", Default: []string{"j"}, Quiet: true},
-	{ID: "agent.approval.up", Context: approvalContext, Label: "up", Doc: "move to the answer before", Default: []string{"k"}, Quiet: true},
-	{ID: "agent.approval.scroll.down", Context: approvalContext, Label: "page down", Doc: "scroll the chat behind the prompt down a page", Default: []string{"pgdown"}, Quiet: true},
-	{ID: "agent.approval.scroll.up", Context: approvalContext, Label: "page up", Doc: "scroll the chat behind the prompt up a page", Default: []string{"pgup"}, Quiet: true},
-	{ID: "agent.yolo", Context: keys.Session, Label: "yolo", Doc: "run commands without asking, or ask again (yolo)", Default: []string{"alt+y"}},
+	{ID: "agent.approve", Context: approvalContext, Label: "allow once", Doc: "Allow this command once", Default: []string{"y"}},
+	{ID: "agent.deny", Context: approvalContext, Label: "deny", Doc: "Deny this command", Default: []string{"n"}},
+	{ID: "agent.approve.session", Context: approvalContext, Label: "allow session", Doc: "Allow commands like this for the rest of the session", Default: []string{"s"}},
+	{ID: "agent.approve.always", Context: approvalContext, Label: "always allow", Doc: "Allow commands like this from now on, without asking", Default: []string{"a"}},
+	{ID: "agent.approval.page", Context: approvalContext, Label: "show more", Doc: "Show the next page of a long command, then the first again", Default: []string{"v", "V"}},
+	{ID: "agent.approval.top", Context: approvalContext, Label: "show top", Doc: "Show the first page of a long command", Default: []string{"g", "home"}, Quiet: true},
+	{ID: "agent.approval.down", Context: approvalContext, Label: "move down", Doc: "Move to the next answer", Default: []string{"j"}, Quiet: true},
+	{ID: "agent.approval.up", Context: approvalContext, Label: "move up", Doc: "Move to the answer before", Default: []string{"k"}, Quiet: true},
+	{ID: "agent.approval.scroll.down", Context: approvalContext, Label: "scroll down", Doc: "Scroll the chat behind the question down a page", Default: []string{"pgdown"}, Quiet: true},
+	{ID: "agent.approval.scroll.up", Context: approvalContext, Label: "scroll up", Doc: "Scroll the chat behind the question up a page", Default: []string{"pgup"}, Quiet: true},
+	{ID: "agent.yolo", Context: keys.Session, Label: "skip approvals", Doc: "Run commands without asking in this session, or ask again", Default: []string{"alt+y"}},
 }
 
 // Rows of a long command shown at once, the page key bringing the rest
@@ -57,12 +58,12 @@ func newApproval(c *chat, request *agentv1.Approval, waiting int) *approval {
 }
 
 func (a *approval) Title() string {
-	title := "⚠ approval required"
+	title := "Allow the agent to run this?"
 	if a.request.GetTitle() != "" {
 		title = a.request.GetTitle()
 	}
 	if a.waiting > 1 {
-		title += fmt.Sprintf(" (1 of %d)", a.waiting)
+		title += fmt.Sprintf(" · 1 of %d", a.waiting)
 	}
 	return title
 }
@@ -82,15 +83,41 @@ func (a *approval) offers(value string) bool {
 	return slices.ContainsFunc(a.request.GetChoices(), func(choice *agentv1.Choice) bool { return choice.GetValue() == value })
 }
 
+// Answers the prompt takes by their value, the key of each and the word its button says
+var answers = []struct{ value, action, verb string }{
+	{"once", "agent.approve", "allow once"},
+	{"session", "agent.approve.session", "allow session"},
+	{"always", "agent.approve.always", "always allow"},
+	{"deny", "agent.deny", "deny"},
+}
+
+// Buttons of the prompt: what enter does on the row under the cursor, then the key of every other answer it takes, then going to the prompt
+// to tell the agent what to do instead, each once
 func (a *approval) Hints() []wm.Hint {
-	hints := []wm.Hint{{Action: "palette.pick", Label: "choose"}, {Action: "agent.approve"}, {Action: "agent.deny"}}
-	if a.offers("session") {
-		hints = append(hints, wm.Hint{Action: "agent.approve.session"})
+	choices := a.request.GetChoices()
+	picked := ""
+	if a.row < len(choices) {
+		picked = choices[a.row].GetValue()
 	}
-	if a.offers("always") {
-		hints = append(hints, wm.Hint{Action: "agent.approve.always"})
+	enter := wm.Hint{Action: "palette.pick", Label: "tell agent"}
+	if picked != "" {
+		enter.Label = "answer"
 	}
-	return append(hints, wm.Hint{Action: "palette.close", Label: "deny with reason"})
+	for _, answer := range answers {
+		if answer.value == picked {
+			enter.Label = answer.verb
+		}
+	}
+	hints := []wm.Hint{enter}
+	for _, answer := range answers {
+		if answer.value != picked && a.offers(answer.value) {
+			hints = append(hints, wm.Hint{Action: answer.action})
+		}
+	}
+	if picked != "" {
+		hints = append(hints, wm.Hint{Action: "palette.close", Label: "tell agent"})
+	}
+	return hints
 }
 
 func (a *approval) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
@@ -170,9 +197,9 @@ func (a *approval) command(w int) []string {
 	}
 	if pages > 1 {
 		key := a.chat.kit.Env.Keys.Display("agent.approval.page")
-		text := fmt.Sprintf("lines %d–%d of %d · %s shows the rest before you choose", start+1, end, len(lines), key)
+		text := fmt.Sprintf("Lines %d to %d of %d. %s shows the next lines, so you can read all of it before you answer.", start+1, end, len(lines), key)
 		if end == len(lines) {
-			text = fmt.Sprintf("lines %d–%d of %d (end) · %s goes back to the top", start+1, end, len(lines), key)
+			text = fmt.Sprintf("Lines %d to %d of %d, the last ones. %s goes back to the first.", start+1, end, len(lines), key)
 		}
 		out = append(out, " "+render.Warm(text, look))
 	}
@@ -190,8 +217,13 @@ func (a *approval) lines(w int) []string {
 		lines = append(lines, " "+render.Warm(line, look))
 	}
 	if a.request.GetSmartDenied() {
-		for _, line := range wrap("The safety check denied this command, allowing it overrides that verdict", 1) {
+		for _, line := range wrap("The safety check refused this command. Allowing it overrides the check.", 1) {
 			lines = append(lines, " "+render.Bad(line, look))
+		}
+	}
+	if deadline := a.request.GetDeadline(); deadline != nil && deadline.AsTime().After(time.Now()) {
+		for _, line := range wrap("If you don't answer by "+deadline.AsTime().Local().Format("15:04")+", the command is denied.", 1) {
+			lines = append(lines, " "+render.Dim(line, look))
 		}
 	}
 	lines = append(append(lines, ""), a.command(w)...)
@@ -273,7 +305,8 @@ func (c *chat) reply() tea.Cmd {
 	if sheet == nil {
 		return nil
 	}
-	c.sheet, c.replying, c.replyTo, c.composer.Hint = nil, true, sheet.request.GetId(), "Tell the agent what to do instead"
+	c.sheet, c.replying, c.replyTo = nil, true, sheet.request.GetId()
+	c.composer.Hint = "Tell the agent what to do instead · " + c.kit.WM.Keys().Display("session.stop") + " goes back to the question"
 	return c.kit.WM.DismissCard(sheet)
 }
 
@@ -287,12 +320,12 @@ func (c *chat) decide(request string, scope agentv1.ApprovalScope, reason string
 			_, err = c.desk.agents.Deny(c.kit.Env.Ctx, &agentv1.DenyRequest{SessionId: id, Id: request, Reason: reason})
 		} else {
 			_, err = c.desk.agents.Approve(c.kit.Env.Ctx, &agentv1.ApproveRequest{SessionId: id, Id: request, Scope: scope})
-			outcome = "approved (" + map[agentv1.ApprovalScope]string{agentv1.ApprovalScope_APPROVAL_SCOPE_ONCE: "once",
-				agentv1.ApprovalScope_APPROVAL_SCOPE_SESSION: "session", agentv1.ApprovalScope_APPROVAL_SCOPE_ALWAYS: "always"}[scope] + ")"
+			outcome = map[agentv1.ApprovalScope]string{agentv1.ApprovalScope_APPROVAL_SCOPE_ONCE: "allowed once",
+				agentv1.ApprovalScope_APPROVAL_SCOPE_SESSION: "allowed for this session", agentv1.ApprovalScope_APPROVAL_SCOPE_ALWAYS: "always allowed"}[scope]
 		}
 		return func() tea.Cmd {
 			if err != nil {
-				c.log.note("**Couldn't answer:** " + tui.Reason(err))
+				c.log.note("**Your answer was not sent.** " + tui.Reason(err))
 				return nil
 			}
 			c.outcome = outcome
@@ -326,7 +359,7 @@ func (c *chat) confirm(command, detail string, then func() tea.Cmd) tea.Cmd {
 // Turns asking before risky commands off for the session, or on again, as /yolo does
 func (c *chat) yolo() tea.Cmd {
 	if c.id == "" {
-		c.log.note("yolo needs an active session")
+		c.log.note("This chat has no session yet. Send a message first, then " + c.kit.WM.Keys().Display("agent.yolo") + " skips approvals in it.")
 		return nil
 	}
 	return c.send("/yolo")

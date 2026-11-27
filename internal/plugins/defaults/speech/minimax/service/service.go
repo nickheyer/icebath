@@ -27,7 +27,7 @@ var (
 
 func Register(registry *speech.Registry) {
 	registry.Register(speech.Services{Speakers: []speech.Voice{{
-		Name: config.Name, Title: "MiniMax", Label: "MiniMax TTS", About: "MiniMax's voices with emotion, pitch and volume, global or China service",
+		Name: config.Name, Title: "MiniMax", Label: "MiniMax TTS", About: "Voices with emotion and pitch control, needs a MiniMax API key",
 		Ready:      func(job *speech.Job) bool { _, err := route(job); return err == nil },
 		Limit:      func(*speech.Job) int { return config.DefaultLimit },
 		Synthesize: synthesize,

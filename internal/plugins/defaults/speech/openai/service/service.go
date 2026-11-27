@@ -26,8 +26,8 @@ import (
 // Where an OpenAI key is made
 const link = "https://platform.openai.com/api-keys"
 
-// What a missing key says, without and with the section it was chosen in
-const noKey = "neither %s.openai.api_key in config nor VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY is set"
+// What a missing key says, naming the section whose OpenAI API key is empty
+const noKey = "OpenAI has no API key. Set API key in /settings under %s, then OpenAI, or set VOICE_TOOLS_OPENAI_KEY or OPENAI_API_KEY."
 
 // Models of Groq's catalog, retired ones included, swapped for OpenAI's default
 var groqModels = strs.Set("whisper-large-v3-turbo", "whisper-large-v3", "distil-whisper-large-v3-en")
@@ -39,7 +39,7 @@ func Register(registry *speech.Registry) {
 	setup := speech.Setup{Keys: []string{speech.OpenAIAudioKey, "OPENAI_API_KEY"}, SignIn: "openai-api", Link: link, Badge: "paid"}
 	registry.Register(speech.Services{
 		Speakers: []speech.Voice{{
-			Name: config.Name, Title: "OpenAI TTS", About: "High quality voices",
+			Name: config.Name, Title: "OpenAI TTS", About: "Natural voices, needs an OpenAI API key",
 			Ready:      func(job *speech.Job) bool { _, _, err := speakRoute(job); return err == nil },
 			Limit:      func(*speech.Job) int { return config.DefaultLimit },
 			Synthesize: synthesize,
@@ -49,7 +49,7 @@ func Register(registry *speech.Registry) {
 			Setup: setup,
 		}},
 		Recognizing: []speech.Recognizer{{
-			Name: config.Name, Title: "OpenAI", About: "whisper-1, gpt-4o-transcribe, gpt-transcribe", Cloud: true, Rank: 4, Whisper: true,
+			Name: config.Name, Title: "OpenAI", About: "Accurate speech to text, needs an OpenAI API key", Cloud: true, Rank: 4, Whisper: true,
 			Detected: "OpenAI Whisper API", Explains: true,
 			Missing: func(_ context.Context, job *speech.Job) string {
 				_, _, err := listenRoute(job)
@@ -88,10 +88,14 @@ func refusal(job *speech.Job, section string) error {
 	if section == speechconfig.STT {
 		choice = speechconfig.STTProvider
 	}
-	if chosen := speech.Chosen(job.Config.With(nil), choice); chosen != "" {
-		return speech.Misconfigured(speech.SelectionError(section, chosen, fmt.Sprintf(noKey, section)))
+	name := "Text to speech"
+	if section == speechconfig.STT {
+		name = "Speech to text"
 	}
-	return speech.Misconfigured(strings.ToUpper(noKey[:1]) + fmt.Sprintf(noKey[1:], section))
+	if chosen := speech.Chosen(job.Config.With(nil), choice); chosen != "" {
+		return speech.Misconfigured(fmt.Sprintf("%s is set to use %s, and %s", name, chosen, fmt.Sprintf(noKey, name)))
+	}
+	return speech.Misconfigured(fmt.Sprintf(noKey, name))
 }
 
 // Fields beside OpenAI's own an OpenAI compatible speech server takes: the language as lang_code and the consent of a cloned voice

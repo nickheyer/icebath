@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 var (
@@ -36,29 +37,29 @@ func (f *filters) bind(cmd *cobra.Command, olderHelp string) {
 	f.cmd = cmd
 	flags := cmd.Flags()
 	flags.StringVar(&f.olderThan, "older-than", "", olderHelp)
-	flags.StringVar(&f.newerThan, "newer-than", "", "Only match sessions active within the last AGE (e.g. '5h', '2d') or after an ISO timestamp")
-	flags.StringVar(&f.before, "before", "", "Only match sessions started before TIME (duration ago like '5h', or ISO timestamp like '2026-07-05 14:30')")
-	flags.StringVar(&f.after, "after", "", "Only match sessions started at/after TIME (duration ago like '5h', or ISO timestamp)")
-	flags.StringVar(&f.source, "source", "", "Only match sessions from this source")
-	flags.StringVar(&f.title, "title", "", "Only match sessions whose title contains this substring")
-	flags.StringVar(&f.endReason, "end-reason", "", "Only match sessions with this end reason")
-	flags.StringVar(&f.cwd, "cwd", "", "Only match sessions whose working directory is under this path")
-	flags.Int64Var(&f.minMessages, "min-messages", 0, "Only match sessions with >= N messages")
-	flags.Int64Var(&f.maxMessages, "max-messages", 0, "Only match sessions with <= N messages")
-	flags.StringVar(&f.model, "model", "", "Only match sessions whose model name contains this substring (e.g. 'sonnet', 'gpt-5', 'icebath')")
-	flags.StringVar(&f.provider, "provider", "", "Only match sessions billed through this provider (e.g. openrouter, anthropic, openai-codex)")
-	flags.StringVar(&f.user, "user", "", "Only match sessions from this user ID")
-	flags.StringVar(&f.chat, "chat-id", "", "Only match sessions from this chat/channel ID")
-	flags.StringVar(&f.chatType, "chat-type", "", "Only match sessions with this chat type (e.g. dm, group)")
-	flags.StringVar(&f.branch, "branch", "", "Only match sessions whose git branch contains this substring")
-	flags.Int64Var(&f.minTokens, "min-tokens", 0, "Only match sessions with >= N total tokens (input+output)")
-	flags.Int64Var(&f.maxTokens, "max-tokens", 0, "Only match sessions with <= N total tokens (input+output)")
-	flags.Float64Var(&f.minCost, "min-cost", 0, "Only match sessions costing >= N USD (actual or estimated)")
-	flags.Float64Var(&f.maxCost, "max-cost", 0, "Only match sessions costing <= N USD (actual or estimated)")
-	flags.Int64Var(&f.minToolCalls, "min-tool-calls", 0, "Only match sessions with >= N tool calls")
-	flags.Int64Var(&f.maxToolCalls, "max-tool-calls", 0, "Only match sessions with <= N tool calls")
-	flags.BoolVar(&f.dryRun, "dry-run", false, "List matching sessions without changing anything")
-	flags.BoolVarP(&f.yes, "yes", "y", false, "Skip confirmation")
+	flags.StringVar(&f.newerThan, "newer-than", "", "Only sessions used within this time, such as 5h or 2d, or since a date")
+	flags.StringVar(&f.before, "before", "", "Only sessions started before a date, or more than a time such as 5h ago")
+	flags.StringVar(&f.after, "after", "", "Only sessions started since a date, or within a time such as 5h")
+	flags.StringVar(&f.source, "source", "", "Only sessions from this source, such as cli or telegram")
+	flags.StringVar(&f.title, "title", "", "Only sessions whose title contains this text")
+	flags.StringVar(&f.endReason, "end-reason", "", "Only sessions that ended for this reason")
+	flags.StringVar(&f.cwd, "cwd", "", "Only sessions whose folder is inside this path")
+	flags.Int64Var(&f.minMessages, "min-messages", 0, "Only sessions with at least this many messages")
+	flags.Int64Var(&f.maxMessages, "max-messages", 0, "Only sessions with at most this many messages")
+	flags.StringVar(&f.model, "model", "", "Only sessions whose model name contains this text, such as sonnet")
+	flags.StringVar(&f.provider, "provider", "", "Only sessions billed through this provider, such as openrouter")
+	flags.StringVar(&f.user, "user", "", "Only sessions from this user id")
+	flags.StringVar(&f.chat, "chat-id", "", "Only sessions from this chat or channel id")
+	flags.StringVar(&f.chatType, "chat-type", "", "Only sessions of this chat type, such as dm or group")
+	flags.StringVar(&f.branch, "branch", "", "Only sessions whose git branch contains this text")
+	flags.Int64Var(&f.minTokens, "min-tokens", 0, "Only sessions with at least this many tokens in and out")
+	flags.Int64Var(&f.maxTokens, "max-tokens", 0, "Only sessions with at most this many tokens in and out")
+	flags.Float64Var(&f.minCost, "min-cost", 0, "Only sessions that cost at least this many US dollars")
+	flags.Float64Var(&f.maxCost, "max-cost", 0, "Only sessions that cost at most this many US dollars")
+	flags.Int64Var(&f.minToolCalls, "min-tool-calls", 0, "Only sessions with at least this many tool calls")
+	flags.Int64Var(&f.maxToolCalls, "max-tool-calls", 0, "Only sessions with at most this many tool calls")
+	flags.BoolVar(&f.dryRun, "dry-run", false, "List the matching sessions without changing anything")
+	flags.BoolVarP(&f.yes, "yes", "y", false, "Go ahead without asking first")
 }
 
 // Names of the flags that filter
@@ -95,13 +96,12 @@ func pointInTime(flag, raw string, now time.Time) (time.Time, error) {
 			return t, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("Invalid value for --%s: '%s'. Use a duration like '5h', '30m', '2d', '1w', a bare number of days, or an ISO timestamp like "+
-		"'2026-07-05' or '2026-07-05 14:30'.", flag, raw)
+	return time.Time{}, fmt.Errorf("--%s takes a time, and “%s” is not one. %s", flag, raw, times)
 }
 
 func shown(t *timestamppb.Timestamp) string {
 	if t == nil {
-		return "-"
+		return "Unknown"
 	}
 	return t.AsTime().Local().Format("2006-01-02 15:04")
 }
@@ -130,11 +130,11 @@ func (f *filters) build(defaultAge string) (*sessionsv1.Filter, error) {
 		*bound.into = timestamppb.New(t)
 	}
 	if out.StartedAfter != nil && out.StartedBefore != nil && !out.StartedAfter.AsTime().Before(out.StartedBefore.AsTime()) {
-		return nil, fmt.Errorf("Empty start-time window: the --after bound (%s) is not earlier than the --before bound (%s).", shown(out.StartedAfter),
+		return nil, fmt.Errorf("No session can match, because --after, %s, is not earlier than --before, %s.", shown(out.StartedAfter),
 			shown(out.StartedBefore))
 	}
 	if out.ActiveAfter != nil && out.ActiveBefore != nil && !out.ActiveAfter.AsTime().Before(out.ActiveBefore.AsTime()) {
-		return nil, fmt.Errorf("Empty activity window: the --newer-than bound (%s) is not earlier than the --older-than bound (%s).", shown(out.ActiveAfter),
+		return nil, fmt.Errorf("No session can match, because --newer-than, %s, is not earlier than --older-than, %s.", shown(out.ActiveAfter),
 			shown(out.ActiveBefore))
 	}
 	whole := func(name string, value int64, into **int64) {
@@ -165,30 +165,31 @@ func describe(f *sessionsv1.Filter) string {
 			parts = append(parts, text)
 		}
 	}
-	add(f.ActiveBefore != nil, "last active before "+shown(f.ActiveBefore))
-	add(f.ActiveAfter != nil, "last active after "+shown(f.ActiveAfter))
+	number := func(n int64) string { return strs.Number(float64(n)) }
+	add(f.ActiveBefore != nil, "last used before "+shown(f.ActiveBefore))
+	add(f.ActiveAfter != nil, "last used after "+shown(f.ActiveAfter))
 	add(f.StartedBefore != nil, "started before "+shown(f.StartedBefore))
 	add(f.StartedAfter != nil, "started after "+shown(f.StartedAfter))
-	add(f.GetSource() != "", "source '"+f.GetSource()+"'")
-	add(f.GetTitle() != "", "title contains '"+f.GetTitle()+"'")
-	add(f.GetEndReason() != "", "end reason '"+f.GetEndReason()+"'")
-	add(f.GetDirectory() != "", "cwd under '"+f.GetDirectory()+"'")
-	add(f.MinMessages != nil, fmt.Sprintf(">= %d messages", f.GetMinMessages()))
-	add(f.MaxMessages != nil, fmt.Sprintf("<= %d messages", f.GetMaxMessages()))
-	add(f.GetModel() != "", "model contains '"+f.GetModel()+"'")
-	add(f.GetProvider() != "", "provider '"+f.GetProvider()+"'")
-	add(f.GetUserId() != "", "user '"+f.GetUserId()+"'")
-	add(f.GetChatId() != "", "chat '"+f.GetChatId()+"'")
-	add(f.GetChatType() != "", "chat type '"+f.GetChatType()+"'")
-	add(f.GetBranch() != "", "git branch contains '"+f.GetBranch()+"'")
-	add(f.MinTokens != nil, fmt.Sprintf(">= %d tokens", f.GetMinTokens()))
-	add(f.MaxTokens != nil, fmt.Sprintf("<= %d tokens", f.GetMaxTokens()))
-	add(f.MinCost != nil, fmt.Sprintf(">= $%g", f.GetMinCost()))
-	add(f.MaxCost != nil, fmt.Sprintf("<= $%g", f.GetMaxCost()))
-	add(f.MinToolCalls != nil, fmt.Sprintf(">= %d tool calls", f.GetMinToolCalls()))
-	add(f.MaxToolCalls != nil, fmt.Sprintf("<= %d tool calls", f.GetMaxToolCalls()))
+	add(f.GetSource() != "", "from “"+f.GetSource()+"”")
+	add(f.GetTitle() != "", "with “"+f.GetTitle()+"” in the title")
+	add(f.GetEndReason() != "", "ended for “"+f.GetEndReason()+"”")
+	add(f.GetDirectory() != "", "in a folder under “"+f.GetDirectory()+"”")
+	add(f.MinMessages != nil, "with at least "+number(f.GetMinMessages())+" messages")
+	add(f.MaxMessages != nil, "with at most "+number(f.GetMaxMessages())+" messages")
+	add(f.GetModel() != "", "with “"+f.GetModel()+"” in the model")
+	add(f.GetProvider() != "", "from the provider “"+f.GetProvider()+"”")
+	add(f.GetUserId() != "", "from the user “"+f.GetUserId()+"”")
+	add(f.GetChatId() != "", "in the chat “"+f.GetChatId()+"”")
+	add(f.GetChatType() != "", "of the chat type “"+f.GetChatType()+"”")
+	add(f.GetBranch() != "", "on a git branch with “"+f.GetBranch()+"” in its name")
+	add(f.MinTokens != nil, "with at least "+number(f.GetMinTokens())+" tokens")
+	add(f.MaxTokens != nil, "with at most "+number(f.GetMaxTokens())+" tokens")
+	add(f.MinCost != nil, "costing at least $"+strs.Number(f.GetMinCost()))
+	add(f.MaxCost != nil, "costing at most $"+strs.Number(f.GetMaxCost()))
+	add(f.MinToolCalls != nil, "with at least "+number(f.GetMinToolCalls())+" tool calls")
+	add(f.MaxToolCalls != nil, "with at most "+number(f.GetMaxToolCalls())+" tool calls")
 	if len(parts) == 0 {
-		return "no filters (all ended sessions)"
+		return "no filters, so every ended session"
 	}
 	return strings.Join(parts, ", ")
 }

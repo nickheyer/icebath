@@ -390,7 +390,7 @@ func (a *Approvals) wait(ctx context.Context, c Context, p *prompt, limit time.D
 			return waitTimeout
 		case <-tick.C:
 			if c.Activity != nil {
-				c.Activity(fmt.Sprintf("waiting for user approval (%ds elapsed)", int(time.Since(start).Seconds())))
+				c.Activity("Waiting for your answer for " + strs.Span(time.Since(start).Truncate(time.Second)) + ".")
 				told = true
 			}
 		}

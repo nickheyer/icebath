@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // What a delete, rename or identity retry did, line by line, and whether every feature settled what it keeps under the name
@@ -53,8 +54,8 @@ func (p *Profiles) Delete(name string) (Done, error) {
 		return Done{}, err
 	}
 	if canon == Default {
-		return Done{}, &ValueError{fmt.Sprintf("Cannot delete the default profile (%s).\nTo remove everything, delete %s", p.Dir(Default),
-			p.config.Dir())}
+		return Done{}, &ValueError{fmt.Sprintf("The default profile in %s can't be deleted. To remove everything icebath keeps, delete %s.",
+			p.Dir(Default), p.config.Dir())}
 	}
 	if canon, err = Canon(canon); err != nil {
 		return Done{}, err
@@ -71,22 +72,22 @@ func (p *Profiles) Delete(name string) (Done, error) {
 		if err := p.use(Default); err != nil {
 			return Done{}, err
 		}
-		done.Lines = append(done.Lines, "✓ Switched to the default profile")
+		done.Lines = append(done.Lines, "✓ Switched to the default profile.")
 	}
 	for _, err := range failures(p.Registry.Delete(canon)) {
 		done.Settled = false
-		done.Lines = append(done.Lines, failed("deleted", "identity purge", err))
+		done.Lines = append(done.Lines, failed(true, err))
 	}
 	p.config.Forget(canon)
 	removeErr := removeTree(dir)
 	if removeErr == nil {
-		done.Later = append(done.Later, "✓ Removed "+dir)
+		done.Later = append(done.Later, "✓ Removed the folder "+dir+".")
 	} else {
-		done.Later = append(done.Later, fmt.Sprintf("⚠ Could not remove %s: %s", dir, failure(removeErr)))
-		done.Failure = fmt.Sprintf("Could not remove profile directory %s: %s", dir, failure(removeErr))
+		done.Later = append(done.Later, fmt.Sprintf("⚠ The folder %s could not be removed: %s.", dir, failure(removeErr)))
+		done.Failure = fmt.Sprintf("The folder %s could not be removed: %s.", dir, failure(removeErr))
 	}
 	if p.sticky() == canon && p.stick(Default) == nil {
-		done.Later = append(done.Later, "✓ Active profile reset to default")
+		done.Later = append(done.Later, "✓ icebath starts with the default profile from now on.")
 	}
 	return done, nil
 }
@@ -106,13 +107,13 @@ func (p *Profiles) Rename(old, renamed string) (Done, error) {
 		return Done{}, err
 	}
 	if newCanon == Default {
-		return Done{}, &ValueError{"Cannot rename to 'default' — it is reserved."}
+		return Done{}, &ValueError{"No profile can be renamed to default, because that is the name of the built-in profile."}
 	}
 	if backend, err := p.config.Backend(); err != nil {
 		return Done{}, err
 	} else if backend != "file" {
-		return Done{}, &ValueError{fmt.Sprintf("Cannot rename profile '%s': its config lives in the %q config backend under that name, and renaming "+
-			"it there is not supported. Nothing was changed.", oldCanon, backend)}
+		return Done{}, &ValueError{fmt.Sprintf("%s can't be renamed, because its settings are kept in the %q settings store under that name, "+
+			"which can't rename them. Nothing changed.", oldCanon, backend)}
 	}
 	oldDir, newDir := p.Dir(oldCanon), p.Dir(newCanon)
 	if !p.config.Exists(oldCanon) {
@@ -126,13 +127,13 @@ func (p *Profiles) Rename(old, renamed string) (Done, error) {
 	}
 	done := Done{Path: newDir, Settled: true}
 	if err := p.Registry.Stop(oldCanon); err != nil {
-		done.Lines = append(done.Lines, fmt.Sprintf("⚠ Could not stop everything running for %s: %v", oldCanon, err))
+		done.Lines = append(done.Lines, fmt.Sprintf("⚠ Some of what runs for %s could not be stopped: %s", oldCanon, sentence(err.Error())))
 	}
 	p.config.Forget(oldCanon)
 	if err := os.Rename(oldDir, newDir); err != nil {
 		return Done{}, err
 	}
-	done.Lines = append(done.Lines, fmt.Sprintf("✓ Renamed %s → %s", oldCanon, newCanon))
+	done.Lines = append(done.Lines, fmt.Sprintf("✓ Renamed %s to %s.", oldCanon, newCanon))
 	history := ReadMeta(newDir).PreviousNames
 	if !slices.Contains(history, oldCanon) {
 		history = append(history, oldCanon)
@@ -145,7 +146,7 @@ func (p *Profiles) Rename(old, renamed string) (Done, error) {
 		}
 	}
 	if p.sticky() == oldCanon && p.stick(newCanon) == nil {
-		done.Later = append(done.Later, "✓ Active profile updated: "+newCanon)
+		done.Later = append(done.Later, "✓ icebath starts with "+newCanon+" from now on.")
 	}
 	moved, settled := p.migrate(oldCanon, newCanon)
 	done.Later, done.Settled = append(done.Later, moved...), settled
@@ -157,7 +158,7 @@ func (p *Profiles) migrate(old, renamed string) ([]string, bool) {
 	lines, err := p.Registry.Move(old, renamed)
 	broken := failures(err)
 	for _, err := range broken {
-		lines = append(lines, failed("renamed", "identity migration", err))
+		lines = append(lines, failed(false, err))
 	}
 	return lines, len(broken) == 0
 }
@@ -165,17 +166,17 @@ func (p *Profiles) migrate(old, renamed string) ([]string, bool) {
 // Sets or clears the name the default profile shows, its name staying default
 func (p *Profiles) displayName(name string) (Done, error) {
 	if strings.TrimSpace(name) == "" {
-		return Done{}, &ValueError{"Display name cannot be empty."}
+		return Done{}, &ValueError{"Give the default profile a name to show."}
 	}
 	cleaned := strings.TrimSpace(name)
 	if n := utf8.RuneCountInString(cleaned); n > 64 {
-		return Done{}, &ValueError{fmt.Sprintf("Display name too long (%d chars, max 64).", n)}
+		return Done{}, &ValueError{fmt.Sprintf("The name is %s long, and the most it can be is 64.", strs.Counted(float64(n), "characters"))}
 	}
 	dir := p.Dir(Default)
 	if err := WriteMeta(dir, MetaUpdate{DisplayName: &cleaned}); err != nil {
 		return Done{}, err
 	}
-	return Done{Path: dir, Settled: true, Lines: []string{fmt.Sprintf("✓ Display name set: %s (canonical id remains 'default')", cleaned)}}, nil
+	return Done{Path: dir, Settled: true, Lines: []string{fmt.Sprintf("✓ The default profile now shows as %s. Its name stays default.", cleaned)}}, nil
 }
 
 // Removes again what the features keep of a deleted profile, for a delete whose removal of it failed: a line for each that failed again
@@ -185,16 +186,15 @@ func (p *Profiles) PurgeIdentity(name string) (Done, error) {
 		return Done{}, err
 	}
 	if canon == Default {
-		return Done{}, &ValueError{"Identity purge applies to named profiles only."}
+		return Done{}, &ValueError{"purge-identity finishes the delete of a profile, and the default profile can't be deleted."}
 	}
 	if p.config.Exists(canon) {
-		return Done{}, &ValueError{fmt.Sprintf("Profile '%s' exists; purge-identity only settles the identity of a delete that has already completed.",
-			canon)}
+		return Done{}, &ValueError{fmt.Sprintf("The profile %s still exists. purge-identity only finishes a delete that already happened.", canon)}
 	}
 	done := Done{Settled: true}
 	for _, err := range failures(p.Registry.Delete(canon)) {
 		done.Settled = false
-		done.Lines = append(done.Lines, failed("deleted", "identity purge", err))
+		done.Lines = append(done.Lines, failed(true, err))
 	}
 	return done, nil
 }
@@ -210,7 +210,7 @@ func (p *Profiles) MigrateIdentity(old, renamed string) (Done, error) {
 		return Done{}, err
 	}
 	if oldCanon == Default || newCanon == Default {
-		return Done{}, &ValueError{"Identity migration applies to named profiles only."}
+		return Done{}, &ValueError{"migrate-identity finishes the rename of a profile, and the default profile keeps its name."}
 	}
 	if !p.config.Exists(newCanon) {
 		return Done{}, unknown(newCanon)
@@ -231,7 +231,7 @@ func (p *Profiles) SetDescription(name, description string) error {
 		}
 	}
 	if !p.Exists(canon) {
-		return &NotFoundError{fmt.Sprintf("profile directory does not exist: %s", p.Dir(canon))}
+		return missing(canon)
 	}
 	auto := false
 	return WriteMeta(p.Dir(canon), MetaUpdate{Description: &description, DescriptionAuto: &auto})

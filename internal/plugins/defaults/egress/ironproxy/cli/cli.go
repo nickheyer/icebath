@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/internal/tools/redact"
 	egressv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/egress/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/egress/v1/egressv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 )
 
@@ -25,16 +26,34 @@ func Register(registry *cli.Registry) {
 
 func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	e := egress{service: egressv1connect.NewEgressServiceClient(conn)}
-	root := &cobra.Command{Use: "egress", Short: "Manage the iron-proxy egress credential-injection firewall", Args: cobra.NoArgs}
+	root := &cobra.Command{
+		Use:     "egress",
+		GroupID: cli.GroupSafety,
+		Short:   "Keep your API keys out of Docker sandboxes",
+		Long: "The sandbox proxy is iron-proxy, a program that runs on this computer. Docker sandboxes reach providers through it with " +
+			"stand-in tokens, and the proxy puts your real API keys in on the way out. A model that a web page or a file tricks never sees " +
+			"your real keys. Run setup once, then start.",
+		Example: "  icebath egress setup\n  icebath egress start\n  icebath egress status",
+		Args:    cobra.NoArgs,
+	}
 	root.AddCommand(e.install(), e.setup(),
-		&cobra.Command{Use: "start", Short: "Start the managed iron-proxy", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return e.start(cmd) }},
-		&cobra.Command{Use: "stop", Short: "Stop the managed iron-proxy", Args: cobra.NoArgs, RunE: e.stop},
-		&cobra.Command{Use: "restart", Short: "Restart the managed iron-proxy (stop if running, then start)", Args: cobra.NoArgs, RunE: e.restart},
-		&cobra.Command{Use: "reload", Short: "Hot-reload the running daemon's ruleset from proxy.yaml (management API — no restart, no dropped connections)",
+		&cobra.Command{Use: "start", Short: "Start the sandbox proxy", Long: "Starts iron-proxy in the background with the settings that setup wrote.",
+			Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return e.start(cmd) }},
+		&cobra.Command{Use: "stop", Short: "Stop the sandbox proxy", Long: "Stops the iron-proxy that is running.", Args: cobra.NoArgs, RunE: e.stop},
+		&cobra.Command{Use: "restart", Short: "Stop the sandbox proxy if it runs, then start it",
+			Long: "Stops the running iron-proxy and starts it again. Use restart after you run setup again or change an API key, because the proxy " +
+				"reads your real keys only when it starts.",
+			Args: cobra.NoArgs, RunE: e.restart},
+		&cobra.Command{Use: "reload", Short: "Apply edited proxy rules without a restart",
+			Long: "Makes the running proxy read its rules from proxy.yaml again, without a restart and without dropping connections. New or " +
+				"changed API keys still need a restart, because the proxy reads them only when it starts.",
 			Args: cobra.NoArgs, RunE: e.reload},
 		e.status(),
-		&cobra.Command{Use: "disable", Short: "Turn off the proxy integration", Args: cobra.NoArgs, RunE: e.disable},
-		&cobra.Command{Use: "config", Short: "Print the generated proxy.yaml path", Args: cobra.NoArgs, RunE: e.config})
+		&cobra.Command{Use: "disable", Short: "Turn the sandbox proxy off",
+			Long: "Turns the sandbox proxy off in your settings. A proxy that is running keeps running until you stop it.", Args: cobra.NoArgs,
+			RunE: e.disable},
+		&cobra.Command{Use: "config", Short: "Print the path of proxy.yaml", Long: "Prints where the proxy.yaml that setup wrote is kept.",
+			Args: cobra.NoArgs, RunE: e.config})
 	return []*cobra.Command{root}
 }
 
@@ -44,27 +63,63 @@ type egress struct {
 
 func (e egress) install() *cobra.Command {
 	force := false
-	command := &cobra.Command{Use: "install", Short: "Install the PM-pinned iron-proxy binary", Args: cobra.NoArgs,
+	command := &cobra.Command{Use: "install", Short: "Install the pinned version of iron-proxy",
+		Long: "Downloads the version of iron-proxy that icebath pins and keeps it with the other programs icebath downloads. With --force, " +
+			"install checks the copy you have and repairs it.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
 			installed, err := e.service.Install(cmd.Context(), &egressv1.InstallRequest{Force: force})
 			if err != nil {
-				c.Say(c.Paint("✗ install failed:", cli.Red) + " " + tui.Reason(err))
-				c.Say("  Manual install: https://github.com/ironsh/iron-proxy/releases")
+				c.Say(c.Paint("✗ iron-proxy could not be installed.", cli.Red) + " " + tui.Reason(err))
+				c.Say("  You can install it yourself from https://github.com/ironsh/iron-proxy/releases.")
 				return cli.Exit(1)
 			}
-			c.Say(c.Tick() + " installed " + installed.GetBinary() + "  " + version(installed.GetVersion()))
+			c.Say(c.Tick() + " Installed iron-proxy at " + installed.GetBinary() + ". " + version(installed.GetVersion()))
 			return nil
 		}}
-	command.Flags().BoolVar(&force, "force", false, "Verify and repair the managed copy")
+	command.Flags().BoolVar(&force, "force", false, "Check the installed copy and repair it")
 	return command
 }
 
+// Sentence saying which version of iron-proxy is installed
 func version(text string) string {
 	if text == "" {
-		return "(version unknown)"
+		return "Its version is not known."
 	}
-	return text
+	return "Its version is " + strings.TrimPrefix(text, "v") + "."
+}
+
+// On or Off for a switch, the way the settings say it
+func onOff(c *cli.Console, on bool) string {
+	if on {
+		return c.Paint("On", cli.Green)
+	}
+	return c.Paint("Off", cli.Dim)
+}
+
+// Yes or No, in the case a value is said in
+func yesNo(c *cli.Console, yes bool) string {
+	if yes {
+		return c.Paint("Yes", cli.Green)
+	}
+	return c.Paint("No", cli.Dim)
+}
+
+// Where the keys come from, the way the settings name it
+func source(value string) string {
+	if value == ironconfig.FromBitwarden {
+		return "Bitwarden"
+	}
+	return "Environment"
+}
+
+// Whether the proxy is up, as the end of a sentence
+func listens(c *cli.Console, listening bool) string {
+	if listening {
+		return c.Paint("is listening", cli.Green)
+	}
+	return c.Paint("is not listening yet", cli.Yellow)
 }
 
 // Table of the mappings, the tokens masked unless asked to show them
@@ -77,49 +132,56 @@ func table(c *cli.Console, mappings []*egressv1.Mapping, envHeader, hostsHeader 
 		}
 		rows = append(rows, []string{c.Paint(m.GetEnv(), cli.Cyan), c.Paint(strings.Join(m.GetHosts(), ", "), cli.Dim), c.Paint(token, cli.Green)})
 	}
-	c.Table([]string{envHeader, hostsHeader, "Proxy token"}, rows)
+	c.Table([]string{envHeader, hostsHeader, "Stand-in token"}, rows)
 }
 
 func (e egress) setup() *cobra.Command {
 	var port int
 	var fromBitwarden, noBitwarden, rotate, restart, noRestart bool
-	command := &cobra.Command{Use: "setup", Short: "Interactive wizard: install + CA + mint tokens + write config", Args: cobra.NoArgs,
+	command := &cobra.Command{Use: "setup", Short: "Set up the sandbox proxy step by step",
+		Long: "Installs iron-proxy, makes its CA certificate, makes a stand-in token for each provider you use and writes proxy.yaml. Run setup " +
+			"again after you add a provider. Tokens you have are kept unless you pass --rotate-tokens, so running sandboxes keep working.\n\n" +
+			"A proxy that is running stops while setup writes the new settings. setup then asks whether to start it again, and " +
+			"--restart or --no-restart answers for you. With --from-bitwarden, setup fails when Bitwarden cannot be reached instead of " +
+			"falling back to the environment.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
 			ctx := cmd.Context()
-			c.Panel("", c.Paint("iron-proxy setup", cli.Bold), "", "Routes outbound sandbox traffic through a local TLS-intercepting",
-				"proxy so prompt-injected agents never see real provider API keys.", "", c.Paint("Project: https://github.com/ironsh/iron-proxy  (Apache-2.0)", cli.Dim))
-			c.Step(1, "Install the iron-proxy binary")
+			c.Panel("", c.Paint("Setting up the sandbox proxy", cli.Bold), "", "Docker sandboxes reach providers through iron-proxy, a proxy on this",
+				"computer that puts in your real API keys on the way out, so an agent",
+				"that a web page or a file tricks never sees them.", "",
+				c.Paint("iron-proxy is at https://github.com/ironsh/iron-proxy, under the Apache 2.0 license.", cli.Dim))
+			c.Step(1, "Install iron-proxy")
 			status, err := e.service.Status(ctx, &egressv1.StatusRequest{})
 			if err != nil {
 				return err
 			}
 			binary, found := status.GetBinary(), status.GetVersion()
 			if binary == "" {
-				c.Say("  No iron-proxy on PATH — downloading…")
+				c.Say("  iron-proxy is not on your PATH, so icebath downloads it…")
 				installed, err := e.service.Install(ctx, &egressv1.InstallRequest{})
 				if err != nil {
-					return c.Fail("  ✗ install failed: " + tui.Reason(err))
+					return c.Fail("  ✗ iron-proxy could not be installed. " + tui.Reason(err))
 				}
 				binary, found = installed.GetBinary(), installed.GetVersion()
 			}
-			c.Say("  " + c.Tick() + " " + binary + "  " + version(found))
-			c.Step(2, "Generate a CA cert")
+			c.Say("  " + c.Tick() + " iron-proxy is at " + binary + ". " + version(found))
+			c.Step(2, "Make a CA certificate")
 			authority, err := e.service.Authority(ctx, &egressv1.AuthorityRequest{})
 			if err != nil {
-				return c.Fail("  ✗ CA generation failed: " + tui.Reason(err))
+				return c.Fail("  ✗ The CA certificate could not be made. " + tui.Reason(err))
 			}
-			c.Say("  " + c.Tick() + " " + authority.GetCertificate())
-			c.Step(3, "Mint proxy tokens for known providers")
+			c.Say("  " + c.Tick() + " The CA certificate is " + authority.GetCertificate() + ".")
+			c.Step(3, "Make stand-in tokens for your providers")
 			if rotate && len(status.GetMappings()) > 0 && c.Interactive() {
-				c.Say(c.Paint("⚠", cli.Yellow) + "  --rotate-tokens will invalidate proxy tokens in every running Icebath sandbox.  They will start 401-ing " +
-					"against upstreams until restarted.")
-				if answer, _ := c.Input("Type 'rotate' to confirm: "); strings.ToLower(strings.TrimSpace(answer)) != "rotate" {
-					c.Say("Cancelled.", cli.Yellow)
+				c.Say(c.Paint("⚠", cli.Yellow) + " --rotate-tokens replaces every stand-in token, so providers refuse every running icebath sandbox until it restarts.")
+				if answer, _ := c.Input("Replace the stand-in tokens of every sandbox? Type rotate to go ahead: "); strings.ToLower(strings.TrimSpace(answer)) != "rotate" {
+					c.Say("Nothing was changed.", cli.Yellow)
 					return cli.Exit(1)
 				}
 			} else if rotate && len(status.GetMappings()) == 0 {
-				c.Say("Note: --rotate-tokens is a no-op on first-time setup (no existing tokens to rotate).", cli.Dim)
+				c.Say("--rotate-tokens changes nothing on a first setup, because there are no tokens to replace yet.", cli.Dim)
 			}
 			minted, err := e.service.Mint(ctx, &egressv1.MintRequest{FromBitwarden: fromBitwarden, Rotate: rotate})
 			if err != nil {
@@ -133,20 +195,20 @@ func (e egress) setup() *cobra.Command {
 				return cli.Exit(1)
 			}
 			if n := minted.GetPulled(); n > 0 {
-				c.Say(fmt.Sprintf("  Pulled %d env names from Bitwarden.", n))
+				c.Say("  Read the names of " + strs.Count(int(n), "secret") + " from Bitwarden.")
 			}
 			if n := minted.GetLoaded(); n > 0 {
-				c.Say(fmt.Sprintf("  Loaded %d provider key name(s) from the profile's .env for discovery.", n), cli.Dim)
+				c.Say("  Found "+strs.Count(int(n), "provider key")+" in the keys file of this profile.", cli.Dim)
 			}
 			if minted.GetBackup() != "" {
-				c.Say("  backup: "+minted.GetBackup(), cli.Dim)
+				c.Say("  Saved the old tokens to "+minted.GetBackup()+".", cli.Dim)
 			}
 			if minted.GetBackupError() != "" {
-				c.Say("  Could not back up mappings before rotation: "+minted.GetBackupError(), cli.Yellow)
+				c.Say("  ⚠ The old tokens could not be saved before they were replaced: "+minted.GetBackupError(), cli.Yellow)
 			}
 			if len(minted.GetMappings()) == 0 {
-				c.Say("  No known provider API keys found in env/Bitwarden.", cli.Yellow)
-				c.Say("  Set at least one of these and rerun setup:")
+				c.Say("  ⚠ No API key of a provider the proxy knows was found in the environment or in Bitwarden.", cli.Yellow)
+				c.Say("  Set at least one of these, then run setup again:")
 				for _, name := range ironterminal.BearerNames() {
 					c.Say("    - " + name)
 				}
@@ -154,30 +216,31 @@ func (e egress) setup() *cobra.Command {
 			}
 			if uncovered := minted.GetUncovered(); len(uncovered) > 0 {
 				c.Blank()
-				c.Say("  " + c.Paint("⚠", cli.Yellow) + "  Detected provider env vars that the proxy does not yet cover:")
+				c.Say("  " + c.Paint("⚠", cli.Yellow) + " The proxy does not cover these provider variables yet:")
 				for _, name := range uncovered {
 					c.Say("    - " + name)
 				}
-				c.Say("  These providers use request signing or SDK-minted OAuth (SigV4, service-account files) and will hold real credentials inside the "+
-					"sandbox.  Egress isolation is INCOMPLETE for these.", cli.Dim)
+				c.Say("  These providers sign their requests or make their own sign-in tokens, such as with SigV4 or service account files, so their "+
+					"real keys stay inside the sandbox. The proxy does not protect them.", cli.Dim)
 			}
-			table(c, minted.GetMappings(), "Provider env", "Upstream hosts", false)
-			c.Step(4, "Write config and persist mappings")
+			table(c, minted.GetMappings(), "Variable", "Sites", false)
+			c.Step(4, "Write proxy.yaml and save the tokens")
 			written, err := e.service.Write(ctx, &egressv1.WriteRequest{Mappings: minted.GetMappings(), TunnelPort: int32(port), FromBitwarden: fromBitwarden,
 				NoBitwarden: noBitwarden})
 			if err != nil {
 				return err
 			}
 			if written.GetBadPort() {
-				return c.Fail("  ✗ --tunnel-port must be between 1 and 65534 (the plain-HTTP listener uses port+1).")
+				return c.Fail("  ✗ --tunnel-port must be from 1 to 65,534, because the proxy also listens for plain HTTP on the port after it.")
 			}
 			if written.GetAuditError() != "" {
 				c.Say("  ⚠ "+written.GetAuditError(), cli.Yellow)
 			}
-			c.Say("  " + c.Tick() + " config:   " + written.GetConfig())
-			c.Say("  " + c.Tick() + " mappings: " + written.GetMappings())
+			c.Say("  " + c.Tick() + " Settings:  " + written.GetConfig())
+			c.Say("  " + c.Tick() + " Tokens:    " + written.GetMappings())
 			if written.GetAudit() != "" {
-				c.Say("  " + c.Tick() + " audit log: " + written.GetAudit() + " " + c.Paint("(reserved — not written by iron-proxy v0.39; per-request records land in iron-proxy.log)", cli.Dim))
+				c.Say("  " + c.Tick() + " Audit log: " + written.GetAudit())
+				c.Say("    iron-proxy 0.39 does not write the audit log yet. Each request is recorded in iron-proxy.log.", cli.Dim)
 			}
 			for _, note := range written.GetNotes() {
 				c.Say(note, cli.Yellow)
@@ -186,23 +249,20 @@ func (e egress) setup() *cobra.Command {
 				return err
 			}
 			c.Blank()
-			c.Say(c.Paint("✓ iron-proxy is configured.", cli.Green) + "  Sandboxes will route outbound traffic through it.")
-			c.Say("  Start:   " + c.Paint("icebath egress start", cli.Cyan) + "\n  Restart: " + c.Paint("icebath egress restart", cli.Cyan) + "  (after any re-setup)\n" +
-				"  Reload:  " + c.Paint("icebath egress reload", cli.Cyan) + "   (apply ruleset edits in-place, no restart)\n  Status:  " +
-				c.Paint("icebath egress status", cli.Cyan) + "\n  Stop:    " + c.Paint("icebath egress stop", cli.Cyan) + "\n  Disable: " + c.Paint("icebath egress disable", cli.Cyan))
+			c.Say(c.Paint("✓ The sandbox proxy is set up.", cli.Green) + " Docker sandboxes send their traffic through it.")
+			for _, name := range []string{"start", "restart", "reload", "status", "stop", "disable"} {
+				if sub, _, err := cmd.Parent().Find([]string{name}); err == nil && sub.Name() == name {
+					c.Say("  " + c.Paint(cli.Pad("icebath egress "+name, 24), cli.Cyan) + sub.Short)
+				}
+			}
 			return nil
 		}}
-	command.Flags().IntVar(&port, "tunnel-port", 0, fmt.Sprintf("Override the tunnel port (default %d)", ironconfig.DefaultTunnelPort))
-	command.Flags().BoolVar(&fromBitwarden, "from-bitwarden", false, "Treat secrets as managed by Bitwarden — discover provider keys from secrets.bitwarden "+
-		"config instead of the current env.  Fails loudly if BW is unreachable rather than silently falling back.")
-	command.Flags().BoolVar(&noBitwarden, "no-bitwarden", false, "Explicitly switch credential_source back to env on re-setup (only meaningful when the "+
-		"previous setup used --from-bitwarden).")
-	command.Flags().BoolVar(&rotate, "rotate-tokens", false, "Mint fresh proxy tokens for every provider (default is to preserve tokens for providers that "+
-		"already had one — avoids 401-ing already-running sandboxes on re-setup).")
-	command.Flags().BoolVar(&restart, "restart", false, "If a daemon is already running, restart it automatically after writing the new config/tokens "+
-		"(non-interactive default on a tty is to ask).")
-	command.Flags().BoolVar(&noRestart, "no-restart", false, "Do not restart a running daemon after setup; you'll need to run `icebath egress restart` "+
-		"yourself for changes to take effect.")
+	command.Flags().IntVar(&port, "tunnel-port", 0, fmt.Sprintf("Port that sandboxes reach the proxy on, instead of %d", ironconfig.DefaultTunnelPort))
+	command.Flags().BoolVar(&fromBitwarden, "from-bitwarden", false, "Find provider keys in your Bitwarden store instead of the environment")
+	command.Flags().BoolVar(&noBitwarden, "no-bitwarden", false, "Read provider keys from the environment again after --from-bitwarden")
+	command.Flags().BoolVar(&rotate, "rotate-tokens", false, "Make new tokens for every provider, so running sandboxes must restart")
+	command.Flags().BoolVar(&restart, "restart", false, "Start a running proxy again after setup, without asking")
+	command.Flags().BoolVar(&noRestart, "no-restart", false, "Leave a running proxy stopped after setup, without asking")
 	return command
 }
 
@@ -225,29 +285,27 @@ func (e egress) restartAfterSetup(c *cli.Console, cmd *cobra.Command, restart, n
 	case restart:
 		again = true
 	case running:
-		again = !c.Interactive() || c.Confirm("  Restart the running proxy now with the new config?", true)
+		again = !c.Interactive() || c.Confirm("  Start the sandbox proxy again with the new settings? It stopped while setup wrote them.", true)
 	}
 	if !again {
 		if running {
-			c.Say("  ⚠ stopped the running iron-proxy; config or tokens changed.  Run "+c.Paint("icebath egress restart", cli.Cyan)+" (or "+
-				c.Paint("start", cli.Cyan)+") before launching new Docker sandboxes.", cli.Yellow)
+			c.Say("  ⚠ The sandbox proxy was stopped, because its settings or tokens changed. Run "+c.Paint("icebath egress start", cli.Cyan)+
+				" before you start new Docker sandboxes.", cli.Yellow)
 		}
 		return nil
 	}
 	started, err := e.service.Start(ctx, &egressv1.StartRequest{Setup: true})
 	if err != nil {
-		c.Say("  ⚠ could not start iron-proxy with the new config: "+tui.Reason(err), cli.Yellow)
-		c.Say("  Run " + c.Paint("icebath egress start", cli.Cyan) + " manually before launching new Docker sandboxes.")
+		c.Say("  ⚠ The sandbox proxy could not start with the new settings. "+tui.Reason(err), cli.Yellow)
+		c.Say("  Run " + c.Paint("icebath egress start", cli.Cyan) + " yourself before you start new Docker sandboxes.")
 		return nil
 	}
-	listening, verb := "not yet listening", "started"
-	if started.GetListening() {
-		listening = "listening"
-	}
+	repeat := ""
 	if running {
-		verb = "restarted"
+		repeat = " again"
 	}
-	c.Say(fmt.Sprintf("  %s %s iron-proxy with the new config (pid=%d, port=%d, %s)", c.Tick(), verb, started.GetPid(), started.GetPort(), listening))
+	c.Say(fmt.Sprintf("  %s Started the sandbox proxy%s with the new settings. It runs as process %d on port %d and %s.", c.Tick(), repeat,
+		started.GetPid(), started.GetPort(), listens(c, started.GetListening())))
 	return nil
 }
 
@@ -255,25 +313,22 @@ func (e egress) start(cmd *cobra.Command) error {
 	c := cli.NewConsole(cmd)
 	started, err := e.service.Start(cmd.Context(), &egressv1.StartRequest{})
 	if err != nil {
-		return c.Fail("✗ failed to start iron-proxy: " + tui.Reason(err))
+		return c.Fail("✗ The sandbox proxy could not start. " + tui.Reason(err))
 	}
 	for _, note := range started.GetNotes() {
 		c.Say(note, cli.Yellow)
 	}
 	switch {
 	case started.GetRefusal() != "" && started.GetHint() == "":
-		c.Say(started.GetRefusal(), cli.Yellow)
+		c.Say("✗ "+started.GetRefusal(), cli.Red)
 		return cli.Exit(1)
 	case started.GetRefusal() != "":
-		c.Say("✗ Refusing to start: "+started.GetRefusal(), cli.Red)
+		c.Say("✗ The sandbox proxy did not start. "+started.GetRefusal(), cli.Red)
 		c.Say("  " + started.GetHint())
 		return cli.Exit(1)
 	}
-	listening := c.Paint("not yet listening", cli.Yellow)
-	if started.GetListening() {
-		listening = c.Paint("listening", cli.Green)
-	}
-	c.Say(fmt.Sprintf("%s iron-proxy running  pid=%d  port=%d  %s", c.Tick(), started.GetPid(), started.GetPort(), listening))
+	c.Say(fmt.Sprintf("%s The sandbox proxy runs as process %d on port %d and %s.", c.Tick(), started.GetPid(), started.GetPort(),
+		listens(c, started.GetListening())))
 	return nil
 }
 
@@ -284,9 +339,9 @@ func (e egress) stop(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if stopped.GetStopped() {
-		c.Say(c.Tick() + " iron-proxy stopped")
+		c.Say(c.Tick() + " Stopped the sandbox proxy.")
 	} else {
-		c.Say("iron-proxy was not running", cli.Dim)
+		c.Say("The sandbox proxy was not running.", cli.Dim)
 	}
 	return nil
 }
@@ -299,7 +354,7 @@ func (e egress) restart(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if stopped.GetStopped() {
-		c.Say("stopped the running iron-proxy", cli.Dim)
+		c.Say("Stopped the sandbox proxy.", cli.Dim)
 	}
 	return e.start(cmd)
 }
@@ -307,17 +362,19 @@ func (e egress) restart(cmd *cobra.Command, _ []string) error {
 func (e egress) reload(cmd *cobra.Command, _ []string) error {
 	c := cli.NewConsole(cmd)
 	if _, err := e.service.Reload(cmd.Context(), &egressv1.ReloadRequest{}); err != nil {
-		return c.Fail("✗ reload failed: " + tui.Reason(err))
+		return c.Fail("✗ The rules could not be reloaded. " + tui.Reason(err))
 	}
-	c.Say(c.Tick() + " iron-proxy ruleset reloaded in-place (no restart, connections preserved)")
-	c.Say("Note: new upstream secrets (rotated keys, new providers) still need `icebath egress restart` — the daemon reads real credentials from its "+
-		"environment at spawn time.", cli.Dim)
+	c.Say(c.Tick() + " The sandbox proxy read its rules again, without a restart and without dropping connections.")
+	c.Say("New or changed API keys still need `icebath egress restart`, because the proxy reads them only when it starts.", cli.Dim)
 	return nil
 }
 
 func (e egress) status() *cobra.Command {
 	show := false
-	command := &cobra.Command{Use: "status", Short: "Show proxy state and mappings", Args: cobra.NoArgs,
+	command := &cobra.Command{Use: "status", Short: "Show the state of the sandbox proxy and its tokens",
+		Long: "Shows whether iron-proxy is installed and running, where its files are, and which environment variable each stand-in token " +
+			"replaces. Tokens are shortened unless you pass --show-tokens.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
 			status, err := e.service.Status(cmd.Context(), &egressv1.StatusRequest{})
@@ -330,40 +387,40 @@ func (e egress) status() *cobra.Command {
 				}
 				return value
 			}
-			process := c.Paint("(stopped)", cli.Dim)
+			process := c.Paint("Not running", cli.Dim)
 			if status.GetPid() != 0 {
-				process = fmt.Sprintf("pid %d", status.GetPid())
+				process = fmt.Sprintf("Running as process %d", status.GetPid())
 			}
-			c.Pairs("Egress proxy", [][2]string{
-				{"Enabled", c.YesNo(status.GetEnabled())},
-				{"Binary", or(status.GetBinary(), "(missing)")},
-				{"Binary version", or(status.GetVersion(), "(unknown)")},
-				{"Config", or(status.GetConfig(), "(not generated)")},
-				{"CA cert", or(status.GetAuthority(), "(not generated)")},
-				{"Tunnel port", fmt.Sprint(status.GetPort())},
+			c.Pairs("Sandbox proxy", [][2]string{
+				{"Hide your keys", onOff(c, status.GetEnabled())},
+				{"Program", or(status.GetBinary(), "Not installed")},
+				{"Version", or(strings.TrimPrefix(status.GetVersion(), "v"), "Not known")},
+				{"Settings file", or(status.GetConfig(), "Not written yet")},
+				{"CA certificate", or(status.GetAuthority(), "Not made yet")},
+				{"Port", fmt.Sprint(status.GetPort())},
 				{"Process", process},
-				{"Listening", c.YesNo(status.GetListening())},
-				{"Credential src", status.GetCredentialSource()},
-				{"Docker enforce", c.YesNo(status.GetEnforce())},
+				{"Listening", yesNo(c, status.GetListening())},
+				{"Key source", source(status.GetCredentialSource())},
+				{"Required for Docker", onOff(c, status.GetEnforce())},
 			})
 			if mappings := status.GetMappings(); len(mappings) > 0 {
 				c.Blank()
-				c.Say("Token mappings", cli.Bold)
-				table(c, mappings, "Real env", "Upstream", show)
+				c.Say("Stand-in tokens", cli.Bold)
+				table(c, mappings, "Variable", "Sites", show)
 				if show {
-					c.Say(c.Paint("⚠", cli.Yellow) + "  proxy tokens just printed in full — they may persist in your shell history.  Consider clearing it after this command.")
+					c.Say(c.Paint("⚠", cli.Yellow) + " The stand-in tokens are printed in full above, and your shell history may keep them. Clear it after this command.")
 				}
 			}
 			if uncovered := status.GetUncovered(); len(uncovered) > 0 {
 				c.Blank()
-				c.Say(c.Paint("Uncovered providers", cli.Yellow) + " (real credentials still visible inside the sandbox):")
+				c.Say(c.Paint("Providers the proxy does not cover", cli.Yellow) + ". Their real keys are still visible inside the sandbox:")
 				for _, name := range uncovered {
 					c.Say("  - " + name)
 				}
 			}
 			return nil
 		}}
-	command.Flags().BoolVar(&show, "show-tokens", false, "Print the proxy tokens (default: redacted prefix only). Beware: tokens may persist in your shell history.")
+	command.Flags().BoolVar(&show, "show-tokens", false, "Print the tokens in full, where your shell history may keep them")
 	return command
 }
 
@@ -374,12 +431,12 @@ func (e egress) disable(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if !disabled.GetWasEnabled() {
-		c.Say("proxy.enabled was already false.", cli.Dim)
+		c.Say("The sandbox proxy was already off.", cli.Dim)
 		return nil
 	}
-	c.Say(c.Tick() + " proxy.enabled set to false")
+	c.Say(c.Tick() + " Turned off Hide your keys in /settings under Sandbox proxy.")
 	if disabled.GetRunning() {
-		c.Say("  iron-proxy is still running — stop it with " + c.Paint("icebath egress stop", cli.Cyan) + " if you want it down too.")
+		c.Say("  iron-proxy still runs. Stop it with " + c.Paint("icebath egress stop", cli.Cyan) + " if you want it stopped too.")
 	}
 	return nil
 }
@@ -391,7 +448,7 @@ func (e egress) config(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if status.GetConfig() == "" {
-		c.Say("(no config generated — run `icebath egress setup`)", cli.Yellow)
+		c.Say("✗ There is no proxy.yaml yet. Run `icebath egress setup` to write it.", cli.Red)
 		return cli.Exit(1)
 	}
 	c.Say(status.GetConfig())

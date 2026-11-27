@@ -45,14 +45,14 @@ const (
 	minRefresh      = 30
 	assertionType   = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 	imdsEndpoint    = "http://169.254.169.254/metadata/identity/oauth2/token"
-	troubleshoot    = "\nTo mitigate this issue, please refer to the troubleshooting guidelines here at https://aka.ms/azsdk/python/identity/defaultazurecredential/troubleshoot."
-	envUnavailable  = "EnvironmentCredential authentication unavailable. Environment variables are not fully configured.\nVisit https://aka.ms/azsdk/python/identity/environmentcredential/troubleshoot to troubleshoot this issue."
-	imdsUnavailable = "ManagedIdentityCredential authentication unavailable, no response from the IMDS endpoint."
-	invalidTenant   = "Invalid tenant ID provided. You can locate your tenant ID by following the instructions here: https://learn.microsoft.com/partner-center/find-ids-and-domain-names"
-	azdNotFound     = "Azure Developer CLI could not be found. Please visit https://aka.ms/azure-dev for installation instructions and then, once installed, authenticate to your Azure account using 'azd auth login'."
+	troubleshoot    = "\nMicrosoft's guide to fixing this: https://aka.ms/azsdk/python/identity/defaultazurecredential/troubleshoot"
+	envUnavailable  = "The AZURE_ variables are not all set. Microsoft's guide: https://aka.ms/azsdk/python/identity/environmentcredential/troubleshoot"
+	imdsUnavailable = "No managed identity answered, because the instance metadata service did not respond."
+	invalidTenant   = "That tenant ID can't be right. Find yours as https://learn.microsoft.com/partner-center/find-ids-and-domain-names shows."
+	azdNotFound     = "The Azure Developer CLI is not installed. Install it from https://aka.ms/azure-dev, then sign in with `azd auth login`."
 	// Default scope of Azure AI Foundry
 	DefaultScope = "https://ai.azure.com/.default"
-	probeHint    = "DefaultAzureCredential can be slow when the token service is unreachable or when az login state is stale. Try `az login` or set AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_CLIENT_SECRET."
+	probeHint    = "Azure's sign-in is slow when its token service can't be reached or your az login is old. Run `az login`, or set AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_CLIENT_SECRET."
 )
 
 var tenantName = regexp.MustCompile(`^[0-9A-Za-z.-]+$`)
@@ -161,7 +161,7 @@ var httpClient = &http.Client{Timeout: 30 * time.Second}
 func parse(data map[string]any, requested int64) (token, error) {
 	value, _ := data["access_token"].(string)
 	if value == "" {
-		return token{}, fmt.Errorf("Authentication failed: %v", firstNonEmpty(data["error_description"], data["error"]))
+		return token{}, fmt.Errorf("Microsoft Entra ID refused the sign-in: %v", firstNonEmpty(data["error_description"], data["error"]))
 	}
 	number := func(v any) (int64, bool) {
 		switch x := v.(type) {
@@ -179,7 +179,7 @@ func parse(data map[string]any, requested int64) (token, error) {
 	} else if in, ok := number(data["expires_in"]); ok {
 		out.expiresOn = requested + in
 	} else {
-		return token{}, fmt.Errorf("Unexpected response '%v'", data)
+		return token{}, fmt.Errorf("Microsoft Entra ID gave an answer without a token: %v", data)
 	}
 	if in, ok := number(data["refresh_in"]); ok {
 		out.refreshOn = requested + in
@@ -214,7 +214,7 @@ func request(ctx context.Context, env environment, tenant string, form url.Value
 	resp.Body.Close()
 	var data map[string]any
 	if json.Unmarshal(raw, &data) != nil {
-		return token{}, fmt.Errorf("Authentication failed: %s", strings.TrimSpace(string(raw)))
+		return token{}, fmt.Errorf("Microsoft Entra ID refused the sign-in: %s", strings.TrimSpace(string(raw)))
 	}
 	return parse(data, requested)
 }
@@ -276,11 +276,14 @@ func certificatePrincipal(env environment, tenant, client, path, password string
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("The certificate file %s can't be read: %w.", path, err)
 	}
 	key, certs, err := certificate(raw, password)
 	if err != nil {
-		return nil, err
+		if strings.HasPrefix(err.Error(), "The certificate") {
+			return nil, err
+		}
+		return nil, fmt.Errorf("The certificate file %s can't be used, because its password is wrong or the file is damaged. The detail: %w.", path, err)
 	}
 	thumb := sha1.Sum(certs[0].Raw)
 	var chain []string
@@ -368,7 +371,7 @@ func certificate(raw []byte, password string) (*rsa.PrivateKey, []*x509.Certific
 	}
 	rsaKey, ok := key.(*rsa.PrivateKey)
 	if !ok || len(certs) == 0 {
-		return nil, nil, errors.New("The certificate must include its private key")
+		return nil, nil, errors.New("The certificate file must hold its private key too.")
 	}
 	for i, c := range certs {
 		if public, ok := c.PublicKey.(*rsa.PublicKey); ok && public.Equal(&rsaKey.PublicKey) {
@@ -383,11 +386,11 @@ func certificate(raw []byte, password string) (*rsa.PrivateKey, []*x509.Certific
 func workloadIdentity(env environment, tenant, client, file string) (*principal, error) {
 	switch {
 	case tenant == "":
-		return nil, errors.New("'tenant_id' is required. Please pass it in or set the AZURE_TENANT_ID environment variable.")
+		return nil, errors.New("A tenant ID is needed. Give one, or set AZURE_TENANT_ID.")
 	case client == "":
-		return nil, errors.New("'client_id' is required. Please pass it in or set the AZURE_CLIENT_ID environment variable.")
+		return nil, errors.New("A client ID is needed. Give one, or set AZURE_CLIENT_ID.")
 	case file == "":
-		return nil, errors.New("'token_file_path' is required. Please pass it in or set the AZURE_FEDERATED_TOKEN_FILE environment variable.")
+		return nil, errors.New("A federated token file is needed. Set AZURE_FEDERATED_TOKEN_FILE.")
 	}
 	if err := validTenant(tenant); err != nil {
 		return nil, err
@@ -472,7 +475,7 @@ func (c *fromEnvironment) token(ctx context.Context, scopes []string) (token, er
 // One resource of a managed identity request, the scope without .default
 func resource(scopes []string) (string, error) {
 	if len(scopes) != 1 {
-		return "", errors.New("This credential requires exactly one scope per token request.")
+		return "", errors.New("This Azure sign-in takes exactly one scope for each token.")
 	}
 	return strings.TrimSuffix(scopes[0], "/.default"), nil
 }
@@ -528,7 +531,7 @@ func (m *managed) forget() {
 
 func (m *managed) token(ctx context.Context, scopes []string) (token, error) {
 	if m.kind == "" {
-		return token{}, &unavailable{"ManagedIdentityCredential authentication unavailable, no managed identity endpoint found."}
+		return token{}, &unavailable{"No managed identity is available here."}
 	}
 	if m.workload != nil {
 		return m.workload.token(ctx, scopes)
@@ -569,14 +572,14 @@ func (m *managed) request(ctx context.Context, res string) (token, error) {
 		q.Set("clientid", cmp.Or(m.client, m.env.get("DEFAULT_IDENTITY_CLIENT_ID")))
 	case "cloud_shell":
 		if m.client != "" {
-			return token{}, errors.New("Cloud Shell does not support user-assigned identities")
+			return token{}, errors.New("Cloud Shell does not take user-assigned managed identities.")
 		}
 		method, endpoint, headers["Metadata"] = http.MethodPost, m.env.get("MSI_ENDPOINT"), "true"
 		body, q = strings.NewReader(url.Values{"resource": {res}}.Encode()), url.Values{}
 		headers["Content-Type"] = "application/x-www-form-urlencoded"
 	case "azure_arc":
 		if m.client != "" {
-			return token{}, errors.New("Azure Arc doesn't support user-assigned managed identities")
+			return token{}, errors.New("Azure Arc does not take user-assigned managed identities.")
 		}
 		endpoint, headers["Metadata"] = m.env.get("IDENTITY_ENDPOINT"), "true"
 		q.Set("api-version", "2020-06-01")
@@ -605,7 +608,7 @@ func (m *managed) request(ctx context.Context, res string) (token, error) {
 			return token{}, err
 		}
 	} else if status != http.StatusOK {
-		return token{}, fmt.Errorf("Unexpected response '%v'", data)
+		return token{}, fmt.Errorf("Microsoft Entra ID gave an answer without a token: %v", data)
 	}
 	return parse(data, time.Now().Unix())
 }
@@ -625,7 +628,7 @@ func (m *managed) arc(ctx context.Context, with *http.Client, target string) (ma
 	header := resp.Header.Get("WWW-Authenticate")
 	_, keyPath, ok := strings.Cut(header, "=")
 	if !ok {
-		return nil, errors.New("Did not receive a value from WWW-Authenticate header: " + header)
+		return nil, errors.New("Azure Arc gave no key file in its answer: " + header)
 	}
 	keyPath = strings.TrimSpace(keyPath)
 	expected := "/var/opt/azcmagent/tokens"
@@ -633,10 +636,10 @@ func (m *managed) arc(ctx context.Context, with *http.Client, target string) (ma
 		expected = filepath.Join(os.Getenv("ProgramData"), "AzureConnectedMachineAgent", "Tokens")
 	}
 	if filepath.Dir(keyPath) != expected || filepath.Ext(keyPath) != ".key" {
-		return nil, errors.New("Unexpected file path from HTTP response: " + keyPath)
+		return nil, errors.New("Azure Arc named a key file outside its own folder, so it was refused: " + keyPath)
 	}
 	if info, err := os.Stat(keyPath); err != nil || info.Size() > 4096 {
-		return nil, errors.New("Invalid file: " + keyPath)
+		return nil, errors.New("The Azure Arc key file can't be used: " + keyPath)
 	}
 	key, err := os.ReadFile(keyPath)
 	if err != nil {
@@ -647,7 +650,7 @@ func (m *managed) arc(ctx context.Context, with *http.Client, target string) (ma
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("Unexpected response '%v'", data)
+		return nil, fmt.Errorf("Microsoft Entra ID gave an answer without a token: %v", data)
 	}
 	return data, nil
 }
@@ -690,18 +693,18 @@ func (m *managed) imds(ctx context.Context, target string, headers map[string]st
 	case status == http.StatusOK:
 		return parse(data, time.Now().Unix())
 	case status == http.StatusBadRequest:
-		message := "ManagedIdentityCredential authentication unavailable. No identity has been assigned to this resource."
+		message := "No managed identity is assigned to this computer."
 		if m.client != "" {
-			message = "ManagedIdentityCredential authentication unavailable. The requested identity has not been assigned to this resource."
+			message = "The managed identity asked for is not assigned to this computer."
 		}
 		if d := firstNonEmpty(data["error_description"], data["error"]); d != nil {
-			message += fmt.Sprintf(" Error: %v", d)
+			message += fmt.Sprintf(" Azure said: %v", d)
 		}
 		return token{}, &unavailable{message}
 	case status == http.StatusForbidden && strings.Contains(fmt.Sprint(data["error"]), "unreachable"):
-		return token{}, &unavailable{fmt.Sprintf("ManagedIdentityCredential authentication unavailable. The request failed due to a gateway error. %v", data)}
+		return token{}, &unavailable{fmt.Sprintf("No managed identity answered, because a gateway in between failed: %v", data)}
 	}
-	return token{}, fmt.Errorf("Unexpected response '%v'", data)
+	return token{}, fmt.Errorf("Microsoft Entra ID gave an answer without a token: %v", data)
 }
 
 // JSON request with its status and object body
@@ -795,15 +798,15 @@ func (c *azureCLI) token(ctx context.Context, scopes []string) (token, error) {
 	out, stderr, code, err := run(ctx, 10*time.Second, "az", args...)
 	switch {
 	case code == -1 && err != nil, code == 127, strings.HasPrefix(stderr, "'az' is not recognized"):
-		return token{}, &unavailable{"Azure CLI not found on path"}
+		return token{}, &unavailable{"The Azure CLI is not installed, or not on your PATH."}
 	case errors.Is(err, context.DeadlineExceeded):
-		return token{}, &unavailable{"Failed to invoke the Azure CLI"}
+		return token{}, &unavailable{"The Azure CLI took too long to answer."}
 	case err != nil:
-		return token{}, &unavailable{"Failed to execute 'az'"}
+		return token{}, &unavailable{"The Azure CLI could not be run."}
 	case code != 0 && (strings.Contains(stderr, "az login") || strings.Contains(stderr, "az account set")):
-		return token{}, &unavailable{"Please run 'az login' to set up an account"}
+		return token{}, &unavailable{"The Azure CLI is not signed in. Run `az login`."}
 	case code != 0:
-		return token{}, toolFailure(c.inChain, cmp.Or(sanitize(stderr), "Failed to invoke Azure CLI"))
+		return token{}, toolFailure(c.inChain, cmp.Or(sanitize(stderr), "The Azure CLI failed."))
 	}
 	var data map[string]any
 	if json.Unmarshal([]byte(out), &data) == nil {
@@ -823,8 +826,8 @@ func (c *azureCLI) token(ctx context.Context, scopes []string) (token, error) {
 			}
 		}
 	}
-	return token{}, toolFailure(c.inChain, fmt.Sprintf("Unexpected output from Azure CLI: '%s'. \nTo mitigate this issue, please refer to the troubleshooting "+
-		"guidelines here at https://aka.ms/azsdk/python/identity/azclicredential/troubleshoot.", sanitize(out)))
+	return token{}, toolFailure(c.inChain, fmt.Sprintf("The Azure CLI gave no token: %s\nMicrosoft's guide to fixing this: "+
+		"https://aka.ms/azsdk/python/identity/azclicredential/troubleshoot", sanitize(out)))
 }
 
 // Token of the Azure Developer CLI's sign-in, from azd auth token
@@ -837,7 +840,7 @@ func (c *azd) name() string { return "AzureDeveloperCliCredential" }
 
 func (c *azd) token(ctx context.Context, scopes []string) (token, error) {
 	if len(scopes) == 0 {
-		return token{}, errors.New("Missing scope in request. \nTo mitigate this issue, please refer to the troubleshooting guidelines here at https://aka.ms/azsdk/python/identity/azdevclicredential/troubleshoot.")
+		return token{}, errors.New("The request for a token named no scope.\nMicrosoft's guide to fixing this: https://aka.ms/azsdk/python/identity/azdevclicredential/troubleshoot")
 	}
 	args := []string{"auth", "token", "--output", "json", "--no-prompt"}
 	for _, s := range scopes {
@@ -851,13 +854,13 @@ func (c *azd) token(ctx context.Context, scopes []string) (token, error) {
 	case code == -1 && err != nil, code == 127, strings.HasPrefix(stderr, "'azd' is not recognized"):
 		return token{}, &unavailable{azdNotFound}
 	case errors.Is(err, context.DeadlineExceeded):
-		return token{}, &unavailable{"Failed to invoke the Azure Developer CLI"}
+		return token{}, &unavailable{"The Azure Developer CLI took too long to answer."}
 	case err != nil:
-		return token{}, &unavailable{"Failed to execute 'azd'"}
+		return token{}, &unavailable{"The Azure Developer CLI could not be run."}
 	case code != 0 && (strings.Contains(stderr, "azd auth login") || strings.Contains(stderr, "not logged in")):
-		return token{}, &unavailable{"Please run 'azd auth login' from a command prompt to authenticate before using this credential."}
+		return token{}, &unavailable{"The Azure Developer CLI is not signed in. Run `azd auth login`."}
 	case code != 0:
-		return token{}, toolFailure(c.inChain, cmp.Or(sanitize(stderr), "Failed to invoke Azure Developer CLI"))
+		return token{}, toolFailure(c.inChain, cmp.Or(sanitize(stderr), "The Azure Developer CLI failed."))
 	}
 	var data map[string]any
 	if json.Unmarshal([]byte(out), &data) == nil {
@@ -868,8 +871,8 @@ func (c *azd) token(ctx context.Context, scopes []string) (token, error) {
 			}
 		}
 	}
-	return token{}, toolFailure(c.inChain, fmt.Sprintf("Unexpected output from Azure Developer CLI: '%s'. \nTo mitigate this issue, please refer to the "+
-		"troubleshooting guidelines here at https://aka.ms/azsdk/python/identity/azdevclicredential/troubleshoot.", sanitize(out)))
+	return token{}, toolFailure(c.inChain, fmt.Sprintf("The Azure Developer CLI gave no token: %s\nMicrosoft's guide to fixing this: "+
+		"https://aka.ms/azsdk/python/identity/azdevclicredential/troubleshoot", sanitize(out)))
 }
 
 const powershellScript = `$ErrorActionPreference = 'Stop'
@@ -918,18 +921,18 @@ func (c *powershell) token(ctx context.Context, scopes []string) (token, error) 
 		shell = "powershell"
 	}
 	out, stderr, code, err := run(ctx, 10*time.Second, shell, "-NoProfile", "-NonInteractive", "-EncodedCommand", base64.StdEncoding.EncodeToString(encoded))
-	failure := "Failed to invoke PowerShell.\nTo mitigate this issue, please refer to the troubleshooting guidelines here at https://aka.ms/azsdk/python/identity/powershellcredential/troubleshoot."
+	failure := "PowerShell could not be run.\nMicrosoft's guide to fixing this: https://aka.ms/azsdk/python/identity/powershellcredential/troubleshoot"
 	switch {
 	case code == -1 && err != nil, code == 127, strings.HasPrefix(stderr, "'pwsh' is not recognized"):
-		return token{}, &unavailable{"PowerShell is not installed"}
+		return token{}, &unavailable{"PowerShell is not installed."}
 	case err != nil:
 		return token{}, toolFailure(c.inChain, failure)
 	case strings.Contains(out, "NO_AZ_ACCOUNT_MODULE"):
-		return token{}, &unavailable{"Az.Account module >= 2.2.0 is not installed"}
+		return token{}, &unavailable{"Azure PowerShell needs the Az.Account module, version 2.2.0 or later, which is not installed."}
 	case code != 0 && strings.Contains(stderr, "Run Connect-AzAccount to login"):
-		return token{}, &unavailable{`Please run "Connect-AzAccount" to set up account`}
+		return token{}, &unavailable{"Azure PowerShell is not signed in. Run `Connect-AzAccount`."}
 	case code != 0 && strings.Contains(stderr, "AuthorizationManager check failed"):
-		return token{}, &unavailable{"Execution policy prevented invoking Azure PowerShell"}
+		return token{}, &unavailable{"PowerShell's execution policy stopped Azure PowerShell from running."}
 	case code != 0:
 		return token{}, toolFailure(c.inChain, failure)
 	}
@@ -940,7 +943,7 @@ func (c *powershell) token(ctx context.Context, scopes []string) (token, error) 
 			}
 		}
 	}
-	return token{}, toolFailure(c.inChain, fmt.Sprintf("Unexpected output from Get-AzAccessToken: '%s'", out))
+	return token{}, toolFailure(c.inChain, fmt.Sprintf("Azure PowerShell gave no token: %s", out))
 }
 
 // Sign-in Microsoft's developer tools keep in the shared MSAL token cache
@@ -964,7 +967,7 @@ func sharedCache() string {
 
 func (c *shared) token(ctx context.Context, scopes []string) (token, error) {
 	none := func(message string) (token, error) {
-		return token{}, &unavailable{"SharedTokenCacheCredential authentication unavailable. " + message}
+		return token{}, &unavailable{message}
 	}
 	raw, _ := os.ReadFile(sharedCache())
 	var store map[string]map[string]map[string]any
@@ -986,11 +989,11 @@ func (c *shared) token(ctx context.Context, scopes []string) (token, error) {
 	}
 	switch {
 	case len(accounts) == 0 && len(store["Account"]) == 0:
-		return none("No accounts were found in the cache.")
+		return none("The shared Azure sign-in cache holds no accounts.")
 	case len(accounts) == 0:
-		return none("No account matching the specified username and/or tenant was found in the cache.")
+		return none("The shared Azure sign-in cache holds no account with that user name and tenant.")
 	case len(accounts) > 1:
-		return none("Multiple accounts were found in the cache. Use username and tenant id to disambiguate.")
+		return none("The shared Azure sign-in cache holds several accounts. Set AZURE_USERNAME and AZURE_TENANT_ID to pick one.")
 	}
 	account := accounts[0]
 	home, realm := fmt.Sprint(account["home_account_id"]), fmt.Sprint(account["realm"])
@@ -1016,7 +1019,7 @@ func (c *shared) token(ctx context.Context, scopes []string) (token, error) {
 				return fresh, nil
 			}
 		}
-		return token{}, fmt.Errorf("Token acquisition failed for user '%v'. To fix, re-authenticate through developer tooling supporting Azure single sign on", account["username"])
+		return token{}, fmt.Errorf("No token could be had for %v. Sign in again with a tool that uses Azure single sign-on, such as `az login`.", account["username"])
 	})
 }
 
@@ -1047,12 +1050,12 @@ func (c *browser) token(ctx context.Context, scopes []string) (token, error) {
 			"code_challenge_method": {"S256"}}.Encode()
 		if c.open == nil || c.open(link) != nil {
 			callback.Close()
-			return token{}, errors.New("Failed to open a browser")
+			return token{}, errors.New("A browser could not be opened to sign in to Azure.")
 		}
 		code, err := callback.Wait(ctx, 300*time.Second, state, "azure-foundry")
 		if err != nil {
 			if failure, ok := errors.AsType[*credentials.AuthError](err); ok && failure.Code == "callback_timeout" {
-				return token{}, errors.New("Timed out after waiting 300 seconds for the user to authenticate")
+				return token{}, errors.New("The Azure sign-in in the browser did not finish within 5 minutes.")
 			}
 			return token{}, err
 		}
@@ -1104,7 +1107,7 @@ func included(env environment, browser bool) (map[string]bool, error) {
 		}
 		if chosen == "" {
 			sort.Strings(valid)
-			return nil, fmt.Errorf("Invalid value for AZURE_TOKEN_CREDENTIALS: %s. Valid values are: %s.", picked, strings.Join(append([]string{"dev", "prod"}, valid...), ", "))
+			return nil, fmt.Errorf("AZURE_TOKEN_CREDENTIALS can't be %s. Set it to one of %s.", picked, strings.Join(append([]string{"dev", "prod"}, valid...), ", "))
 		}
 		for k := range include {
 			include[k] = k == chosen
@@ -1208,14 +1211,14 @@ func (c *chain) token(ctx context.Context, scopes []string) (token, error) {
 			c.mu.Unlock()
 			return t, nil
 		}
-		fmt.Fprintf(&attempts, "\n\t%s: %s", member.name(), err.Error())
+		fmt.Fprintf(&attempts, "\n  %s: %s", SignedInBy(member.name()), err.Error())
 		if _, ok := errors.AsType[*unavailable](err); !ok {
 			break
 		}
 	}
-	message := "DefaultAzureCredential failed to retrieve a token from the included credentials."
+	message := "No Azure sign-in on this computer gave a token."
 	if attempts.Len() > 0 {
-		message += "\nAttempted credentials:" + attempts.String()
+		message += "\nWhat each one said:" + attempts.String()
 	}
 	return token{}, errors.New(message + troubleshoot)
 }
@@ -1255,21 +1258,32 @@ func own(env environment) (entra, error) {
 	case client != "" && tenant == "":
 		return managedIdentity(env, client, false, false), nil
 	}
-	return nil, errors.New("The account's service principal needs a tenant ID with a client ID, and a client secret or a certificate; or a client ID " +
-		"alone for a user-assigned managed identity.")
+	return nil, errors.New("The account's service principal needs a tenant ID, a client ID, and a client secret or a certificate. A client ID " +
+		"alone stands for a user-assigned managed identity.")
 }
 
 // Variables of the profile that pick a credential of the chain, as labels
 func sources(env environment) []string {
 	var out []string
 	if strings.TrimSpace(env.get("AZURE_FEDERATED_TOKEN_FILE")) != "" {
-		out = append(out, "WorkloadIdentityCredential (AZURE_FEDERATED_TOKEN_FILE)")
+		out = append(out, "a workload identity from AZURE_FEDERATED_TOKEN_FILE")
 	}
 	if env.get("AZURE_CLIENT_ID") != "" && env.get("AZURE_CLIENT_SECRET") != "" && env.get("AZURE_TENANT_ID") != "" {
-		out = append(out, "EnvironmentCredential (client secret)")
+		out = append(out, "a client secret from AZURE_ variables")
 	}
 	if strings.TrimSpace(env.get("IDENTITY_ENDPOINT")) != "" || strings.TrimSpace(env.get("MSI_ENDPOINT")) != "" {
-		out = append(out, "ManagedIdentityCredential (IDENTITY_ENDPOINT)")
+		out = append(out, "a managed identity")
 	}
 	return out
+}
+
+// Words for the Azure sign-in of the name, as a person reads it
+func SignedInBy(name string) string {
+	words := map[string]string{"VisualStudioCodeCredential": "the VS Code sign-in", "BrokerCredential": "the Windows sign-in broker",
+		"InteractiveBrowserBrokerCredential": "the sign-in broker in a browser", "ClientSecretCredential": "a client secret",
+		"CertificateCredential": "a certificate", "WorkloadIdentityCredential": "a workload identity", "UsernamePasswordCredential": "a user name and password",
+		"EnvironmentCredential": "the AZURE_ variables", "ManagedIdentityCredential": "a managed identity", "AzureCliCredential": "az login",
+		"AzureDeveloperCliCredential": "azd auth login", "AzurePowerShellCredential": "Azure PowerShell", "SharedTokenCacheCredential": "the shared sign-in cache",
+		"InteractiveBrowserCredential": "a browser sign-in", "DefaultAzureCredential": "the usual Azure sign-ins"}
+	return cmp.Or(words[name], name)
 }

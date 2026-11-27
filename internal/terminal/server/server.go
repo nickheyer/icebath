@@ -59,7 +59,7 @@ func (s *service) Kill(ctx context.Context, request *terminalv1.KillRequest) (*t
 	if session != "" {
 		job := s.terminal.Jobs.Get(nil, session, id)
 		if job == nil || job.Session != session {
-			return &terminalv1.KillResponse{Status: "not_found", Error: "No process with ID " + id}, nil
+			return &terminalv1.KillResponse{Status: "not_found", Error: "There is no background process with the ID " + id + "."}, nil
 		}
 		id = job.ID
 	}

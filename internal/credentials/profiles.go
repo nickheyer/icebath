@@ -80,12 +80,12 @@ func (p Profiles) Made(making profile.Making) ([]string, error) {
 		if err := target.Set(providerconfig.Key, maps.Clone(held)); err != nil {
 			return nil, err
 		}
-		lines = append(lines, fmt.Sprintf("Copied logins from '%s'.", making.Launch))
+		lines = append(lines, fmt.Sprintf("Copied the accounts of the profile %s.", making.Launch))
 	}
 	dropped, err := p.dropRotating(target)
 	if len(dropped) > 0 {
-		lines = append(lines, fmt.Sprintf("⚠ Single-use logins not carried over (%s): each renews once, so sign them in on %s from /providers.",
-			strings.Join(dropped, ", "), making.Profile))
+		lines = append(lines, fmt.Sprintf("⚠ These accounts were not copied, because each can renew only once: %s. Sign them in on the profile %s "+
+			"from /providers.", strings.Join(dropped, ", "), making.Profile))
 	}
 	return lines, err
 }

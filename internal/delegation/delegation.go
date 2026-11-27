@@ -166,13 +166,13 @@ func (r *Registry) Status(cfg *config.Config, name string) (Backend, string) {
 	case ok && backend.available(cfg):
 		return backend, ""
 	case !ok && name == Default:
-		return backend, "No default delegation strategy is available: the default delegation backend is not part of this build."
+		return backend, "Subagents can't run, because this build of icebath leaves out the usual way to run them."
 	case !ok:
-		return backend, fmt.Sprintf("Delegation backend '%s' is not installed: no enabled plugin provides it. Install or enable the plugin that "+
-			"does, or switch back to the default backend (`/delegation default`, or `icebath config set delegation.backend default`).", name)
+		return backend, fmt.Sprintf("No plugin that is turned on runs subagents with %s. Install or turn on the plugin that does, or go back to "+
+			"the usual way with `/delegation default` or `icebath config set delegation.backend default`.", name)
 	}
-	return backend, fmt.Sprintf("Delegation backend '%s' is unavailable here (its plugin reports it cannot run). Fix its setup, or switch back "+
-		"to the default backend: `/delegation default`, or `icebath config set delegation.backend default`.", name)
+	return backend, fmt.Sprintf("Subagents can't run with %s here, because its plugin says it can't. Fix its setup, or go back to the usual "+
+		"way with `/delegation default` or `icebath config set delegation.backend default`.", name)
 }
 
 // Backend the settings select, a refusal naming it and the fix when it can't run
@@ -217,7 +217,13 @@ func New(cfg *config.Config) *Delegation {
 	delegationconfig.Register(cfg, func() []config.Option {
 		var options []config.Option
 		for _, info := range d.List(cfg) {
-			options = append(options, config.Option{Value: info.Name, Title: info.Title, About: cmp.Or(info.Summary, info.Reason)})
+			about := info.Summary
+			if _, installed := d.Backend(info.Name); !installed {
+				about = "Not installed"
+			} else if !info.Available {
+				about = "Can't run here"
+			}
+			options = append(options, config.Option{Value: info.Name, Title: info.Title, About: about})
 		}
 		return options
 	})

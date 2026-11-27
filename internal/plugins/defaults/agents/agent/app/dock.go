@@ -19,7 +19,7 @@ const (
 )
 
 var dockKeys = []keys.Action{
-	{ID: "agent.dock", Context: keys.Session, Label: "dock", Doc: "fold the dock of background processes above the prompt to a line, or unfold it", Default: []string{"f7"}},
+	{ID: "agent.dock", Context: keys.Session, Label: "fold", Doc: "Fold the list of background processes to one line, or unfold it", Default: []string{"f7"}},
 }
 
 // Reads the docks of the session while the chat watches it: often while a reply runs or something docked counts by the second, rarely

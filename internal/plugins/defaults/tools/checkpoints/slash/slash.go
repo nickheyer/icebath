@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/internal/sessions"
 	"github.com/nickheyer/icebath/internal/slash"
 	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type commands struct {
@@ -27,7 +28,7 @@ func Register(registry *slash.Registry, cfg *config.Config, stores *sessions.Reg
 const usage = "[list | diff [N] | <N> [file] [--all]]"
 
 func (c commands) Commands() []slash.Command {
-	return []slash.Command{{Name: "rollback", Usage: usage, Help: "List or restore filesystem checkpoints (restores keep your hand-edits; --all overrides)",
+	return []slash.Command{{Name: "rollback", Usage: usage, Help: "Restore files from a checkpoint",
 		Run: c.rollback}}
 }
 
@@ -73,7 +74,7 @@ func (c commands) rollback(ctx context.Context, call *slash.Call) (string, error
 	}
 	entries := scope.List(scope.Directory)
 	if len(entries) == 0 {
-		return "No checkpoints found for " + scope.Directory, nil
+		return none(scope.Directory), nil
 	}
 	sha, err := scope.Resolve(scope.Directory, words[0])
 	if err != nil {
@@ -97,7 +98,7 @@ func (c commands) diff(scope *checkpoints.Scope, reference string) (string, erro
 		return "", err
 	}
 	if diff.Empty && sha == "" {
-		return "No checkpoints found for " + scope.Directory, nil
+		return none(scope.Directory), nil
 	}
 	if diff.Empty {
 		return "No changes since checkpoint " + sha[:min(8, len(sha))] + ".", nil
@@ -116,35 +117,40 @@ func (c commands) diff(scope *checkpoints.Scope, reference string) (string, erro
 			body, cut = string(runes[:3000]), true
 		}
 		if cut {
-			body += fmt.Sprintf("\n... (truncated — %d lines total; use /rollback diff in the terminal app for all of it)", len(lines))
+			body += "\n…"
+			parts = append(parts, "```diff\n"+body+"\n```", "The diff is cut here. It has "+strs.Count(len(lines), "line")+
+				" in all, and /rollback diff in icebath in your terminal shows all of it.")
+			return strings.Join(parts, "\n\n"), nil
 		}
 		parts = append(parts, "```diff\n"+body+"\n```")
 	}
 	return strings.Join(parts, "\n\n"), nil
 }
 
+// What /rollback says when the folder has no checkpoint yet
+func none(directory string) string {
+	return "There are no checkpoints of " + directory + " yet. One is saved each time the agent is about to change files there."
+}
+
 // Numbered listing of checkpoints with how to use them
 func list(entries []checkpoints.Entry, directory string) string {
 	if len(entries) == 0 {
-		return "No checkpoints found for " + directory
+		return none(directory)
 	}
-	lines := []string{"📸 Checkpoints for " + directory + ":\n"}
+	lines := []string{"Checkpoints of " + directory + ":\n"}
 	for i, entry := range entries {
 		when := entry.When.Local().Format("2006-01-02 15:04")
 		stat := ""
 		if entry.Files != 0 {
-			plural := "s"
-			if entry.Files == 1 {
-				plural = ""
-			}
-			stat = fmt.Sprintf("  (%d file%s, +%d/-%d)", entry.Files, plural, entry.Insertions, entry.Deletions)
+			stat = "  " + strs.Count(entry.Files, "file") + " changed, " + strs.Count(entry.Insertions, "line") + " added, " +
+				strs.Number(float64(entry.Deletions)) + " removed"
 		}
 		lines = append(lines, fmt.Sprintf("  %d. %s  %s  %s%s", i+1, entry.Short, when, entry.Reason, stat))
 	}
 	lines = append(lines,
-		"\n  /rollback <N>             restore to checkpoint N",
-		"  /rollback diff <N>        preview changes since checkpoint N",
-		"  /rollback diff            preview everything changed since the oldest checkpoint",
-		"  /rollback <N> <file>      restore a single file from checkpoint N")
+		"\n  /rollback <N>             Restore your files to checkpoint N",
+		"  /rollback diff <N>        Show what changed since checkpoint N",
+		"  /rollback diff            Show everything that changed since the oldest checkpoint",
+		"  /rollback <N> <file>      Restore one file from checkpoint N")
 	return strings.Join(lines, "\n")
 }

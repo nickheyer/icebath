@@ -6,9 +6,9 @@ import (
 )
 
 func Register(cfg *config.Config) {
-	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.Wake, Title: "Porcupine wake word", About: "Picovoice Porcupine, which hears its built in " +
-		"keywords or a keyword file; needs PORCUPINE_ACCESS_KEY", Settings: []config.Setting{
-		{Key: Keyword, Title: "Porcupine keyword", About: "Built in keyword Porcupine listens for, such as jarvis or computer, or the path of a .ppn keyword file",
-			Default: DefaultKeyword},
-	}}})
+	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.Wake, Title: "Porcupine", About: "Hears a few fixed keywords, with a free Picovoice key",
+		Order: 30, Settings: []config.Setting{
+			{Key: Keyword, Title: "Keyword", About: "The word Porcupine listens for.",
+				Help: "A built-in keyword such as jarvis or computer, or the path of a .ppn keyword file.", Default: DefaultKeyword},
+		}}})
 }

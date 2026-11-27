@@ -736,7 +736,7 @@ func Variables(fm Frontmatter) []Variable {
 		if name == "" || !variableName.MatchString(name) || slices.ContainsFunc(out, func(v Variable) bool { return v.Name == name }) {
 			continue
 		}
-		v := Variable{Name: name, Prompt: "Enter value for " + name, For: clean(entry["required_for"]), Optional: config.Truthy(entry["optional"])}
+		v := Variable{Name: name, Prompt: asking(name), For: clean(entry["required_for"]), Optional: config.Truthy(entry["optional"])}
 		if prompt := firstSet(entry["prompt"]); prompt != nil {
 			v.Prompt = strings.TrimSpace(text(prompt))
 		}
@@ -748,6 +748,20 @@ func Variables(fm Frontmatter) []Variable {
 		out = append(out, v)
 	}
 	return out
+}
+
+// What a variable is asked for with when its skill wrote no prompt
+func asking(name string) string {
+	return "Enter value for " + name
+}
+
+// Text a skill's author wrote, as a sentence of the settings screen: the full stop it lacks added
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "?") || strings.HasSuffix(text, "!") {
+		return text
+	}
+	return text + "."
 }
 
 // Key of the profile setting that keeps a variable's value
@@ -763,7 +777,8 @@ func envValue(cfg *config.Config, name string) string {
 	return cfg.GetString(variableKey(name))
 }
 
-// Settings the user keeps the values of skills' variables in, one secret each; the process's own variable of the name wins
+// Settings the user keeps the values of skills' variables in, one secret each, named for the skill that asks; the process's own variable
+// of the name wins. The about is what the skill's author asks with, the help where to get the value
 func (s *Scope) VariableSettings() []config.Setting {
 	var out []config.Setting
 	for _, e := range s.declaring() {
@@ -772,11 +787,11 @@ func (s *Scope) VariableSettings() []config.Setting {
 			if slices.ContainsFunc(out, func(o config.Setting) bool { return o.Key == key }) {
 				continue
 			}
-			about := v.Prompt + " (skill " + e.Name + ")"
-			if v.Help != "" {
-				about += ". " + v.Help
+			about := sentence(v.Prompt)
+			if v.Prompt == asking(v.Name) {
+				about = "A secret that one of your skills needs."
 			}
-			out = append(out, config.Setting{Key: key, Title: v.Name, About: about, Default: "", Secret: true})
+			out = append(out, config.Setting{Key: key, Title: v.Name, About: about, Help: v.Help, Skill: e.Name, Default: "", Secret: true})
 		}
 	}
 	return out

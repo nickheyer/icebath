@@ -22,7 +22,7 @@ const ptyEnter = "\r"
 // Pauses after each termination signal and after closing the master
 const ptyPause = 100 * time.Millisecond
 
-var errNotTerminated = errors.New("Could not terminate the child.")
+var errNotTerminated = errors.New("The process could not be stopped.")
 
 // Program on a pseudo terminal, for background jobs driven through their prompts
 type ptyProc struct {

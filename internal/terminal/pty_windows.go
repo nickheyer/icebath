@@ -19,7 +19,7 @@ import (
 // Enter as a program on a Windows pseudo console reads it
 const ptyEnter = "\r\n"
 
-var errNotTerminated = errors.New("Could not terminate the child.")
+var errNotTerminated = errors.New("The process could not be stopped.")
 
 // Program on a pseudo console, for background jobs driven through their prompts
 type ptyProc struct {

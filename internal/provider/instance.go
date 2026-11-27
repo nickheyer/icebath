@@ -144,7 +144,7 @@ func (r *Registry) Options(cfg *config.Config) func() []config.Option {
 func (r *Registry) Add(cfg *config.Config, kind, id, title string) (Instance, error) {
 	spec, ok := r.Spec(kind)
 	if !ok || spec.Hidden {
-		return Instance{}, fmt.Errorf("No kind of provider named %s.", kind)
+		return Instance{}, fmt.Errorf("There is no kind of provider named %s. Run `icebath providers` to see the kinds.", kind)
 	}
 	id = strings.ToLower(strings.TrimSpace(id))
 	switch {
@@ -210,7 +210,7 @@ func (r *Registry) AddAccount(cfg *config.Config, id, name, title string) (strin
 func (r *Registry) RemoveAccount(cfg *config.Config, id, name string) ([]string, error) {
 	instance, ok := r.Instance(cfg, id)
 	if !ok || !slices.Contains(instance.Accounts, name) {
-		return nil, fmt.Errorf("No account named %s.", name)
+		return nil, noAccount(instance, id, name)
 	}
 	linked := strings.TrimSpace(instance.AccountFields(name).GetString(providerconfig.KeyEnv))
 	if err := instance.AccountFields(name).Remove(); err != nil {
@@ -261,7 +261,7 @@ func (r *Registry) Ignore(cfg *config.Config, id, source string) ([]string, erro
 	case !ok:
 		return nil, fmt.Errorf("The profile has no provider named %s.", id)
 	case source == "":
-		return nil, fmt.Errorf("Name the variable or program %s should leave out.", instance.Label())
+		return nil, fmt.Errorf("Name the environment variable or program that %s should not take its key from.", instance.Label())
 	}
 	if ignored := instance.Settings.GetStringSlice(providerconfig.Ignored); !slices.Contains(ignored, source) {
 		if err := instance.Settings.Set(providerconfig.Ignored, append(slices.Clone(ignored), source)); err != nil {
@@ -292,7 +292,7 @@ func (r *Registry) UseAccount(cfg *config.Config, id, name string) error {
 			return fmt.Errorf("No account of %s is in rotation. Mark accounts with `icebath auth rotation %s on` first.", instance.Label(), instance.ID)
 		}
 	case !slices.Contains(instance.Accounts, name):
-		return fmt.Errorf("No account named %s.", name)
+		return noAccount(instance, id, name)
 	}
 	return instance.Settings.Set(providerconfig.Account, name)
 }
@@ -305,7 +305,7 @@ func (r *Registry) RenameAccount(cfg *config.Config, id, name, to string) error 
 	case !ok:
 		return fmt.Errorf("The profile has no provider named %s.", id)
 	case !slices.Contains(instance.Accounts, name):
-		return fmt.Errorf("No account named %s.", name)
+		return noAccount(instance, id, name)
 	case !config.Named(to):
 		return fmt.Errorf("%q can't name an account. Use lower case letters, digits, dashes or underscores.", to)
 	case to == name:
@@ -330,7 +330,7 @@ func (r *Registry) RenameAccount(cfg *config.Config, id, name, to string) error 
 func (r *Registry) MoveAccount(cfg *config.Config, id, name string, place int) (int, error) {
 	instance, ok := r.Instance(cfg, id)
 	if !ok || !slices.Contains(instance.Accounts, name) {
-		return 0, fmt.Errorf("No account named %s.", name)
+		return 0, noAccount(instance, id, name)
 	}
 	others := slices.DeleteFunc(slices.Clone(instance.Accounts), func(other string) bool { return other == name })
 	place = min(max(place, 0), len(others))
@@ -371,27 +371,75 @@ type sections struct {
 }
 
 func (s sections) Sections(values *config.Config) []config.Section {
-	var out []config.Section
+	// One provider of the profile with the kind it is of and the name it is shown by
+	type held struct {
+		id, kind, label string
+		spec            Spec
+	}
 	all := providers(values)
+	var kept []held
 	for _, id := range all.Names() {
 		settings := all.View(id)
 		kind, _ := settings.Stored(providerconfig.Type).(string)
 		spec, _ := s.registry.exact(kind)
-		title, _ := settings.Stored(providerconfig.Title).(string)
-		label := cmp.Or(title, spec.Label(), id)
+		own, _ := settings.Stored(providerconfig.Title).(string)
+		kept = append(kept, held{id: id, kind: kind, label: shown(spec, id, own), spec: spec})
+	}
+	slices.SortStableFunc(kept, func(a, b held) int {
+		return cmp.Or(strings.Compare(strings.ToLower(a.label), strings.ToLower(b.label)), strings.Compare(a.id, b.id))
+	})
+	var out []config.Section
+	for place, p := range kept {
+		settings := all.View(p.id)
 		accounts := settings.View(providerconfig.Accounts)
 		names := accounts.Names()
+		instance := providerconfig.Instance(p.kind, shown(p.spec, p.id, ""), p.spec.BaseURL, p.spec.BaseURLEnv, p.spec.DefaultModel, names)
 		out = append(out,
-			config.Section{Key: settings.Prefix(), Parent: providerconfig.Key, Title: label, About: spec.Description,
-				Settings: providerconfig.Under(settings.Prefix(), slices.Concat(providerconfig.Instance(kind, cmp.Or(spec.Label(), id), spec.BaseURL, spec.BaseURLEnv, spec.DefaultModel, names), providerconfig.Rotations(), spec.Settings))},
-			config.Section{Key: accounts.Prefix(), Parent: settings.Prefix(), Title: "Accounts", About: "Sign-ins and keys of " + label},
+			config.Section{Key: settings.Prefix(), Parent: providerconfig.Key, Title: p.label, About: "The models, accounts and limits of this provider",
+				Order:    (place + 1) * 10,
+				Settings: providerconfig.Under(settings.Prefix(), providerconfig.Arranged(slices.Concat(instance, providerconfig.Rotations(), p.spec.Settings)))},
+			config.Section{Key: accounts.Prefix(), Parent: settings.Prefix(), Title: "Accounts", About: "Your sign-ins and API keys for this provider", Order: 10},
 		)
-		for _, name := range names {
+		for place, name := range tried(accounts, names) {
 			fields := accounts.View(name)
 			title, _ := fields.Stored(providerconfig.Title).(string)
-			out = append(out, config.Section{Key: fields.Prefix(), Parent: accounts.Prefix(), Title: cmp.Or(title, name),
-				Settings: providerconfig.Under(fields.Prefix(), slices.Concat([]config.Setting{providerconfig.AccountTitle(name)}, spec.AccountFields(), providerconfig.Kept(spec.Keyed())))})
+			out = append(out, config.Section{Key: fields.Prefix(), Parent: accounts.Prefix(), Title: cmp.Or(title, name), About: "What this account signs in with",
+				Order: (place + 1) * 10,
+				Settings: providerconfig.Under(fields.Prefix(), providerconfig.Arranged(slices.Concat([]config.Setting{providerconfig.AccountTitle(name)},
+					p.spec.AccountFields(), providerconfig.Kept(p.spec.Keyed()))))})
 		}
 	}
 	return out
+}
+
+// Name a provider is shown by: the one the person gave it, else the name of its kind followed by its own name in the profile when that
+// differs from the kind's, so two of one kind tell apart
+func shown(kind Spec, id, own string) string {
+	if own = strings.TrimSpace(own); own != "" {
+		return own
+	}
+	switch label := kind.Label(); {
+	case label == "":
+		return id
+	case id != kind.Name:
+		return label + " (" + id + ")"
+	default:
+		return label
+	}
+}
+
+// Names of the accounts in the order they are tried, read from what is kept alone: by their place, then by name
+func tried(accounts config.View, names []string) []string {
+	place := func(name string) int {
+		n, _ := config.Whole(accounts.View(name).Stored(providerconfig.Priority))
+		return n
+	}
+	sorted := slices.Clone(names)
+	slices.SortStableFunc(sorted, func(a, b string) int { return cmp.Compare(place(a), place(b)) })
+	return sorted
+}
+
+// Refusal of an account the provider does not have, named by the provider's title when the profile has it
+func noAccount(instance Instance, id, name string) error {
+	return fmt.Errorf("%s has no account named %s.", cmp.Or(instance.Label(), id), name)
 }

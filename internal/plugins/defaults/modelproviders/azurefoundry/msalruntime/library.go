@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // source is one archive Microsoft publishes with the native library inside it, both pinned by sha256
@@ -71,7 +72,7 @@ func pickSource() (source, error) {
 	platform := runtime.GOOS + "/" + runtime.GOARCH
 	list := sources[platform]
 	if len(list) == 0 {
-		return source{}, fmt.Errorf("Microsoft publishes no msalruntime %s library for %s", Version, platform)
+		return source{}, fmt.Errorf("Microsoft offers no msalruntime %s library for %s.", Version, platform)
 	}
 	if runtime.GOOS != "linux" {
 		return list[0], nil
@@ -84,9 +85,9 @@ func pickSource() (source, error) {
 	}
 	oldest := list[len(list)-1].glibc
 	if !ok {
-		return source{}, fmt.Errorf("the msalruntime %s library needs the GNU C library %d.%d or newer, and this system has none", Version, oldest[0], oldest[1])
+		return source{}, fmt.Errorf("The msalruntime %s library needs the GNU C library %d.%d or newer, and this computer has none.", Version, oldest[0], oldest[1])
 	}
-	return source{}, fmt.Errorf("the msalruntime %s library needs the GNU C library %d.%d or newer, this system has %d.%d", Version, oldest[0], oldest[1], major, minor)
+	return source{}, fmt.Errorf("The msalruntime %s library needs the GNU C library %d.%d or newer, and this computer has %d.%d.", Version, oldest[0], oldest[1], major, minor)
 }
 
 // The archive bytes at a URL, refused when they exceed the size limit or miss the pinned sha256
@@ -101,17 +102,17 @@ func download(ctx context.Context, src source) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s answered %s", src.url, resp.Status)
+		return nil, fmt.Errorf("%s answered with %s.", src.url, resp.Status)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, archiveLimit+1))
 	if err != nil {
 		return nil, err
 	}
 	if len(data) > archiveLimit {
-		return nil, fmt.Errorf("%s is larger than %d bytes", src.url, archiveLimit)
+		return nil, fmt.Errorf("%s is larger than %s, so it was not downloaded.", src.url, strs.Size(float64(archiveLimit)))
 	}
 	if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != src.sha256 {
-		return nil, fmt.Errorf("%s has sha256 %s, the pinned archive has %s", src.url, hex.EncodeToString(sum[:]), src.sha256)
+		return nil, fmt.Errorf("%s is not the file icebath expects, so it was not used. Its SHA-256 is %s, not %s.", src.url, hex.EncodeToString(sum[:]), src.sha256)
 	}
 	return data, nil
 }
@@ -124,7 +125,7 @@ func extract(archive []byte, src source, path string) error {
 	}
 	member, err := zr.Open(src.member)
 	if err != nil {
-		return fmt.Errorf("the archive holds no %s: %w", src.member, err)
+		return fmt.Errorf("The downloaded archive holds no %s: %w", src.member, err)
 	}
 	defer member.Close()
 	data, err := io.ReadAll(member)
@@ -133,7 +134,7 @@ func extract(archive []byte, src source, path string) error {
 	}
 	sum := sha256.Sum256(data)
 	if text := hex.EncodeToString(sum[:]); text != src.memberSHA256 {
-		return fmt.Errorf("%s in the archive has sha256 %s, the pinned library has %s", src.member, text, src.memberSHA256)
+		return fmt.Errorf("%s in the archive is not the library icebath expects, so it was not used. Its SHA-256 is %s, not %s.", src.member, text, src.memberSHA256)
 	}
 	return fsx.Write(path, data, 0o755)
 }
@@ -142,7 +143,7 @@ func extract(archive []byte, src source, path string) error {
 func Ensure(ctx context.Context, home string) (string, error) {
 	path, ok := libraryPath(home)
 	if !ok {
-		return "", fmt.Errorf("Microsoft publishes no msalruntime %s library for %s/%s", Version, runtime.GOOS, runtime.GOARCH)
+		return "", fmt.Errorf("Microsoft offers no msalruntime %s library for %s/%s.", Version, runtime.GOOS, runtime.GOARCH)
 	}
 	src, err := pickSource()
 	if err != nil {
@@ -153,10 +154,10 @@ func Ensure(ctx context.Context, home string) (string, error) {
 	if sum, err := fsx.Digest(path); err != nil || sum != src.memberSHA256 {
 		archive, err := download(ctx, src)
 		if err != nil {
-			return "", fmt.Errorf("the msalruntime library could not be fetched: %w", err)
+			return "", fmt.Errorf("The msalruntime library could not be downloaded: %w", err)
 		}
 		if err := extract(archive, src, path); err != nil {
-			return "", fmt.Errorf("the msalruntime library could not be installed: %w", err)
+			return "", fmt.Errorf("The msalruntime library could not be installed: %w", err)
 		}
 	}
 	return path, nil

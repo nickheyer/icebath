@@ -72,6 +72,8 @@ func (r registrant) Tools() []tools.Def {
 		Name:    Name,
 		Toolset: toolset,
 		Title:   "Tasks",
+		About:   "Keep a to-do list for a task with many steps",
+		Group:   "Planning",
 		Icon:    tools.IconPlan,
 		Schema: tools.Schema(
 			"Track a task list for multi-step work (3+ steps). Use for complex tasks with 3+ steps or when the user provides multiple tasks. "+

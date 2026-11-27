@@ -47,9 +47,10 @@ func (r registrant) Tools() []tools.Def {
 		return generation.Chosen(env.Config, generation.Video) == xaiconfig.Name && r.services.Ready(env.Config)
 	}
 	return []tools.Def{
-		{Name: Edit, Toolset: "video_gen", Title: "Edit video", Icon: tools.IconEdit, Subject: "prompt", Schema: schema("Edit", "editing", "modify", nil),
-			Handler: r.edit, Check: check, Unfocused: true},
-		{Name: Extend, Toolset: "video_gen", Title: "Extend video", Icon: tools.IconEdit, Subject: "prompt",
+		{Name: Edit, Toolset: "video_gen", Title: "Edit video", About: "Change a video that xAI made earlier", Group: "Images and video",
+			Icon: tools.IconEdit, Subject: "prompt", Schema: schema("Edit", "editing", "modify", nil), Handler: r.edit, Check: check, Unfocused: true},
+		{Name: Extend, Toolset: "video_gen", Title: "Extend video", About: "Make a video that xAI made earlier longer", Group: "Images and video",
+			Icon: tools.IconEdit, Subject: "prompt",
 			Schema: schema("Extend", "extension", "continue", map[string]any{
 				"duration": tools.Property("integer", "Desired extension duration in seconds. xAI clamps this to its supported range."),
 			}), Handler: r.extend, Check: check, Unfocused: true},

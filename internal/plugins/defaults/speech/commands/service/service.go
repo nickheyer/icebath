@@ -120,10 +120,22 @@ func declared(cfg *config.Config, section, providers, format string, formats map
 	return out
 }
 
+// Speech programs, a program that names no voice, model or format taking the one tts.voice, tts.model or tts.output_format sets
 func (programs) Voices(cfg *config.Config) []speech.Voice {
+	format := strings.ToLower(strings.TrimSpace(cfg.GetString(speechconfig.OutputFormat)))
+	if !audioFormats[format] {
+		format = "mp3"
+	}
+	voice, model := strings.TrimSpace(cfg.GetString(speechconfig.PluginVoice)), strings.TrimSpace(cfg.GetString(speechconfig.PluginModel))
 	var out []speech.Voice
-	for _, p := range declared(cfg, speechconfig.TTS, speechconfig.TTSCommands, "mp3", audioFormats, 120*time.Second, builtinVoices...) {
-		v := speech.Voice{Name: p.name, Title: p.name, About: "Your speech program: " + p.command, Label: "command TTS provider '" + p.name + "'",
+	for _, p := range declared(cfg, speechconfig.TTS, speechconfig.TTSCommands, format, audioFormats, 120*time.Second, builtinVoices...) {
+		if strings.TrimSpace(p.voice) == "" {
+			p.voice = voice
+		}
+		if strings.TrimSpace(p.model) == "" {
+			p.model = model
+		}
+		v := speech.Voice{Name: p.name, Title: p.name, About: "A speech program of yours, run on this computer", Label: "command TTS provider '" + p.name + "'",
 			Limit: func(*speech.Job) int { return p.limit }, Format: p.format,
 			Synthesize: func(ctx context.Context, job *speech.Job, request speech.Request) (string, error) {
 				return p.synthesize(ctx, job, request)
@@ -152,7 +164,7 @@ func (programs) Voices(cfg *config.Config) []speech.Voice {
 func (programs) Recognizers(cfg *config.Config) []speech.Recognizer {
 	var out []speech.Recognizer
 	for _, p := range declared(cfg, speechconfig.STT, speechconfig.STTCommands, "txt", textFormats, 300*time.Second, builtinRecognizers...) {
-		out = append(out, speech.Recognizer{Name: p.name, Title: p.name, About: "Your speech recognition program: " + p.command, Label: "command: " + p.name,
+		out = append(out, speech.Recognizer{Name: p.name, Title: p.name, About: "A speech to text program of yours, run on this computer", Label: "command: " + p.name,
 			Model:    func(job *speech.Job, model string) string { return strs.Filled(model, p.model) },
 			Language: func(*speech.Job) string { return p.language },
 			Transcribe: func(ctx context.Context, job *speech.Job, path string, hints speech.Hints) speech.Transcript {

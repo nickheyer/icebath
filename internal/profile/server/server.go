@@ -29,7 +29,7 @@ const DescribeTask = "profile_describer"
 type Describer struct{}
 
 func (Describer) Tasks() []auxiliary.Task {
-	return []auxiliary.Task{{Name: DescribeTask, Title: "Profile text", About: "Model that writes what each profile is good at, for routing work to it",
+	return []auxiliary.Task{{Name: DescribeTask, Title: "Profile summaries", About: "The model that writes what each profile is good at", Order: 90,
 		Timeout: 60}}
 }
 
@@ -162,13 +162,13 @@ func (s *service) Describe(ctx context.Context, request *profilev1.DescribeReque
 	name := request.GetName()
 	switch {
 	case request.GetAll() && !request.GetAuto():
-		return nil, connect.NewError(connect.CodeInvalidArgument, "profile describe: --all requires --auto")
+		return nil, connect.NewError(connect.CodeInvalidArgument, "icebath profile describe needs --auto with --all.")
 	case request.GetAll() && (request.GetText() != "" || name != ""):
-		return nil, connect.NewError(connect.CodeInvalidArgument, "profile describe: --all is mutually exclusive with a profile name / --text")
+		return nil, connect.NewError(connect.CodeInvalidArgument, "icebath profile describe takes either --all or a profile name and --text, not both.")
 	case !request.GetAll() && name == "":
-		return nil, connect.NewError(connect.CodeInvalidArgument, "profile describe: profile name is required (or --all --auto)")
+		return nil, connect.NewError(connect.CodeInvalidArgument, "icebath profile describe needs a profile name, or --all with --auto.")
 	case request.GetText() != "" && request.GetAuto():
-		return nil, connect.NewError(connect.CodeInvalidArgument, "profile describe: --text is mutually exclusive with --auto")
+		return nil, connect.NewError(connect.CodeInvalidArgument, "icebath profile describe takes --text or --auto, not both.")
 	}
 	if !request.GetAuto() && request.GetText() == "" {
 		canon, err := profile.Canon(name)
@@ -176,7 +176,7 @@ func (s *service) Describe(ctx context.Context, request *profilev1.DescribeReque
 			return nil, refusal(err)
 		}
 		if !s.profiles.Exists(canon) {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Sprintf("profile '%s' not found", name))
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Sprintf("There is no profile named %s. Run icebath profile list to see your profiles.", canon))
 		}
 		meta := profile.ReadMeta(s.profiles.Dir(canon))
 		return &profilev1.DescribeResponse{Description: meta.Description, DescriptionAuto: meta.DescriptionAuto}, nil

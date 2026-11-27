@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/profile"
 	"github.com/nickheyer/icebath/internal/skills"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Longest seeding the bundled skills of a new profile may take
@@ -45,16 +46,16 @@ func (s seeder) Seed(making profile.Making) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), seedTimeout)
 	defer cancel()
 	synced, err := s.registry.Scope(s.config.In(making.Profile), "").Sync(ctx)
-	retry := fmt.Sprintf("⚠ Skills could not be seeded. They are seeded again the next time %s is used.", making.Profile)
+	retry := fmt.Sprintf("⚠ The built-in skills could not be copied in. icebath copies them the next time %s is used.", making.Profile)
 	switch {
 	case ctx.Err() != nil:
-		return []string{"⚠ Skill seeding timed out (60s)", retry}, nil
+		return []string{"⚠ Copying the built-in skills took longer than " + strs.Span(seedTimeout) + ".", retry}, nil
 	case err != nil:
-		return []string{fmt.Sprintf("⚠ Skill seeding failed: %v", err), retry}, nil
+		return []string{fmt.Sprintf("⚠ Copying the built-in skills failed: %s", strings.TrimSuffix(err.Error(), ".")+"."), retry}, nil
 	case synced.OptedOut:
-		return []string{"No bundled skills seeded (--no-skills). Delete .no-bundled-skills in the profile to opt back in."}, nil
+		return []string{"Only the essential built-in skills were copied, because of --no-skills. Delete .no-bundled-skills in the folder of the profile to get them all."}, nil
 	}
-	return []string{fmt.Sprintf("%d bundled skills synced.", len(synced.Copied))}, nil
+	return []string{"Copied " + strs.Count(len(synced.Copied), "built-in skill") + "."}, nil
 }
 
 // Skills the profile's folder holds, by category and name, or name for one at the top

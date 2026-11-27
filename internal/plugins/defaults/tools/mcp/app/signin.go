@@ -30,7 +30,7 @@ func open(kit *tui.Kit, hub *cards.Hub, link string) tea.Cmd {
 		err := browser.Open(kit.Env.Ctx, link)
 		return func() tea.Cmd {
 			if err != nil {
-				return hub.Fail("The browser didn't open: copy the link and open it yourself")
+				return hub.Fail("The browser didn't open. Copy the link and open it yourself.")
 			}
 			return nil
 		}
@@ -46,9 +46,9 @@ func copyLink(kit *tui.Kit, hub *cards.Hub, link string) tea.Cmd {
 		ok := clip.WriteText(kit.Env.Ctx, link)
 		return func() tea.Cmd {
 			if !ok {
-				return hub.Fail("Couldn't copy the link")
+				return hub.Fail("Couldn't copy the link. Select it on screen and copy it yourself.")
 			}
-			return hub.Done("Copied the link")
+			return hub.Done("Copied the link.")
 		}
 	})
 }
@@ -58,11 +58,15 @@ func paste(kit *tui.Kit, hub *cards.Hub, service mcpv1connect.McpServiceClient, 
 	if id == "" {
 		return nil
 	}
-	field := cards.Field{Label: "Address", Placeholder: "http://127.0.0.1:…/callback?code=…", Help: "Where the browser ended after you approved"}
+	field := cards.Field{Label: "Address", Placeholder: "http://127.0.0.1:8765/callback?code=abc",
+		Help: "The address your browser showed after you approved, even if the page there failed to load."}
 	return kit.Ask(hub, "Paste the address", field, "Send", func(text string) tea.Cmd {
 		return tui.Call(hub, func() (*mcpv1.CallbackResponse, error) {
 			return service.Callback(kit.Env.Ctx, &mcpv1.CallbackRequest{Id: id, Pasted: text})
-		}, func(*mcpv1.CallbackResponse) tea.Cmd { return hub.Done("Sent, finishing the sign in…") })
+		}, func(*mcpv1.CallbackResponse) tea.Cmd {
+			hub.Busy("Sent the address. Finishing the sign-in…")
+			return nil
+		})
 	})
 }
 
@@ -91,17 +95,18 @@ func signin(kit *tui.Kit, hub *cards.Hub, service mcpv1connect.McpServiceClient,
 		Key:     Screen + ":signin:" + s.name,
 		Context: signinContext,
 		Lines: func(int) []string {
-			out := []string{render.Heading("Sign in to "+s.name, t), ""}
 			if s.link == "" {
-				return append(out, render.Dim("Starting the sign in…", t))
+				return []string{render.Dim("Starting the sign-in…", t)}
 			}
+			out := []string{"Approve icebath in your browser at this link:"}
 			if s.code != "" {
-				out = append(out, "Open this link and enter the code "+render.Good(s.code, t)+":")
-			} else {
-				out = append(out, "Approve icebath in the browser:")
+				out = []string{"Open this link on any device and enter the code " + render.Good(s.code, t) + " there:"}
 			}
-			return append(out, render.Warm(s.link, t), "", render.Dim("Waiting for the server to approve. If the browser can't reach icebath, paste "+
-				"the address it ended on", t))
+			wait := "icebath waits for " + s.name + " to approve. If your browser can't reach icebath, paste the address it ended on."
+			if s.code != "" {
+				wait = "icebath waits for " + s.name + " to approve."
+			}
+			return append(out, render.Warm(s.link, t), "", render.Dim(wait, t))
 		},
 		Hints: func(*cards.Page) []wm.Hint {
 			hints := []wm.Hint{{Action: "mcp.signin.open"}, {Action: "mcp.signin.copy"}}
@@ -186,7 +191,7 @@ func (s *signing) watch(ctx context.Context) {
 			id := s.id
 			return tui.Async(func() func() tea.Cmd {
 				s.service.CancelLogin(context.WithoutCancel(s.kit.Env.Ctx), &mcpv1.CancelLoginRequest{Id: id})
-				return func() tea.Cmd { return s.hub.Done("Stopped the sign in to " + s.name) }
+				return func() tea.Cmd { return s.hub.Done("Stopped signing in to " + s.name + ".") }
 			})
 		})
 	}

@@ -12,17 +12,21 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: toolsconfig.Key,
 		Title:  "Code execution",
-		About:  "Python scripts the agent runs that call its tools",
+		About:  "Python scripts that the agent writes to call tools",
+		Order:  80,
 		Settings: []config.Setting{
-			{Key: Timeout, Title: "Code run limit", About: "Longest one code run may take before it is stopped, in seconds", Default: 5 * time.Minute},
-			{Key: MaxToolCalls, Title: "Script tool calls", About: "Most tool calls one code run may make", Default: 50},
-			{Key: MaxSessionKernels, Title: "Max code sessions", About: "How many code sessions can stay open at once; at least 1", Default: 4},
-			{Key: KernelIdleTimeout, Title: "Kernel idle close", About: "Close an idle code session after this many seconds; never less than 1", Default: 30 * time.Minute,
-				Min: config.Bound(time.Second)},
-			{Key: Mode, Title: "Code run folder", About: "Where scripts run: your working folder or a scratch one", Default: Project, Options: config.Options(
-				config.Option{Value: Project, Title: "Project folder", About: "Scripts run in your working folder."},
-				config.Option{Value: Strict, Title: "Scratch folder", About: "Scripts run in a temporary folder."},
+			{Key: Mode, Title: "Where scripts run", About: "Which folder the agent's scripts run in.", Default: Project, Options: config.Options(
+				config.Option{Value: Project, Title: "Project folder", About: "Your working folder, with its Python environment"},
+				config.Option{Value: Strict, Title: "Scratch folder", About: "A temporary folder, apart from your project"},
 			)},
+			{Key: MaxToolCalls, Title: "Tool calls per script", About: "The most tool calls that one script may make.", Default: 50, Zero: "None allowed",
+				Counts: "calls"},
+			{Key: MaxSessionKernels, Title: "Open code sessions", About: "How many code sessions may stay open at the same time.", Default: 4,
+				Counts: "sessions", Least: config.Num(1)},
+			{Key: Timeout, Title: "Script time limit", About: "How long one script may run before it is stopped.", Help: "At least 1 second.",
+				Default: 5 * time.Minute, Advanced: true},
+			{Key: KernelIdleTimeout, Title: "Close when idle", About: "How long an unused code session stays open.", Default: 30 * time.Minute,
+				Min: config.Bound(time.Second), Advanced: true},
 		},
 	}})
 }

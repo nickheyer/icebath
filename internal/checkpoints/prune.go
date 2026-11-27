@@ -15,13 +15,14 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/git"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Git step of a rewrite of the store's histories that must succeed, its failure stopping the prune
 func (s *Store) must(st step, args ...string) (string, error) {
 	ok, out, errs := s.git(s.base, st, args...)
 	if !ok {
-		return "", fmt.Errorf("checkpoint %s failed: %s", args[0], errs)
+		return "", fmt.Errorf("`git %s` failed for the checkpoints: %s", args[0], errs)
 	}
 	return out, nil
 }
@@ -65,7 +66,7 @@ func (s *Store) commits(name string) ([]string, error) {
 	}
 	commits := git.Lines(out)
 	if len(commits) == 0 {
-		return nil, errors.New("checkpoint ref has no readable history: " + name)
+		return nil, errors.New("The checkpoints of " + name + " have no history that can be read.")
 	}
 	return commits, nil
 }
@@ -81,7 +82,7 @@ func (s *Store) rewrite(name string, original, keep []string, collect bool) erro
 		}
 		fields := strings.SplitN(metadata, "\x00", 4)
 		if len(fields) != 4 {
-			return errors.New("invalid checkpoint metadata: " + sha)
+			return errors.New("The record of the checkpoint " + sha + " is not valid.")
 		}
 		args := []string{"commit-tree", fields[0], "--no-gpg-sign", "-m", fields[3]}
 		if parent != "" {
@@ -91,11 +92,11 @@ func (s *Store) rewrite(name string, original, keep []string, collect bool) erro
 			return err
 		}
 		if parent == "" {
-			return errors.New("commit-tree returned no checkpoint identity")
+			return errors.New("git made no checkpoint.")
 		}
 	}
 	if parent == "" {
-		return errors.New("cannot remove a project's last snapshot")
+		return errors.New("The last checkpoint of a project cannot be removed.")
 	}
 	if _, err := s.must(step{}, "update-ref", name, parent, original[len(original)-1]); err != nil {
 		return err
@@ -398,20 +399,6 @@ func AutoPrune(cfg *config.Config) (bool, Pruned, error) {
 	return true, pruned, nil
 }
 
-// Byte count as B, KB, MB, GB or TB, one decimal above bytes
-func Size(n int64) string {
-	value := float64(n)
-	if value < 1024 {
-		return fmt.Sprintf("%d B", n)
-	}
-	for _, unit := range []string{"KB", "MB", "GB"} {
-		if value /= 1024; value < 1024 {
-			return fmt.Sprintf("%.1f %s", value, unit)
-		}
-	}
-	return fmt.Sprintf("%.1f TB", value/1024)
-}
-
 // Note naming the way out when snapshots are on and the store is at or above its size, empty otherwise
 func Footprint(cfg *config.Config) string {
 	if !cfg.GetBool(checkpointsconfig.Enabled) {
@@ -426,9 +413,9 @@ func Footprint(cfg *config.Config) string {
 	if taken < int64(limit)*1024*1024 {
 		return ""
 	}
-	return fmt.Sprintf("Filesystem checkpoints (/rollback) are on: %s across %d project(s), above the %d MB cap (one snapshot per project is "+
-		"always kept). Not using /rollback? Turn off File checkpoints in /settings under Tools then run `icebath checkpoints clear`; or "+
-		"lower Snapshot retention.", Size(taken), len(s.projects()), limit)
+	return fmt.Sprintf("Checkpoints take up %s, more than the limit of %s. The newest checkpoint of each project is always kept. If you "+
+		"don't use /rollback, turn off Save checkpoints in /settings under Tools › Checkpoints and run `icebath checkpoints clear`. If you "+
+		"do, lower Keep for or raise Disk limit there.", strs.Size(float64(taken)), strs.Size(float64(limit)*1024*1024))
 }
 
 // One project of the store as its status shows it

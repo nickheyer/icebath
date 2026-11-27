@@ -622,7 +622,11 @@ func (m *Model) ToastRegion() (Box, bool) {
 		return Box{}, false
 	}
 	w := max(10, m.width/2) + m.gapOutX + 2
-	return Box{X: max(m.width-w, 0), Y: barHeight, W: min(w, m.width), H: len(m.toasts) * toastGap}, true
+	rows := 0
+	for _, tt := range m.toasts {
+		rows += len(m.toastLines(tt.text)) + toastGap - 1
+	}
+	return Box{X: max(m.width-w, 0), Y: barHeight, W: min(w, m.width), H: rows}, true
 }
 
 // Card with the key and the workspace holding it, a tab of a group included

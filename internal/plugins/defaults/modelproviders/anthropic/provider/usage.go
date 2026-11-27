@@ -3,11 +3,13 @@ package provider
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/internal/models"
 	"github.com/nickheyer/icebath/internal/provider"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Where a Claude subscription's limits are read
@@ -55,7 +57,7 @@ func accountUsage(ctx context.Context, route provider.Route) (*provider.AccountU
 		if currency == "" {
 			currency = "USD"
 		}
-		details = append(details, fmt.Sprintf("Extra usage: %.2f / %.2f %s", spent, limit, currency))
+		details = append(details, fmt.Sprintf("Extra usage: %s of %s %s", strs.Number(math.Round(spent*100)/100), strs.Number(math.Round(limit*100)/100), currency))
 	}
 	return provider.NewAccountUsage(route.Provider, "oauth_usage_api", windows, details), nil
 }

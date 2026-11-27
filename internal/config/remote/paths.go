@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Key of the config plane as its segments
@@ -40,14 +42,14 @@ func Decode(encoded string) (Path, error) {
 		switch ch := runes[i]; ch {
 		case '\\':
 			if i+1 >= len(runes) || (runes[i+1] != '\\' && runes[i+1] != '.') {
-				return nil, &PathError{fmt.Sprintf("invalid escape in config path %s", strconv.Quote(encoded))}
+				return nil, &PathError{fmt.Sprintf("The key %s can't be read. A backslash in a key is followed by a dot or by another backslash.", strconv.Quote(encoded))}
 			}
 			current.WriteRune(runes[i+1])
 			empty = false
 			i++
 		case '.':
 			if empty {
-				return nil, &PathError{fmt.Sprintf("empty segment in config path %s", strconv.Quote(encoded))}
+				return nil, &PathError{fmt.Sprintf("The key %s has an empty part between its dots.", strconv.Quote(encoded))}
 			}
 			segments = append(segments, current.String())
 			current.Reset()
@@ -58,7 +60,7 @@ func Decode(encoded string) (Path, error) {
 		}
 	}
 	if empty {
-		return nil, &PathError{fmt.Sprintf("empty segment in config path %s", strconv.Quote(encoded))}
+		return nil, &PathError{fmt.Sprintf("The key %s has an empty part between its dots.", strconv.Quote(encoded))}
 	}
 	segments = append(segments, current.String())
 	if err := validate(segments, encoded); err != nil {
@@ -70,22 +72,22 @@ func Decode(encoded string) (Path, error) {
 // Segment count, byte lengths, control characters and the reserved segment the plane refuses
 func validate(segments []string, shown string) error {
 	if len(segments) < 1 || len(segments) > maxSegments {
-		return &PathError{fmt.Sprintf("config path %s must have 1-%d segments", strconv.Quote(shown), maxSegments)}
+		return &PathError{fmt.Sprintf("The key %s must have from 1 to %d parts.", strconv.Quote(shown), maxSegments)}
 	}
 	if len(shown) > maxEncodedBytes {
-		return &PathError{fmt.Sprintf("config path is longer than %d bytes", maxEncodedBytes)}
+		return &PathError{fmt.Sprintf("The key is longer than %s.", strs.Size(float64(maxEncodedBytes)))}
 	}
 	for _, seg := range segments {
 		if len(seg) < 1 || len(seg) > maxSegmentBytes {
-			return &PathError{fmt.Sprintf("config path %s: a segment must be 1-%d bytes", strconv.Quote(shown), maxSegmentBytes)}
+			return &PathError{fmt.Sprintf("Each part of the key %s must be from 1 to %s long.", strconv.Quote(shown), strs.Size(float64(maxSegmentBytes)))}
 		}
 		for _, c := range seg {
 			if c < 0x20 || c == 0x7F {
-				return &PathError{fmt.Sprintf("config path %s: control character in a segment", strconv.Quote(shown))}
+				return &PathError{fmt.Sprintf("The key %s holds a character that can't be shown.", strconv.Quote(shown))}
 			}
 		}
 		if seg == "__proto__" {
-			return &PathError{fmt.Sprintf("reserved segment '__proto__' in config path %s", strconv.Quote(shown))}
+			return &PathError{fmt.Sprintf("The key %s can't have a part named __proto__.", strconv.Quote(shown))}
 		}
 	}
 	return nil

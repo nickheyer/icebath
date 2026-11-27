@@ -18,12 +18,14 @@ import (
 // Settings of an OpenRouter provider beside its base URL and models
 func settings() []config.Setting {
 	return []config.Setting{
-		{Key: openrouterconfig.Routing, Title: "Routing", About: "Which upstream providers requests may go to: only, ignore, order, sort, require_parameters and " +
-			"data_collection, or the same for one model under models", Default: map[string]any{}},
-		{Key: openrouterconfig.MinCodingScore, Title: "Min coding score", About: "Lowest coding score the pareto router picks a model with, from 0 to 1",
-			Default: 0.65},
-		{Key: openrouterconfig.ResponseCache, Title: "Response cache", About: "Lets OpenRouter reuse identical earlier answers", Default: true},
-		{Key: openrouterconfig.ResponseCacheTTL, Title: "Cache lifetime", About: "Seconds OpenRouter keeps cached answers, from 1 to 86400", Default: 300},
+		{Key: openrouterconfig.ResponseCache, Title: "Reuse answers", About: "Let OpenRouter reuse the answer of an identical earlier request.", Default: true},
+		{Key: openrouterconfig.ResponseCacheTTL, Title: "Keep answers for", About: "How long OpenRouter keeps an answer it may reuse.", Default: 300,
+			Counts: "seconds", Least: config.Num(1), Most: config.Num(86400), Advanced: true},
+		{Key: openrouterconfig.Routing, Title: "Routing", About: "Rules for which providers behind OpenRouter may serve requests.",
+			Help:    "Rules are only, ignore and order with lists of providers, sort, require_parameters, data_collection, and models with rules for one model.",
+			Default: map[string]any{}, Advanced: true, Entry: &config.Entry{Noun: "rule", Name: "Rule name"}},
+		{Key: openrouterconfig.MinCodingScore, Title: "Least coding score", About: "The lowest coding score of a model that the Pareto router may pick.",
+			Default: 0.65, Least: config.Num(0), Most: config.Num(1), Advanced: true},
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Cells of a usage bar, and what fills them
@@ -107,25 +108,25 @@ func (u *AccountUsage) Lines(markdown bool) []string {
 	}
 	plan := ""
 	if u.Plan != "" {
-		plan = " (" + u.Plan + ")"
+		plan = " · Plan: " + u.Plan
 	}
-	lines := []string{"📈 " + bold + u.Title + bold, "Provider: " + u.Provider + plan}
+	lines := []string{bold + u.Title + bold, "Provider: " + u.Provider + plan}
 	for _, w := range u.Windows {
-		line := w.Label + ": unavailable"
+		line := w.Label + ": Not known"
 		if w.Used != nil {
-			line = fmt.Sprintf("%s: %d%% remaining (%d%% used)", w.Label, max(0, roundEven(100-*w.Used)), max(0, roundEven(*w.Used)))
+			line = fmt.Sprintf("%s: %d%% left, %d%% used", w.Label, max(0, roundEven(100-*w.Used)), max(0, roundEven(*w.Used)))
 		}
 		switch {
 		case w.Resets != nil:
-			line += " • resets " + resetStamp(*w.Resets)
+			line += " · resets " + resetStamp(*w.Resets)
 		case w.Detail != "":
-			line += " • " + w.Detail
+			line += " · " + w.Detail
 		}
 		lines = append(lines, line)
 	}
 	lines = append(lines, u.Details...)
 	if u.Unavailable != "" {
-		lines = append(lines, "Unavailable: "+u.Unavailable)
+		lines = append(lines, "Not available: "+u.Unavailable)
 	}
 	return lines
 }
@@ -141,7 +142,7 @@ func (u *AccountUsage) barLines() []string {
 		width = max(width, utf8.RuneCountInString(w.Label))
 	}
 	for _, w := range u.Windows {
-		line := w.Label + strings.Repeat(" ", width-utf8.RuneCountInString(w.Label)) + "  unavailable"
+		line := w.Label + strings.Repeat(" ", width-utf8.RuneCountInString(w.Label)) + "  Not known"
 		if w.Used != nil {
 			used := min(max(*w.Used, 0), 100) / 100
 			line = w.Label + strings.Repeat(" ", width-utf8.RuneCountInString(w.Label)) + "  " + Bar(used, barWidth) + "  " + PercentUsed(used) + " used"
@@ -156,7 +157,7 @@ func (u *AccountUsage) barLines() []string {
 	}
 	lines = append(lines, u.Details...)
 	if u.Unavailable != "" {
-		lines = append(lines, "Unavailable: "+u.Unavailable)
+		lines = append(lines, "Not available: "+u.Unavailable)
 	}
 	return lines
 }
@@ -168,18 +169,11 @@ func roundEven(v float64) int {
 // Local time of a reset with the time left, now when it is past
 func resetStamp(at time.Time) string {
 	stamp := at.Local().Format("2006-01-02 15:04 MST")
-	total := int64(time.Until(at).Seconds())
-	if total <= 0 {
-		return fmt.Sprintf("now (%s)", stamp)
+	left := time.Until(at)
+	if left <= 0 {
+		return "now, at " + stamp
 	}
-	hours, minutes := total/3600, total%3600/60
-	switch {
-	case hours >= 24:
-		return fmt.Sprintf("in %dd %dh (%s)", hours/24, hours%24, stamp)
-	case hours > 0:
-		return fmt.Sprintf("in %dh %dm (%s)", hours, minutes, stamp)
-	}
-	return fmt.Sprintf("in %dm (%s)", minutes, stamp)
+	return "in " + roughly(left) + ", at " + stamp
 }
 
 // Bracketed bar whose filled cells show the share, never empty above nothing nor full below all of it
@@ -195,32 +189,41 @@ func Bar(fraction float64, width int) string {
 	return "[" + strings.Repeat(barFill, filled) + strings.Repeat(barEmpty, width-filled) + "]"
 }
 
-// Share used as a whole percent rounded down, a sliver reading as below one percent
+// Share used as a whole percent rounded down, a sliver reading as under one percent
 func PercentUsed(fraction float64) string {
 	points := int64(math.Round(min(max(fraction, 0), 1)*10000*1e6) / 1e6)
 	switch {
 	case points <= 0:
 		return "0%"
 	case points < 100:
-		return "<1%"
+		return "under 1%"
 	}
 	return fmt.Sprintf("%d%%", points/100)
 }
 
-// When a window starts over as resets in a span of days and hours, hours or minutes; resets soon once that is under a minute
+// When a window starts over, as resets in a length of time in words; resets soon once that is under a minute
 func ResetsIn(at, now time.Time) string {
-	seconds := int64(math.Floor(at.Sub(now).Seconds()))
-	if seconds < 60 {
+	left := at.Sub(now)
+	if left < time.Minute {
 		return "resets soon"
 	}
-	days, hours, minutes := seconds/86_400, seconds%86_400/3_600, seconds%3_600/60
-	switch {
-	case days > 0 && hours > 0:
-		return fmt.Sprintf("resets in %dd %dh", days, hours)
-	case days > 0:
-		return fmt.Sprintf("resets in %dd", days)
-	case hours > 0:
-		return fmt.Sprintf("resets in %dh", hours)
+	return "resets in " + roughly(left)
+}
+
+// Length of time in words, in its two largest units of days, hours and minutes, rounded down
+func roughly(d time.Duration) string {
+	days, hours, minutes := int(d/(24*time.Hour)), int(d%(24*time.Hour)/time.Hour), int(d%time.Hour/time.Minute)
+	pair := func(big int, bigName string, small int, smallName string) string {
+		if small == 0 {
+			return strs.Count(big, bigName)
+		}
+		return strs.Count(big, bigName) + " and " + strs.Count(small, smallName)
 	}
-	return fmt.Sprintf("resets in %dm", minutes)
+	switch {
+	case days > 0:
+		return pair(days, "day", hours, "hour")
+	case hours > 0:
+		return pair(hours, "hour", minutes, "minute")
+	}
+	return strs.Count(max(minutes, 1), "minute")
 }

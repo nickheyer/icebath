@@ -12,6 +12,6 @@ func Register(registry *auxiliary.Registry) {
 }
 
 func (tasks) Tasks() []auxiliary.Task {
-	return []auxiliary.Task{{Name: mcpconfig.Task, Title: "MCP sampling", About: "Model that answers MCP servers asking the agent's model to write for them",
+	return []auxiliary.Task{{Name: mcpconfig.Task, Title: "MCP sampling", About: "The model that writes text that MCP servers ask for", Order: 80,
 		Timeout: 30}}
 }

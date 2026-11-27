@@ -85,7 +85,7 @@ func (h *Hooks) TransformTerminal(ctx context.Context, cfg *config.Config, outpu
 }
 
 // Said in place of a reply held back for a hook that failed to rewrite it
-const withheld = "This reply was withheld: the plugin that rewrites replies in this session failed."
+const withheld = "A plugin that rewrites replies in this session failed, so this reply is held back."
 
 // Runs the transform_llm_output hooks: the first rewrite that holds text, and whether there was one; a reply held back from the screen is
 // withheld when every hook failed to rewrite it

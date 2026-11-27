@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/internal/packages"
 	speechconfig "github.com/nickheyer/icebath/internal/speech/config"
 	speechpackages "github.com/nickheyer/icebath/internal/speech/packages"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Name the recognizer in use takes when none can transcribe
@@ -35,10 +36,10 @@ const UploadCap = 25 << 20
 const whisperPromptChars = 224 * 4
 
 // Message when nothing can transcribe
-const noRecognizer = "No STT provider available. Install faster-whisper for free local transcription, configure " + speechconfig.LocalCommandEnv +
-	" or install a local whisper CLI, set GROQ_API_KEY for free Groq Whisper, set MISTRAL_API_KEY for Mistral Voxtral Transcribe, configure xAI " +
-	"OAuth or set XAI_API_KEY for xAI Grok STT, set ELEVENLABS_API_KEY for ElevenLabs Scribe, or set VOICE_TOOLS_OPENAI_KEY or OPENAI_API_KEY " +
-	"for the OpenAI Whisper API."
+const noRecognizer = "No service can turn speech into text yet. Install faster-whisper for free transcription on this computer, set " +
+	speechconfig.LocalCommandEnv + " or install a whisper program, or set the API key of a service: GROQ_API_KEY for Groq, which is free, " +
+	"MISTRAL_API_KEY for Mistral, XAI_API_KEY or a sign-in for xAI, ELEVENLABS_API_KEY for ElevenLabs, or VOICE_TOOLS_OPENAI_KEY or " +
+	"OPENAI_API_KEY for OpenAI. Then pick the service in /settings under Speech to text."
 
 // Recognizer in use, its name or None: the one stt.provider names when it can transcribe, its fallback when that can, else none; when
 // stt.provider is unset, the first that can of the local engines and then the cloud services
@@ -129,7 +130,7 @@ func (j *Job) Transcribe(ctx context.Context, path, model, source string) Transc
 		return failure
 	}
 	if !j.Config.GetBool(speechconfig.STTEnabled) {
-		return Failure("STT is disabled in config.yaml (stt.enabled: false).")
+		return Failure("Speech to text is off. Turn on Transcribe speech in /settings under Speech to text.")
 	}
 	name := j.Recognizing(ctx)
 	recognizer, known := j.Speech.Recognizer(j.Config, name)
@@ -143,7 +144,7 @@ func (j *Job) Transcribe(ctx context.Context, path, model, source string) Transc
 		}
 		defer os.RemoveAll(work)
 		if path = j.caf(ctx, path, work); path == "" {
-			return Failure("CAF audio could not be converted to WAV.")
+			return Failure("The CAF recording could not be turned into WAV for the service.")
 		}
 	}
 	if recognizer.Cloud {
@@ -232,9 +233,8 @@ func (j *Job) hints(ctx context.Context, recognizer Recognizer, path, model, sou
 func (j *Job) unclaimed(ctx context.Context, name string) Transcript {
 	chosen := Chosen(j.Config, speechconfig.STTProvider)
 	if name != None && name != "" {
-		return Transcript{Error: fmt.Sprintf("stt.provider='%s' is set but no built-in, command, or plugin provider registered that name. Run `icebath "+
-			"plugins list` to see installed STT plugins, or configure a command provider under `stt.providers.%s.command`.", name, name), Provider: name,
-			Kind: "provider_not_registered"}
+		return Transcript{Error: fmt.Sprintf("Speech to text is set to use %s, and no service has that name. Pick another in /settings under "+
+			"Speech to text, or add a program named %s under Programs there.", name, name), Provider: name, Kind: "provider_not_registered"}
 	}
 	if recognizer, ok := j.Speech.Recognizer(j.Config, chosen); ok && recognizer.Explains {
 		if missing := recognizer.missing(ctx, j); missing != "" {
@@ -247,16 +247,16 @@ func (j *Job) unclaimed(ctx context.Context, name string) Transcript {
 // Failure of a source file a decoder must not read, or that is too large when the cap applies
 func sourceFile(path string, capped bool) (Transcript, bool) {
 	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return Failure("Path is a symbolic link: " + path), false
+		return Failure(path + " is a link, and links are not read."), false
 	}
 	info, err := os.Stat(path)
 	switch {
 	case err != nil:
-		return Failure("Audio file not found: " + path), false
+		return Failure("There is no audio file at " + path + "."), false
 	case !info.Mode().IsRegular():
-		return Failure("Path is not a file: " + path), false
+		return Failure(path + " is not a file."), false
 	case capped && info.Size() > UploadCap:
-		return Failure(fmt.Sprintf("File too large: %.1fMB (max %.0fMB)", float64(info.Size())/(1<<20), float64(UploadCap)/(1<<20))), false
+		return Failure(fmt.Sprintf("The file is %s, and the most a file may be is %s.", strs.Size(float64(info.Size())), strs.Size(UploadCap))), false
 	}
 	return Transcript{}, true
 }
@@ -267,7 +267,7 @@ func audioFile(path string) (Transcript, bool) {
 		return failure, false
 	}
 	if ext := filepath.Ext(path); !slices.Contains(audioFormats, strings.ToLower(ext)) {
-		return Failure(fmt.Sprintf("Unsupported format: %s. Supported: %s", ext, strings.Join(audioFormats, ", "))), false
+		return Failure(fmt.Sprintf("Files of the type %s can't be turned into text. These types can: %s.", cmpOr(ext, "without an extension"), strings.Join(audioFormats, ", "))), false
 	}
 	return Transcript{}, true
 }
@@ -286,7 +286,7 @@ except BaseException as exc:
 func (j *Job) SilkToWAV(ctx context.Context, source, output string, rate int) error {
 	python, ok := j.Speech.packages.ExtraPython(speechpackages.Silk)
 	if !ok {
-		return Misconfigured("the pilk Python package is not installed; run `" + packages.InstallHint(speechpackages.Silk) + "`")
+		return Misconfigured("The Python package pilk, which reads SILK voice notes, is not installed. Run " + packages.InstallHint(speechpackages.Silk) + ".")
 	}
 	captured, err := Run(ctx, []string{python, "-I", "-c", silkScript, source, output, strconv.Itoa(rate)}, 300*time.Second, nil)
 	if err != nil && captured != nil {
@@ -303,21 +303,21 @@ func (j *Job) SilkToWAV(ctx context.Context, source, output string, rate int) er
 // WAV of a SILK note in a folder to remove after, or the failure
 func (j *Job) silk(ctx context.Context, path string) (string, string, Transcript) {
 	if _, ok := j.Speech.packages.ExtraPython(speechpackages.Silk); !ok {
-		return "", "", Failure("Unsupported format: .silk. Run `" + packages.InstallHint(speechpackages.Silk) + "` to enable WeChat voice transcription.")
+		return "", "", Failure("SILK voice notes from WeChat and QQ can't be read yet. Run " + packages.InstallHint(speechpackages.Silk) + " to read them.")
 	}
 	dir, err := os.MkdirTemp("", "icebath-silk-")
 	if err != nil {
-		return "", "", Failure("Failed to convert .silk audio for transcription: " + err.Error())
+		return "", "", Failure("The SILK voice note could not be turned into WAV: " + strings.TrimSuffix(err.Error(), ".") + ".")
 	}
 	decoded := filepath.Join(dir, strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))+".wav")
 	err = j.SilkToWAV(ctx, path, decoded, 24000)
 	if info, serr := os.Stat(decoded); err == nil && (serr != nil || !info.Mode().IsRegular() || info.Size() == 0) {
-		err = fmt.Errorf("pilk did not produce a readable WAV file")
+		err = fmt.Errorf("pilk made no WAV file that can be read")
 	}
 	if err != nil {
 		os.RemoveAll(dir)
 		slog.Error(fmt.Sprintf("Failed to convert .silk audio %s: %v", path, err))
-		return "", "", Failure(fmt.Sprintf("Failed to convert .silk audio for transcription: %v", err))
+		return "", "", Failure("The SILK voice note could not be turned into WAV: " + strings.TrimSuffix(err.Error(), ".") + ".")
 	}
 	return decoded, dir, Transcript{}
 }
@@ -349,7 +349,7 @@ var uploadEncode = []string{"-vn", "-ac", "1", "-ar", "16000", "-c:a", "aac", "-
 func (j *Job) encode(ctx context.Context, path, output, filter string) error {
 	ffmpeg := j.FFmpeg(ctx)
 	if ffmpeg == "" {
-		return fmt.Errorf("ffmpeg was not found")
+		return fmt.Errorf("ffmpeg is not installed")
 	}
 	argv := []string{ffmpeg, "-y", "-i", path}
 	if filter != "" {
@@ -461,7 +461,7 @@ func (j *Job) over(ctx context.Context, path string, limit Limit) bool {
 }
 
 func tooLarge(path string, limit Limit, reason string) Transcript {
-	return Failure(fmt.Sprintf("File too large: %.1fMB (max %.0fMB) and it could not be split: %s", float64(size(path))/(1<<20), float64(limit.Bytes)/(1<<20), reason))
+	return Failure(fmt.Sprintf("The file is %s, more than the %s the service takes, and it could not be split: %s.", strs.Size(float64(size(path))), strs.Size(float64(limit.Bytes)), strings.TrimSuffix(reason, ".")))
 }
 
 var (

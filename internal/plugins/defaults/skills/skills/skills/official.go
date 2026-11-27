@@ -21,7 +21,7 @@ const (
 	officialRepo = "nickheyer/icebath"
 	// Folder of the official optional skills in it
 	optionalPrefix = "pkg/skills/optional"
-	remoteNote     = "Official optional skill (from live repo; run install to fetch)"
+	remoteNote     = "Optional skill from icebath, downloaded from its repository when you install it"
 )
 
 // The official optional skills icebath ships, with those its repository has since added

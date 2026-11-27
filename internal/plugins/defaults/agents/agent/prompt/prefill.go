@@ -3,7 +3,9 @@ package prompt
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,7 +40,7 @@ func Prefill(settings *config.Config, client *tools.Client) ([]*sessionsv1.Messa
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("Prefill messages file %s could not be read: %w", path, err)
+		return nil, fmt.Errorf("⚠ The example messages file %s could not be read, so the agent starts without it. %s", path, cause(err, "read"))
 	}
 	var rows []struct {
 		Role    string          `json:"role"`
@@ -53,13 +55,15 @@ func Prefill(settings *config.Config, client *tools.Client) ([]*sessionsv1.Messa
 		CallID string `json:"tool_call_id"`
 	}
 	if err := json.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &rows); err != nil {
-		return nil, fmt.Errorf("Prefill messages file %s must hold a JSON array of messages: %w", path, err)
+		return nil, fmt.Errorf("⚠ The example messages file %s is not a JSON list of messages, so the agent starts without it. The problem: %s.", path,
+			strings.TrimSuffix(err.Error(), "."))
 	}
 	messages := make([]*sessionsv1.Message, 0, len(rows))
 	for i, row := range rows {
 		role, ok := roles[row.Role]
 		if !ok {
-			return nil, fmt.Errorf("Message %d of the prefill messages file %s has the role %q; it must be system, user, assistant or tool.", i+1, path, row.Role)
+			return nil, fmt.Errorf("⚠ Message %d of the example messages file %s has the role %q, but it must be system, user, assistant or tool.", i+1,
+				path, row.Role)
 		}
 		message := &sessionsv1.Message{Role: role, Text: content(row.Content), ToolCallId: row.CallID}
 		for _, call := range row.Calls {
@@ -88,4 +92,23 @@ func content(raw json.RawMessage) string {
 		}
 	}
 	return strings.Join(texts, "\n")
+}
+
+// Why a file could not be read or written, as a sentence
+func cause(err error, doing string) string {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "It does not exist."
+	case errors.Is(err, fs.ErrPermission):
+		return "You don't have permission to " + doing + " it."
+	}
+	var path *fs.PathError
+	if errors.As(err, &path) {
+		err = path.Err
+	}
+	text := strings.TrimSuffix(err.Error(), ".")
+	if text == "" {
+		return ""
+	}
+	return strings.ToUpper(text[:1]) + text[1:] + "."
 }

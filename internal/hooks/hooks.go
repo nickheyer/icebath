@@ -266,7 +266,7 @@ const (
 	// Runs of a timed out callback still going after which it is skipped as hung
 	maxAbandoned = 3
 	// What blocks a call whose pre_tool_call callback ran out of time
-	timeoutBlock = "pre_tool_call plugin callback timed out or is still running"
+	timeoutBlock = "A plugin hook on pre_tool_call ran out of time or is still running, so the call is blocked."
 	// Seconds hooks.callback_timeout takes when it holds no usable number, and the most it takes
 	defaultTimeout = 30
 	maxTimeout     = 600
@@ -367,8 +367,8 @@ func (h *Hooks) fire(ctx context.Context, cfg *config.Config, event Event) ([]Re
 			failed++
 			h.report(point.Name, hook.Name, event, err)
 			if point.FailClosed {
-				results = append(results, Result{Action: Block, Message: fmt.Sprintf("%s plugin callback %s raised %s: %s", point.Name, hook.Name,
-					kind(err), strs.Head(err.Error(), 200))})
+				results = append(results, Result{Action: Block, Message: fmt.Sprintf("The plugin hook %s on %s failed with %s, so the call is blocked: %s",
+					hook.Name, point.Name, kind(err), strings.TrimSuffix(strs.Head(err.Error(), 200), ".")+".")})
 			}
 			continue
 		}

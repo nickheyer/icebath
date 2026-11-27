@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/internal/terminal/sandbox"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -77,8 +78,8 @@ func (r *registrant) sif(ctx context.Context, cfg *config.Config, image, exe str
 	if fsx.Exists(target) {
 		return target, nil
 	}
-	for _, line := range []string{"Building SIF image (one-time setup)...", "  Source: " + image, "  Target: " + target} {
-		slog.Info(line)
+	slog.Info("Building SIF image (one-time setup)", "source", image, "target", target)
+	for _, line := range []string{"Building the SIF image once, which takes a while…", "  From: " + image, "  Into: " + target} {
 		say(line)
 	}
 	temp := filepath.Join(cache, "tmp")
@@ -88,7 +89,7 @@ func (r *registrant) sif(ctx context.Context, cfg *config.Config, image, exe str
 	captured, err := terminal.Capture(ctx, []string{exe, "build", target, image}, pullBuild, buildEnv(temp, cache))
 	fallback := func(text string, attrs ...any) (string, error) {
 		slog.Warn(text, attrs...)
-		say(text)
+		say(text + " Each sandbox downloads " + image + " as it starts instead.")
 		return image, nil
 	}
 	switch {
@@ -98,15 +99,15 @@ func (r *registrant) sif(ctx context.Context, cfg *config.Config, image, exe str
 				return "", err
 			}
 		}
-		return fallback("SIF build timed out, falling back to docker:// URL")
+		return fallback("The SIF image was not built within " + strs.Span(pullBuild) + ".")
 	case err != nil:
-		return fallback(fmt.Sprintf("SIF build error: %s, falling back to docker:// URL", err))
+		return fallback(fmt.Sprintf("The SIF image could not be built: %s.", strings.TrimRight(err.Error(), ".")))
 	case captured.Code != 0:
 		stderr := []rune(captured.Stderr)
-		return fallback("SIF build failed, falling back to docker:// URL", "error", string(stderr[:min(len(stderr), 500)]))
+		return fallback("The SIF image could not be built.", "error", string(stderr[:min(len(stderr), 500)]))
 	}
 	slog.Info("SIF image built successfully")
-	say("SIF image built successfully")
+	say("The SIF image is built.")
 	return target, nil
 }
 
@@ -157,7 +158,7 @@ func (r *registrant) sandboxSIF(ctx context.Context, cfg *config.Config, exe str
 			err = captured.Err(save)
 		}
 		if err != nil {
-			return "", fmt.Errorf("saving the sandbox image for Apptainer: %w", err)
+			return "", fmt.Errorf("The sandbox image could not be saved for Apptainer: %w", err)
 		}
 		argv = []string{exe, "build", target, "docker-archive://" + archive}
 	default:
@@ -173,15 +174,15 @@ func (r *registrant) sandboxSIF(ctx context.Context, cfg *config.Config, exe str
 		argv = []string{exe, "build", "--fakeroot", target, path}
 	}
 	slog.Info("Building the sandbox SIF image (one-time setup)", "source", argv[len(argv)-1], "target", target)
-	say("Building the sandbox SIF image " + target + " (one-time setup)")
+	say("Building the sandbox SIF image " + target + " once, which takes a while…")
 	captured, err := terminal.Capture(ctx, argv, sandboxBuild, buildEnv(temp, cache))
 	if err != nil {
-		return "", fmt.Errorf("building the sandbox SIF image: %w", err)
+		return "", fmt.Errorf("The sandbox SIF image could not be built: %w", err)
 	}
 	if captured.Code != 0 {
 		os.Remove(target)
 		stderr := []rune(captured.Stderr)
-		return "", fmt.Errorf("building the sandbox SIF image failed: %s", string(stderr[:min(len(stderr), 500)]))
+		return "", fmt.Errorf("The sandbox SIF image could not be built: %s", string(stderr[:min(len(stderr), 500)]))
 	}
 	slog.Info("Sandbox SIF image built", "target", target)
 	return target, nil

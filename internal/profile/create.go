@@ -88,7 +88,7 @@ func (p *Profiles) source(r Request) (string, string, error) {
 	}
 	dir := p.Dir(label)
 	if !fsx.IsDir(dir) {
-		return "", "", &NotFoundError{fmt.Sprintf("Source profile '%s' does not exist at %s", label, dir)}
+		return "", "", &NotFoundError{fmt.Sprintf("There is no profile named %s to copy from, because its folder %s is missing.", label, dir)}
 	}
 	return label, dir, nil
 }
@@ -98,15 +98,15 @@ func refuseRequest(r Request) error {
 	cloning := r.Clone || r.From != "" || r.All
 	switch {
 	case cloning && r.NoCredentials:
-		return &ValueError{"--no-credentials cannot be combined with --clone / --clone-from / --clone-all (a clone copies the source's keys); " +
-			"create without cloning instead."}
+		return &ValueError{"--no-credentials can't go with --clone, --clone-from or --clone-all, because a copy takes the keys of the profile it " +
+			"copies. Leave out one of them."}
 	case r.NoSkills && cloning:
-		return &ValueError{"--no-skills is mutually exclusive with --clone / --clone-from / --clone-all (cloning explicitly copies skills from the " +
-			"source profile)."}
+		return &ValueError{"--no-skills can't go with --clone, --clone-from or --clone-all, because a copy takes the skills of the profile it " +
+			"copies. Leave out one of them."}
 	case r.SyncImports && !cloning:
-		return &ValueError{"--sync-imports requires --clone or --clone-from (there is no import manifest to carry over without a source profile)."}
+		return &ValueError{"--sync-imports needs --clone or --clone-from, because it copies the record of imported agents from the profile you copy."}
 	case r.Channels && !cloning:
-		return &ValueError{"--clone-channels only applies to a clone (--clone, --clone-from or --clone-all)."}
+		return &ValueError{"--clone-channels needs --clone, --clone-from or --clone-all."}
 	}
 	return nil
 }
@@ -135,7 +135,7 @@ func (p *Profiles) Create(r Request) (Made, error) {
 		return Made{}, err
 	}
 	if canon == Default {
-		return Made{}, &ValueError{fmt.Sprintf("Cannot create a profile named 'default' — it is the built-in profile (%s).", p.Dir(Default))}
+		return Made{}, &ValueError{fmt.Sprintf("There is a profile named default already, the built-in one in %s. Pick another name.", p.Dir(Default))}
 	}
 	defer p.creating(canon)()
 	dir := p.Dir(canon)
@@ -148,7 +148,7 @@ func (p *Profiles) Create(r Request) (Made, error) {
 	cloning := r.Clone || r.From != "" || r.All
 	label, sourceDir := r.Launch, ""
 	if cloning {
-		if err := p.fileTooling("Profile clone"); err != nil {
+		if err := p.fileTooling("Copying a profile"); err != nil {
 			return Made{}, err
 		}
 		if label, sourceDir, err = p.source(r); err != nil {
@@ -192,7 +192,7 @@ func (p *Profiles) Create(r Request) (Made, error) {
 	if !r.NoCredentials {
 		copied, err := mirrorKeys(p.Dir(r.Launch), dir)
 		if err != nil {
-			made.Warnings = append(made.Warnings, ".env copy: "+failure(err))
+			made.Warnings = append(made.Warnings, "The API keys of "+r.Launch+" could not be copied into the keys file: "+failure(err)+".")
 		}
 		made.Keys = copied
 	}
@@ -206,7 +206,7 @@ func (p *Profiles) Create(r Request) (Made, error) {
 func warnings(err error) []string {
 	var out []string
 	for _, one := range failures(err) {
-		out = append(out, failure(one))
+		out = append(out, sentence(failure(one)))
 	}
 	return out
 }
@@ -323,8 +323,9 @@ func finish(dir string, r Request) error {
 		return err
 	}
 	if r.NoSkills {
-		if err := seedFile(filepath.Join(dir, noSkillsMarker), "This profile opted out of bundled-skill seeding (`icebath profile create --no-skills`).\n"+
-			"Delete this file to re-enable sync on the next `icebath update`.\n", 0o644); err != nil {
+		if err := seedFile(filepath.Join(dir, noSkillsMarker), "This profile was made with icebath profile create --no-skills, so it gets only the "+
+			"essential bundled skills.\nDelete this file, and the next time icebath starts it copies every bundled skill into this profile.\n",
+			0o644); err != nil {
 			return err
 		}
 	}

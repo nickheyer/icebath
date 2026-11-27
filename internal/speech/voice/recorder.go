@@ -102,11 +102,11 @@ func (r *termuxRecorder) recording() bool {
 func (r *termuxRecorder) start(context.Context, func()) error {
 	mic := termuxMic()
 	if mic == "" {
-		return errors.New("Termux voice capture requires the termux-api package and app.\nInstall with: pkg install termux-api\n" +
-			"Then install/update the Termux:API Android app.")
+		return errors.New("Recording on Termux needs the termux-api package and the Termux:API app. Run pkg install termux-api, " +
+			"then install or update the Termux:API app for Android.")
 	}
 	if !termuxApp() {
-		return errors.New("Termux voice capture requires the Termux:API Android app.\nInstall/update the Termux:API app, then retry /voice on.")
+		return errors.New("Recording on Termux needs the Termux:API app for Android. Install or update it, then run /voice on again.")
 	}
 	r.mu.Lock()
 	if r.active {
@@ -125,7 +125,7 @@ func (r *termuxRecorder) start(context.Context, func()) error {
 			detail = strings.TrimSpace(strings.ToValidUTF8(string(exit.Stderr), "�"))
 		}
 		detail = cmp.Or(detail, strings.TrimSpace(strings.ToValidUTF8(string(out), "�")), err.Error())
-		return fmt.Errorf("Termux microphone start failed: %s", detail)
+		return fmt.Errorf("The Termux microphone did not start: %s.", strings.TrimSuffix(detail, "."))
 	}
 	r.mu.Lock()
 	r.active, r.path, r.started = true, path, time.Now()
@@ -372,7 +372,7 @@ func (r *audioRecorder) ensure(pa portaudio.Audio) error {
 		}
 		opened = nil
 		if attempt > 0 || !strings.Contains(strings.ToLower(err.Error()), "timed out") {
-			return fmt.Errorf("Failed to open audio input stream: %s. Check that a microphone is connected and accessible.", err)
+			return fmt.Errorf("The microphone did not open: %s. Check that a microphone is plugged in and that icebath may use it.", strings.TrimSuffix(err.Error(), "."))
 		}
 		slog.Info("Audio input stream start timed out; retrying once")
 	}
@@ -390,7 +390,7 @@ func (r *audioRecorder) start(ctx context.Context, silenced func()) error {
 	case missingLibrary(err):
 		return errors.New(portaudioMissing())
 	case unloadable(err):
-		return errors.New("Voice mode requires the PortAudio library.\n" + captureHint(err))
+		return errors.New("Voice mode needs PortAudio, the sound library icebath records with. " + capital(captureHint(err)) + ".")
 	default:
 		return err
 	}

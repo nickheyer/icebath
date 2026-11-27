@@ -16,6 +16,7 @@ func (specs) Specs() []provider.Spec {
 		Name:               arceeconfig.Name,
 		Native:             provider.Unprefixed,
 		DisplayName:        arceeconfig.Title,
+		Description:        "Arcee AI's models, with an API key paid by use",
 		BaseURL:            arceeconfig.BaseURL,
 		BaseURLEnv:         arceeconfig.BaseURLEnv,
 		ModelsURL:          arceeconfig.ModelsURL,

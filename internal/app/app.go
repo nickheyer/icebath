@@ -63,7 +63,7 @@ func (a *App) Run(ctx context.Context, conn *connect.Client) (err error) {
 	get := func(key string) (string, error) {
 		response, err := settings.Get(ctx, &configv1.GetRequest{Key: key})
 		if err != nil {
-			return "", fmt.Errorf("%s: %w", key, err)
+			return "", fmt.Errorf("the setting %s could not be read: %w", key, err)
 		}
 		return response.GetSetting().GetValue(), nil
 	}
@@ -76,7 +76,7 @@ func (a *App) Run(ctx context.Context, conn *connect.Client) (err error) {
 			return err
 		}
 		if err := yaml.Unmarshal([]byte(value), into); err != nil {
-			return fmt.Errorf("%s: %w", key, err)
+			return fmt.Errorf("the setting %s holds a value icebath can't read: %w", key, err)
 		}
 	}
 	for _, key := range tui.Followed(screens) {

@@ -59,7 +59,7 @@ func (r HTTPRejection) Describe() string {
 	if r.Status == 0 {
 		return ""
 	}
-	detail := fmt.Sprintf("HTTP %d from %s %s", r.Status, r.Method, r.URL)
+	detail := fmt.Sprintf("HTTP status %d to %s %s", r.Status, r.Method, r.URL)
 	if r.Body != "" {
 		detail += ": " + r.Body
 	}
@@ -158,7 +158,7 @@ func proxy() func(*http.Request) (*url.URL, error) {
 // Drops Authorization, and when strict every configured header, on a hop to another origin
 func (c *Client) redirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
-		return errors.New("stopped after 10 redirects")
+		return errors.New("Stopped after the server sent icebath on to another address 10 times.")
 	}
 	if originOf(req.URL) != c.origin {
 		req.Header.Del("Authorization")
@@ -199,7 +199,7 @@ type HTTPStatusError struct {
 }
 
 func (e *HTTPStatusError) Error() string {
-	detail := fmt.Sprintf("HTTP %d from %s %s", e.Status, e.Method, e.URL)
+	detail := fmt.Sprintf("The server answered with HTTP status %d to %s %s", e.Status, e.Method, e.URL)
 	if e.Body != "" {
 		detail += ": " + e.Body
 	}
@@ -207,7 +207,7 @@ func (e *HTTPStatusError) Error() string {
 }
 
 // A 404 the server gave for a session id it knew
-var ErrSessionExpired = errors.New("session expired: the server no longer knows this Mcp-Session-Id (session not found)")
+var ErrSessionExpired = errors.New("The MCP session expired, as the server no longer knows it.")
 
 // Streamable HTTP transport: one POST per message, answers as JSON or a stream of events, an optional GET stream for server requests
 type StreamableHTTP struct {
@@ -323,7 +323,7 @@ func (t *StreamableHTTP) send(ctx context.Context, method string, body []byte, a
 func (t *StreamableHTTP) Send(ctx context.Context, msg *Message) error {
 	select {
 	case <-t.done:
-		return errors.New("transport is closed")
+		return errors.New("The connection closed.")
 	default:
 	}
 	body, err := json.Marshal(msg)
@@ -378,7 +378,7 @@ func (t *StreamableHTTP) Send(ctx context.Context, msg *Message) error {
 		if msg.IsNotification() {
 			return nil
 		}
-		return fmt.Errorf("MCP endpoint answered with Content-Type %q, not an MCP response", kind)
+		return fmt.Errorf("The server answered with a page of type %s, which is not MCP.", kind)
 	}
 }
 

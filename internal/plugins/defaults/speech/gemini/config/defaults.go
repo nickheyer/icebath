@@ -6,15 +6,18 @@ import (
 )
 
 func Register(cfg *config.Config) {
-	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.TTS, Title: "Gemini speech", About: "Google Gemini's voices, directed by a persona; needs " + KeyEnv,
-		Settings: []config.Setting{
-			{Key: AudioTags, Title: "Gemini tone tags", About: "Add tone cues to text before Gemini speaks it; Gemini 3.1 speech models only", Default: false},
-			{Key: BaseURL, Title: "Gemini endpoint", About: "Custom endpoint for Gemini speech; empty uses " + BaseURLEnv + ", else Google's", Default: ""},
-			{Key: Model, Title: "Gemini model", About: "Speech model used with Gemini", Default: DefaultModel},
-			{Key: PersonaFile, Title: "Gemini persona file", About: "Path to a text file describing how Gemini should sound, relative to the profile's folder; " +
-				"{transcript} in it marks where the words go", Default: ""},
-			{Key: Voice, Title: "Gemini voice", About: "Voice used with Gemini, such as Kore or Puck", Default: DefaultVoice},
-			{Key: MaxTextLength, Title: "Gemini text limit", About: "Most characters one Gemini request takes, persona included, longer text split into several; " +
-				"0 uses 32000", Default: 0},
+	cfg.Register(config.Sections{{Key: Key, Parent: speechconfig.TTS, Title: "Google Gemini", About: "Expressive voices from Gemini, with a Gemini API key",
+		Order: 50, Settings: []config.Setting{
+			{Key: Voice, Title: "Voice", About: "The Gemini voice that speaks.", Help: "Such as Kore or Puck.", Default: DefaultVoice},
+			{Key: Model, Title: "Model", About: "The Gemini model that speaks.", Default: DefaultModel},
+			{Key: AudioTags, Title: "Tone tags", About: "Add tone cues to the text before Gemini speaks it.",
+				Help: "A helper model adds the cues. Only Gemini 3.1 speech models understand tone cues.", Default: false},
+			{Key: PersonaFile, Title: "Persona file", About: "The text file that describes how the Gemini voice should sound.",
+				Help: "A path inside the profile folder, or a full path. Write {transcript} in the file where the words go.", Default: "", Advanced: true},
+			{Key: BaseURL, Title: "Base URL", About: "The address Gemini speech requests go to.",
+				Help: "The variable " + BaseURLEnv + " wins over Google's address when it is set.", Default: "", Zero: "Google's address", Advanced: true},
+			{Key: MaxTextLength, Title: "Text limit", About: "The most characters one request to Gemini takes, the persona included.",
+				Help: "Longer text is split into several requests.", Default: 0, Zero: "32,000 characters", Counts: "characters", Least: config.Num(1),
+				Advanced: true},
 		}}})
 }

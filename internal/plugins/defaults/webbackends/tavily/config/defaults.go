@@ -10,10 +10,14 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: webconfig.Key,
 		Title:  "Tavily",
-		About:  "Tavily's AI-native web search and page reading, keyless when chosen and keyed for higher limits",
+		About:  "Search and page reading built for agents, free with limits",
+		Order:  30,
 		Settings: []config.Setting{
-			{Key: APIKey, Title: "Tavily key", About: "Tavily API key for web search and extract, from https://app.tavily.com/home. Optional: keyless works when Tavily is chosen", Default: "", Env: []string{"TAVILY_API_KEY"}, Secret: true},
-			{Key: BaseURL, Title: "Tavily address", About: "Address of the Tavily API the calls go to", Default: DefaultBaseURL, Env: []string{"TAVILY_BASE_URL"}},
+			{Key: APIKey, Title: "API key", About: "Your Tavily API key.",
+				Help: "Tavily works without a key once you choose it, and a key raises the limits. Get one at app.tavily.com.", Default: "",
+				Env: []string{"TAVILY_API_KEY"}, Secret: true},
+			{Key: BaseURL, Title: "Base URL", About: "The address of the Tavily API.", Help: "Change the address only to go through a proxy.", Default: DefaultBaseURL,
+				Zero: "The standard address", Env: []string{"TAVILY_BASE_URL"}, Advanced: true},
 		},
 	}})
 }

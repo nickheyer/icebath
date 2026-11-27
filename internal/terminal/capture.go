@@ -18,7 +18,7 @@ type Captured struct {
 }
 
 // A program of this machine that ran past its time
-var ErrTimedOut = errors.New("command timed out")
+var ErrTimedOut = errors.New("The command did not finish in time.")
 
 // Runs a program of this machine with its output captured and no stdin, its whole process group killed once it runs past the timeout or
 // ctx ends; env nil inherits this process's environment

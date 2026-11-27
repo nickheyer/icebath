@@ -120,7 +120,7 @@ func (h *Packages) Installed(name string, outdated bool) (*Installed, error) {
 		return nil, err
 	}
 	if p.Internal {
-		return nil, fmt.Errorf("%s is internal PM tooling, not an application package", name)
+		return nil, fmt.Errorf("%s is a tool the package manager uses itself, not a program features can ask for.", name)
 	}
 	return h.installed(p, outdated)
 }
@@ -139,7 +139,7 @@ func (h *Packages) installed(p *Package, outdated bool) (*Installed, error) {
 // Installed uv or uvx launcher, empty when uv is not installed
 func (h *Packages) UVLauncher(name string) (string, error) {
 	if name != "uv" && name != "uvx" {
-		return "", fmt.Errorf("%s is not a uv launcher", name)
+		return "", fmt.Errorf("%s is not a program that comes with uv. Ask for uv or uvx.", name)
 	}
 	p, err := h.Package(UV)
 	if err != nil {
@@ -176,7 +176,8 @@ func (h *Packages) LazyAllowed(cfg *config.Config) bool {
 
 // Refusal of an install on demand the settings forbid, recorded in the receipt being written
 func refuseLazy(ctx context.Context, name, what string) *InstallError {
-	err := Failure(name, "not installed and lazy installs are disabled: "+what, "enable "+packagesconfig.LazyInstalls+" or run `icebath pm install`")
+	err := Failure(name, "It needs "+what+", and downloads when needed are off.",
+		"Turn on Download when needed in /settings under Downloads, or run `icebath pm install "+name+"`.")
 	receiptOf(ctx).refuse("lazy-install", err.Error())
 	return err
 }
@@ -202,10 +203,10 @@ type realizing struct {
 func (h *Packages) realize(ctx context.Context, p *Package, l *lockfile, f *facts, s *store, target string, opts realizing) (string, error) {
 	version, pinned := l.version(p.Name)
 	if !pinned {
-		return "", Failure(p.Name, "not in the lockfile", "add it with `icebath pm lock --bump`")
+		return "", Failure(p.Name, "It is not in the lock file.", "Add it with `icebath pm lock --bump "+p.Name+" VERSION`.")
 	}
 	if reason := p.Missing(target); reason != "" {
-		return "", Failure(p.Name, fmt.Sprintf("unavailable on %s: %s", target, reason), "none")
+		return "", Failure(p.Name, fmt.Sprintf("It is not available for %s: %s", target, reason), "none")
 	}
 	entryName := p.entryName(version, target)
 	entry := s.entry(entryName)
@@ -252,7 +253,7 @@ func (h *Packages) realize(ctx context.Context, p *Package, l *lockfile, f *fact
 		return entry, nil
 	}
 	if len(artifacts) == 0 {
-		return "", Failure(p.Name, fmt.Sprintf("no artifact for %s in the lockfile", target), "run `icebath pm lock --bump` for this package")
+		return "", Failure(p.Name, fmt.Sprintf("The lock file has no archive of it for %s.", target), "Run `icebath pm lock --bump "+p.Name+" VERSION` to pin one.")
 	}
 	scratch, cleanup, err := s.scratch()
 	if err != nil {
@@ -276,7 +277,7 @@ func (h *Packages) realize(ctx context.Context, p *Package, l *lockfile, f *fact
 			reason, remedy = p.Repair(ctx, h, build.report, staged, target, reason)
 		}
 		if reason != "" {
-			return Failure(p.Name, "staged entry failed verification: "+reason, remedy)
+			return Failure(p.Name, "The downloaded copy did not pass its check: "+reason, remedy)
 		}
 		if f == nil {
 			if err := writeJSON(filepath.Join(staged, ".pm-stage-pin.json"), pin); err != nil {
@@ -304,7 +305,7 @@ func (h *Packages) realize(ctx context.Context, p *Package, l *lockfile, f *fact
 		if _, ok := errors.AsType[*InstallError](err); ok || IsDownload(err, Paused) {
 			return "", err
 		}
-		return "", &InstallError{Package: p.Name, Cause: "install failed: " + err.Error(), Remedy: "retry, or run `icebath pm doctor`", Err: err}
+		return "", &InstallError{Package: p.Name, Cause: "It could not be installed: " + err.Error(), Remedy: Failure("", "", "").Remedy, Err: err}
 	}
 	if previous != nil && previous.Entry != "" {
 		old := previous.Version + "/?"
@@ -427,7 +428,7 @@ func (h *Packages) publishEntry(p *Package, s *store, staged, entry, previousEnt
 			}
 		}
 		if reason := h.verify(p, entry, target); reason != "" {
-			return Failure(p.Name, "published entry failed verification: "+reason, "")
+			return Failure(p.Name, "The installed copy did not pass its check: "+reason, "")
 		}
 		return commit()
 	}()
@@ -594,7 +595,7 @@ func (h *Packages) Ensure(ctx context.Context, cfg *config.Config, name string, 
 		for i, p := range missing {
 			names[i] = p.Name
 		}
-		return nil, refuseLazy(ctx, name, strings.Join(names, ", "))
+		return nil, refuseLazy(ctx, name, joined(names, "and")+" installed")
 	}
 	if len(missing) > 0 {
 		f, err := readFacts(s.root, false)

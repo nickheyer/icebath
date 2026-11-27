@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/internal/cli"
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/launch"
-	shellconfig "github.com/nickheyer/icebath/internal/plugins/defaults/hooks/shellhooks/config"
 	hooksv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/hooks/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/hooks/v1/hooksv1connect"
 )
@@ -26,8 +25,7 @@ func Register(registry *launch.Registry) {
 }
 
 func (flags) Flags() []launch.Flag {
-	return []launch.Flag{{Names: []string{"--accept-hooks"}, Help: "Auto-approve any unseen shell hooks declared in config.yaml without a TTY prompt. " +
-		"Equivalent to ICEBATH_ACCEPT_HOOKS=1 or " + shellconfig.AutoAccept + ": true in config.yaml. Use on CI / headless runs that can't prompt."}}
+	return []launch.Flag{{Names: []string{"--accept-hooks"}, Help: "Allow new shell hooks without asking, for runs with no terminal to ask in"}}
 }
 
 // Takes consent for the profile's hooks, then runs the app; a launch that leaves the profile's config out has no hooks to consent to
@@ -60,9 +58,9 @@ func consent(ctx context.Context, service hooksv1connect.HooksServiceClient, acc
 		if hook.GetAllowed() || !console.Interactive() {
 			continue
 		}
-		fmt.Fprintf(console.Out(), "\n⚠ Icebath is about to register a shell hook that will run a\n  command on your behalf.\n\n    Event:   %s\n    Command: %s\n\n"+
-			"  Commands run with your full user credentials.  Only approve\n  commands you trust.\n", hook.GetEvent(), hook.GetCommand())
-		line, ok := console.Input("Allow this hook to run? [y/N]: ")
+		fmt.Fprintf(console.Out(), "\n⚠ A shell hook wants to run a command for you each time its event happens.\n\n    Event:   %s\n    Command: %s\n\n"+
+			"  The command runs with all the rights of your user account. Allow only commands you trust.\n", hook.GetEvent(), hook.GetCommand())
+		line, ok := console.Input(fmt.Sprintf("Allow %s to run on %s from now on? [y/N]: ", hook.GetCommand(), hook.GetEvent()))
 		if !ok {
 			fmt.Fprintln(console.Out())
 			continue

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/strs"
 	"log/slog"
 	"math"
 	"net/url"
@@ -16,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/provider"
 	transportconfig "github.com/nickheyer/icebath/internal/transport/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Request size from which an endpoint that can't be reached may be refusing its size
@@ -85,8 +85,8 @@ func (r *retried) Stream(ctx context.Context, request *provider.Request, fn prov
 	for attempt := 0; ; attempt++ {
 		if streak := r.stalls.count(session); session != "" && giveup > 0 && streak >= giveup {
 			return nil, &provider.APIError{Provider: r.client.Route().Provider, Model: request.Model, Kind: provider.ErrNetwork,
-				Message: fmt.Sprintf("Provider has been unresponsive (no response received) for %d consecutive stale attempts — aborting this call to "+
-					"avoid an indefinite stall. Switch models or start a new session, then retry.", streak)}
+				Message: fmt.Sprintf("The provider sent nothing back %s in a row, so icebath stopped asking. Switch models or start a new "+
+					"session, then try again.", strs.Count(streak, "time")), Own: true}
 		}
 		delivered, tool := false, false
 		started := time.Now()
@@ -139,7 +139,7 @@ func (r *retried) dropped(fn provider.StreamFunc, err error, attempt, attempts i
 	kind := "drop"
 	if tool {
 		kind = "drop mid tool-call"
-		Say(fn, provider.EventStatus, "⚠ Connection dropped mid tool-call; reconnecting…")
+		Say(fn, provider.EventStatus, "The connection dropped while the model was writing a tool call. Connecting again.")
 	}
 	route := r.client.Route()
 	name := route.Provider
@@ -147,53 +147,50 @@ func (r *retried) dropped(fn provider.StreamFunc, err error, attempt, attempts i
 	reason := dropReason(err)
 	slog.Warn(fmt.Sprintf("Stream %s on attempt %d/%d — retrying. provider=%s base_url=%s error=%s", kind, attempt, attempts, name, route.BaseURL,
 		strs.Head(err.Error(), 240)), "mid_tool_call", tool)
-	Say(fn, provider.EventStatus, fmt.Sprintf("⚠️ %s stream %s (%s) after %.1fs — attempt %d/%d dropped, reconnecting", name, kind, reason,
-		after.Seconds(), attempt, attempts))
-	Say(fn, provider.EventActivity, fmt.Sprintf("stream retry %d/%d after %s", attempt, attempts, reason))
+	Say(fn, provider.EventStatus, fmt.Sprintf("The reply from %s dropped after %s: %s. Connecting again, try %d of %d.", name,
+		strs.Span(max(after.Round(100*time.Millisecond), 100*time.Millisecond)), reason, attempt, attempts))
+	Say(fn, provider.EventActivity, fmt.Sprintf("connecting again, try %d of %d, after %s", attempt, attempts, reason))
 }
 
 // Short reason of a dropped stream
 func dropReason(err error) string {
 	switch {
 	case Phase(err) != "":
-		return "timeout"
+		return "it took too long"
 	case unreached(err):
-		return "connection lost"
+		return "the connection was lost"
 	}
 	return strs.Head(strings.Join(strings.Fields(err.Error()), " "), 80)
 }
 
 // Line once every retry of a stream failed: an empty stream, the lifetime cut, or the endpoint that couldn't be reached and why
 func (r *retried) exhausted(fn provider.StreamFunc, failure *provider.APIError, err error, attempts int) {
-	plural := "s"
-	if attempts == 1 {
-		plural = ""
-	}
+	tries := strs.Count(attempts, "try")
 	if failure.Kind == provider.ErrEmptyResponse {
-		Say(fn, provider.EventStatus, fmt.Sprintf("❌ Provider returned an empty response stream after %d attempts. The provider may be experiencing "+
-			"issues — try again in a moment.", attempts))
+		Say(fn, provider.EventStatus, fmt.Sprintf("⚠ The provider sent back empty replies %s, so it may be having trouble. Try again in a "+
+			"moment.", map[bool]string{true: "once", false: strs.Count(attempts, "time")}[attempts == 1]))
 		return
 	}
 	if cutoff, ok := errors.AsType[*LifetimeError](err); ok {
-		Say(fn, provider.EventStatus, fmt.Sprintf("❌ %s (%d attempt%s)", cutoff.Error(), attempts, plural))
+		Say(fn, provider.EventStatus, fmt.Sprintf("⚠ %s That happened on each of %s.", cutoff.Error(), tries))
 		return
 	}
 	raw, size := r.client.Route().BaseURL, -1
 	if sent, ok := errors.AsType[*SentError](err); ok {
 		raw, size = cmp.Or(sent.URL, raw), sent.Bytes
 	}
-	host := "the endpoint"
+	host := "the provider"
 	if u, perr := url.Parse(raw); perr == nil && u.Hostname() != "" {
 		host = strings.ToLower(u.Hostname())
 	}
-	line := fmt.Sprintf("❌ Could not open a stream to %s after %d attempt%s", host, attempts, plural)
+	line := fmt.Sprintf("⚠ icebath could not get a reply from %s in %s", host, tries)
 	switch {
 	case size < 0:
-		line += "; the endpoint looks unreachable — try again in a moment."
+		line += ", and it looks unreachable. Try again in a moment."
 	case size >= largeRequest:
-		line += fmt.Sprintf(" (request %d KB); the endpoint or a proxy in front of it may reject requests this large.", max(1, int(math.RoundToEven(float64(size)/1024))))
+		line += fmt.Sprintf(". The request was %s, and the provider or a proxy in front of it may refuse requests that large.", strs.Size(float64(size)))
 	default:
-		line += fmt.Sprintf(" (request %d KB); the endpoint looks unreachable — try again in a moment.", max(1, int(math.RoundToEven(float64(size)/1024))))
+		line += fmt.Sprintf(", and it looks unreachable with a request of %s. Try again in a moment.", strs.Size(float64(size)))
 	}
 	Say(fn, provider.EventStatus, line)
 }

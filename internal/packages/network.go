@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/httpx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Agent every asset host accepts, asking for bytes as stored
@@ -38,11 +39,11 @@ var client = &http.Client{
 	},
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
-			return errors.New("stopped after 10 redirects")
+			return errors.New("The server sent icebath through more than 10 redirects.")
 		}
 		next := req.URL.String()
 		if !strings.HasPrefix(next, "https://") && !(loopback(via[len(via)-1].URL.String()) && loopback(next)) {
-			return &DownloadError{Kind: Failed, Message: "refusing redirect to non-https url: " + next}
+			return &DownloadError{Kind: Failed, Message: "The server tried to send icebath to " + next + ", which is not an https address."}
 		}
 		return nil
 	},
@@ -66,19 +67,21 @@ type HTTPError struct {
 	URL    string
 }
 
-func (e *HTTPError) Error() string { return fmt.Sprintf("HTTP Error %d: %s", e.Code, e.Reason) }
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("The server answered %d %s.", e.Code, e.Reason)
+}
 
 // Body that ended before the bytes it declared
 type shortRead struct{ expected int64 }
 
 func (e *shortRead) Error() string {
-	return fmt.Sprintf("the transfer ended %d bytes short", e.expected)
+	return fmt.Sprintf("the download ended %s short", strs.Size(float64(e.expected)))
 }
 
 // Stall of a body that saw no bytes within its timeout
 type stalled struct{}
 
-func (stalled) Error() string   { return "the read timed out" }
+func (stalled) Error() string   { return "no data came for too long" }
 func (stalled) Timeout() bool   { return true }
 func (stalled) Temporary() bool { return true }
 
@@ -211,7 +214,7 @@ func edgeBlock(err error) string {
 	if u, err := url.Parse(he.URL); err == nil && u.Hostname() != "" {
 		who = strings.ToLower(u.Hostname())
 	}
-	return fmt.Sprintf("%s's CDN firewall (%s) refused this network. Your install is fine; retry from another network", who, cdn)
+	return fmt.Sprintf("The %s firewall in front of %s refused this network. Nothing is wrong with your install, so try again from another network.", cdn, who)
 }
 
 // Backoff of an attempt, a longer Retry-After of the server winning

@@ -3,7 +3,6 @@ package cli
 
 import (
 	"cmp"
-	"fmt"
 
 	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
@@ -14,8 +13,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/camofox/v1/camofoxv1connect"
 )
 
-const serverHelp = "Server setup: https://github.com/jo-inc/camofox-browser  (native: npm install && npm start; Docker: docker run -p 9377:9377 " +
-	"-e CAMOFOX_PORT=9377 jo-inc/camofox-browser)"
+// Lines saying where to get a Camofox server and how to start one
+var serverHelp = []string{
+	"  How to run a Camofox server: https://github.com/jo-inc/camofox-browser",
+	"  On this computer: npm install && npm start",
+	"  With Docker: docker run -p 9377:9377 -e CAMOFOX_PORT=9377 jo-inc/camofox-browser",
+}
 
 type commands struct{}
 
@@ -25,23 +28,27 @@ func Register(registry *cli.Registry) {
 
 // Prints how the server stands, an exit status of 1 when none is set or it does not answer
 func show(cmd *cobra.Command, st *camofoxv1.StatusResponse) error {
-	out := cmd.OutOrStdout()
+	c := cli.NewConsole(cmd)
 	if st.GetUrl() == "" {
-		fmt.Fprintln(out, "CAMOFOX_URL is not set. Run: icebath camofox setup")
-		fmt.Fprintln(out, serverHelp)
+		c.Failure("No Camofox server is set. Give its address with icebath camofox setup.")
+		for _, line := range serverHelp {
+			c.Say(line)
+		}
 		return cli.Exit(1)
 	}
-	fmt.Fprintf(out, "Camofox server: %s\n", st.GetUrl())
-	fmt.Fprintf(out, "Identity:       %s\n", st.GetIdentity())
+	rows := [][2]string{{"Server address", st.GetUrl()}, {"Camofox user", st.GetIdentity()}}
+	if vnc := st.GetVnc(); vnc != "" && st.GetReachable() {
+		rows = append(rows, [2]string{"Watch over VNC", vnc})
+	}
+	c.Pairs("Camofox", rows)
 	if !st.GetReachable() {
-		fmt.Fprintln(out, "Status:         not reachable. Start your server and check CAMOFOX_URL.")
-		fmt.Fprintln(out, serverHelp)
+		c.Failure("The server does not answer. Start it, and check its address in /settings under Browser › Camofox › Server address.")
+		for _, line := range serverHelp {
+			c.Say(line)
+		}
 		return cli.Exit(1)
 	}
-	fmt.Fprintln(out, "Status:         reachable")
-	if vnc := st.GetVnc(); vnc != "" {
-		fmt.Fprintf(out, "VNC:            %s\n", vnc)
-	}
+	c.Success("The server answers.")
 	return nil
 }
 
@@ -49,10 +56,12 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	service := camofoxv1connect.NewCamofoxServiceClient(conn)
 	var profile string
 	root := &cobra.Command{
-		Use:   "camofox",
-		Short: "Set up and check the Camofox browser server",
-		Long:  "Camofox browser backend: point Icebath at a camofox-browser server and check it.",
-		Args:  cobra.NoArgs,
+		Use:     "camofox",
+		GroupID: cli.GroupAbilities,
+		Short:   "Set up and check the Camofox browser server",
+		Long: "Camofox is a browser server you run yourself, which the agent can browse with. Use setup to give icebath its address, and " +
+			"status to check that it answers. With no subcommand, camofox shows the status.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			st, err := service.Status(cmd.Context(), &camofoxv1.StatusRequest{Profile: profile})
 			if err != nil {
@@ -61,36 +70,41 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 			return show(cmd, st)
 		},
 	}
-	root.PersistentFlags().StringVar(&profile, "profile", "", "Profile whose Camofox server to use, the one in use when empty")
+	root.PersistentFlags().StringVar(&profile, "profile", "", "icebath profile to act for, instead of the one in use")
 	var address string
 	setup := &cobra.Command{
 		Use:   "setup",
-		Short: "Save the Camofox server address (and an optional API key) to this profile",
-		Args:  cobra.NoArgs,
+		Short: "Save the address of your Camofox server",
+		Long: "Saves the address of your Camofox server, and an API key when it needs one, in this profile. icebath does not install or " +
+			"start Camofox. The agent can use the Camofox browser tools from its next reply.",
+		Example: "  icebath camofox setup --url http://localhost:9377",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			console := cli.NewConsole(cmd)
-			fmt.Fprintln(cmd.OutOrStdout(), "Camofox is an externally managed server; Icebath does not install or start it.")
+			console.Say("Camofox is a server you run yourself, as icebath does not install or start it.")
 			chosen := address
 			if !cmd.Flags().Changed("url") {
 				current, err := service.Status(cmd.Context(), &camofoxv1.StatusRequest{Profile: profile})
 				if err != nil {
 					return err
 				}
-				chosen = console.Prompt("Camofox server URL", cmp.Or(current.GetUrl(), camofoxconfig.DefaultURL), false)
+				chosen = console.Prompt("Address of your Camofox server", cmp.Or(current.GetUrl(), camofoxconfig.DefaultURL), false)
 			}
-			key := console.Prompt("Camofox API key (optional, Enter to skip)", "", true)
+			key := console.Prompt("API key of your Camofox server, or press enter if it needs none", "", true)
 			reply, err := service.Setup(cmd.Context(), &camofoxv1.SetupRequest{Profile: profile, Url: chosen, ApiKey: key})
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Saved to this profile (browser.camofox.url). The camofox browser tools are offered from the next turn.")
+			console.Success("Saved the address in /settings under Browser › Camofox › Server address. The agent can use the Camofox tools from " +
+				"its next reply.")
 			return show(cmd, reply.GetStatus())
 		},
 	}
-	setup.Flags().StringVar(&address, "url", "", "Camofox server URL (default: prompt, "+camofoxconfig.DefaultURL+")")
+	setup.Flags().StringVar(&address, "url", "", "Address of the Camofox server, instead of asking for it")
 	status := &cobra.Command{
 		Use:   "status",
-		Short: "Show the configured Camofox server and whether it answers",
+		Short: "Show your Camofox server and whether it answers",
+		Long:  "Shows the address of your Camofox server and whether it answers.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			st, err := service.Status(cmd.Context(), &camofoxv1.StatusRequest{Profile: profile})

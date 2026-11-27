@@ -44,7 +44,7 @@ func repository(ctx context.Context, dir string) (string, error) {
 	if repo := git.Root(ctx, dir); repo != "" {
 		return repo, nil
 	}
-	return "", connect.NewError(connect.CodeFailedPrecondition, "Not inside a git repository (or pass --repo <path>).")
+	return "", connect.NewError(connect.CodeFailedPrecondition, "This folder is not inside a git repository. Run the command in one, or pass --repo with the folder of one.")
 }
 
 func tree(t worktrees.Tree) *worktreesv1.Tree {
@@ -75,7 +75,7 @@ func (s *service) List(ctx context.Context, request *worktreesv1.ListRequest) (*
 // Days a request holds back young trees by, refused below zero
 func olderThan(days *float64) error {
 	if days != nil && *days < 0 {
-		return connect.NewError(connect.CodeInvalidArgument, "--older-than must be a non-negative number of days.")
+		return connect.NewError(connect.CodeInvalidArgument, "--older-than must be 0 days or more.")
 	}
 	return nil
 }
@@ -179,14 +179,17 @@ func (s *service) Prune(ctx context.Context, request *worktreesv1.PruneRequest) 
 					return nil, err
 				}
 				for _, a := range archived {
-					if a.Removed {
-						response.Actions = append(response.Actions, "archived + removed → "+a.Ref)
-					} else {
-						response.Actions = append(response.Actions, fmt.Sprintf("archived, kept (%s) → %s", cmp.Or(a.WhyKept, "?"), a.Ref))
+					switch {
+					case a.Removed:
+						response.Actions = append(response.Actions, "Archived a worktree to "+a.Ref+" and removed it.")
+					case a.WhyKept != "":
+						response.Actions = append(response.Actions, fmt.Sprintf("Archived a worktree to %s but kept it: %s", a.Ref, a.WhyKept))
+					default:
+						response.Actions = append(response.Actions, "Archived a worktree to "+a.Ref+" but kept it.")
 					}
 				}
 				for _, ref := range expired {
-					response.Actions = append(response.Actions, "deleted expired archive "+ref)
+					response.Actions = append(response.Actions, "Deleted the old archive "+ref+".")
 				}
 			}
 			missing, err := worktrees.PruneMissing(repo, dry)
@@ -258,7 +261,7 @@ func (s *service) Restore(ctx context.Context, request *worktreesv1.RestoreReque
 		return nil, err
 	}
 	if request.GetName() == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, "Usage: icebath worktree restore <name> [--path DIR]")
+		return nil, connect.NewError(connect.CodeInvalidArgument, "Name the archived worktree to bring back.")
 	}
 	restored, err := s.worktrees.Restore(ctx, repo, request.GetName(), request.GetPath())
 	if failure, ok := errors.AsType[*worktrees.ArchiveError](err); ok {
@@ -280,7 +283,7 @@ func (s *service) Create(ctx context.Context, request *worktreesv1.CreateRequest
 	cfg := s.config
 	if request.GetLaunch() && response.Repo != "" {
 		if err := s.worktrees.PruneStale(ctx, cfg, response.Repo, 24); err != nil {
-			say("✗ Failed to create the worktree: " + err.Error())
+			say("✗ Could not make the worktree: " + err.Error() + ".")
 			return response, nil
 		}
 		go git.Maintain(context.WithoutCancel(ctx), response.Repo)
@@ -311,7 +314,7 @@ func (s *service) Enter(ctx context.Context, request *worktreesv1.EnterRequest) 
 	if !fsx.IsDir(made.Path) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, "The worktree "+made.Path+" is gone.")
 	}
-	response := &worktreesv1.EnterResponse{Lines: []string{"✅ Worktree ready: " + made.Path, "Branch: " + made.Branch}}
+	response := &worktreesv1.EnterResponse{Lines: []string{"✓ The worktree " + made.Path + " is ready.", "Branch: " + made.Branch}}
 	if request.GetSessionId() == "" {
 		s.worktrees.Record(s.config, made)
 		response.Lines = append(response.Lines, "New sessions of this window start in the worktree.")
@@ -330,8 +333,8 @@ func (s *service) Enter(ctx context.Context, request *worktreesv1.EnterRequest) 
 		return nil, err
 	}
 	if backend.Container || backend.Remote {
-		response.Lines = append(response.Lines, "File tools now work in the worktree; terminal.backend="+backend.Name+" keeps running commands in the folder its "+
-			"environment works in, away from this machine.")
+		response.Lines = append(response.Lines, "File tools now work in the worktree. The agent's commands keep running in "+
+			cmp.Or(backend.Title, backend.Name)+", in the folder they used before.")
 		return response, nil
 	}
 	if s.terminal.Folder(cfg, request.GetSessionId()) != "" {
@@ -342,7 +345,7 @@ func (s *service) Enter(ctx context.Context, request *worktreesv1.EnterRequest) 
 		lease.Record(made.Path)
 		lease.Release()
 	}
-	response.Lines = append(response.Lines, "Terminal and file tools now operate in the worktree.")
+	response.Lines = append(response.Lines, "Commands and the file tools now work in the worktree.")
 	return response, nil
 }
 

@@ -31,7 +31,7 @@ func (c *client) normalize(p *prepared, message map[string]any, header http.Head
 	content, ok := message["content"].([]any)
 	stop := transport.Text(message["stop_reason"])
 	if !ok || len(content) == 0 && stop != "end_turn" && stop != "refusal" {
-		return nil, p.refused.Empty("Provider returned a message with no content blocks", nil)
+		return nil, p.refused.Empty("The provider sent back a reply with nothing in it. Send your message again.", nil)
 	}
 	// Blocks before the last fallback block are the refused model's, whose tool calls are not made
 	edge := -1

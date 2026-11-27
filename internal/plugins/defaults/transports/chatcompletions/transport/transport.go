@@ -55,7 +55,7 @@ func (r *registrant) Factories() map[provider.APIMode]provider.Factory {
 	return map[provider.APIMode]provider.Factory{
 		provider.ModeChatCompletions: func(route provider.Route) (provider.Client, error) {
 			if strings.TrimSpace(route.BaseURL) == "" {
-				return nil, fmt.Errorf("%s has no base URL for %s.", route.Provider, route.Model)
+				return nil, fmt.Errorf("%s has no address for %s. Set its Base URL in /providers.", route.Provider, route.Model)
 			}
 			return &client{r: r, route: route}, nil
 		},
@@ -100,13 +100,13 @@ func (c *client) Stream(ctx context.Context, request *provider.Request, fn provi
 				c.r.unstreamed.Store(c.key(), true)
 				slog.Warn(fmt.Sprintf("Provider stream returned an empty SSE frame (keepalive, no payload) before any delta — switching %s/%s to "+
 					"non-streaming for this session.", cmp.Or(c.route.Provider, "unknown"), cmp.Or(c.route.Model, "unknown")))
-				transport.Say(fn, provider.EventStatus, "⚠️ Provider stream returned an empty keepalive frame — retrying this turn without streaming (streaming stays "+
-					"off for this session).")
+				transport.Say(fn, provider.EventStatus, "The provider's reply held an empty piece, so this session gets whole replies instead of "+
+					"streamed ones. Trying again.")
 				return c.complete(ctx, p, fn)
 			}
 			if failure != nil && unsupportedStreaming(failure) {
 				c.r.unstreamed.Store(c.key(), true)
-				transport.Say(fn, provider.EventStatus, "⚠  Streaming is not supported for this model/provider. Switching to non-streaming.")
+				transport.Say(fn, provider.EventStatus, "This model can't stream its replies here, so they come whole instead.")
 				return c.complete(ctx, p, fn)
 			}
 			if response, done, err := c.unmask(ctx, p, fn, failure, err); done {
@@ -143,7 +143,7 @@ func (c *client) unmask(ctx context.Context, p *prepared, fn provider.StreamFunc
 	}
 	slog.Info(fmt.Sprintf("Streaming 5xx re-issued non-streaming successfully for %s/%s (not latched: the 5xx may be transient).",
 		cmp.Or(c.route.Provider, "unknown"), cmp.Or(c.route.Model, "unknown")))
-	transport.Say(fn, provider.EventStatus, "⚠  Streaming failed with a provider server error; the non-streaming retry succeeded.")
+	transport.Say(fn, provider.EventStatus, "Streaming the reply failed on the provider's side, so it came whole instead.")
 	return response, true, transport.Replay(response, fn)
 }
 
@@ -195,7 +195,7 @@ func (c *client) stream(ctx context.Context, p *prepared, fn provider.StreamFunc
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return nil, false, fmt.Errorf("The chat completions request couldn't be encoded: %w", err)
+		return nil, false, fmt.Errorf("The request to the provider could not be built: %w", err)
 	}
 	timeouts := p.limits.Stream(ctx)
 	watch := &transport.Watch{Timeouts: timeouts, Model: p.request.Model, Tokens: p.tokens, Emit: fn}
@@ -296,7 +296,7 @@ func (c *client) complete(ctx context.Context, p *prepared, fn provider.StreamFu
 	delete(body, "stream_options")
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("The chat completions request couldn't be encoded: %w", err)
+		return nil, fmt.Errorf("The request to the provider could not be built: %w", err)
 	}
 	timeouts := p.limits.Stream(ctx)
 	watch := &transport.Watch{Timeouts: transport.Timeouts{Stale: p.limits.Call(ctx, p.call.Ask.Requested(), 1)}, Model: p.request.Model,
@@ -325,7 +325,7 @@ func (c *client) once(ctx context.Context, p *prepared, payload []byte, timeouts
 	}
 	timedOut := func(err error) error {
 		if ctx.Err() == nil && errors.Is(bounded.Err(), context.DeadlineExceeded) {
-			return &transport.TimeoutError{Phase: transport.PhaseRead, Err: fmt.Errorf("Request timed out after %.0fs.", limit.Seconds())}
+			return &transport.TimeoutError{Phase: transport.PhaseRead, Err: fmt.Errorf("The request took longer than its time limit of %s.", strs.Span(max(limit.Round(time.Second), time.Second)))}
 		}
 		return err
 	}
@@ -364,7 +364,7 @@ func (c *client) request(ctx context.Context, p *prepared, payload []byte) (*htt
 	call.Header = p.header.Clone()
 	if c.route.Sign != nil {
 		if err := c.route.Sign(call, payload); err != nil {
-			return nil, fmt.Errorf("The request to %s couldn't be signed: %w", c.route.Provider, err)
+			return nil, fmt.Errorf("The request to %s could not be signed: %w", c.route.Provider, err)
 		}
 	}
 	return call, nil

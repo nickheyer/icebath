@@ -63,10 +63,10 @@ func readRef(path string) (*keyRef, error) {
 		err = json.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &ref)
 	}
 	if err != nil {
-		return nil, &Error{fmt.Sprintf("%s is unreadable (%v); see `icebath vault key`", filepath.Base(path), err)}
+		return nil, &Error{fmt.Sprintf("%s can't be read: %v. Run icebath vault key to see where the key should be.", filepath.Base(path), err)}
 	}
 	if ref.Storage != "keychain" || ref.Account == "" {
-		return nil, &Error{filepath.Base(path) + " does not describe a keychain entry; see `icebath vault key`"}
+		return nil, &Error{filepath.Base(path) + " does not name an entry in the keychain. Run icebath vault key to see where the key should be."}
 	}
 	return &ref, nil
 }
@@ -101,7 +101,7 @@ func loadKey(ref *keyRef) ([]byte, error) {
 	}
 	value, ok, err := k.get(ref.service(), ref.Account)
 	if err != nil {
-		return nil, &KeychainUnavailable{Msg: refused("the OS keychain did not answer", err)}
+		return nil, &KeychainUnavailable{Msg: refused("The keychain of this computer did not answer.", err)}
 	}
 	if !ok || value == "" {
 		return nil, nil
@@ -116,14 +116,14 @@ func storeKey(ref *keyRef, key []byte) error {
 		return err
 	}
 	if err := k.set(ref.service(), ref.Account, string(key)); err != nil {
-		return &KeychainUnavailable{Msg: refused("the OS keychain refused the key", err)}
+		return &KeychainUnavailable{Msg: refused("The keychain of this computer refused the key.", err)}
 	}
 	back, _, err := k.get(ref.service(), ref.Account)
 	if err != nil {
-		return &KeychainUnavailable{Msg: refused("the OS keychain refused the key", err)}
+		return &KeychainUnavailable{Msg: refused("The keychain of this computer refused the key.", err)}
 	}
 	if back != string(key) {
-		return &KeychainUnavailable{Msg: "the OS keychain did not return the key it was given"}
+		return &KeychainUnavailable{Msg: "The keychain of this computer did not give back the key it was given."}
 	}
 	return nil
 }

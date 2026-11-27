@@ -122,7 +122,7 @@ func (p *prepared) target(stream bool) (string, []byte, error) {
 	base = cmp.Or(base, "https://api.anthropic.com")
 	target, err := url.Parse(base)
 	if err != nil || target.Scheme == "" || target.Host == "" {
-		return "", nil, fmt.Errorf("The base URL must be absolute, as https://host: %s", p.route.BaseURL)
+		return "", nil, fmt.Errorf("The Base URL %s must be a full address, such as https://host.", p.route.BaseURL)
 	}
 	target.Path = strings.TrimRight(target.Path, "/") + "/v1/messages"
 	if azureAnthropic(base) && !strings.Contains(base, "api-version") {
@@ -138,7 +138,7 @@ func (p *prepared) target(stream bool) (string, []byte, error) {
 func vertexTarget(base string) (string, string, string, error) {
 	u, err := url.Parse(strings.TrimSpace(base))
 	if err != nil || u.Scheme == "" || u.Host == "" {
-		return "", "", "", fmt.Errorf("The Vertex AI address must be absolute: %s", base)
+		return "", "", "", fmt.Errorf("The Vertex AI address %s must be a full address, such as https://host.", base)
 	}
 	project, region := "", ""
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
@@ -151,7 +151,7 @@ func vertexTarget(base string) (string, string, string, error) {
 		}
 	}
 	if project == "" {
-		return "", "", "", errors.New("No Vertex AI project id resolves; set the provider's project or VERTEX_PROJECT_ID, or use credentials that embed one.")
+		return "", "", "", errors.New("No Google Cloud project is known for Vertex AI. Set the project in /providers or set VERTEX_PROJECT_ID, or use credentials that name one.")
 	}
 	region = cmp.Or(region, "global")
 	origin := u.Scheme + "://" + u.Host
@@ -192,7 +192,7 @@ func bedrockEvents(body io.Reader, header http.Header) func() (*transport.Frame,
 			}
 			data, err := base64.StdEncoding.DecodeString(*chunk.Bytes)
 			if err != nil {
-				return nil, fmt.Errorf("A Bedrock stream chunk isn't base64: %w", err)
+				return nil, fmt.Errorf("A piece of the Bedrock reply can't be read: %w", err)
 			}
 			var payload map[string]any
 			if json.Unmarshal(data, &payload) != nil {

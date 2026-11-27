@@ -77,7 +77,7 @@ func (c *core) adminRead(path string, parse func(data []byte) (map[string]any, e
 	if err == nil {
 		data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 		if !utf8.Valid(data) {
-			err = errors.New("the file is not valid UTF-8")
+			err = errors.New("the file holds text that is not UTF-8")
 		}
 	}
 	var values map[string]any
@@ -346,22 +346,22 @@ type LockedError struct {
 func (e *LockedError) Reason() string {
 	switch e.By {
 	case ByRemote:
-		return "it is locked by the " + e.Source + " level of Remote Config and cannot be changed from this agent."
+		return "The " + e.Source + " level of the remote settings locks this."
 	case ByPackageManager:
-		return "this Icebath installation is managed by " + e.Source + ".\nUse your package manager to upgrade or reinstall Icebath."
+		return "This copy of icebath is managed by " + e.Source + ", which keeps its settings. Change them through " + e.Source + "."
 	}
-	return "it is managed by your administrator (" + e.Source + ") and cannot be changed. Contact your administrator to modify it."
+	return "Your administrator sets this in " + e.Source + "."
 }
 
-// Refusal of an action on the key, such as set or unset
-func (e *LockedError) Refusal(action string) string {
-	if e.By == ByPackageManager {
-		return "Cannot " + action + " configuration values: " + e.Reason()
+// Refusal of a change of the key, or of the settings as a whole for a lock that names no key
+func (e *LockedError) Refusal() string {
+	if e.By == ByPackageManager || e.Key == "" {
+		return "Settings can't be changed here. " + e.Reason()
 	}
-	return "Cannot " + action + " '" + e.Key + "': " + e.Reason()
+	return e.Key + " can't be changed here. " + e.Reason()
 }
 
-func (e *LockedError) Error() string { return e.Refusal("change") }
+func (e *LockedError) Error() string { return e.Refusal() }
 
 // Why the key can't be changed here, nil when it can: the administrator pins it, a level of Remote Config locks it, or, for a setting a person
 // changes or a part of a table setting, the administrator sets a variable the setting reads or the package manager that installed icebath

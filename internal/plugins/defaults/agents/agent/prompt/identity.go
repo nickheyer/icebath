@@ -40,7 +40,8 @@ func identity(ctx context.Context, env *prompt.Env) string {
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		if info, err := os.Stat(filepath.Dir(path)); err == nil && info.IsDir() {
 			if err := os.WriteFile(path, []byte(defaultIdentity), 0o600); err != nil {
-				env.Notify("Could not write the default " + soulFile + " to " + path + ": " + err.Error())
+				env.Notify("⚠ icebath could not write the default " + soulFile + " to " + path + ", so the agent uses its default identity. " +
+					cause(err, "write"))
 			}
 		}
 	}
@@ -49,8 +50,8 @@ func identity(ctx context.Context, env *prompt.Env) string {
 		return defaultIdentity
 	}
 	if found := prompt.Threats(text, prompt.Context); len(found) > 0 {
-		env.Notify("Context file " + soulFile + " matched injection pattern(s) " + strings.Join(found, ", ") + "; loaded anyway because it " +
-			"is your own file in the profile folder — review " + path + " if you did not write that text.")
+		env.Notify("⚠ Your " + soulFile + " holds text that looks like instructions slipped in by someone else. It was loaded anyway because " +
+			"it is your own file, so check " + path + " if you did not write that text.")
 	}
 	return truncate(env, text, soulFile, path)
 }

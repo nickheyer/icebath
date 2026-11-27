@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/proc"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Argv of this machine that runs the rest inside the environment, nil when the environment can't
@@ -79,7 +80,7 @@ type Stream struct {
 func OpenStream(env Environment, argv []string, vars map[string]string, user string, stderr *os.File) (*Stream, error) {
 	command := RemoteCommand(env, argv, vars, user, true)
 	if command == nil {
-		return nil, fmt.Errorf("%s cannot host a long-lived stdio stream", env.Backend())
+		return nil, fmt.Errorf("icebath cannot keep a program running inside the %q sandbox and talk to it.", env.Backend())
 	}
 	cmd := exec.Command(command[0], command[1:]...)
 	stdinR, stdinW, err := os.Pipe()
@@ -156,7 +157,7 @@ func RunIn(ctx context.Context, env Environment, argv []string, vars map[string]
 func runIn(ctx context.Context, env Environment, argv []string, vars map[string]string, user string, timeout time.Duration, stdin []byte) (*RunResult, error) {
 	command := RemoteCommand(env, argv, vars, user, stdin != nil)
 	if command == nil {
-		return nil, fmt.Errorf("%s cannot exec argv", env.Backend())
+		return nil, fmt.Errorf("icebath cannot run a program inside the %q sandbox.", env.Backend())
 	}
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -172,7 +173,7 @@ func runIn(ctx context.Context, env Environment, argv []string, vars map[string]
 	proc.HideWindow(cmd)
 	err := cmd.Run()
 	if ctx.Err() != nil {
-		return nil, fmt.Errorf("command timed out after %s", timeout)
+		return nil, fmt.Errorf("The command did not finish within %s.", strs.Span(timeout))
 	}
 	if _, exited := errors.AsType[*exec.ExitError](err); err != nil && !exited {
 		return nil, err

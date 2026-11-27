@@ -21,6 +21,9 @@ import (
 // Handles of the profile's own store begin with this
 const localPrefix = "vault_"
 
+// Name of the profile's own store as people read it
+const OwnTitle = "icebath vault"
+
 // A password manager the vault reads website logins from beside its own store
 type Backend struct {
 	// Name of its settings, vault.<name>, and of its handles, <name>:
@@ -47,7 +50,7 @@ type Manager interface {
 }
 
 // A manager's answer that its session ended or never began, which locks it again
-var ErrLocked = errors.New("the password manager is locked")
+var ErrLocked = errors.New("The password manager is locked.")
 
 // Login item of a password manager from what it keeps: every address saved on it as an origin, the first one its site and its label when
 // it has no title, the web ones the sites it may be filled on; false for an item with no usable address
@@ -88,7 +91,7 @@ func Code(out string) (string, bool) {
 // A password manager to unlock before it is read
 type Locked struct{ Title string }
 
-func (e *Locked) Error() string { return e.Title + " is locked" }
+func (e *Locked) Error() string { return e.Title + " is locked. Unlock it in /vault first." }
 
 type Registrant interface {
 	Backends() []Backend
@@ -204,7 +207,7 @@ type Login struct {
 
 // Sources of logins of the profile: its own store first, then every password manager it reads
 func (v *Vault) Logins(cfg *config.Config) []Login {
-	out := []Login{{Name: "local", Title: "Icebath vault", vault: v, cfg: cfg}}
+	out := []Login{{Name: "local", Title: OwnTitle, vault: v, cfg: cfg}}
 	for _, b := range v.all() {
 		if v.enabled(cfg, b) {
 			out = append(out, Login{Name: b.Name, Title: b.Title, vault: v, cfg: cfg, manager: b.Open(cfg)})
@@ -280,7 +283,7 @@ func (l Login) Unlock(ctx context.Context, master, session string) error {
 		return err
 	}
 	if !l.vault.tokens.commit(l.key(), value, generation, session) {
-		return fmt.Errorf("%s was locked while unlocking; try again", l.Title)
+		return fmt.Errorf("%s was locked again while it was unlocking. Unlock it again.", l.Title)
 	}
 	return nil
 }
@@ -333,7 +336,7 @@ func (l Login) Item(ctx context.Context, handle string) (*Item, error) {
 
 func (l Login) id(handle string) (string, error) {
 	if !l.Owns(handle) {
-		return "", &Error{fmt.Sprintf("Handle is outside the %s login backend's namespace.", l.Name)}
+		return "", &Error{fmt.Sprintf("%s is not the handle of an item in %s.", handle, l.Title)}
 	}
 	return strings.TrimPrefix(handle, l.Prefix()), nil
 }
@@ -406,7 +409,7 @@ func (v *Vault) Unlock(ctx context.Context, cfg *config.Config, name, master, se
 			return login.Unlock(ctx, master, session)
 		}
 	}
-	return &Error{"no password manager the profile reads is named " + name}
+	return &Error{"There is no password manager named " + name + " to unlock. Turn it on in /settings under Autofill vault."}
 }
 
 // Locks the password manager of the name for the profile, every one for no name
@@ -512,7 +515,7 @@ func (v *Vault) SetSource(cfg *config.Config, name string, on bool) (Backend, er
 		for i, known := range v.all() {
 			names[i] = known.Name
 		}
-		return Backend{}, &Error{fmt.Sprintf("Unknown password manager %q (expected one of %s)", name, strings.Join(names, ", "))}
+		return Backend{}, &Error{fmt.Sprintf("icebath knows no password manager named %q. It knows %s.", name, strings.Join(names, ", "))}
 	}
 	var value any
 	if !on {
@@ -559,13 +562,13 @@ func KindFields(kind string) []Field {
 func (v *Vault) Add(cfg *config.Config, kind, label, origin string, values map[string]string) (Item, error) {
 	fields := KindFields(kind)
 	if fields == nil {
-		return Item{}, &Error{"unknown kind of vault item: " + kind}
+		return Item{}, &Error{fmt.Sprintf("The vault keeps logins, payment cards and addresses, not “%s”.", kind)}
 	}
 	secret := map[string]string{}
 	for _, field := range fields {
 		value := values[field.Key]
 		if field.Required && strings.TrimSpace(value) == "" {
-			return Item{}, &Error{"missing " + strings.ReplaceAll(field.Key, "_", " ")}
+			return Item{}, &Error{"Fill in the " + FieldName(field.Key) + "."}
 		}
 		if strings.TrimSpace(value) != "" {
 			secret[field.Key] = value
@@ -592,7 +595,7 @@ func (v *Vault) Key(cfg *config.Config) (KeyView, error) {
 // lives after it
 func (v *Vault) MoveKey(cfg *config.Config, target string) (KeyView, error) {
 	if target != "keychain" && target != "file" {
-		return KeyView{}, &Error{"the vault key lives in the keychain or in a file, not in " + target}
+		return KeyView{}, &Error{"The vault key can be kept in the keychain or in a file, not in “" + target + "”."}
 	}
 	if err := v.Store(cfg).Migrate(target); err != nil {
 		return KeyView{}, err

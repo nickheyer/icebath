@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
@@ -11,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
-// How a chat shows delegate_task: the goal or the count of tasks on its line, and its results folded to one line a task
+// How a chat shows the tool that starts subagents: the goal or the count of tasks on its line, and its results folded to one line a task
 type delegateView struct{}
 
 func (delegateView) Views() []toolsapp.View {
@@ -34,7 +35,7 @@ func delegateLine(call toolsapp.Call) string {
 	case args.Action != "":
 		return strings.TrimSpace(args.Action + " " + args.ID)
 	case len(args.Tasks) > 1:
-		return fmt.Sprintf("%d tasks · %s", len(args.Tasks), oneLine(args.Tasks[0].Goal))
+		return fmt.Sprintf("%s · %s", render.Count(len(args.Tasks), "task"), oneLine(args.Tasks[0].Goal))
 	case len(args.Tasks) == 1:
 		return oneLine(args.Tasks[0].Goal)
 	}
@@ -70,13 +71,20 @@ func delegateResult(call toolsapp.Call, _ int, t theme.Theme) *toolsapp.Shown {
 		return nil
 	}
 	if result.Status == "dispatched" {
-		shown := &toolsapp.Shown{Head: render.Cool(fmt.Sprintf("%s dispatched in the background · %s", render.Count(cmp.Or(result.Count,
-			len(result.Goals)), "subagent"), result.ID), t)}
+		started := render.Count(cmp.Or(result.Count, len(result.Goals)), "subagent") + " started in the background"
+		if result.ID != "" {
+			started += " · " + result.ID
+		}
+		shown := &toolsapp.Shown{Head: render.Cool(started, t)}
 		for i, goal := range result.Goals {
-			shown.Rows = append(shown.Rows, fmt.Sprintf("%s [%d] %s", render.Dim(t.Glyphs.Hollow, t), i+1, oneLine(goal)))
+			shown.Rows = append(shown.Rows, fmt.Sprintf("%s %d. %s", render.Dim(t.Glyphs.Hollow, t), i+1, oneLine(goal)))
 		}
 		for _, unit := range result.Units {
-			shown.Rows = append(shown.Rows, render.Dim(fmt.Sprintf("%s · tasks %v", unit.ID, unit.Indexes), t))
+			tasks := make([]string, len(unit.Indexes))
+			for i, index := range unit.Indexes {
+				tasks[i] = strconv.Itoa(index + 1)
+			}
+			shown.Rows = append(shown.Rows, render.Dim(fmt.Sprintf("Tasks %s run together as %s", strings.Join(tasks, ", "), unit.ID), t))
 		}
 		if result.Note != "" {
 			shown.Rows = append(shown.Rows, render.Dim(oneLine(result.Note), t))
@@ -95,22 +103,22 @@ func delegateResult(call toolsapp.Call, _ int, t theme.Theme) *toolsapp.Shown {
 		} else {
 			failed++
 		}
-		meta := []string{status}
+		meta := []string{statusWord(status)}
 		if r.Duration > 0 {
 			meta = append(meta, spawnDuration(r.Duration))
 		}
 		if r.Calls > 0 {
-			meta = append(meta, render.Count(r.Calls, "call"))
+			meta = append(meta, render.Count(r.Calls, "step"))
 		}
 		if r.Model != "" {
 			meta = append(meta, r.Model)
 		}
 		text := cmp.Or(firstLine(r.Summary), firstLine(r.Error))
-		rows = append(rows, fmt.Sprintf("%s [%d] %s  %s", statusGlyph(status, t), r.Index+1, render.Dim(strings.Join(meta, " · "), t), text))
+		rows = append(rows, fmt.Sprintf("%s %d. %s  %s", statusGlyph(status, t), r.Index+1, render.Dim(strings.Join(meta, " · "), t), text))
 	}
-	head := fmt.Sprintf("%s · %d completed", render.Count(len(result.Results), "subagent"), done)
+	head := fmt.Sprintf("%s · %d done", render.Count(len(result.Results), "subagent"), done)
 	if failed > 0 {
-		head += fmt.Sprintf(" · %d not", failed)
+		head += fmt.Sprintf(" · %d did not finish", failed)
 	}
 	if result.Total > 0 {
 		head += " · " + spawnDuration(result.Total)

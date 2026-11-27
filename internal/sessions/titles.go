@@ -79,12 +79,13 @@ type Titles struct{}
 // Tasks session titling runs on, with the settings titles keep
 func (Titles) Tasks() []auxiliary.Task {
 	return []auxiliary.Task{{
-		Name: TitleTask, Title: "Session titles", About: "Model that names new sessions", Timeout: 30, Critical: true,
+		Name: TitleTask, Title: "Session titles", About: "The model that names new sessions", Order: 10, Timeout: 30, Critical: true,
 		Settings: []config.Setting{
-			{Key: TitleEnabled, Title: "Auto titles", About: "Name new sessions automatically", Default: true},
-			{Key: TitleUpgrade, Title: "Better titles", About: "Replace the quick title with one written by the title model", Default: true},
-			{Key: TitlePreferFast, Title: "Prefer fast model", About: "Pick a quicker model of the session's provider for titles when one is available", Default: false},
-			{Key: TitleLanguage, Title: "Title language", About: "Language of session titles; empty matches the language of your message", Default: ""},
+			{Key: TitleEnabled, Title: "Name new sessions", About: "Give each new session a title made from its first message.", Default: true},
+			{Key: TitleUpgrade, Title: "Improve with the model", About: "Replace the quick first title with one that the model writes.", Default: true},
+			{Key: TitleLanguage, Title: "Language", About: "The language that session titles are written in.", Default: "", Zero: "Your message's language"},
+			{Key: TitlePreferFast, Title: "Prefer a fast model", About: "Use a quicker model of the session's provider when there is one.", Default: false,
+				Advanced: true},
 		},
 	}}
 }
@@ -95,7 +96,7 @@ func SanitizeTitle(title string) (string, error) {
 	title = titleInvisible.ReplaceAllString(titleControl.ReplaceAllString(title, ""), "")
 	title = strings.Join(strings.Fields(title), " ")
 	if n := utf8.RuneCountInString(title); n > MaxTitle {
-		return "", fmt.Errorf("Title too long (%d chars, max %d)", n, MaxTitle)
+		return "", fmt.Errorf("A title can be at most %s, and this one has %s.", strs.Counted(MaxTitle, "characters"), strs.Number(float64(n)))
 	}
 	return title, nil
 }

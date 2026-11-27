@@ -46,7 +46,7 @@ func (r *registrant) Backends() []terminal.Backend {
 	return []terminal.Backend{{
 		Name:      name,
 		Title:     "Docker",
-		About:     "Run commands in a hardened Docker container with persistent /root and /workspace sandboxes",
+		About:     "A locked-down Docker container on this computer",
 		Where:     "a Docker container (Linux)",
 		Remote:    true,
 		Container: true,
@@ -108,20 +108,26 @@ func shared(cfg *config.Config, dir string) string {
 func check(cfg *config.Config) error {
 	docker := sandbox.Docker(cfg)
 	if docker == "" {
-		return errors.New("Docker is not installed — no docker executable in PATH or the usual install locations")
+		return errors.New("Docker is not installed: no docker program is on your PATH or in the usual places. Install Docker or Podman, or set " +
+			"Container program in /settings under Terminal.")
 	}
+	runtime := runtimeName(docker)
 	captured, err := terminal.Capture(context.Background(), []string{docker, "version"}, 5*time.Second, nil)
-	if err != nil {
-		return fmt.Errorf("Docker is installed but the Docker daemon is not running (`%s version` failed: %v)", docker, err)
-	}
-	if captured.Code != 0 {
-		return fmt.Errorf("Docker is installed but the Docker daemon is not running (`%s version` exited with code %d)", docker, captured.Code)
+	switch {
+	case errors.Is(err, terminal.ErrTimedOut):
+		return fmt.Errorf("%s is installed, but `%s version` got no answer within 5 seconds, so its daemon is not running. %s", runtime, docker,
+			startHint(docker))
+	case err != nil:
+		return fmt.Errorf("%s is installed, but `%s version` could not run: %v. %s", runtime, docker, err, startHint(docker))
+	case captured.Code != 0:
+		return fmt.Errorf("%s is installed, but its daemon is not running: `%s version` ended with exit code %d. %s", runtime, docker,
+			captured.Code, startHint(docker))
 	}
 	return nil
 }
 
 // Hint of the failures a command reads: switching away from Docker
-const switchHint = "pick another backend with /backends, or Where commands run in /settings under Terminal"
+const switchHint = "choose another place to run commands in /backends"
 
 // The program when it and its daemon answer, else a connection error saying what to do
 func available(ctx context.Context, cfg *config.Config) (string, error) {
@@ -132,34 +138,46 @@ func available(ctx context.Context, cfg *config.Config) (string, error) {
 	docker := sandbox.Docker(cfg)
 	if docker == "" {
 		return unavailable("Docker backend selected but no docker executable was found in PATH or known install locations. Install Docker Desktop and ensure "+
-			"the CLI is available.", "Docker executable not found in PATH or known install locations. Install Docker and ensure the 'docker' command is available.",
-			"Install Docker (or fix PATH) and retry, or "+switchHint+".")
+			"the CLI is available.", "Docker is not installed: no docker program is on your PATH or in the usual places.",
+			"Install Docker or add it to your PATH, then try again, or "+switchHint+".")
 	}
 	captured, err := terminal.Capture(ctx, []string{docker, "version"}, 5*time.Second, nil)
 	switch {
 	case errors.Is(err, terminal.ErrTimedOut):
 		return unavailable("Docker backend selected but '"+docker+" version' timed out. The Docker daemon may not be running.",
-			"Docker daemon is not responding. Ensure Docker is running and try again.",
-			"Start Docker (e.g. `systemctl start docker` or launch Docker Desktop), then retry — or "+switchHint+".")
+			"Docker does not answer: `"+docker+" version` got no answer within 5 seconds.",
+			"Start Docker, such as with `systemctl start docker` or by opening Docker Desktop, then try again, or "+switchHint+".")
 	case err != nil:
 		return unavailable("Docker backend selected but the resolved docker executable '"+docker+"' could not be executed.",
-			"Docker executable could not be executed. Check your Docker installation.", "Repair the Docker installation and retry.")
+			"The docker program at "+docker+" could not be run.", "Repair the Docker installation, then try again.")
 	case captured.Code != 0:
 		return unavailable(fmt.Sprintf("Docker backend selected but '%s version' failed (exit code %d, stderr=%s)", docker, captured.Code, strings.TrimSpace(captured.Stderr)),
-			"Docker command is available but 'docker version' failed. Check your Docker installation.",
-			"Start Docker, or add your user to the docker group, then retry — or "+switchHint+".")
+			strings.TrimSpace(fmt.Sprintf("Docker is installed, but `%s version` failed with exit code %d. %s", docker, captured.Code, said(captured.Stderr))),
+			"Start Docker, or add your user to the docker group, then try again, or "+switchHint+".")
 	}
 	return docker, nil
+}
+
+// What a program wrote to stderr as a sentence saying so, empty when it wrote nothing
+func said(stderr string) string {
+	stderr = strings.Join(strings.Fields(stderr), " ")
+	if stderr == "" {
+		return ""
+	}
+	if !strings.ContainsAny(stderr[len(stderr)-1:], ".!?") {
+		stderr += "."
+	}
+	return "It said: " + stderr
 }
 
 // What the user does to make the backend usable
 func setup(*config.Config) []string {
 	return []string{
-		"Install Docker Desktop or Podman and make sure the CLI is on PATH (Docker: https://docs.docker.com/get-docker/, Podman: https://podman.io/docs/installation), " +
-			"or point Container program in /settings under Terminal at it.",
-		"Start the daemon (Docker Desktop, `systemctl start docker`, or `podman machine start`).",
-		"Choose the sandbox image with Container image in /settings under Terminal → Docker; icebath builds its own default image the first time a " +
-			"sandbox starts, or when the backend is readied.",
+		"Install Docker from https://docs.docker.com/get-docker/ or Podman from https://podman.io/docs/installation, and make sure its program is " +
+			"on your PATH. If it is somewhere else, set Container program in /settings under Terminal.",
+		"Start it: open Docker Desktop, or run `systemctl start docker` or `podman machine start`.",
+		"Choose the sandbox image with Container image in /settings under Terminal › Docker. icebath builds its own image the first time a " +
+			"sandbox starts, or when you prepare Docker on this screen.",
 	}
 }
 
@@ -167,29 +185,29 @@ func setup(*config.Config) []string {
 func (r *registrant) doctor(cfg *config.Config) []terminal.Check {
 	docker := sandbox.Docker(cfg)
 	if docker == "" {
-		return []terminal.Check{{Label: "Docker or Podman not installed", Detail: "(needed for the 'docker' terminal backend)"}}
+		return []terminal.Check{{Label: "Docker or Podman is not installed.", Detail: "Commands run in Docker only once one of them is."}}
 	}
 	runtime := runtimeName(docker)
 	var checks []terminal.Check
 	if captured, err := terminal.Capture(context.Background(), []string{docker, "version"}, 10*time.Second, nil); err != nil || captured.Code != 0 {
-		label := runtime + " not reachable"
+		label := runtime + " does not answer."
 		if runtime == "Docker" {
-			label = runtime + " daemon not running"
+			label = "The Docker daemon is not running."
 		}
-		checks = append(checks, terminal.Check{Label: label, Detail: "(needed for the 'docker' terminal backend; " + startHint(docker) + ")"})
+		checks = append(checks, terminal.Check{Label: label, Detail: startHint(docker)})
 	} else {
-		detail := "(reachable)"
+		label := runtime + " answers."
 		if runtime == "Docker" {
-			detail = "(daemon running)"
+			label = "The Docker daemon is running."
 		}
-		checks = append(checks, terminal.Check{OK: true, Label: runtime, Detail: detail})
+		checks = append(checks, terminal.Check{OK: true, Label: label})
 	}
 	image := cmp.Or(strings.TrimSpace(cfg.GetString(dockerconfig.Image)), sandbox.Image)
-	checks = append(checks, terminal.Check{OK: true, Label: "Docker Image", Detail: "(" + image + ")"})
+	checks = append(checks, terminal.Check{OK: true, Label: "Sandbox image:", Detail: image})
 	if current, containers := r.pendingSwitch(context.Background(), cfg, docker, image); current != "" {
-		checks = append(checks, terminal.Check{Label: "Sandbox image switch pending", Detail: fmt.Sprintf("(%s run %s while the image is now %s: set "+
-			"Container image in /settings under Terminal → Docker to %s to switch, files in /root and /workspace carrying over, or to %s to keep it)",
-			strings.Join(containers, ", "), current, image, image, current)})
+		checks = append(checks, terminal.Check{Label: "A new sandbox image is waiting.", Detail: fmt.Sprintf("%s still run %s, but the image is now %s. "+
+			"Set Container image in /settings under Terminal › Docker to %s to move them, keeping the files in /root and /workspace, or to %s to keep "+
+			"the old image.", strings.Join(containers, ", "), current, image, image, current)})
 	}
 	return checks
 }
@@ -237,11 +255,11 @@ func (r *registrant) pendingSwitch(ctx context.Context, cfg *config.Config, dock
 func (r *registrant) prepare(ctx context.Context, cfg *config.Config, say func(line string)) error {
 	docker := sandbox.Docker(cfg)
 	if docker == "" {
-		say("Docker or Podman not found in PATH!")
-		say("Install Docker: https://docs.docker.com/get-docker/ or Podman: https://podman.io/docs/installation")
-		return errors.New("Docker or Podman is not installed.")
+		say("Neither Docker nor Podman is on your PATH.")
+		say("Install Docker from https://docs.docker.com/get-docker/ or Podman from https://podman.io/docs/installation.")
+		return errors.New("Docker or Podman is not installed. Install one of them, then prepare Docker again.")
 	}
-	say(runtimeName(docker) + " found: " + docker)
+	say("Found " + runtimeName(docker) + " at " + docker + ".")
 	if _, err := available(ctx, cfg); err != nil {
 		if broken, ok := errors.AsType[*terminal.ConnectionError](err); ok {
 			return fmt.Errorf("%s %s", broken.Reason, broken.Hint)
@@ -250,22 +268,26 @@ func (r *registrant) prepare(ctx context.Context, cfg *config.Config, say func(l
 	}
 	image := cmp.Or(strings.TrimSpace(cfg.GetString(dockerconfig.Image)), sandbox.Image)
 	if sandbox.Default(image) {
+		built := false
 		err := sandbox.Ensure(ctx, docker, image, func(line string, headline bool) {
 			buildLog(line, headline)
 			if headline {
+				built = true
 				say("  " + line)
 			}
 		})
 		if err != nil {
-			return fmt.Errorf("%w; the first Docker sandbox start builds it again", err)
+			return fmt.Errorf("%w\nThe first Docker sandbox to start tries the build again.", err)
 		}
-		say("Sandbox image " + image + " ready")
+		if !built {
+			say("The sandbox image " + image + " is ready.")
+		}
 		return nil
 	}
-	say("Pulling " + image + " unless it is here already")
+	say("Getting the image " + image + ", unless it is here already.")
 	if !imageReady(ctx, docker, image) {
-		return fmt.Errorf("The image %s could not be pulled; check its name in Container image under Terminal → Docker.", image)
+		return fmt.Errorf("The image %s could not be downloaded. Check its name in /settings under Terminal › Docker › Container image.", image)
 	}
-	say("Sandbox image " + image + " ready")
+	say("The sandbox image " + image + " is ready.")
 	return nil
 }

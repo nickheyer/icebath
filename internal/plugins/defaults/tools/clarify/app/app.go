@@ -42,20 +42,28 @@ type result struct {
 	Notice  string `json:"notice"`
 }
 
+// Head with a capital first letter, the outcome a server names as it is
+func sentence(text string) string {
+	if text == "" {
+		return ""
+	}
+	return strings.ToUpper(text[:1]) + text[1:]
+}
+
 func answers(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 	var settled result
 	if json.Unmarshal([]byte(call.Result), &settled) != nil || len(settled.Responses) == 0 {
 		return nil
 	}
-	shown := &toolsapp.Shown{Head: "answered", Open: true}
+	shown := &toolsapp.Shown{Head: "Answered", Open: true}
 	switch settled.Outcome {
 	case tools.Submitted:
 	case tools.Cancelled:
-		shown.Head = "dismissed"
+		shown.Head = "You dismissed the questions"
 	case tools.TimedOut:
-		shown.Head = "timed out"
+		shown.Head = "No answer came in time"
 	default:
-		shown.Head = strings.TrimSpace(settled.Outcome + " " + settled.Notice)
+		shown.Head = sentence(strings.TrimSpace(settled.Outcome + " " + settled.Notice))
 	}
 	for _, response := range settled.Responses {
 		var answer string
@@ -75,9 +83,9 @@ func answers(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 		case answer != "":
 			shown.Rows = append(shown.Rows, look.Glyphs.Check+" "+response.Question+" → "+render.Good(answer, look))
 		case response.Status == "skipped":
-			shown.Rows = append(shown.Rows, render.Dim(look.Glyphs.Skip+" "+response.Question+" → (skipped)", look))
+			shown.Rows = append(shown.Rows, render.Dim(look.Glyphs.Skip+" "+response.Question+" → skipped", look))
 		default:
-			shown.Rows = append(shown.Rows, render.Dim(look.Glyphs.Bullet+" "+response.Question+" (no answer)", look))
+			shown.Rows = append(shown.Rows, render.Dim(look.Glyphs.Bullet+" "+response.Question+" → no answer", look))
 		}
 	}
 	return shown

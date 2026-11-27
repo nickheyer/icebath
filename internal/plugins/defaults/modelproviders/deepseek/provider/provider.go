@@ -18,7 +18,7 @@ func (specs) Specs() []provider.Spec {
 		EchoesReasoning:            true,
 		Native:                     native,
 		DisplayName:                deepseekconfig.Title,
-		Description:                "DeepSeek models",
+		Description:                "DeepSeek models, with an API key paid by use",
 		SignupURL:                  "https://platform.deepseek.com/",
 		BaseURL:                    deepseekconfig.BaseURL,
 		BaseURLEnv:                 deepseekconfig.BaseURLEnv,

@@ -21,7 +21,7 @@ func openLibrary(path string) (uintptr, error) {
 	}
 	h, err := windows.LoadLibraryEx(full, 0, windows.LOAD_LIBRARY_SEARCH_DEFAULT_DIRS|windows.LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR)
 	if err != nil {
-		return 0, fmt.Errorf("Could not find module '%s' (or one of its dependencies): %v", full, err)
+		return 0, fmt.Errorf("The library %s, or one it needs, could not be loaded: %v", full, err)
 	}
 	return uintptr(h), nil
 }
@@ -29,7 +29,7 @@ func openLibrary(path string) (uintptr, error) {
 func lookupSymbol(lib uintptr, name string) (uintptr, error) {
 	addr, err := windows.GetProcAddress(windows.Handle(lib), name)
 	if err != nil || addr == 0 {
-		return 0, fmt.Errorf("function '%s' not found", name)
+		return 0, fmt.Errorf("The msalruntime library lacks the function %s.", name)
 	}
 	return addr, nil
 }

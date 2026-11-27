@@ -74,7 +74,7 @@ func (e *elicitor) Elicit(ctx context.Context, params *mcp.ElicitParams) (*mcp.E
 		e.count("errors")
 		return nil, &mcp.RPCError{Code: mcp.CodeInvalidParams, Message: fmt.Sprintf("Invalid params: elicitation mode %q is neither form nor url", params.Mode)}
 	}
-	message := cmp.Or(params.Message, fmt.Sprintf("MCP server '%s' is requesting your approval", name))
+	message := cmp.Or(params.Message, fmt.Sprintf("The MCP server %s asks for your approval.", name))
 	slog.Info("MCP server elicitation request", "server", name, "message", strs.Head(mcp.Redact(message), 200))
 	if props, _ := params.RequestedSchema["properties"].(map[string]any); len(props) > 0 {
 		fields, failure := formFields(params)
@@ -95,13 +95,27 @@ func (e *elicitor) Elicit(ctx context.Context, params *mcp.ElicitParams) (*mcp.E
 func summary(params *mcp.ElicitParams, server string) string {
 	props, _ := params.RequestedSchema["properties"].(map[string]any)
 	if len(props) == 0 {
-		return fmt.Sprintf("MCP server '%s' asks for your approval.", server)
+		return fmt.Sprintf("The MCP server %s asks for your approval.", server)
 	}
 	var lines []string
 	for _, name := range order(props, params.Order) {
 		lines = append(lines, "  "+name)
 	}
-	return fmt.Sprintf("MCP server '%s' asks for:\n%s", server, strings.Join(lines, "\n"))
+	return fmt.Sprintf("The MCP server %s asks for:\n%s", server, strings.Join(lines, "\n"))
+}
+
+// Text as a sentence: capital first letter, a period at the end
+func sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	runes := []rune(text)
+	text = strings.ToUpper(string(runes[:1])) + string(runes[1:])
+	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
+		text += "."
+	}
+	return text
 }
 
 // Property names in the order the server wrote them, any it left out of that order last by name
@@ -239,38 +253,40 @@ func titled(options []any) ([]string, []any) {
 func (f *formField) question(problem string) string {
 	label := f.name
 	if title, _ := f.spec["title"].(string); title != "" {
-		label = title + " (" + f.name + ")"
+		label = title + ", the field " + f.name
 	}
 	if f.required {
-		label += ", required"
+		label += ", which is needed"
 	}
-	parts := []string{label}
+	parts := []string{label + "."}
 	if description, _ := f.spec["description"].(string); description != "" {
-		parts = append(parts, description)
+		parts = append(parts, sentence(description))
 	}
 	var limits []string
-	for _, key := range []string{"minLength", "maxLength", "minimum", "maximum", "minItems", "maxItems", "format"} {
-		if v, ok := f.spec[key]; ok {
-			limits = append(limits, fmt.Sprintf("%s %v", key, v))
+	for _, rule := range []struct{ key, words string }{{"minLength", "at least %v characters"}, {"maxLength", "at most %v characters"},
+		{"minimum", "at least %v"}, {"maximum", "at most %v"}, {"minItems", "at least %v choices"}, {"maxItems", "at most %v choices"},
+		{"format", "in the format %v"}} {
+		if v, ok := f.spec[rule.key]; ok {
+			limits = append(limits, fmt.Sprintf(rule.words, v))
 		}
 	}
 	if pattern, _ := f.spec["pattern"].(string); pattern != "" {
-		limits = append(limits, "pattern "+pattern)
+		limits = append(limits, "matching "+pattern)
 	}
 	switch f.spec["type"] {
 	case "integer":
-		limits = append(limits, "a whole number")
+		limits = append([]string{"a whole number"}, limits...)
 	case "number":
-		limits = append(limits, "a number")
+		limits = append([]string{"a number"}, limits...)
 	}
 	if len(limits) > 0 {
-		parts = append(parts, "("+strings.Join(limits, ", ")+")")
+		parts = append(parts, "It must be "+strings.Join(limits, ", ")+".")
 	}
 	if def, ok := f.spec["default"]; ok {
-		parts = append(parts, fmt.Sprintf("Default %v, used when you skip it.", def))
+		parts = append(parts, fmt.Sprintf("Skip it to use %v.", def))
 	}
 	if problem != "" {
-		parts = append(parts, "Your last answer was refused: "+problem)
+		parts = append(parts, "Your last answer was refused, because "+problem+".")
 	}
 	return strings.Join(parts, " ")
 }
@@ -286,15 +302,15 @@ func (f *formField) value(answer []string) (any, string) {
 		for _, p := range picked {
 			v, ok := f.constOf(p)
 			if !ok {
-				return nil, fmt.Sprintf("%q is not one of %s", strings.TrimSpace(p), strings.Join(f.choices, ", "))
+				return nil, fmt.Sprintf("“%s” is not one of %s", strings.TrimSpace(p), strings.Join(f.choices, ", "))
 			}
 			out = append(out, v)
 		}
 		if n, ok := f.limit("minItems"); ok && len(out) < n {
-			return nil, fmt.Sprintf("pick at least %d", n)
+			return nil, fmt.Sprintf("it needs at least %s", strs.Count(n, "choice"))
 		}
 		if n, ok := f.limit("maxItems"); ok && len(out) > n {
-			return nil, fmt.Sprintf("pick at most %d", n)
+			return nil, fmt.Sprintf("it allows at most %s", strs.Count(n, "choice"))
 		}
 		return out, ""
 	}
@@ -302,7 +318,7 @@ func (f *formField) value(answer []string) (any, string) {
 	if len(f.choices) > 0 {
 		v, ok := f.constOf(text)
 		if !ok {
-			return nil, fmt.Sprintf("%q is not one of %s", text, strings.Join(f.choices, ", "))
+			return nil, fmt.Sprintf("“%s” is not one of %s", text, strings.Join(f.choices, ", "))
 		}
 		return v, ""
 	}
@@ -310,22 +326,22 @@ func (f *formField) value(answer []string) (any, string) {
 	case "integer":
 		n, err := strconv.ParseInt(text, 10, 64)
 		if err != nil {
-			return nil, fmt.Sprintf("%q is not a whole number", text)
+			return nil, fmt.Sprintf("“%s” is not a whole number", text)
 		}
 		return n, f.within(float64(n))
 	case "number":
 		n, err := strconv.ParseFloat(text, 64)
 		if err != nil || math.IsInf(n, 0) || math.IsNaN(n) {
-			return nil, fmt.Sprintf("%q is not a number", text)
+			return nil, fmt.Sprintf("“%s” is not a number", text)
 		}
 		return n, f.within(n)
 	}
 	length := utf8.RuneCountInString(text)
 	if n, ok := f.limit("minLength"); ok && length < n {
-		return nil, fmt.Sprintf("it needs at least %d characters", n)
+		return nil, fmt.Sprintf("it needs at least %s", strs.Count(n, "character"))
 	}
 	if n, ok := f.limit("maxLength"); ok && length > n {
-		return nil, fmt.Sprintf("it allows at most %d characters", n)
+		return nil, fmt.Sprintf("it allows at most %s", strs.Count(n, "character"))
 	}
 	if f.pattern != nil {
 		if matched, err := f.pattern.MatchString(text); err != nil || !matched {
@@ -362,10 +378,10 @@ func (f *formField) limit(key string) (int, bool) {
 // Refusal of a number outside the field's minimum or maximum
 func (f *formField) within(n float64) string {
 	if v, ok := seconds(f.spec["minimum"]); ok && n < v {
-		return fmt.Sprintf("it must be at least %v", v)
+		return "it must be at least " + strs.Number(v)
 	}
 	if v, ok := seconds(f.spec["maximum"]); ok && n > v {
-		return fmt.Sprintf("it must be at most %v", v)
+		return "it must be at most " + strs.Number(v)
 	}
 	return ""
 }
@@ -375,19 +391,19 @@ func format(kind, text string) string {
 	switch kind {
 	case "email":
 		if addr, err := mail.ParseAddress(text); err != nil || addr.Address != text {
-			return fmt.Sprintf("%q is not an email address", text)
+			return fmt.Sprintf("“%s” is not an email address", text)
 		}
 	case "uri":
 		if u, err := url.Parse(text); err != nil || u.Scheme == "" {
-			return fmt.Sprintf("%q is not an absolute URI", text)
+			return fmt.Sprintf("“%s” is not a full address", text)
 		}
 	case "date":
 		if _, err := time.Parse("2006-01-02", text); err != nil {
-			return fmt.Sprintf("%q is not a date like 2026-01-31", text)
+			return fmt.Sprintf("“%s” is not a date such as 2026-01-31", text)
 		}
 	case "date-time":
 		if _, err := time.Parse(time.RFC3339, text); err != nil {
-			return fmt.Sprintf("%q is not a date and time like 2026-01-31T09:30:00Z", text)
+			return fmt.Sprintf("“%s” is not a date and time such as 2026-01-31T09:30:00Z", text)
 		}
 	}
 	return ""
@@ -412,7 +428,7 @@ func (e *elicitor) form(ctx context.Context, message string, fields []*formField
 		for i, f := range batch {
 			text := f.question(problems[f.name])
 			if i == 0 {
-				text = fmt.Sprintf("MCP server '%s' asks: %s\n%s", name, message, text)
+				text = fmt.Sprintf("The MCP server %s asks: %s\n%s", name, message, text)
 			}
 			questions[i] = tools.Question{ID: f.name, Text: text, Choices: f.choices, MultiSelect: f.multi}
 		}
@@ -450,14 +466,14 @@ func (e *elicitor) form(ctx context.Context, message string, fields []*formField
 			open = append(open, f)
 		}
 	}
-	review := []string{fmt.Sprintf("Answers for MCP server '%s':", name)}
+	review := []string{fmt.Sprintf("Your answers for the MCP server %s:", name)}
 	for _, f := range fields {
 		if v, ok := content[f.name]; ok {
 			shown, _ := json.Marshal(v)
 			review = append(review, "  "+f.name+": "+string(shown))
 		}
 	}
-	if answer := e.ask(ctx, "Send these answers?", strings.Join(review, "\n")); answer != "accept" {
+	if answer := e.ask(ctx, "Send these answers to the server?", strings.Join(review, "\n")); answer != "accept" {
 		return &mcp.ElicitResult{Action: answer}, nil
 	}
 	return &mcp.ElicitResult{Action: "accept", Content: content}, nil
@@ -474,7 +490,7 @@ func (e *elicitor) link(ctx context.Context, params *mcp.ElicitParams) (*mcp.Eli
 		return nil, &mcp.RPCError{Code: mcp.CodeInvalidParams,
 			Message: fmt.Sprintf("Invalid params: a url mode elicitation needs an absolute http or https url with a host, got %q", params.URL)}
 	}
-	message := cmp.Or(params.Message, fmt.Sprintf("MCP server '%s' asks you to open a link", name))
+	message := cmp.Or(params.Message, fmt.Sprintf("The MCP server %s asks you to open a link.", name))
 	slog.Info("MCP server url elicitation request", "server", name, "host", u.Hostname(), "message", strs.Head(mcp.Redact(message), 200))
 	var done chan struct{}
 	if params.ElicitationID != "" {
@@ -508,22 +524,22 @@ func linkText(u *url.URL, server string) string {
 			domain = registrable
 		}
 	}
-	lines := []string{fmt.Sprintf("MCP server '%s' asks you to open this link:", server), "  " + u.String(), "Domain: " + domain}
+	lines := []string{fmt.Sprintf("The MCP server %s asks you to open this link:", server), "  " + u.String(), "Site: " + domain}
 	if ascii != domain {
-		lines[2] += " (host " + ascii + ")"
+		lines[2] += ", at " + ascii
 	}
 	if strings.Contains(ascii, "xn--") || ascii != host {
 		shown, err := idna.Display.ToUnicode(ascii)
 		if err != nil {
 			shown = host
 		}
-		lines = append(lines, fmt.Sprintf("Warning: the domain uses international letters (punycode %s, shown as %s). Check it is the site you expect.", ascii, shown))
+		lines = append(lines, fmt.Sprintf("⚠ The site name uses letters of other alphabets. It reads %s and is really %s, so check that it is the site you expect.", shown, ascii))
 	}
 	if u.User != nil {
-		lines = append(lines, fmt.Sprintf("Warning: the link carries a user name before the host; the site it opens is %s.", ascii))
+		lines = append(lines, fmt.Sprintf("⚠ The link puts a user name before the site, so the site it really opens is %s.", ascii))
 	}
 	if u.Scheme == "http" && !httpx.Loopback(ascii) {
-		lines = append(lines, "Warning: the link is not encrypted (http).")
+		lines = append(lines, "⚠ The link is not encrypted, as it starts with http://.")
 	}
 	return strings.Join(append(lines, "Accept, then finish the step on that page. What you enter there goes to the site and never through icebath."), "\n")
 }

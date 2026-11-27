@@ -23,7 +23,7 @@ func owner(f *os.File) (string, bool, error) {
 	}
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return "", false, errors.New("fstat returned no owner")
+		return "", false, errors.New("The file system gave no owner for the file.")
 	}
 	return strconv.FormatUint(uint64(st.Uid), 10), int(st.Uid) == os.Getuid(), nil
 }

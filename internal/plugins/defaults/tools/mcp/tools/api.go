@@ -201,7 +201,7 @@ type Probe struct {
 // signer of the context
 func (m *Manager) Probe(ctx context.Context, cfg *config.Config, name string, raw map[string]any, connectTimeout time.Duration, values map[string]string) (Probe, error) {
 	if issues := validate(name, raw); len(issues) > 0 {
-		return Probe{}, &ProbeError{Err: errors.New(strings.Join(issues, "; ")), Class: "config_rejected"}
+		return Probe{}, &ProbeError{Err: errors.New(strings.Join(issues, " ")), Class: "config_rejected"}
 	}
 	p := m.pool(cfg)
 	s := parseSpecWith(p.cfg, name, raw, p.workspaceDir(), values)
@@ -222,8 +222,8 @@ func (m *Manager) Probe(ctx context.Context, cfg *config.Config, name string, ra
 	srv.mu.Unlock()
 	if err != nil {
 		if errors.Is(connectCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-			err = fmt.Errorf("Connecting to MCP server '%s' timed out after %s (bounded by connect_timeout; an OAuth login also by oauth.timeout): %w", name,
-				s.ConnectTimeout, context.DeadlineExceeded)
+			err = &slowConnect{fmt.Sprintf("Connecting to the MCP server %s took longer than %s, its time limit to connect, so it stopped. A sign-in "+
+				"counts against the OAuth timeout as well.", name, strs.Span(s.ConnectTimeout))}
 		}
 		return result, &ProbeError{Err: errors.New(mcp.Redact(describe(err))), Class: failureClass(err), cause: err}
 	}
@@ -257,6 +257,13 @@ func (m *Manager) Probe(ctx context.Context, cfg *config.Config, name string, ra
 }
 
 // Failed probe: its message with credentials redacted, and the class of the failure
+// A connect that ran past its time limit, said for a person and still a deadline to whoever checks
+type slowConnect struct{ msg string }
+
+func (e *slowConnect) Error() string { return e.msg }
+
+func (e *slowConnect) Unwrap() error { return context.DeadlineExceeded }
+
 type ProbeError struct {
 	Err   error
 	Class string
@@ -293,13 +300,14 @@ func statusOf(err error) int {
 func NextStep(name string, err error) string {
 	switch class := failureClass(err); {
 	case class == "auth_required":
-		return "The server rejected the sign-in. Run: icebath mcp login " + name
+		return "The server turned down the sign-in. Sign in again with icebath mcp login " + name + "."
 	case errors.As(err, new(*abiError)):
-		return "After rebuilding it as above, run: icebath mcp test " + name
-	case missing(err) != "" || strings.Contains(err.Error(), "missing executable"):
-		return fmt.Sprintf("Install that command, or set the full path in %s.%s.command.", mcpconfig.Servers, name)
+		return "Once it is rebuilt, run icebath mcp test " + name + "."
+	case missing(err) != "" || strings.Contains(err.Error(), notFound):
+		return "Install that program, or give its full path as the command of " + name + " in /settings under Tools › MCP servers › Your servers."
 	}
-	return "Check the server is running and the URL/command in its config, then run: icebath mcp test " + name
+	return "Check that the server is running and that its address or command is right in /settings under Tools › MCP servers › Your servers, then " +
+		"run icebath mcp test " + name + "."
 }
 
 // Sign in to a server in progress, reached by its id
@@ -320,7 +328,7 @@ func (m *Manager) Login(cfg *config.Config, name, flow string) (*Signin, error) 
 	p := m.pool(cfg)
 	s, ok := p.spec(name)
 	if !ok {
-		return nil, fmt.Errorf("Server '%s' not found in config.", name)
+		return nil, fmt.Errorf("No MCP server is called “%s”. Run icebath mcp list to see yours.", name)
 	}
 	return m.loginWith(cfg, name, s.Raw, flow, nil)
 }
@@ -335,14 +343,15 @@ func (m *Manager) loginWith(cfg *config.Config, name string, raw map[string]any,
 	p := m.pool(cfg)
 	s := parseSpec(p.cfg, name, raw, p.workspaceDir())
 	if !s.remote() {
-		return nil, fmt.Errorf("Server '%s' has no URL — not an OAuth-capable server", name)
+		return nil, fmt.Errorf("The MCP server %s runs on this computer and has no address, so it has no sign-in.", name)
 	}
 	if s.Auth != "oauth" {
-		return nil, fmt.Errorf("Server '%s' is not configured for OAuth (auth=%s). Use `icebath mcp remove` + `icebath mcp add` to reconfigure auth.", name, cmp.Or(s.Auth, "None"))
+		return nil, fmt.Errorf("The MCP server %s does not sign in with OAuth, as its Sign-in is %s. Set its Sign-in to OAuth in /settings under "+
+			"Tools › MCP servers › Your servers.", name, cmp.Or(s.Auth, "Headers only"))
 	}
 	flow = cmp.Or(flow, s.OAuth.Flow)
 	if flow != "browser" && flow != "device" {
-		return nil, errors.New("oauth.flow must be browser or device")
+		return nil, errors.New("The OAuth setting flow must be browser or device.")
 	}
 	signin := &Signin{ID: strs.Random(8), Server: name, Login: mcp.NewLogin(), Done: make(chan struct{})}
 	m.logins.Store(signin.ID, signin)
@@ -388,7 +397,7 @@ func (m *Manager) signIn(ctx context.Context, p *pool, s *spec, raw map[string]a
 			return undo(err)
 		}
 	} else if err := store.Remove(true); err != nil {
-		return fmt.Errorf("could not clear the existing OAuth state: %w", err)
+		return fmt.Errorf("Could not forget the earlier sign-in of the server: %w", err)
 	}
 	p.forgetProvider(s.Name)
 	probe, err := m.Probe(mcp.WithSigner(ctx, signin.Login), p.cfg, s.Name, raw, max(s.ConnectTimeout, s.OAuth.Timeout+15*time.Second), nil)
@@ -401,9 +410,8 @@ func (m *Manager) signIn(ctx context.Context, p *pool, s *spec, raw map[string]a
 	signin.Tools = len(probe.Tools)
 	if !store.HasTokens() {
 		signin.NoToken = true
-		return undo(fmt.Errorf("Server responded, but no OAuth token was obtained — authentication did not complete. Some providers (e.g. Google Drive, " +
-			"Atlassian) do not support automatic client registration; create an OAuth client yourself and add its client_id and client_secret to the " +
-			"server's oauth settings, then sign in again."))
+		return undo(errors.New("The server answered but gave no sign-in token, so the sign-in did not finish. Providers such as Google Drive and " +
+			"Atlassian need an OAuth client that you create there, with its client_id and client_secret in the oauth part of the server's settings."))
 	}
 	if commit != nil {
 		if err := commit(); err != nil {

@@ -310,14 +310,14 @@ func (a *Agent) failClosed(r *run, env *contexts.Env, tokens int) error {
 	timedOut, deferred := r.cx.timedOut, r.cx.deferred
 	r.mu.Unlock()
 	if timedOut {
-		return fmt.Errorf("Context compression timed out before it could commit while the request was still approximately %s tokens. The provider "+
-			"call was not sent. Run /compress and wait for it to finish, then retry.", strs.Thousands(tokens))
+		return fmt.Errorf("Summarizing older messages took too long while the session was still about %s tokens, so nothing was sent to the "+
+			"model. Type /compress and wait for it to finish, then send your message again.", strs.Thousands(tokens))
 	}
 	if strings.HasPrefix(deferred, "transient:") {
 		return nil
 	}
-	return fmt.Errorf("Context compression could not bring this session under the model's context window (~%s tokens vs %s). The provider call "+
-		"was not sent. Start a new session with /new; this session is too large to compress further.", strs.Thousands(tokens), strs.Thousands(env.Window))
+	return fmt.Errorf("Summarizing could not bring this session, at about %s tokens, under the %s the model can read, so nothing was sent to "+
+		"the model. Start a new session with /new, because this one can't be made smaller.", strs.Thousands(tokens), strs.Thousands(env.Window))
 }
 
 // Compaction before a model call later in the turn, when the request grew over the trigger or a provider refused the last one for its
@@ -425,7 +425,7 @@ func (a *Agent) postTool(ctx context.Context, r *run, settings *config.Config, e
 		r.cx.attempts++
 		r.mu.Unlock()
 		r.rearm()
-		a.activity(r, settings, "⟳ compacting context…", false)
+		a.activity(r, settings, "Summarizing older messages to make room.", false)
 		done, err := a.compress(ctx, r, settings, env, engine, compressing{trigger: "post_tool", tokens: tokens})
 		if err != nil {
 			return "", err

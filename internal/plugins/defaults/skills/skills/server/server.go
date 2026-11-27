@@ -170,9 +170,9 @@ func (s *service) row(e skills.Entry, hub *skills.Lock, builtin map[string]bool,
 	if command, ok := commands[slug]; ok && command.Name == e.Name {
 		row.Command = slug
 	} else if slug != "" && s.taken != nil && s.taken(slug) {
-		row.CommandNote = "slash command /" + slug + " unavailable — name taken by another command"
+		row.CommandNote = "Its slash command /" + slug + " is taken by another command"
 	} else if slug != "" && row.Enabled {
-		row.CommandNote = "slash command /" + slug + " is taken by another skill"
+		row.CommandNote = "Its slash command /" + slug + " is taken by another skill"
 	}
 	if record := usage[e.Load]; record != nil {
 		row.UseCount, row.ViewCount, row.PatchCount = record.UseCount, record.ViewCount, record.PatchCount

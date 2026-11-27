@@ -15,6 +15,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
+
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Colors of a console's lines
@@ -118,12 +120,20 @@ func (c *Console) Fail(text string) error {
 	return Exit(1)
 }
 
-// Yes in green or no dimmed
+// Yes in green or No dimmed
 func (c *Console) YesNo(on bool) string {
 	if on {
-		return c.Paint("yes", Green)
+		return c.Paint("Yes", Green)
 	}
-	return c.Paint("no", Dim)
+	return c.Paint("No", Dim)
+}
+
+// On in green or Off dimmed, as a switch is shown
+func (c *Console) OnOff(on bool) string {
+	if on {
+		return c.Paint("On", Green)
+	}
+	return c.Paint("Off", Dim)
 }
 
 // Check mark in green
@@ -132,7 +142,7 @@ func (c *Console) Tick() string { return c.Paint("✓", Green) }
 // Prints a step of a wizard: its number and title in bold after a blank line
 func (c *Console) Step(n int, title string) {
 	c.Blank()
-	fmt.Fprintln(c.out, c.Paint(fmt.Sprintf("Step %d", n), Bold)+"  "+title)
+	fmt.Fprintln(c.out, c.Paint("Step "+strs.Number(float64(n)), Bold)+"  "+title)
 }
 
 // Starts a read of one line, or joins the one already outstanding; a secret line is not echoed
@@ -259,7 +269,7 @@ func (c *Console) Answer(prompt string) (string, bool) {
 // Line typed after the prompt without echo where the input is a terminal, false at the end of the input or on an interrupt
 func (c *Console) Secret(prompt string) (string, bool) {
 	if !c.tty {
-		fmt.Fprintln(c.out, c.Paint("Warning: Password input may be echoed.", Yellow))
+		fmt.Fprintln(c.out, c.Paint("⚠ What you type next may show on the screen.", Yellow))
 	}
 	return c.read(prompt, true)
 }
@@ -322,7 +332,7 @@ func (c *Console) Choose(title string, items []string) (int, bool) {
 		fmt.Fprintf(c.out, "  %3d  %s\n", i+1, item)
 	}
 	for {
-		value, ok := c.Input(c.Paint("  Number (empty or q to quit): ", Yellow))
+		value, ok := c.Input(c.Paint("  Type a number, or press enter to quit: ", Yellow))
 		value = strings.ToLower(strings.TrimSpace(value))
 		if !ok || value == "" || value == "q" {
 			return 0, false
@@ -330,7 +340,7 @@ func (c *Console) Choose(title string, items []string) (int, bool) {
 		if n, err := strconv.Atoi(value); err == nil && n >= 1 && n <= len(items) {
 			return n - 1, true
 		}
-		c.Failure("Pick a number from 1 to " + strconv.Itoa(len(items)))
+		c.Failure("Pick a number from 1 to " + strs.Number(float64(len(items))) + ".")
 	}
 }
 
@@ -352,7 +362,7 @@ func (c *Console) Checklist(title string, items []string, selected map[int]bool)
 			}
 			fmt.Fprintf(c.out, "  %3d %s %s\n", i+1, mark, item)
 		}
-		value, ok := c.Input(c.Paint("  Toggle numbers (1 3-5), a for all, n for none, empty to accept, q to cancel: ", Yellow))
+		value, ok := c.Input(c.Paint("  Type numbers such as 1 3-5 to check or uncheck them, a for all, n for none, enter to accept or q to cancel: ", Yellow))
 		value = strings.ToLower(strings.TrimSpace(value))
 		switch {
 		case !ok || value == "q":
@@ -376,7 +386,7 @@ func (c *Console) Checklist(title string, items []string, selected map[int]bool)
 				b, errB = strconv.Atoi(to)
 			}
 			if errA != nil || errB != nil || a < 1 || b > len(items) || a > b {
-				c.Failure("Not a number or range of the list: " + word)
+				c.Failure("“" + word + "” is not a number or a range of numbers from the list.")
 				continue
 			}
 			for i := a - 1; i < b; i++ {
@@ -424,7 +434,7 @@ func (c *Console) Index(prompt string, count int, empty bool, emptyLine string) 
 		if n >= 1 && n <= int64(count) {
 			return int(n), true
 		}
-		c.Say(fmt.Sprintf("  Out of range — pick 1-%d.", count), Red)
+		c.Say("  Pick a number from 1 to "+strs.Number(float64(count))+".", Red)
 	}
 }
 

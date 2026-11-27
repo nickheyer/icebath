@@ -526,7 +526,9 @@ type Backend struct {
 	// What the user does to make it usable
 	Setup []string `protobuf:"bytes,7,rep,name=setup,proto3" json:"setup,omitempty"`
 	// Key of the section of its own settings, empty when it has none
-	Section       string `protobuf:"bytes,8,opt,name=section,proto3" json:"section,omitempty"`
+	Section string `protobuf:"bytes,8,opt,name=section,proto3" json:"section,omitempty"`
+	// Has something to get ready before commands run there, such as an image to build
+	Prepares      bool `protobuf:"varint,9,opt,name=prepares,proto3" json:"prepares,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -615,6 +617,13 @@ func (x *Backend) GetSection() string {
 		return x.Section
 	}
 	return ""
+}
+
+func (x *Backend) GetPrepares() bool {
+	if x != nil {
+		return x.Prepares
+	}
+	return false
 }
 
 type BackendsRequest struct {
@@ -871,7 +880,7 @@ const file_icebath_terminal_v1_terminal_proto_rawDesc = "" +
 	"\x05Check\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x16\n" +
-	"\x06detail\x18\x03 \x01(\tR\x06detail\"\xeb\x01\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detail\"\x87\x02\n" +
 	"\aBackend\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
@@ -880,7 +889,8 @@ const file_icebath_terminal_v1_terminal_proto_rawDesc = "" +
 	"\vunavailable\x18\x05 \x01(\tR\vunavailable\x122\n" +
 	"\x06checks\x18\x06 \x03(\v2\x1a.icebath.terminal.v1.CheckR\x06checks\x12\x14\n" +
 	"\x05setup\x18\a \x03(\tR\x05setup\x12\x18\n" +
-	"\asection\x18\b \x01(\tR\asection\"+\n" +
+	"\asection\x18\b \x01(\tR\asection\x12\x1a\n" +
+	"\bprepares\x18\t \x01(\bR\bprepares\"+\n" +
 	"\x0fBackendsRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\"f\n" +
 	"\x10BackendsResponse\x12\x18\n" +

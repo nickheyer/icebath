@@ -27,6 +27,7 @@ import (
 	"github.com/nickheyer/icebath/internal/tools"
 	"github.com/nickheyer/icebath/internal/web"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Message waiting its turn
@@ -54,7 +55,7 @@ const (
 	// Asked of the model once the step limit is reached, and given when it can't answer
 	summaryRequest = "You've reached the maximum number of tool-calling iterations allowed. Please provide a final response summarizing what " +
 		"you've found and accomplished so far, without calling any more tools."
-	emptySummary = "I reached the iteration limit and couldn't generate a summary."
+	emptySummary = "I reached my step limit for this reply and couldn't sum up my work. Send “continue” to keep going."
 	// Told the model with the problems a language server found in its edits after their results had returned, before it gives its answer
 	lateVerdicts = "[System note: the language server reported problems in files you edited this turn, after those tool results had returned. " +
 		"Fix them if they are real, then give your final answer.]"
@@ -361,7 +362,10 @@ func (a *Agent) turn(ctx context.Context, r *run, q queued) (err error) {
 						return err
 					}
 				}
-				return fmt.Errorf("The provider ended the reply early (%s).", response.FinishReason)
+				if response.FinishReason == "length" {
+					return errors.New("The model reached its length limit and ended the reply early. Send “continue” to have it go on.")
+				}
+				return errors.New("The provider's safety filter ended the reply early. Rephrase your message, or pick another model with /model.")
 			}
 		}
 		if len(reply.GetToolCalls()) > 0 {
@@ -451,7 +455,7 @@ func (a *Agent) turn(ctx context.Context, r *run, q queued) (err error) {
 			return err
 		}
 		if halt := guard.halt; halt != nil {
-			a.tell(r, fmt.Sprintf("⚠️ Tool guardrail halted %s: %s", halt.tool, halt.code))
+			a.tell(r, haltNotice(*halt))
 			th.exit = "guardrail_halt"
 			return a.answer(ctx, store, r, settings, &sessionsv1.Message{Role: sessionsv1.Role_ROLE_ASSISTANT, Text: haltReply(*halt)})
 		}
@@ -501,7 +505,7 @@ func (a *Agent) ask(ctx context.Context, r *run, settings *config.Config, instan
 			return nil, route, err
 		}
 		if len(a.chain(settings)) > 0 {
-			a.tell(r, fmt.Sprintf("⚠️ %s — trying fallback...", cmp.Or(failureLabel(err, exhausted), "Provider failure")))
+			a.tell(r, cmp.Or(failureLabel(err, exhausted), "The provider failed")+". Trying a fallback model.")
 		}
 		if !a.failover(r, settings, route, err, reason) {
 			if reason == billingReason {
@@ -523,11 +527,11 @@ func failureLabel(err error, exhausted bool) string {
 	case !ok:
 		return ""
 	case exhausted:
-		return "Max retries exhausted"
+		return "The provider still failed after every retry"
 	case failure.StatusCode > 0:
-		return fmt.Sprintf("Non-retryable error (HTTP %d)", failure.StatusCode)
+		return fmt.Sprintf("The provider refused the request with HTTP status %d", failure.StatusCode)
 	}
-	return "Non-retryable error"
+	return "The provider refused the request"
 }
 
 // Streams one reply, retried after a failure retrying can fix while nothing of it streamed; whether the failure outlasted every retry. The
@@ -605,11 +609,11 @@ func (a *Agent) complete(ctx context.Context, r *run, client provider.Client, re
 		}
 		// The wait shows in place of the request's line while it lasts
 		wait := retryWait(failure, attempt)
-		reason := "waiting on provider —"
+		reason := "The request to the provider failed."
 		if failure.Kind == provider.ErrRateLimit {
-			reason = "rate limited —"
+			reason = "The provider is limiting requests."
 		}
-		r.waiting(fmt.Sprintf("⏳ %s retrying in %.0fs (attempt %d/%d)", reason, wait.Seconds(), attempt+1, retries))
+		r.waiting(fmt.Sprintf("%s Trying again in %s, retry %d of %d.", reason, strs.Span(max(wait.Round(time.Second), time.Second)), attempt+1, retries))
 		slog.Warn(fmt.Sprintf("Retrying API call in %ss (attempt %d/%d) provider=%s model=%s error=%s", strconv.FormatFloat(wait.Seconds(), 'f', -1, 64),
 			attempt+1, retries, route.Provider, request.Model, err))
 		select {
@@ -638,7 +642,7 @@ func retryWait(failure *provider.APIError, attempt int) time.Duration {
 // The model's last word at the step limit: asked to sum up what it did without calling more tools, its answer stored as the turn's reply
 func (a *Agent) summarize(ctx context.Context, r *run, store sessions.Store, settings *config.Config, built *system, definitions []map[string]any,
 	steps, limit int, searching string, deadline time.Time, source string) error {
-	a.tell(r, fmt.Sprintf("⚠️ Iteration budget exhausted (%d/%d) — asking model to summarise", steps, limit))
+	a.tell(r, fmt.Sprintf("The agent used all %s it may take for one reply, so it is asked to sum up its work.", strs.Count(limit, "step")))
 	if th := turningOf(ctx); th != nil {
 		th.exit = "budget_exhausted"
 	}
@@ -669,8 +673,8 @@ func (a *Agent) summarize(ctx context.Context, r *run, store sessions.Store, set
 				return err
 			}
 			slog.Warn("Failed to get summary response", "session", r.sessionID(), "error", err)
-			text = fmt.Sprintf("I ran out of steps for this turn (%d tool calls) before finishing, and couldn't produce a summary. Send `continue` to "+
-				"keep going, or raise Max steps in /settings under Agent.", limit)
+			text = fmt.Sprintf("I used all %s I may take for one reply before finishing, and couldn't sum up my work. Send “continue” to keep "+
+				"going, or raise Max steps in /settings under Agent.", strs.Count(limit, "step"))
 			break
 		}
 		if text = strings.TrimSpace(thinkBlocks.ReplaceAllString(response.Message.GetText(), "")); text != "" {

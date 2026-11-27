@@ -385,8 +385,8 @@ func (p *pool) gate(ctx context.Context, call *tools.Call, s *spec, tool *mcp.To
 		lines = c.lines(already)
 	}
 	if gated && !over {
-		parts := append([]string{fmt.Sprintf("MCP tool '%s' on UNTRUSTED server '%s' wants to run.", tool.Name, s.Name)}, lines...)
-		parts = append(parts, "This tool is write-capable (no readOnlyHint=true annotation) and may modify external state.")
+		parts := append([]string{fmt.Sprintf("The agent wants to run %s, a tool of the MCP server %s, which you do not trust.", tool.Name, s.Name)}, lines...)
+		parts = append(parts, "The server does not mark this tool as read-only, so it may change things outside icebath.")
 		action := strings.Join(parts, " ")
 		if len(call.Args) > 0 {
 			action += "\n\nArguments:\n" + arguments(call.Args, call.RawArgs)
@@ -408,13 +408,14 @@ func (p *pool) gate(ctx context.Context, call *tools.Call, s *spec, tool *mcp.To
 	// Past the spend limit a call is approved once only, so every further paid call of the chat asks again
 	var parts []string
 	if gated {
-		parts = append(parts, fmt.Sprintf("MCP tool '%s' on UNTRUSTED server '%s' wants to run.", tool.Name, s.Name), "This call goes past the chat's spend limit.")
+		parts = append(parts, fmt.Sprintf("The agent wants to run %s, a tool of the MCP server %s, which you do not trust.", tool.Name, s.Name),
+			"This call goes past the spending limit of this session.")
 		parts = append(parts, lines...)
-		parts = append(parts, "This tool is write-capable (no readOnlyHint=true annotation) and may modify external state.")
+		parts = append(parts, "The server does not mark this tool as read-only, so it may change things outside icebath.")
 	} else {
-		parts = append([]string{fmt.Sprintf("MCP tool '%s' on server '%s' would take this chat past its spend limit.", tool.Name, s.Name)}, lines...)
+		parts = append([]string{fmt.Sprintf("Running %s on the MCP server %s would take this session past its spending limit.", tool.Name, s.Name)}, lines...)
 	}
-	question := strings.Join(parts, " ") + fmt.Sprintf(" Run '%s' once? Every further paid call in this chat asks again.", tool.Name)
+	question := strings.Join(parts, " ") + fmt.Sprintf(" Run %s this once? Every further paid call in this session asks again.", tool.Name)
 	if len(call.Args) > 0 {
 		question += "\n\nArguments:\n" + arguments(call.Args, call.RawArgs)
 	}

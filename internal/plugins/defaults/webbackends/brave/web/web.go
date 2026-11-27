@@ -23,15 +23,15 @@ func Register(registry *web.Registry) {
 func (backends) Backends() []web.Backend {
 	return []web.Backend{{
 		Name:     "brave-free",
-		Title:    "Brave Search (Free)",
-		About:    "Brave Search (free tier) — web search via Brave's Data-for-Search API. Requires BRAVE_SEARCH_API_KEY (free signup at https://brave.com/search/api/, 2k queries/month).",
+		Title:    "Brave Search",
+		About:    "Web search on Brave's free plan, 2,000 searches a month",
 		Settings: []string{braveconfig.APIKey},
 		Plans: []web.Plan{{
-			Title:  "Brave Search (Free)",
-			Badge:  "free",
-			About:  "Free-tier API key — 2k queries/mo, search only.",
+			Title:  "Free plan",
+			Badge:  "free · key needed · search only",
+			About:  "A free API key for up to 2,000 searches a month",
 			Key:    braveconfig.APIKey,
-			Prompt: "Brave Search API key (free tier)",
+			Prompt: "Brave Search API key",
 			Link:   "https://brave.com/search/api/",
 		}},
 		Search: search,

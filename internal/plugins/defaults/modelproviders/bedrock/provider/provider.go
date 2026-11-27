@@ -16,6 +16,7 @@ func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               bedrockconfig.Name,
 		DisplayName:        bedrockconfig.Title,
+		Description:        "Claude and other models on AWS, with AWS credentials or a Bedrock key",
 		BaseURL:            bedrockconfig.BaseURL,
 		BaseURLEnv:         bedrockconfig.BaseURLEnv,
 		Mode:               provider.ModeBedrockConverse,
@@ -34,22 +35,22 @@ func (specs) Specs() []provider.Spec {
 		RequestHeaders:     guardrailHeaders,
 		Shape:              guardrail,
 		Settings: []config.Setting{
-			{Key: bedrockconfig.Region, Title: "Bedrock region", About: "AWS region requests are signed for and sent to; AWS_REGION, AWS_DEFAULT_REGION " +
-				"or the AWS profile's when empty", Default: ""},
-			{Key: bedrockconfig.Profile, Title: "AWS profile", About: "Profile of ~/.aws/config the provider signs in with; AWS_PROFILE or default when empty",
-				Default: ""},
-			{Key: bedrockconfig.Guardrail, Title: "Guardrail ID", About: "ID of the Bedrock guardrail applied to the replies; the version must be set " +
-				"too", Default: ""},
-			{Key: bedrockconfig.GuardrailVersion, Title: "Guardrail version", About: "Version of the Bedrock guardrail applied to the replies",
-				Default: ""},
-			{Key: bedrockconfig.GuardrailStreaming, Title: "Guardrail streaming", About: "Whether the guardrail checks streamed replies before they are " +
-				"shown", Default: "async", Options: config.Options(
-				config.Option{Value: "async", Title: "Async", About: "Check without delaying replies"},
-				config.Option{Value: "sync", Title: "Sync", About: "Check before text is shown"})},
-			{Key: bedrockconfig.GuardrailTrace, Title: "Guardrail trace", About: "Whether Bedrock reports why the guardrail acted", Default: "disabled",
-				Options: config.Options(config.Option{Value: "disabled", Title: "Off", About: "No guardrail trace"},
-					config.Option{Value: "enabled", Title: "On", About: "Include guardrail trace"},
-					config.Option{Value: "enabled_full", Title: "Full", About: "Include full guardrail trace"})},
+			{Key: bedrockconfig.Region, Title: "AWS region", About: "The AWS region that requests are signed for and sent to.",
+				Help: "Left empty, AWS_REGION, AWS_DEFAULT_REGION or the AWS profile decides.", Default: "", Zero: "From AWS settings"},
+			{Key: bedrockconfig.Profile, Title: "AWS profile", About: "The profile in ~/.aws/config that icebath signs in with.", Default: "",
+				Zero: "AWS_PROFILE, else default"},
+			{Key: bedrockconfig.Guardrail, Title: "Guardrail ID", About: "The ID of the Bedrock guardrail that checks replies.",
+				Help: "Set the guardrail version as well.", Default: "", Advanced: true},
+			{Key: bedrockconfig.GuardrailVersion, Title: "Guardrail version", About: "The version of the Bedrock guardrail that checks replies.",
+				Default: "", Advanced: true},
+			{Key: bedrockconfig.GuardrailStreaming, Title: "Guardrail streaming", About: "When the guardrail checks a reply that streams in.",
+				Default: "async", Advanced: true, Options: config.Options(
+					config.Option{Value: "async", Title: "Without delay", About: "Check while the reply is shown"},
+					config.Option{Value: "sync", Title: "Before showing", About: "Check text before it is shown"})},
+			{Key: bedrockconfig.GuardrailTrace, Title: "Guardrail trace", About: "Whether Bedrock reports why the guardrail acted.", Default: "disabled",
+				Advanced: true, Options: config.Options(config.Option{Value: "disabled", Title: "Off", About: "No report"},
+					config.Option{Value: "enabled", Title: "On", About: "Report why the guardrail acted"},
+					config.Option{Value: "enabled_full", Title: "Full", About: "Report why the guardrail acted, in full detail"})},
 		},
 	}}
 }

@@ -42,12 +42,13 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 	if p.Option("browser") == "true" || p.Settings[openaicodexconfig.LoginFlow] == openaicodexconfig.Browser {
 		tokens, err = browser(p)
 		if failure, ok := errors.AsType[*credentials.AuthError](err); ok && failure.Code == portBusy {
-			p.Say("Port %d is already in use (a Codex CLI sign-in may be running). OpenAI only redirects to that port, so falling back to the device-code login.\n", callbackPort)
+			p.Say("Port %d is busy, perhaps with a Codex CLI sign-in, and OpenAI sends the browser back only to that port. Signing in with a code "+
+				"instead.\n", callbackPort)
 			tokens, err = device(p)
 		}
 	} else {
-		p.Say("Signing in to OpenAI Codex...")
-		p.Say("(Icebath creates its own session — won't affect Codex CLI or VS Code)\n")
+		p.Say("Signing in to your ChatGPT account.")
+		p.Say("This sign-in is icebath's own and doesn't affect Codex CLI or VS Code.\n")
 		tokens, err = device(p)
 	}
 	if err != nil {
@@ -65,14 +66,8 @@ func device(p *credentials.Prompter) (Tokens, error) {
 		return Tokens{}, err
 	}
 	link := Issuer + "/codex/device"
-	p.Say("To continue, follow these steps:\n")
-	p.Say("  1. Open this URL in your browser:\n     \033[94m%s\033[0m\n", link)
-	p.Say("  2. Enter this code:\n     \033[94m%s\033[0m\n", code.user)
-	if p.Show != nil {
-		p.Show(link, code.user)
-	}
-	p.OpenBrowser(link, "Browser opened for OpenAI authorization.", "Could not open the browser automatically; use the URL above.")
-	p.Say("Waiting for sign-in... (press Ctrl+C to cancel)")
+	p.Instructions(link, code.user)
+	p.Pending("Waiting for you to approve the sign-in.")
 	granted, err := poll(p, code)
 	if err != nil {
 		return Tokens{}, err
@@ -80,7 +75,7 @@ func device(p *credentials.Prompter) (Tokens, error) {
 	verifier := credentials.Text(granted["code_verifier"])
 	authorization := credentials.Text(granted["authorization_code"])
 	if authorization == "" || verifier == "" {
-		return Tokens{}, failed("Device auth response missing authorization_code or code_verifier.", "device_code_incomplete_exchange", false)
+		return Tokens{}, failed("OpenAI approved the sign-in but sent back too little to finish it. Start the sign-in again.", "device_code_incomplete_exchange", false)
 	}
 	return exchange(ctx, url.Values{"grant_type": {"authorization_code"}, "code": {authorization}, "redirect_uri": {Issuer + "/deviceauth/callback"},
 		"client_id": {ClientID}, "code_verifier": {verifier}})
@@ -97,7 +92,7 @@ func deviceCode(p *credentials.Prompter) (issued, error) {
 	var reply *credentials.Reply
 	var err error
 	for attempt := 1; attempt <= 4; attempt++ {
-		if reply, err = post(p.Ctx, Issuer+"/api/accounts/deviceauth/usercode", map[string]string{"client_id": ClientID}, "Failed to request device code", "device_code_request_failed"); err != nil {
+		if reply, err = post(p.Ctx, Issuer+"/api/accounts/deviceauth/usercode", map[string]string{"client_id": ClientID}, "icebath could not ask OpenAI for a sign-in code.", "device_code_request_failed"); err != nil {
 			return issued{}, err
 		}
 		if reply.Status != 429 || attempt == 4 {
@@ -108,7 +103,7 @@ func deviceCode(p *credentials.Prompter) (issued, error) {
 			delay = wait
 		}
 		delay = min(max(delay, time.Second), time.Minute)
-		p.Say("OpenAI is rate-limiting login requests (429); retrying in %ds...", int(delay.Seconds()))
+		p.Say("OpenAI is limiting sign-in requests. Trying again in %s.", strs.Span(delay.Round(time.Second)))
 		if err := credentials.Sleep(p.Ctx, delay); err != nil {
 			return issued{}, err
 		}
@@ -117,7 +112,8 @@ func deviceCode(p *credentials.Prompter) (issued, error) {
 	case reply.Status == 429:
 		return issued{}, throttled(reply, "")
 	case reply.Status != 200:
-		return issued{}, failed(fmt.Sprintf("Device code request returned status %d.", reply.Status), "device_code_request_error", false)
+		return issued{}, failed(fmt.Sprintf("OpenAI refused to hand out a sign-in code, with HTTP status %d. Try again later.", reply.Status),
+			"device_code_request_error", false)
 	}
 	payload, err := reply.JSON()
 	if err != nil {
@@ -129,7 +125,7 @@ func deviceCode(p *credentials.Prompter) (issued, error) {
 	}
 	code := issued{user: credentials.Text(payload["user_code"]), id: credentials.Text(payload["device_auth_id"]), interval: time.Duration(max(interval, 3)) * time.Second}
 	if code.user == "" || code.id == "" {
-		return issued{}, failed("Device code response missing required fields.", "device_code_incomplete", false)
+		return issued{}, failed("OpenAI's sign-in code came back incomplete. Start the sign-in again.", "device_code_incomplete", false)
 	}
 	return code, nil
 }
@@ -142,23 +138,21 @@ func poll(p *credentials.Prompter, code issued) (map[string]any, error) {
 	failures := 0
 	for time.Since(start) < deviceWait {
 		if err := credentials.Sleep(p.Ctx, code.interval); err != nil {
-			p.Say("\nLogin cancelled.")
 			return nil, err
 		}
 		reply, err := credentials.PostJSON(p.Ctx, client, Issuer+"/api/accounts/deviceauth/token", body, nil)
 		if err != nil {
 			if p.Ctx.Err() != nil {
-				p.Say("\nLogin cancelled.")
 				return nil, errors.Join(credentials.ErrCancelled, p.Ctx.Err())
 			}
 			if failures++; !transient(err) || failures >= blips {
-				prefix := "Device auth polling request failed"
+				message := fmt.Sprintf("The connection to OpenAI failed while waiting for your approval: %v.%s", err, hint(err))
 				if failures >= blips {
-					prefix = fmt.Sprintf("Device auth polling request failed after %d consecutive transport errors", failures)
+					message = fmt.Sprintf("The connection to OpenAI failed %d times in a row while waiting for your approval: %v.%s", failures, err, hint(err))
 				}
-				return nil, credentials.Failed(openaicodexconfig.Name, "device_code_poll_error", fmt.Sprintf("%s: %v%s", prefix, err, hint(err)), false, err)
+				return nil, credentials.Failed(openaicodexconfig.Name, "device_code_poll_error", message, false, err)
 			}
-			p.Say("Transient network error while waiting for sign-in; retrying...")
+			p.Say("The connection to OpenAI dropped for a moment. Trying again.")
 			continue
 		}
 		failures = 0
@@ -168,9 +162,10 @@ func poll(p *credentials.Prompter, code issued) (map[string]any, error) {
 		case 403, 404:
 			continue
 		}
-		return nil, failed(fmt.Sprintf("Device auth polling returned status %d.", reply.Status), "device_code_poll_error", false)
+		return nil, failed(fmt.Sprintf("OpenAI answered with HTTP status %d while waiting for your approval. Start the sign-in again.", reply.Status),
+			"device_code_poll_error", false)
 	}
-	return nil, failed("Login timed out after 15 minutes.", credentials.Expired, false)
+	return nil, failed("The sign-in was not approved within "+strs.Span(deviceWait)+".", credentials.Expired, false)
 }
 
 // Swaps an authorization code for tokens at the endpoint both sign-ins share
@@ -181,9 +176,10 @@ func exchange(ctx context.Context, form url.Values) (Tokens, error) {
 	}
 	switch {
 	case reply.Status == 429:
-		return Tokens{}, throttled(reply, " during token exchange")
+		return Tokens{}, throttled(reply, " while finishing the sign-in")
 	case reply.Status != 200:
-		return Tokens{}, failed(fmt.Sprintf("Token exchange returned status %d.", reply.Status), "token_exchange_error", false)
+		return Tokens{}, failed(fmt.Sprintf("OpenAI refused to finish the sign-in, with HTTP status %d. Start the sign-in again.", reply.Status),
+			"token_exchange_error", false)
 	}
 	payload, err := reply.JSON()
 	if err != nil {
@@ -192,7 +188,7 @@ func exchange(ctx context.Context, form url.Values) (Tokens, error) {
 	tokens := Tokens{Access: credentials.Text(payload["access_token"]), Refresh: credentials.Text(payload["refresh_token"]),
 		Refreshed: time.Now().UTC().Format("2006-01-02T15:04:05.000000Z")}
 	if tokens.Access == "" {
-		return Tokens{}, failed("Token exchange did not return an access_token.", "token_exchange_no_access_token", false)
+		return Tokens{}, failed("OpenAI finished the sign-in without sending a token. Start the sign-in again.", "token_exchange_no_access_token", false)
 	}
 	return tokens, nil
 }
@@ -201,7 +197,7 @@ func exchange(ctx context.Context, form url.Values) (Tokens, error) {
 func browser(p *credentials.Prompter) (Tokens, error) {
 	verifier, challenge := credentials.PKCE(64)
 	state := strs.Token(32)
-	callback, err := credentials.Listen("127.0.0.1", callbackPort, callbackPath, "OpenAI Codex", portBusy)
+	callback, err := credentials.Listen("127.0.0.1", callbackPort, callbackPath, "ChatGPT", portBusy)
 	if err != nil {
 		return Tokens{}, err
 	}
@@ -209,24 +205,21 @@ func browser(p *credentials.Prompter) (Tokens, error) {
 	query := url.Values{"response_type": {"code"}, "client_id": {ClientID}, "redirect_uri": {callback.Redirect}, "scope": {browserScope},
 		"code_challenge": {challenge}, "code_challenge_method": {"S256"}, "id_token_add_organizations": {"true"}, "state": {state}}
 	link := Authorize + "?" + query.Encode()
-	p.Say("\nSigning in to OpenAI Codex (browser authorization)...")
-	p.Say("(Icebath creates its own session — won't affect Codex CLI or VS Code)\n")
-	p.Say("Open this URL to authorize Icebath:\n  %s\n", link)
+	p.Say("\nSigning in to your ChatGPT account in the browser.")
+	p.Say("This sign-in is icebath's own and doesn't affect Codex CLI or VS Code.\n")
+	p.Say("Open this address in your browser to allow icebath: %s\n", link)
 	if p.Show != nil {
 		p.Show(link, "")
 	}
 	p.Tunnel(callback.Redirect)
-	p.OpenBrowser(link, "Browser opened for OpenAI authorization.", "Could not open the browser automatically; use the URL above.")
+	p.OpenBrowser(link, "The address is open in your browser.", "Your browser could not be opened, so open the address yourself.")
 	wait := p.Wait(callbackWait)
-	p.Say("Waiting for the OpenAI callback on %s (timeout %ds, Ctrl+C to cancel)...", callback.Redirect, int(wait.Seconds()))
+	p.Pending(fmt.Sprintf("Waiting up to %s for your browser to come back to %s.", strs.Span(wait), callback.Redirect))
 	code, err := callback.Wait(p.Ctx, wait, state, openaicodexconfig.Name)
 	if err != nil {
-		if p.Ctx.Err() != nil {
-			p.Say("\nLogin cancelled.")
-		}
 		return Tokens{}, err
 	}
-	p.Say("Exchanging the authorization code for Codex tokens...")
+	p.Say("Finishing the sign-in with OpenAI.")
 	return exchange(p.Ctx, url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {callback.Redirect}, "client_id": {ClientID},
 		"code_verifier": {verifier}})
 }
@@ -239,7 +232,7 @@ func post(ctx context.Context, endpoint string, body any, what, code string) (*c
 }
 
 func postForm(ctx context.Context, form url.Values) (*credentials.Reply, error) {
-	return retried(ctx, "Token exchange failed", "token_exchange_failed", func() (*credentials.Reply, error) {
+	return retried(ctx, "icebath could not finish the sign-in with OpenAI.", "token_exchange_failed", func() (*credentials.Reply, error) {
 		return credentials.PostForm(ctx, credentials.Client(15*time.Second), TokenURL, form, nil)
 	})
 }
@@ -254,7 +247,7 @@ func retried(ctx context.Context, what, code string, send func() (*credentials.R
 			return nil, errors.Join(credentials.ErrCancelled, ctx.Err())
 		}
 		if attempt == 3 || !transient(err) {
-			return nil, credentials.Failed(openaicodexconfig.Name, code, fmt.Sprintf("%s: %v%s", what, err, hint(err)), false, err)
+			return nil, credentials.Failed(openaicodexconfig.Name, code, fmt.Sprintf("%s The connection failed: %v.%s", what, err, hint(err)), false, err)
 		}
 		if err := credentials.Sleep(ctx, time.Duration(attempt)*time.Second); err != nil {
 			return nil, err
@@ -264,12 +257,11 @@ func retried(ctx context.Context, what, code string, send func() (*credentials.R
 
 // Failure of a sign-in OpenAI throttled, which is no credential problem
 func throttled(reply *credentials.Reply, during string) error {
-	wait := " Wait a minute and run the login again."
+	wait := " Wait a minute, then sign in again."
 	if after, ok := reply.RetryAfter(); ok {
-		wait = fmt.Sprintf(" Try again in about %ds.", int(after.Seconds()))
+		wait = " Try again in about " + strs.Span(max(after.Round(time.Second), time.Second)) + "."
 	}
-	return failed(fmt.Sprintf("OpenAI is rate-limiting Codex login requests (HTTP 429)%s. This is a temporary throttle on OpenAI's side, not a credential problem.%s",
-		during, wait), RateLimited, false)
+	return failed(fmt.Sprintf("OpenAI is limiting sign-in requests for now%s, which is not a problem with your account.%s", during, wait), RateLimited, false)
 }
 
 // Whether a failure is of the connection and may pass, unlike an error of decoding or of the code
@@ -307,9 +299,6 @@ func hint(err error) string {
 	if !trouble {
 		return ""
 	}
-	return " This looks like a TLS handshake failure rather than a Codex outage: some networks reject the larger TLS 1.3 ClientHello that Go sends " +
-		"by default (post-quantum hybrid groups). Workaround: run with GODEBUG=tlsmlkem=0 to restrict key exchange to classic curves " +
-		"(x25519:secp256r1:secp384r1:x448), or test with TLS 1.2. Sign in already rides out a one-off dropped connection (the device code request " +
-		"and token exchange are retried twice and polling survives up to six transport errors in a row), so this error means the network keeps " +
-		"failing. Set the workaround, then run `icebath auth add openai-codex` again"
+	return " Your network seems to refuse the larger secure connection setup icebath sends, and icebath already tried again. Set " +
+		"GODEBUG=tlsmlkem=0, then run `icebath auth add openai-codex` again."
 }

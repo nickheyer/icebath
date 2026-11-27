@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-var errUnsupported = errors.New("Bot Desktop runs on Linux gateway hosts only")
+var errUnsupported = errors.New("The agent desktop works only when icebath runs on Linux.")
 
 func pgid(int) (int, error) { return 0, errUnsupported }
 

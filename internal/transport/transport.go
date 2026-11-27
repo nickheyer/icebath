@@ -69,7 +69,7 @@ func (r *Registry) make(route provider.Route) (provider.Client, error) {
 	}
 	factory, ok := r.Factories()[route.Mode]
 	if !ok {
-		return nil, fmt.Errorf("%s uses the %s API, which icebath doesn't support.", route.Provider, route.Mode)
+		return nil, fmt.Errorf("%s uses a request format, %s, that icebath doesn't support.", route.Provider, route.Mode)
 	}
 	client, err := factory(route)
 	if err != nil || r.host == nil {

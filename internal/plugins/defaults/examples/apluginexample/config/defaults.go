@@ -6,9 +6,9 @@ func Register(cfg *config.Config) {
 	cfg.Register(config.Sections{{
 		Key:   Key,
 		Title: "Example plugin",
-		About: "Example of how a plugin is built",
+		About: "Shows how a plugin adds settings of its own",
 		Settings: []config.Setting{
-			{Key: Greeting, Title: "Greeting", About: "Text the example plugin shows", Default: "hello"},
+			{Key: Greeting, Title: "Greeting", About: "The text the example plugin shows.", Default: "hello"},
 		},
 	}})
 }

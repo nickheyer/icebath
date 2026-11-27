@@ -14,7 +14,7 @@ import (
 
 func Register(registry *speech.Registry) {
 	registry.Register(speech.Services{Waking: []speech.Engine{{
-		Name: config.Name, Aliases: []string{"oww", "local"}, Title: "openWakeWord", About: "Hears the phrase its model file was trained for",
+		Name: config.Name, Aliases: []string{"oww", "local"}, Title: "openWakeWord", About: "Hears a phrase that a model file was trained for",
 		Rank: 1, Extra: config.Extra, Model: config.Model,
 		Supported: func(sp *speech.Speech) bool {
 			reason, known := sp.Packages().ExtraUnsupported(config.Extra)
@@ -32,15 +32,16 @@ func Register(registry *speech.Registry) {
 func open(_ context.Context, wake *speech.Wake) (speech.Hotword, error) {
 	model := wake.Setting(config.Model)
 	if model == "" {
-		return nil, fmt.Errorf("%s is not set. openWakeWord detects only the phrase its model file was trained for; set the path of that file, or set "+
-			"wake_word.provider to auto so the open vocabulary engine detects %s.", config.Model, wake.Phrase)
+		return nil, fmt.Errorf("openWakeWord hears only the phrase its model file was trained for, and it has no model file. Set Model file in "+
+			"/settings under Wake word › openWakeWord, or set Listener to Automatic so a listener that hears any phrase listens for “%s”.", wake.Phrase)
 	}
 	if _, ok := wake.Speech.Packages().ExtraPython(config.Extra); !ok {
-		return nil, errors.New("the " + config.Extra + " wake engine is not provisioned. Run `" + packages.InstallHint(config.Extra) + "`")
+		return nil, errors.New("openWakeWord is not installed. Run " + packages.InstallHint(config.Extra) + " to install it.")
 	}
 	dir, ok := wake.Speech.Packages().ExtraModule(config.Extra, "pyopen_wakeword")
 	if !ok {
-		return nil, errors.New("the Python package pyopen_wakeword is not installed in the wake word environment")
+		return nil, errors.New("The Python package pyopen_wakeword is missing from the install of openWakeWord. Run " + packages.InstallHint(config.Extra) +
+			" again.")
 	}
 	t, err := library(dir)
 	if err != nil {

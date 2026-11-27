@@ -19,7 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
-var ErrNotFound = connect.NewError(connect.CodeNotFound, "Session not found")
+var ErrNotFound = connect.NewError(connect.CodeNotFound, "There is no such session. Run icebath sessions list to see your sessions.")
 
 // Who set a title, least authority first: a title is only replaced by one of the same authority or more, a person's always
 const (
@@ -284,6 +284,12 @@ type Registrant interface {
 	Stores() map[string]Store
 }
 
+// A store that names itself where a person picks one: its title and what it keeps sessions in
+type Described interface {
+	Title() string
+	About() string
+}
+
 type Registry struct {
 	registrants []Registrant
 	starts      []func(ctx context.Context)
@@ -365,7 +371,7 @@ func (r *Registry) Stores() map[string]Store {
 func (r *Registry) Store(name string) (Store, error) {
 	store, ok := r.Stores()[name]
 	if !ok {
-		return nil, fmt.Errorf("No session store named %s.", name)
+		return nil, fmt.Errorf("There is no session storage named %s. Pick one in /settings under Sessions › Storage.", name)
 	}
 	return store, nil
 }
@@ -416,8 +422,13 @@ func New(cfg *config.Config, points *hooks.Hooks) *Sessions {
 	s.Registry.hooks = points
 	sessionsconfig.Register(cfg, func() []config.Option {
 		var options []config.Option
-		for _, name := range slices.Sorted(maps.Keys(s.Stores())) {
-			options = append(options, config.Option{Value: name, Title: name})
+		stores := s.Stores()
+		for _, name := range slices.Sorted(maps.Keys(stores)) {
+			option := config.Option{Value: name, Title: name}
+			if described, ok := stores[name].(Described); ok {
+				option.Title, option.About = described.Title(), described.About()
+			}
+			options = append(options, option)
 		}
 		return options
 	})
@@ -454,16 +465,15 @@ func (s *Sessions) Rename(old, renamed string) error {
 
 // Refusal to load a session back that holds more messages than the resume limit
 func TooLong(count, limit int64) error {
-	return fmt.Errorf("This session is too long to reload safely (%d messages; limit %d). Start a fresh chat and keep a copy with "+
-		"`icebath sessions export --format md --session-id <id>` (not capped), or raise the limit with Resume size limit in /settings under Sessions "+
-		"(0 turns the guard off).", count, limit)
+	return fmt.Errorf("This session has %s messages, more than the %s that can be reopened safely. Start a new session and keep a copy with "+
+		"icebath sessions export --format md --session-id <id>, or raise Reopen limit in /settings under Sessions.", strs.Number(float64(count)),
+		strs.Number(float64(limit)))
 }
 
 // Refusal to export a session in memory that holds more messages than the export limit
 func TooLarge(id string, limit int64) error {
-	return fmt.Errorf("Session '%s' has more than %s exportable messages; the JSON/JSONL backup is built in memory and capped per session. Use the "+
-		"uncapped `icebath sessions export --format md --session-id <id>`, or set Export size limit to 0 in /settings under Sessions to disable the guard.",
-		id, strs.Thousands(limit))
+	return fmt.Errorf("The session %s has more than %s messages, the most a JSON export holds. Export it as Markdown with "+
+		"icebath sessions export --format md --session-id %s, or raise Export limit in /settings under Sessions.", id, strs.Number(float64(limit)), id)
 }
 
 type resumeKey struct{}

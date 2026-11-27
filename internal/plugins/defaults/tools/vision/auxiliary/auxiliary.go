@@ -16,12 +16,16 @@ func Register(registry *auxiliary.Registry) {
 
 func (tasks) Tasks() []auxiliary.Task {
 	return []auxiliary.Task{
-		{Name: visionconfig.Task, Title: "Image analysis", About: "Model that looks at images for the agent", Timeout: 120, Vision: true, Critical: true,
-			Settings: []config.Setting{
-				{Key: visionconfig.DownloadTimeout, Title: "Download timeout", About: "Seconds a download of an image or video may go without data", Default: 30 * time.Second},
-				{Key: visionconfig.Temperature, Title: "Vision temperature", About: "How varied image and video descriptions may be, 0 to 2; low values give steadier ones", Default: 0.1},
-				{Key: visionconfig.MaxConcurrency, Title: "Image workers", About: "How many images are prepared at the same time; 0 for one per processor core", Default: 0},
+		{Name: visionconfig.Task, Title: "Image analysis", About: "The model that looks at images for the agent", Order: 30, Timeout: 120, Vision: true,
+			Critical: true, Settings: []config.Setting{
+				{Key: visionconfig.Temperature, Title: "Temperature", About: "How much the descriptions of images and videos may vary.",
+					Help: "Low values give steadier descriptions.", Default: 0.1, Least: config.Num(0), Most: config.Num(2), Advanced: true},
+				{Key: visionconfig.DownloadTimeout, Title: "Download time limit", About: "How long a download of an image or video may go without data.",
+					Default: 30 * time.Second, Zero: "1 second", Advanced: true},
+				{Key: visionconfig.MaxConcurrency, Title: "Images at once", About: "How many images are prepared at the same time.", Default: 0,
+					Zero: "One per core", Counts: "images", Least: config.Num(0), Advanced: true},
 			}},
-		{Name: visionconfig.VideoTask, Title: "Video analysis", About: "Model that watches videos for the agent", Inherit: visionconfig.Task, MinTimeout: 180, Vision: true, Critical: true},
+		{Name: visionconfig.VideoTask, Title: "Video analysis", About: "The model that watches videos for the agent", Order: 40, Inherit: visionconfig.Task,
+			MinTimeout: 180, Vision: true, Critical: true},
 	}
 }

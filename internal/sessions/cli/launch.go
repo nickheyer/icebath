@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1/sessionsv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // How the app is launched from the command line: on a new chat, or on a session to resume or continue
@@ -40,7 +41,7 @@ func parseLaunch(args []string) (launch, bool, error) {
 		case "-r", "--resume":
 			if !inline {
 				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
-					return l, true, errors.New("--resume needs the id or title of a session")
+					return l, true, errors.New("--resume needs the id or title of a session, such as icebath -r 3f2a9c.")
 				}
 				i++
 				value = args[i]
@@ -61,7 +62,7 @@ func parseLaunch(args []string) (launch, bool, error) {
 		}
 	}
 	if l.resume != "" && l.continuing {
-		return l, true, errors.New("--resume and --continue can't be used together")
+		return l, true, errors.New("--resume and --continue can't go together. Use one of them.")
 	}
 	return l, true, nil
 }
@@ -81,7 +82,7 @@ func Launch(ctx context.Context, conn *connect.Client, dir string, args []string
 	case l.resume != "":
 		response, err := service.Resolve(ctx, &sessionsv1.ResolveRequest{Ref: l.resume, Tip: true})
 		if err != nil {
-			return true, fmt.Errorf("No session found matching '%s'. Use 'icebath sessions list' to see available sessions.", l.resume)
+			return true, fmt.Errorf("No session matches “%s”. Run icebath sessions list to see your sessions.", l.resume)
 		}
 		id = response.GetSession().GetId()
 		restore(out, response.GetSession(), l.keepCwd)
@@ -114,7 +115,7 @@ func continued(ctx context.Context, conn *connect.Client, service sessionsv1conn
 	if name != "" {
 		response, err := service.Resolve(ctx, &sessionsv1.ResolveRequest{Ref: name, Tip: true})
 		if err != nil {
-			return nil, fmt.Errorf("No session found matching '%s'. Use 'icebath sessions list' to see available sessions.", name)
+			return nil, fmt.Errorf("No session matches “%s”. Run icebath sessions list to see your sessions.", name)
 		}
 		return response.GetSession(), nil
 	}
@@ -143,7 +144,7 @@ func continued(ctx context.Context, conn *connect.Client, service sessionsv1conn
 			return response.GetSession(), nil
 		}
 	}
-	return nil, errors.New("No previous TUI session to continue. Start a new one with `icebath`, or list sessions with `icebath sessions list`.")
+	return nil, errors.New("There is no session to continue yet. Run icebath to start one, or icebath sessions list to see your sessions.")
 }
 
 // Moves into the session's working directory, as resuming it puts the person back where it ran, unless asked not to
@@ -154,25 +155,46 @@ func restore(out io.Writer, session *sessionsv1.Session, keep bool) {
 		return
 	}
 	if info, err := os.Stat(directory); err != nil || !info.IsDir() {
-		fmt.Fprintf(out, "⚠ Session's working directory is gone: %s — staying in %s\n", directory, current)
+		fmt.Fprintf(out, "⚠ The folder of the session, %s, is gone, so icebath stays in %s.\n", directory, current)
 		return
 	}
 	if err := os.Chdir(directory); err != nil {
-		fmt.Fprintf(out, "⚠ Could not enter session's working directory %s: %v\n", directory, err)
+		fmt.Fprintf(out, "⚠ icebath could not go into the folder of the session, %s: %v.\n", directory, err)
 		return
 	}
-	fmt.Fprintf(out, "↻ Working directory: %s\n", directory)
+	fmt.Fprintf(out, "Working in the folder of the session, %s.\n", directory)
+}
+
+// Length of time in hours, minutes and seconds, each said when it is not zero: 1 hour, 2 minutes and 5 seconds
+func lasted(d time.Duration) string {
+	var parts []string
+	for _, unit := range []struct {
+		length time.Duration
+		noun   string
+	}{{time.Hour, "hour"}, {time.Minute, "minute"}, {time.Second, "second"}} {
+		if n := int(d / unit.length); n > 0 {
+			parts = append(parts, strs.Count(n, unit.noun))
+			d -= time.Duration(n) * unit.length
+		}
+	}
+	switch len(parts) {
+	case 0:
+		return "Less than a second"
+	case 1:
+		return parts[0]
+	}
+	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
 // Says how to come back to the session the app showed last
 func goodbye(ctx context.Context, out io.Writer, service sessionsv1connect.SessionServiceClient, id string, started time.Time) {
 	if id == "" {
-		fmt.Fprintln(out, "Goodbye! 󰆧")
+		fmt.Fprintln(out, "Goodbye.")
 		return
 	}
 	response, err := service.Get(ctx, &sessionsv1.GetRequest{Id: id})
 	if err != nil || len(response.GetMessages()) == 0 {
-		fmt.Fprintln(out, "Goodbye! 󰆧")
+		fmt.Fprintln(out, "Goodbye.")
 		return
 	}
 	session := response.GetSession()
@@ -183,17 +205,18 @@ func goodbye(ctx context.Context, out io.Writer, service sessionsv1connect.Sessi
 		}
 		calls += len(m.GetToolCalls())
 	}
-	fmt.Fprintln(out, "Resume this session with:")
+	fmt.Fprintln(out, "To come back to this session, run:")
 	fmt.Fprintf(out, "  icebath --resume %s\n", id)
 	if title := session.GetTitle(); title != "" {
 		fmt.Fprintf(out, "  icebath -c %q\n", title)
 	}
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "%-16s%s\n", "Session:", id)
+	fmt.Fprintf(out, "%-12s%s\n", "Session:", id)
 	if title := session.GetTitle(); title != "" {
-		fmt.Fprintf(out, "%-16s%s\n", "Title:", title)
+		fmt.Fprintf(out, "%-12s%s\n", "Title:", title)
 	}
-	elapsed := time.Since(started).Round(time.Second)
-	fmt.Fprintf(out, "%-16s%dh %dm %ds\n", "Duration:", int(elapsed.Hours()), int(elapsed.Minutes())%60, int(elapsed.Seconds())%60)
-	fmt.Fprintf(out, "%-16s%d (%d user, %d tool calls)\n", "Messages:", len(response.GetMessages()), users, calls)
+	fmt.Fprintf(out, "%-12s%s\n", "Time:", lasted(time.Since(started).Round(time.Second)))
+	fmt.Fprintf(out, "%-12s%s\n", "Messages:", strs.Number(float64(len(response.GetMessages()))))
+	fmt.Fprintf(out, "%-12s%s\n", "From you:", strs.Number(float64(users)))
+	fmt.Fprintf(out, "%-12s%s\n", "Tool calls:", strs.Number(float64(calls)))
 }

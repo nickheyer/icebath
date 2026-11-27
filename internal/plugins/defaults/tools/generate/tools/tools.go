@@ -38,6 +38,9 @@ type registrant struct {
 	journal  *tools.Journal
 }
 
+// Heading the Tools screen lists the tools that make images and videos under, which the video tools of the xAI plugin share
+const group = "Images and video"
+
 func Register(registry *tools.Registry, services *generation.Generation, t *terminal.Terminal) {
 	registry.Register(&registrant{services: services, terminal: t, journal: &tools.Journal{Name: "image_tools"}})
 }
@@ -45,7 +48,8 @@ func Register(registry *tools.Registry, services *generation.Generation, t *term
 func (r *registrant) Tools() []tools.Def {
 	return []tools.Def{
 		{
-			Name: Image, Toolset: "image_gen", Title: "Image", Icon: tools.IconWrite, Subject: "prompt",
+			Name: Image, Toolset: "image_gen", Title: "Image", About: "Make an image from a description", Group: group, Icon: tools.IconWrite,
+			Subject: "prompt",
 			Schema:  imageSchema(),
 			Dynamic: r.imageSchema,
 			Handler: r.image,
@@ -58,7 +62,8 @@ func (r *registrant) Tools() []tools.Def {
 			},
 		},
 		{
-			Name: Video, Toolset: "video_gen", Title: "Video", Icon: tools.IconWrite, Subject: "prompt",
+			Name: Video, Toolset: "video_gen", Title: "Video", About: "Make a video from a description or an image", Group: group,
+			Icon: tools.IconWrite, Subject: "prompt",
 			Schema:    videoSchema(),
 			Dynamic:   r.videoSchema,
 			Handler:   r.video,

@@ -1,6 +1,7 @@
 package slash
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -13,6 +14,7 @@ import (
 	sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
 	"github.com/nickheyer/icebath/internal/skills"
 	"github.com/nickheyer/icebath/internal/slash"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type commands struct {
@@ -44,9 +46,9 @@ func (c *commands) taken(name string) bool {
 
 func (c *commands) own() []slash.Command {
 	return []slash.Command{
-		{Name: "reload-skills", Aliases: []string{"reload_skills"}, Help: "Re-scan the skills folders for newly installed or removed skills", Run: c.reload},
-		{Name: "bundles", Help: "List skill bundles (aliases /<name> for multiple skills)", Run: c.bundles},
-		{Name: "learn", Usage: "<what to learn from>", Help: "Learn a reusable skill from anything you describe (dirs, URLs, this chat, notes)", Run: c.learn},
+		{Name: "reload-skills", Aliases: []string{"reload_skills"}, Help: "Read the skills folders again", Run: c.reload},
+		{Name: "bundles", Help: "List the skill bundles", Run: c.bundles},
+		{Name: "learn", Usage: "<what to learn from>", Help: "Make a skill from a folder, a page or this chat", Run: c.learn},
 	}
 }
 
@@ -63,7 +65,12 @@ func (c *commands) Commands() []slash.Command {
 		command := table[key]
 		help := command.Description
 		if len(command.Skills) > 0 {
-			help += fmt.Sprintf(" (bundle of %d skills)", len(command.Skills))
+			bundle := fmt.Sprintf("a bundle of %d skills", len(command.Skills))
+			if help = strings.TrimRight(strings.TrimSpace(help), "."); help == "" {
+				help = "Load " + bundle
+			} else {
+				help += ", " + bundle
+			}
 		}
 		out = append(out, slash.Command{Name: key, Usage: "[instruction]", Help: help, Skill: true, Run: func(ctx context.Context, call *slash.Call) (string, error) {
 			return c.invoke(ctx, key, call)
@@ -99,15 +106,23 @@ func (c *commands) invoke(ctx context.Context, key string, call *slash.Call) (st
 		return "", err
 	}
 	if !ok {
-		return "", fmt.Errorf("No skill or bundle of /%s is available to this session.", key)
+		return "", fmt.Errorf("No skill or bundle named /%s is available in this session.", key)
 	}
 	if err := c.skills.Submit(ctx, call.SessionID, invocation.Message, line); err != nil {
 		return "", err
 	}
 	if len(invocation.Missing) > 0 {
-		return "Skipped missing skills: " + strings.Join(invocation.Missing, ", "), nil
+		return "These skills are missing, so they were left out: " + strings.Join(invocation.Missing, ", ") + ".", nil
 	}
 	return "", nil
+}
+
+// Count with its verb: 1 skill command is, 2 skill commands are
+func agreeing(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strs.Number(float64(n)) + " " + many
 }
 
 func (c *commands) reload(ctx context.Context, call *slash.Call) (string, error) {
@@ -117,16 +132,16 @@ func (c *commands) reload(ctx context.Context, call *slash.Call) (string, error)
 	}
 	reloaded, err := scope.Reload(c.taken)
 	if err != nil {
-		return "", fmt.Errorf("Skills reload failed: %w", err)
+		return "", fmt.Errorf("The skills could not be read again: %s", strings.TrimSuffix(err.Error(), ".")+".")
 	}
-	lines := []string{"**Skills Reloaded**", ""}
+	lines := []string{"**Read the skills again**", ""}
 	if len(reloaded.Added) == 0 && len(reloaded.Removed) == 0 {
-		lines = append(lines, "No new skills detected.")
+		lines = append(lines, "No skill was added or removed.")
 	}
 	for _, group := range []struct {
 		header   string
 		commands []skills.Command
-	}{{"**Added Skills:**", reloaded.Added}, {"**Removed Skills:**", reloaded.Removed}} {
+	}{{"**Added skills:**", reloaded.Added}, {"**Removed skills:**", reloaded.Removed}} {
 		if len(group.commands) == 0 {
 			continue
 		}
@@ -139,7 +154,7 @@ func (c *commands) reload(ctx context.Context, call *slash.Call) (string, error)
 			}
 		}
 	}
-	lines = append(lines, "", fmt.Sprintf("%d skill command(s) available", reloaded.Total))
+	lines = append(lines, "", fmt.Sprintf("%s available.", agreeing(reloaded.Total, "skill command is", "skill commands are")))
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -150,16 +165,16 @@ func (c *commands) bundles(ctx context.Context, call *slash.Call) (string, error
 	}
 	bundles, err := scope.BundleList()
 	if err != nil {
-		return "", fmt.Errorf("Bundles subsystem unavailable: %w", err)
+		return "", fmt.Errorf("The skill bundles can't be read: %s", strings.TrimSuffix(err.Error(), ".")+".")
 	}
 	if len(bundles) == 0 {
-		return fmt.Sprintf("No skill bundles installed.\nCreate one with:\n  `icebath bundles create <name> --skill <s1> --skill <s2>`\nDirectory: `%s`", scope.BundlesDir()), nil
+		return fmt.Sprintf("You have no skill bundles yet. Make one with:\n  `icebath bundles create <name> --skill skill1 --skill skill2`\nBundles are kept in `%s`.", scope.BundlesDir()), nil
 	}
-	lines := []string{fmt.Sprintf("**Skill Bundles** (%d installed):", len(bundles))}
+	lines := []string{fmt.Sprintf("**%s:**", strs.Count(len(bundles), "skill bundle"))}
 	for _, bundle := range bundles {
-		lines = append(lines, fmt.Sprintf("- `/%s` — %s _(%d skills)_", bundle.Slug, bundle.Description, len(bundle.Skills)))
+		lines = append(lines, fmt.Sprintf("- `/%s`: %s, %s", bundle.Slug, cmp.Or(bundle.Description, "No description"), strs.Count(len(bundle.Skills), "skill")))
 	}
-	return strings.Join(append(lines, "", "Invoke a bundle with `/<slug>` to load all its skills."), "\n"), nil
+	return strings.Join(append(lines, "", "Type the command of a bundle to load all its skills."), "\n"), nil
 }
 
 func (c *commands) learn(ctx context.Context, call *slash.Call) (string, error) {

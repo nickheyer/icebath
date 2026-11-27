@@ -214,10 +214,10 @@ func Check(ctx context.Context, cfg *config.Config, ecosystem, token string) str
 				summary = a.ID
 			}
 			runes := []rune(summary)
-			summaries[i] = string(runes[:min(100, len(runes))])
+			summaries[i] = strings.TrimRight(strings.TrimSpace(string(runes[:min(100, len(runes))])), ".;")
 		}
-		message := fmt.Sprintf("BLOCKED: Package '%s' (%s) has known malware advisories: %s. Details: %s", name, ecosystem, strings.Join(ids, ", "),
-			strings.Join(summaries, "; "))
+		message := fmt.Sprintf("The %s package %s has known malware advisories, %s, so it was blocked. What they say: %s.", ecosystem, name,
+			strings.Join(ids, ", "), strings.Join(summaries, ". "))
 		result = &message
 	}
 	store(path, key, answer{Expiry: now + float64(cfg.GetInt(osvconfig.CacheTTL)), Result: result}, now)
@@ -256,7 +256,7 @@ func query(ctx context.Context, endpoint, name, ecosystem, version string) ([]ad
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP Error %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		return nil, fmt.Errorf("OSV answered %d %s.", resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {

@@ -83,7 +83,7 @@ func cimdPort() (int, bool) {
 var skipWords = map[string]bool{"skip": true, "cancel": true, "s": true, "n": true, "no": true, "q": true, "quit": true}
 
 // The sign in was given up on purpose
-var ErrSkipped = errors.New("sign in skipped")
+var ErrSkipped = errors.New("You skipped the sign-in.")
 
 // One interactive sign in: the link the person opens, and the browser coming back to the loopback listener or pasted by hand
 type Login struct {
@@ -157,7 +157,7 @@ func (l *Login) Link(ctx context.Context) (link, code string, err error) {
 		return l.device.link, l.device.code, nil
 	}
 	if l.link == "" {
-		return "", "", cmp.Or(l.err, errors.New("the sign in ended before it had a link"))
+		return "", "", cmp.Or(l.err, errors.New("The sign-in ended before the server gave a link to open."))
 	}
 	return l.link, "", nil
 }
@@ -182,13 +182,13 @@ func (l *Login) Deliver(pasted string) error {
 	}
 	values, err := url.ParseQuery(strings.TrimPrefix(query, "?"))
 	if err != nil || values.Get("code") == "" && values.Get("error") == "" {
-		return errors.New("the pasted address holds no code= or error=; copy the whole address the browser ended on")
+		return errors.New("The address you pasted holds no code or error. Copy the whole address that the browser ended on.")
 	}
 	select {
 	case l.back <- values:
 		return nil
 	default:
-		return errors.New("an answer for this sign in was already taken")
+		return errors.New("This sign-in already got its answer.")
 	}
 }
 
@@ -205,7 +205,7 @@ func (l *Login) Fail(err error) {
 // Closed once the sign in was given up or failed
 func (l *Login) Ended() <-chan struct{} { return l.ended }
 
-const callbackPage = `<html><head><meta charset="utf-8"><title>Icebath</title></head><body>%s</body></html>`
+const callbackPage = `<html><head><meta charset="utf-8"><title>icebath</title></head><body>%s</body></html>`
 
 // Starts the loopback listener of a redirect URI on this machine, a no op for any other redirect URI, which only a paste can answer
 func (l *Login) receive(redirect string) (func(), error) {
@@ -216,7 +216,7 @@ func (l *Login) receive(redirect string) (func(), error) {
 	port, _ := strconv.Atoi(u.Port())
 	listener, err := listen(u.Hostname(), port)
 	if err != nil {
-		return nil, fmt.Errorf("could not listen for the OAuth redirect on %s: %w", u.Host, err)
+		return nil, fmt.Errorf("Could not wait for the browser to come back on %s: %w", u.Host, err)
 	}
 	taken := false
 	var mu sync.Mutex
@@ -230,7 +230,7 @@ func (l *Login) receive(redirect string) (func(), error) {
 		code, failure := query.Get("code"), query.Get("error")
 		if code == "" && failure == "" {
 			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprintf(w, callbackPage, "<h2>Not Found</h2>")
+			fmt.Fprintf(w, callbackPage, "<h2>Nothing is here</h2>")
 			return
 		}
 		mu.Lock()
@@ -239,12 +239,12 @@ func (l *Login) receive(redirect string) (func(), error) {
 		mu.Unlock()
 		switch {
 		case !first:
-			fmt.Fprintf(w, callbackPage, "<h2>Authorization already received</h2><p>You can close this tab and return to Icebath.</p>")
+			fmt.Fprintf(w, callbackPage, "<h2>You are already signed in</h2><p>You can close this tab and go back to icebath.</p>")
 			return
 		case code != "":
-			fmt.Fprintf(w, callbackPage, "<h2>Authorization Successful</h2><p>You can close this tab and return to Icebath.</p>")
+			fmt.Fprintf(w, callbackPage, "<h2>You are signed in</h2><p>You can close this tab and go back to icebath.</p>")
 		default:
-			fmt.Fprintf(w, callbackPage, "<h2>Authorization Failed</h2><p>Error: "+html.EscapeString(failure)+"</p>")
+			fmt.Fprintf(w, callbackPage, "<h2>The sign-in failed</h2><p>The server said: "+html.EscapeString(failure)+"</p>")
 		}
 		select {
 		case l.back <- query:

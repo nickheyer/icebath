@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"slices"
+	"strings"
 
 	"connectrpc.com/connect/v2"
 
@@ -32,8 +33,11 @@ func (s *service) List(context.Context, *toolsv1.ListRequest) (*toolsv1.ListResp
 	env := &tools.Env{Config: s.config}
 	disabled := s.config.GetStringSlice(toolsconfig.Disabled)
 	defs := s.tools.Tools()
+	// The tools of one heading together, headings and the tools under each by the names a person reads
+	groups := tools.Groups(defs)
 	slices.SortFunc(defs, func(a, b tools.Def) int {
-		return cmp.Or(cmp.Compare(a.Toolset, b.Toolset), cmp.Compare(a.Name, b.Name))
+		return cmp.Or(cmp.Compare(strings.ToLower(groups[a.Toolset]), strings.ToLower(groups[b.Toolset])),
+			cmp.Compare(strings.ToLower(a.Label()), strings.ToLower(b.Label())), cmp.Compare(a.Name, b.Name))
 	})
 	response := &toolsv1.ListResponse{}
 	for _, def := range defs {
@@ -47,6 +51,8 @@ func (s *service) List(context.Context, *toolsv1.ListRequest) (*toolsv1.ListResp
 			Icon:        def.Icon,
 			Subject:     def.Subject,
 			Disabled:    slices.Contains(disabled, def.Name),
+			About:       def.About,
+			Group:       groups[def.Toolset],
 		})
 	}
 	return response, nil

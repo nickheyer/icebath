@@ -18,7 +18,7 @@ func (specs) Specs() []provider.Spec {
 		Shape:              shape,
 		Efforts:            efforts,
 		DisplayName:        actualconfig.Title,
-		Description:        "Hosted inference, or a local server set as its base URL",
+		Description:        "Actual Computer's models, or your own server, with an API key",
 		SignupURL:          "https://actual.inc",
 		BaseURL:            base,
 		BaseURLEnv:         actualconfig.BaseURLEnv,

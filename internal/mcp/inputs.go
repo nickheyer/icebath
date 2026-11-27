@@ -51,13 +51,13 @@ func (s *Session) stamp(msg *Message, version string) error {
 	params := map[string]json.RawMessage{}
 	if len(msg.Params) > 0 && string(msg.Params) != "null" {
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
-			return fmt.Errorf("stamp %s params: %w", msg.Method, err)
+			return fmt.Errorf("Could not prepare the request %s: %w", msg.Method, err)
 		}
 	}
 	meta := map[string]json.RawMessage{}
 	if raw, ok := params["_meta"]; ok && string(raw) != "null" {
 		if err := json.Unmarshal(raw, &meta); err != nil {
-			return fmt.Errorf("stamp %s _meta: %w", msg.Method, err)
+			return fmt.Errorf("Could not prepare the request %s: %w", msg.Method, err)
 		}
 	}
 	for key, value := range map[string]any{
@@ -131,7 +131,7 @@ func (s *Session) callWithInputs(ctx context.Context, method string, params map[
 		}
 		if len(raw) > 0 {
 			if err := json.Unmarshal(raw, &head); err != nil {
-				return fmt.Errorf("decode %s result: %w", method, err)
+				return fmt.Errorf("The answer of the server to %s cannot be read: %w", method, err)
 			}
 		}
 		switch head.ResultType {
@@ -140,15 +140,15 @@ func (s *Session) callWithInputs(ctx context.Context, method string, params map[
 				return nil
 			}
 			if err := json.Unmarshal(raw, out); err != nil {
-				return fmt.Errorf("decode %s result: %w", method, err)
+				return fmt.Errorf("The answer of the server to %s cannot be read: %w", method, err)
 			}
 			return nil
 		case "input_required":
 		default:
-			return fmt.Errorf("MCP server '%s' answered %s with resultType %q, which this client does not know", s.opts.Name, method, head.ResultType)
+			return fmt.Errorf("The MCP server %s answered %s with a result of the kind “%s”, which icebath does not know.", s.opts.Name, method, head.ResultType)
 		}
 		if round+1 >= inputRounds {
-			return fmt.Errorf("MCP server '%s' still asked for more input after %d rounds of %s", s.opts.Name, inputRounds, method)
+			return fmt.Errorf("The MCP server %s still asked for more input after %d rounds of %s.", s.opts.Name, inputRounds, method)
 		}
 		if params, err = s.fulfill(ctx, method, raw, params); err != nil {
 			return err
@@ -166,17 +166,17 @@ func (s *Session) fulfill(ctx context.Context, method string, raw json.RawMessag
 		State *string `json:"requestState"`
 	}
 	if err := json.Unmarshal(raw, &asked); err != nil {
-		return nil, fmt.Errorf("decode %s input request: %w", method, err)
+		return nil, fmt.Errorf("The request of the server for input to %s cannot be read: %w", method, err)
 	}
 	if len(asked.Requests) == 0 && asked.State == nil {
-		return nil, fmt.Errorf("MCP server '%s' answered %s with input_required carrying neither inputRequests nor requestState", s.opts.Name, method)
+		return nil, fmt.Errorf("The MCP server %s asked for input to %s without saying what it needs.", s.opts.Name, method)
 	}
 	responses := map[string]any{}
 	for _, key := range slices.Sorted(maps.Keys(asked.Requests)) {
 		request := asked.Requests[key]
 		answer, err := s.input(ctx, request.Method, request.Params)
 		if err != nil {
-			return nil, fmt.Errorf("MCP server '%s' input request %q of %s: %w", s.opts.Name, key, method, err)
+			return nil, fmt.Errorf("The MCP server %s asked for the input %s to %s in a form icebath cannot read: %w", s.opts.Name, key, method, err)
 		}
 		responses[key] = answer
 	}
@@ -239,7 +239,7 @@ func (s *Session) awaitURLs(ctx context.Context, method string, rpc *RPCError, a
 	}
 	tracker, ok := s.opts.Elicitor.(URLTracker)
 	if !ok {
-		return fmt.Errorf("MCP server '%s' requires a browser step although elicitation is turned off for this server: %w", s.opts.Name, rpc)
+		return fmt.Errorf("The MCP server %s needs a step in the browser, but asking you is turned off for this server: %w", s.opts.Name, rpc)
 	}
 	var waits []<-chan struct{}
 	var links []string
@@ -247,7 +247,7 @@ func (s *Session) awaitURLs(ctx context.Context, method string, rpc *RPCError, a
 		e := &data.Elicitations[i]
 		links = append(links, e.URL)
 		if e.Mode != "url" || e.ElicitationID == "" {
-			return fmt.Errorf("MCP server '%s' listed an elicitation that is not url mode with an elicitationId: %w", s.opts.Name, rpc)
+			return fmt.Errorf("The MCP server %s asked for a step in the browser in a form icebath cannot use: %w", s.opts.Name, rpc)
 		}
 		if accepted[e.ElicitationID] && tracker.Done(e.ElicitationID) == nil {
 			accepted[e.ElicitationID] = false

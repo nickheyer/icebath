@@ -7,22 +7,27 @@ import (
 
 func Register(cfg *config.Config) {
 	cfg.Register(config.Sections{
-		{Key: TTS, Parent: speechconfig.TTS, Title: "ElevenLabs speech", About: "ElevenLabs voices, which the model may pick per call; needs " + KeyEnv, Settings: []config.Setting{
-			{Key: TTSBaseURL, Title: "ElevenLabs endpoint", About: "Custom endpoint for ElevenLabs speech; empty for ElevenLabs' own", Default: ""},
-			{Key: ModelID, Title: "ElevenLabs model", About: "Speech model used with ElevenLabs", Default: DefaultModel},
-			{Key: StreamingModelID, Title: "ElevenLabs live model", About: "Speech model for ElevenLabs when speaking as text arrives; empty uses ElevenLabs model",
-				Default: ""},
-			{Key: VoiceID, Title: "ElevenLabs voice", About: "Voice used with ElevenLabs, by its ID", Default: DefaultVoice},
-			{Key: MaxTextLength, Title: "ElevenLabs text limit", About: "Most characters one ElevenLabs request takes, longer text split into several; 0 uses the " +
-				"model's own limit", Default: 0},
-		}},
-		{Key: STT, Parent: speechconfig.STT, Title: "ElevenLabs recognition", About: "ElevenLabs Scribe transcription; needs " + KeyEnv, Settings: []config.Setting{
-			{Key: STTBaseURL, Title: "ElevenLabs endpoint", About: "Custom endpoint for ElevenLabs speech recognition; empty for ElevenLabs' own", Default: "",
-				Env: []string{STTBaseURLEnv}},
-			{Key: STTModelID, Title: "ElevenLabs model", About: "Speech recognition model used with ElevenLabs", Default: DefaultSTTModel, Env: []string{STTModelEnv}},
-			{Key: LanguageCode, Title: "ElevenLabs language", About: "Language code for ElevenLabs transcripts; empty detects it", Default: ""},
-			{Key: Diarize, Title: "Label speakers", About: "Have ElevenLabs mark who is speaking in transcripts", Default: false},
-			{Key: TagAudioEvents, Title: "Tag sounds", About: "Mark non-speech sounds such as laughter in ElevenLabs transcripts", Default: false},
-		}},
+		{Key: TTS, Parent: speechconfig.TTS, Title: "ElevenLabs", About: "Lifelike voices from ElevenLabs, with an ElevenLabs API key", Order: 30,
+			Settings: []config.Setting{
+				{Key: VoiceID, Title: "Voice", About: "The ElevenLabs voice that speaks, by its ID.", Default: DefaultVoice},
+				{Key: ModelID, Title: "Model", About: "The ElevenLabs model that speaks.", Default: DefaultModel},
+				{Key: StreamingModelID, Title: "Live model", About: "The model that speaks while a reply is still being written.", Default: "",
+					Zero: "Same as Model", Advanced: true},
+				{Key: TTSBaseURL, Title: "Base URL", About: "The address ElevenLabs speech requests go to.", Default: "", Zero: "ElevenLabs' address",
+					Advanced: true},
+				{Key: MaxTextLength, Title: "Text limit", About: "The most characters one request to ElevenLabs takes.",
+					Help: "Longer text is split into several requests.", Default: 0, Zero: "The model's limit", Counts: "characters", Least: config.Num(1),
+					Advanced: true},
+			}},
+		{Key: STT, Parent: speechconfig.STT, Title: "ElevenLabs", About: "Speech to text that tells speakers apart, with an API key", Order: 60,
+			Settings: []config.Setting{
+				{Key: STTModelID, Title: "Model", About: "The ElevenLabs model that turns speech into text.", Default: DefaultSTTModel, Env: []string{STTModelEnv}},
+				{Key: LanguageCode, Title: "Language", About: "The language code of what you say.", Help: "Such as en or de.", Default: "",
+					Zero: "Your language"},
+				{Key: Diarize, Title: "Label speakers", About: "Mark who is speaking in transcripts.", Default: false},
+				{Key: TagAudioEvents, Title: "Tag sounds", About: "Mark sounds that are not speech, such as laughter, in transcripts.", Default: false},
+				{Key: STTBaseURL, Title: "Base URL", About: "The address ElevenLabs speech to text requests go to.", Default: "", Zero: "ElevenLabs' address",
+					Env: []string{STTBaseURLEnv}, Advanced: true},
+			}},
 	})
 }

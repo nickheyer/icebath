@@ -262,9 +262,11 @@ func (s *Store) RecordSince(workdir, sha string) {
 func Refusal(backend terminal.Backend) string {
 	switch {
 	case backend.Container:
-		return "Checkpoints are not taken for terminal.backend=" + backend.Name + ": file paths belong to the container, not this host."
+		return "Checkpoints are not saved while the agent's commands run in " + backend.Title + ", because the files there belong to its " +
+			"sandbox, not to this computer."
 	case backend.Remote:
-		return "Checkpoints are not taken for terminal.backend=" + backend.Name + ": file paths belong to the remote machine, not this host."
+		return "Checkpoints are not saved while the agent's commands run on " + backend.Title + ", because the files there belong to " +
+			"another computer."
 	}
 	return ""
 }

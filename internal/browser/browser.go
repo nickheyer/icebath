@@ -1,5 +1,5 @@
 // The browser the agent drives: the cloud browser services plugins bring, the browsers that hold pages of their own, such as Camofox, and
-// the Chromium of this machine that the browser tools and the Bot Desktop start
+// the Chromium of this machine that the browser tools and the agent desktop start
 package browser
 
 import (
@@ -136,8 +136,7 @@ func (b *Browser) options() []config.Option {
 		options = append(options, config.Option{Value: p.Name, Title: p.Title, About: p.About})
 	}
 	for _, p := range b.Pages() {
-		options = append(options, config.Option{Value: p.Name, Title: p.Title, About: "Pages open in " + p.Title + " through its own browser tools; " +
-			"browser_exec stays on this machine."})
+		options = append(options, config.Option{Value: p.Name, Title: p.Title, About: "Pages open in " + p.Title + ", which brings tools of its own"})
 	}
 	return options
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/internal/provider"
 	"github.com/nickheyer/icebath/internal/skills"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Skills the sources a filter selects offer for a query, without repeats, the most trusted first, at most limit
@@ -66,7 +67,7 @@ func (h *Hub) Inspect(ctx context.Context, scope *skills.Scope, identifier strin
 	}
 	meta, bundle, _ := r.resolve(ctx, identifier, sources)
 	if meta == nil {
-		r.fail("Could not find '%s' in any source.", identifier)
+		r.fail("No source has %s. Search for it with icebath skills search <query>.", identifier)
 		return nil, "", nil
 	}
 	return meta, preview(bundle), nil
@@ -188,7 +189,7 @@ func (h *Hub) Update(ctx context.Context, scope *skills.Scope, name string, forc
 	}
 	updates := slices.DeleteFunc(checks, func(c Check) bool { return c.Status != "update_available" })
 	if len(updates) == 0 {
-		r.line(Dim, "No updates available.")
+		r.line(Dim, "✓ Every skill from the hub is up to date.")
 		return true, nil
 	}
 	lock, err := skills.ReadLock(scope.Dir())
@@ -204,11 +205,11 @@ func (h *Hub) Update(ctx context.Context, scope *skills.Scope, name string, forc
 			}
 			if !force && r.edited(entry) {
 				skipped = append(skipped, c.Name)
-				r.line(Warn, "Skipping: %s — you have local edits (update would overwrite them).", c.Name)
+				r.line(Warn, "⚠ Skipped %s, because you edited it and an update would replace your changes.", c.Name)
 				continue
 			}
 		}
-		r.line(Heading, "Updating: %s", c.Name)
+		r.line(Heading, "Updating %s…", c.Name)
 		outcome, _, err := h.Stage(ctx, scope, Install{Identifier: c.Identifier, Category: category, Force: true, Source: c.Source}, say)
 		if err != nil {
 			return false, err
@@ -218,16 +219,16 @@ func (h *Hub) Update(ctx context.Context, scope *skills.Scope, name string, forc
 		}
 	}
 	if updated := len(updates) - len(skipped) - len(failed); updated > 0 {
-		r.line(Good, "Updated %d skill(s).", updated)
+		r.line(Good, "✓ Updated %s.", strs.Count(updated, "skill"))
 	}
 	if len(skipped) > 0 {
 		slices.Sort(skipped)
-		r.line(Dim, "%d skill(s) kept your local edits: %s.", len(skipped), strings.Join(skipped, ", "))
-		r.line(Dim, "Overwrite with: icebath skills update <name> --force")
+		r.line(Dim, "Kept your edits in %s: %s.", strs.Count(len(skipped), "skill"), strings.Join(skipped, ", "))
+		r.line(Dim, "To replace them with the update, run icebath skills update <name> --force.")
 	}
 	if len(failed) > 0 {
 		slices.Sort(failed)
-		r.line(Bad, "Not updated: %s (see the messages above).", strings.Join(failed, ", "))
+		r.line(Bad, "✗ These were not updated, for the reasons above: %s.", strings.Join(failed, ", "))
 		return false, nil
 	}
 	return true, nil
@@ -241,25 +242,25 @@ func (h *Hub) Audit(ctx context.Context, scope *skills.Scope, name string, deep 
 		return false, err
 	}
 	if len(lock.Installed) == 0 {
-		r.line(Dim, "No hub-installed skills to audit.")
+		r.line(Dim, "You have no skills from the hub to scan. Install one with icebath skills install <identifier>.")
 		return true, nil
 	}
 	targets := slices.DeleteFunc(names(lock), func(n string) bool { return name != "" && n != name || lock.Installed[n] == nil })
 	if len(targets) == 0 {
-		r.fail("'%s' is not a hub-installed skill.", name)
+		r.fail("%s is not a skill from the hub, so audit does not scan it.", name)
 		return false, nil
 	}
-	r.line(Heading, "Auditing %d skill(s)...", len(targets))
+	r.line(Heading, "Scanning %s for risks…", strs.Count(len(targets), "skill"))
 	for _, n := range targets {
 		entry := lock.Installed[n]
 		dir := filepath.Join(scope.Dir(), filepath.FromSlash(entry.InstallPath))
 		if !fsx.Exists(dir) {
-			r.line(Warn, "Warning: %s — path missing: %s", n, entry.InstallPath)
+			r.line(Warn, "⚠ The folder of %s is missing: %s", n, entry.InstallPath)
 			continue
 		}
 		result, _, err := r.scan(ctx, dir, cmp.Or(entry.Identifier, entry.Source), "", "")
 		if err != nil {
-			r.fail("%s could not be scanned: %s", n, err)
+			r.fail("%s could not be scanned: %s", n, strings.TrimSuffix(err.Error(), ".")+".")
 			continue
 		}
 		r.line(Plain, report(result))
@@ -280,11 +281,11 @@ func (h *Hub) Uninstall(ctx context.Context, scope *skills.Scope, name string) (
 	}
 	entry := lock.Installed[name]
 	if entry == nil {
-		return false, fmt.Sprintf("'%s' is not a hub-installed skill (may be a builtin)", name), nil
+		return false, fmt.Sprintf("%s is not a skill from the hub, so there is nothing to uninstall. It may be a built-in skill.", name), nil
 	}
 	dir, err := r.installDir(entry.InstallPath, name)
 	if err != nil {
-		return false, fmt.Sprintf("Refusing to uninstall '%s': %s", name, err), nil
+		return false, fmt.Sprintf("%s was not uninstalled: %s", name, strings.TrimSuffix(err.Error(), ".")+"."), nil
 	}
 	if fsx.Exists(dir) {
 		if err := os.RemoveAll(dir); err != nil {
@@ -300,7 +301,7 @@ func (h *Hub) Uninstall(ctx context.Context, scope *skills.Scope, name string) (
 	}
 	r.audit("UNINSTALL", name, entry.Source, entry.Trust, "n/a", "user_request")
 	h.registry.Forget()
-	return true, fmt.Sprintf("Uninstalled '%s' from %s", name, entry.InstallPath), nil
+	return true, fmt.Sprintf("✓ Uninstalled %s from %s.", name, entry.InstallPath), nil
 }
 
 // A GitHub repository the user added to those the hub searches
@@ -341,21 +342,21 @@ func (h *Hub) Trust(scope *skills.Scope, path string, trust bool, say Say) bool 
 	}
 	switch {
 	case !trust && !result.Changed:
-		r.line(Plain, "%s was not trusted.", result.Root)
+		r.line(Plain, "You had not trusted %s, so nothing changed.", result.Root)
 		return true
 	case !trust:
-		r.line(Good, "Untrusted: %s", result.Root)
-		r.line(Plain, "Project skills from this repo will no longer load.")
+		r.line(Good, "✓ You no longer trust %s.", result.Root)
+		r.line(Plain, "icebath no longer loads the skills this project keeps in its own folder.")
 		return true
 	case result.Changed:
-		r.line(Good, "Trusted: %s", result.Root)
+		r.line(Good, "✓ You trust %s now.", result.Root)
 	default:
-		r.line(Plain, "Already trusted: %s", result.Root)
+		r.line(Plain, "You trust %s already.", result.Root)
 	}
 	if result.Skills > 0 {
-		r.line(Plain, "%d project skill(s) will load in sessions started inside this repo (they take precedence over same-named profile skills).", result.Skills)
+		r.line(Plain, "%s of the project load in sessions started inside it, before skills of the profile with the same name.", strs.Count(result.Skills, "skill"))
 	} else {
-		r.line(Plain, "No project skills found yet — add them under %s.", strings.Join(skills.ProjectSkillDirs(), " or "))
+		r.line(Plain, "The project has no skills yet. Add them under %s.", strings.Join(skills.ProjectSkillDirs(), " or "))
 	}
 	return true
 }

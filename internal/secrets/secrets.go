@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	secretsconfig "github.com/nickheyer/icebath/internal/secrets/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Longest one fetch of a store may take unless its timeout_seconds says otherwise
@@ -48,12 +49,21 @@ const (
 
 // Fix of each kind of failure when a store names none of its own, {name} standing for the store
 var remedies = map[Failure]string{
-	NotConfigured: "Run `icebath secrets {name} setup` to finish configuration.",
-	BinaryMissing: "Run `icebath secrets {name} setup` to install the helper CLI.",
-	AuthFailed:    "Credentials rejected — run `icebath secrets {name} setup` to re-authenticate.",
-	AuthExpired:   "Credentials expired — run `icebath secrets {name} setup` to re-authenticate.",
-	Network:       "Network problem reaching the secrets backend — check connectivity and retry.",
-	Timeout:       "Backend was slow — raise secrets.{name}.timeout_seconds if this recurs.",
+	NotConfigured: "Run icebath secrets {name} setup to finish setting it up.",
+	BinaryMissing: "Run icebath secrets {name} setup to install the program it needs.",
+	AuthFailed:    "Run icebath secrets {name} setup to sign in again.",
+	AuthExpired:   "The sign-in has expired. Run icebath secrets {name} setup to sign in again.",
+	Network:       "Check your network connection, then run icebath secrets status --reload.",
+	Timeout:       "If the store is only slow, raise its Time limit in /settings under Secret stores.",
+}
+
+// Text that ends as a sentence: trimmed, with a period added when it ends in no mark of its own
+func Sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?") {
+		return text
+	}
+	return text + "."
 }
 
 // What a store is, fixed for it
@@ -320,8 +330,7 @@ func (h *Secrets) fetch(ctx context.Context, source Source, fetch Fetch) Result 
 		}
 		return result
 	case <-ctx.Done():
-		return Failed(fmt.Sprintf("fetch exceeded %.0fs budget — startup continued without this source (raise secrets.%s.timeout_seconds if the backend is just slow)",
-			timeout.Seconds(), spec.Name), Timeout)
+		return Failed(fmt.Sprintf("%s did not answer within %s, so icebath went on without it.", spec.Label, strs.Span(timeout)), Timeout)
 	}
 }
 

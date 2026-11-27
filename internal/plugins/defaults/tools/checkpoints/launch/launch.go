@@ -17,7 +17,7 @@ func Register(registry *launch.Registry) {
 }
 
 func (flags) Flags() []launch.Flag {
-	return []launch.Flag{{Names: []string{"--checkpoints"}, Help: "Enable filesystem checkpoints before destructive file operations (use /rollback to restore)"}}
+	return []launch.Flag{{Names: []string{"--checkpoints"}, Help: "Keep checkpoints of files before risky changes, restored with /rollback"}}
 }
 
 // Turns snapshots on through the variable File checkpoints follows, for the sessions this process serves

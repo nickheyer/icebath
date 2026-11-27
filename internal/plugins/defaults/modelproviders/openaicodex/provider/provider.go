@@ -21,6 +21,8 @@ func (specs) Specs() []provider.Spec {
 		Name:               openaicodexconfig.Name,
 		Native:             native,
 		DisplayName:        openaicodexconfig.Title,
+		Rank:               1,
+		Description:        "GPT models through your ChatGPT plan, with no API key",
 		BaseURL:            base,
 		BaseURLEnv:         openaicodexconfig.BaseURLEnv,
 		ModelsURL:          provider.ModelsURL(base),
@@ -44,18 +46,19 @@ func (specs) Specs() []provider.Spec {
 		RequestHeaders:     identity,
 		Finish:             finish,
 		Settings: []config.Setting{
-			{Key: openaicodexconfig.LoginFlow, Title: "Codex login style", About: "How the Codex sign-in is done", Default: openaicodexconfig.DeviceCode,
+			{Key: openaicodexconfig.LoginFlow, Title: "Sign-in method", About: "How you sign in to ChatGPT for Codex.", Default: openaicodexconfig.DeviceCode,
 				Options: config.Options(config.Option{Value: openaicodexconfig.DeviceCode, Title: "Device code", About: "Enter a code on another device"},
-					config.Option{Value: openaicodexconfig.Browser, Title: "Browser", About: "Sign in through a local browser window"})},
-			{Key: openaicodexconfig.RefreshTimeout, Title: "Refresh timeout", About: "Seconds a renewal of the sign-in may take", Default: 20 * time.Second,
-				Env: []string{openaicodexconfig.RefreshTimeoutEnv}},
-			{Key: openaicodexconfig.Daybreak, Title: "Codex research access", About: "Ask Codex for its security research access in your own " +
-				"sessions; only your own terminal sessions send it, and only on a Codex subscription that offers it", Default: false},
+					config.Option{Value: openaicodexconfig.Browser, Title: "Browser", About: "Sign in through a browser window on this computer"})},
+			{Key: openaicodexconfig.Daybreak, Title: "Security research access", About: "Ask Codex for security research access in your own sessions.",
+				Help: "Only sessions in your own terminal ask, and only on a Codex plan that offers this access.", Default: false},
+			{Key: openaicodexconfig.RefreshTimeout, Title: "Renewal time limit", About: "How long a renewal of the sign-in may take.", Default: 20 * time.Second,
+				Env: []string{openaicodexconfig.RefreshTimeoutEnv}, Advanced: true},
 		},
 		Account: []config.Setting{
-			{Key: openaicodexconfig.AccessToken, Title: "Access token", About: "Token of the ChatGPT sign-in", Default: "", Secret: true, Internal: true},
-			{Key: openaicodexconfig.RefreshToken, Title: "Refresh token", About: "Renews the access token before it expires", Default: "", Secret: true, Internal: true},
-			{Key: openaicodexconfig.LastRefresh, Title: "Last renewed", About: "When the tokens were last renewed", Default: "", Internal: true},
+			{Key: openaicodexconfig.AccessToken, Title: "Access token", About: "Your ChatGPT sign-in token.", Default: "", Secret: true, Internal: true},
+			{Key: openaicodexconfig.RefreshToken, Title: "Refresh token", About: "Your token that renews the sign-in before it expires.", Default: "", Secret: true,
+				Internal: true},
+			{Key: openaicodexconfig.LastRefresh, Title: "Last renewed", About: "When the sign-in tokens were last renewed.", Default: "", Internal: true},
 		},
 	}}
 }

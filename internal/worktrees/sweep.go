@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Prefixes of the trees icebath names itself, aged on the base tier; any other tree is named by the user and gets three times as long
@@ -113,7 +114,7 @@ func (w *Worktrees) classify(cfg *config.Config, repo string, found []candidate)
 }
 
 // Why a verdict keeps a tree that holds work
-var keepReasons = map[string]string{"dirty": "uncommitted changes", "unpushed": "unpushed commits"}
+var keepReasons = map[string]string{"dirty": "uncommitted changes", "unpushed": "commits that are not pushed"}
 
 // Unlocks, removes and deletes the branch of every reapable verdict in turn: the trees kept that are older than the cutoff, and the
 // branches kept
@@ -289,11 +290,11 @@ func (w *Worktrees) survivor(repo, entry, verdict string, settings Settings, tie
 	what := keepReasons[verdict]
 	lock := w.lockState(repo, entry, 5*time.Second)
 	if lock == "live" {
-		return "skip-live-lock", "lock owner still running", lock, time.Time{}
+		return "skip-live-lock", "the process that locked it still runs", lock, time.Time{}
 	}
 	active := lastActivity(entry)
 	if active.After(now.Add(-tier)) {
-		return "skip-young", fmt.Sprintf("%s; last activity %.1fh ago", what, now.Sub(active).Hours()), lock, active
+		return "skip-young", fmt.Sprintf("%s, last changed %s ago", what, strs.Counted(tenths(now.Sub(active).Hours()), "hours")), lock, active
 	}
 	if !settings.ArchiveDirty {
 		return "keep-" + verdict, what, lock, active
@@ -329,7 +330,7 @@ func budget(decisions []*Decision, maxGB, maxFileMB float64) {
 			d.Action, d.Reason = unsafe.Action, unsafe.Reason
 			continue
 		}
-		d.Action, d.Reason = "archive-remove", fmt.Sprintf("%s; over Worktree disk limit=%sGB", d.Reason, strconv.FormatFloat(maxGB, 'g', -1, 64))
+		d.Action, d.Reason = "archive-remove", fmt.Sprintf("%s, and all worktrees take more than the disk limit of %s", d.Reason, strs.Counted(maxGB, "GB"))
 		total -= *d.SizeMB
 	}
 }
@@ -357,9 +358,9 @@ func (w *Worktrees) Plan(cfg *config.Config, repo string, hours float64, olderTh
 		if err != nil || !info.IsDir() || doomed[entry.Name()] {
 			continue
 		}
-		d := &Decision{Name: entry.Name(), Path: path, Action: "skip-young", Reason: "younger than its age tier", AgeHours: tenths(now.Sub(info.ModTime()).Hours())}
+		d := &Decision{Name: entry.Name(), Path: path, Action: "skip-young", Reason: "younger than its age limit", AgeHours: tenths(now.Sub(info.ModTime()).Hours())}
 		if kanbanTree.MatchString(entry.Name()) {
-			d.Action, d.Reason = "skip-kanban", "owned by kanban gc"
+			d.Action, d.Reason = "skip-kanban", "the kanban cleanup removes it"
 		}
 		decisions = append(decisions, d)
 	}
@@ -383,9 +384,9 @@ func (w *Worktrees) Plan(cfg *config.Config, repo string, hours float64, olderTh
 		_, archivable := keepReasons[v.verdict]
 		switch {
 		case len(live[v.entry]) > 0:
-			d.Action, d.Reason = "skip-live-process", "in use by pid "+pids(live[v.entry])
+			d.Action, d.Reason = "skip-live-process", "in use by process "+pids(live[v.entry])
 		case v.verdict == "locked-live":
-			d.Action, d.Reason = "skip-live-lock", "lock owner still running"
+			d.Action, d.Reason = "skip-live-lock", "the process that locked it still runs"
 		case archivable && settings.Classic():
 			d.Action, d.Reason = "keep-"+v.verdict, keepReasons[v.verdict]
 		case archivable:
@@ -399,9 +400,9 @@ func (w *Worktrees) Plan(cfg *config.Config, repo string, hours float64, olderTh
 			case blocked != nil:
 				d.Action, d.Reason = blocked.Action, blocked.Reason
 			case v.verdict == "reap-keep-branch":
-				d.Action, d.Reason = "remove-keep-branch", "pushed to origin; branch kept"
+				d.Action, d.Reason = "remove-keep-branch", "pushed to origin, branch kept"
 			default:
-				d.Action, d.Reason = "remove", "clean and merged/pushed"
+				d.Action, d.Reason = "remove", "clean, and merged or pushed"
 			}
 		}
 		decisions = append(decisions, d)
@@ -412,7 +413,7 @@ func (w *Worktrees) Plan(cfg *config.Config, repo string, hours float64, olderTh
 	if olderThanDays != nil {
 		for _, d := range decisions {
 			if slices.Contains(destructive, d.Action) && d.AgeHours < *olderThanDays*24 {
-				d.Action, d.Reason = "skip-young", fmt.Sprintf("idle %.1fh (--older-than %s)", d.AgeHours, strconv.FormatFloat(*olderThanDays, 'g', -1, 64))
+				d.Action, d.Reason = "skip-young", fmt.Sprintf("idle for %s, younger than --older-than %s", strs.Counted(d.AgeHours, "hours"), strconv.FormatFloat(*olderThanDays, 'g', -1, 64))
 			}
 		}
 	}
@@ -442,7 +443,7 @@ func indexMoved(tree, captured string) string {
 	if state, err := StagedState(tree); err == nil && state == captured {
 		return ""
 	}
-	return "staged changes since the snapshot"
+	return "its staged changes moved after it was archived"
 }
 
 // What archiving then removing one tree came to

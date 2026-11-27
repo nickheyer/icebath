@@ -113,12 +113,12 @@ func (a *Agent) Compact(ctx context.Context, id, argument string) (string, error
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.cx.running {
-		return "⏳ Compression already in progress for this session. Please wait for it to finish.", nil
+		return "Older messages are already being summarized. Wait for that to finish.", nil
 	}
 	r.queue = append(r.queue, queued{compact: &compactJob{focus: focus, aggressive: aggressive, keep: keep}})
 	r.life.admissions = append(r.life.admissions, "")
 	if r.busy {
-		return "Queued. Compression runs when the current reply finishes.", nil
+		return "Summarizing is queued. It runs when the current reply finishes.", nil
 	}
 	r.mu.Unlock()
 	err = a.start(r)
@@ -146,21 +146,19 @@ func (a *Agent) preview(ctx context.Context, r *run, keep int, focus string) (st
 	if keep > 0 {
 		head, tail = splitKeep(shown, keep)
 	}
-	lines := []string{"Preview — no changes made.", fmt.Sprintf("Would compress %d of %d message(s) (~%s tokens currently in context).", len(head),
-		len(shown), strs.Thousands(requestTokens(nil, sent(shown), nil)))}
+	lines := []string{"This is a preview, and nothing was changed.", fmt.Sprintf("It would summarize %s of %s, which now take about %s tokens.",
+		strs.Number(float64(len(head))), strs.Count(len(shown), "message"), strs.Thousands(requestTokens(nil, sent(shown), nil)))}
 	switch {
 	case keep > 0 && len(tail) > 0:
-		lines = append(lines, fmt.Sprintf("Boundary: keeping the last %d exchange(s) (%d message(s)) verbatim.", keep, len(tail)))
+		lines = append(lines, fmt.Sprintf("Your last %s and the replies to them stay whole, %s in all.", strs.Count(keep, "message"),
+			strs.Count(len(tail), "message")))
 	case keep > 0:
-		lines = append(lines, "Boundary: 'here' split would keep everything — falling back to full compression.")
+		lines = append(lines, "Keeping that many would keep everything, so the whole session would be summarized.")
 	}
 	if focus != "" {
-		lines = append(lines, fmt.Sprintf("Focus topic: %q", focus))
+		lines = append(lines, "The summary would focus on “"+focus+"”.")
 	}
-	lines = append(lines, "Run the command again without --preview to apply.")
-	for i, line := range lines {
-		lines[i] = "🗜️ " + line
-	}
+	lines = append(lines, "Type the command again without --preview to summarize.")
 	return strings.Join(lines, "\n"), nil
 }
 
@@ -174,35 +172,36 @@ func (a *Agent) compactNow(ctx context.Context, r *run, job *compactJob) error {
 	settings := a.settings(r)
 	instance, route, err := a.current(r)
 	if err != nil {
-		return errors.New("No provider configured -- cannot compress.")
+		return err
 	}
 	aux := a.helpers(r, settings, route)
 	env := a.contextEnv(ctx, r, settings, instance, route, aux)
 	engine := a.engine(r, env)
 	if engine == nil {
-		return errors.New("No context engine is registered, so the conversation can't be compressed.")
+		return errors.New("This session can't be summarized, because no way of summarizing is set up. Check Method in /settings under Long sessions.")
 	}
 	history, err := store.Messages(ctx, env.Session, sessions.Model)
 	if err != nil {
 		return err
 	}
 	if len(history) < manualMinimum {
-		a.tell(r, "Not enough conversation to compress (need at least 4 messages).")
+		a.tell(r, fmt.Sprintf("There is too little to summarize yet. A session needs at least %d messages first.", manualMinimum))
 		return nil
 	}
 	if !engine.Compressible(history) && job.keep == 0 && !job.aggressive {
-		a.tell(r, "Nothing to compress yet (the transcript is still all protected context).")
+		a.tell(r, "There is nothing to summarize yet, because every message is still among those always kept. First messages kept and Last "+
+			"messages kept in /settings under Long sessions › Summaries set how many.")
 		return nil
 	}
 	before := requestTokens(nil, sent(history), nil)
-	a.tell(r, fmt.Sprintf("🗜️ Compressing %d messages (~%s tokens)...", len(history), strs.Thousands(before)))
+	a.tell(r, fmt.Sprintf("Summarizing %s, about %s tokens.", strs.Count(len(history), "message"), strs.Thousands(before)))
 	done, err := a.compress(ctx, r, settings, env, engine, compressing{trigger: "manual", tokens: before, focus: job.focus, force: true, bypass: true,
 		aggressive: job.aggressive, keep: job.keep})
 	if err != nil {
 		if ctx.Err() != nil {
 			return err
 		}
-		return fmt.Errorf("Compression failed: %s", maskedFailure(err.Error()))
+		return errors.New("The summary failed, so nothing changed. " + sentence(maskedFailure(err.Error())))
 	}
 	switch done.reason {
 	case "lock":
@@ -210,14 +209,13 @@ func (a *Agent) compactNow(ctx context.Context, r *run, job *compactJob) error {
 		holder := strings.TrimPrefix(r.cx.deferred, "lock:")
 		r.mu.Unlock()
 		if holder != "" && holder != "unconfirmed" {
-			a.tell(r, "⏳ Compression already in progress for this session (holder: "+holder+"). Please wait for it to finish.")
+			a.tell(r, "Older messages are already being summarized. Wait for that to finish.")
 		} else {
-			a.tell(r, "⏳ Compression skipped: could not acquire this session's compression lock. Another compression may still be running, or the "+
-				"lock check failed — try again shortly.")
+			a.tell(r, "Nothing was summarized, because another summary of this session may still be running. Try again shortly.")
 		}
 		return nil
 	case "saturated":
-		a.tell(r, "⏳ Compression skipped: too many compressions are running right now. Try again shortly.")
+		a.tell(r, "Nothing was summarized, because too many summaries are running right now. Try again shortly.")
 		return nil
 	case "timeout", "rotated":
 		return nil
@@ -239,59 +237,63 @@ func (a *Agent) feedback(done compressed, before, after int, focus string) strin
 	var headline, note string
 	switch {
 	case done.reason == "refused":
-		headline = fmt.Sprintf("Compression refused (summary would grow the conversation): %d messages preserved", countBefore)
-		note = "The generated summary was larger than what it would replace; no messages were removed."
+		headline = fmt.Sprintf("Nothing was summarized, because the summary came out longer than the messages it would replace. All %s are kept.",
+			strs.Count(countBefore, "message"))
 	case result.Aborted:
-		headline = fmt.Sprintf("Compression aborted: %d messages preserved", countBefore)
-		note = "Summary generation failed; no messages were removed."
+		headline = fmt.Sprintf("The summary failed, so nothing changed. All %s are kept.", strs.Count(countBefore, "message"))
 	case result.Fallback && done.stored:
-		headline = fmt.Sprintf("Compressed with fallback: %d → %d messages", countBefore, countAfter)
 		dropped := cmp.Or(result.Dropped, max(countBefore-countAfter, 0))
-		note = fmt.Sprintf("Summary generation failed; Icebath used limited fallback context and removed %d message(s).", dropped)
+		headline = fmt.Sprintf("The summary failed, so icebath kept a short stand-in in its place and removed %s.", strs.Count(dropped, "message"))
+		note = fmt.Sprintf("The session went from %s to %s.", strs.Count(countBefore, "message"), strs.Number(float64(countAfter)))
 	case unchanged:
-		headline = fmt.Sprintf("No changes from compression: %d messages", countBefore)
+		headline = fmt.Sprintf("Nothing changed. The session still holds %s.", strs.Count(countBefore, "message"))
 	default:
-		headline = fmt.Sprintf("Compressed: %d → %d messages", countBefore, countAfter)
+		headline = fmt.Sprintf("Summarized %s into %s.", strs.Count(countBefore, "message"), strs.Number(float64(countAfter)))
 		if countAfter < countBefore && after > before {
-			note = "Note: fewer messages can still raise this estimate when compression rewrites the transcript into denser summaries."
+			note = "Fewer messages can still mean more tokens, because summaries are dense."
 		}
 	}
-	tokens := "Approx request size: ~" + strs.Thousands(before) + " → ~" + strs.Thousands(after) + " tokens"
+	tokens := "The request went from about " + strs.Thousands(before) + " to about " + strs.Thousands(after) + " tokens."
 	if unchanged && after == before || done.reason == "refused" {
-		tokens = "Approx request size: ~" + strs.Thousands(before) + " tokens (unchanged)"
+		tokens = "The request is still about " + strs.Thousands(before) + " tokens."
 	}
-	if failure := strings.TrimSpace(result.Failure); failure != "" && (result.Aborted || result.Fallback) {
-		note = strings.TrimSpace(note + " Reason: " + maskedFailure(failure))
-	}
-	lines := []string{"🗜️ " + headline}
+	lines := []string{headline}
 	if focus != "" {
-		lines = append(lines, fmt.Sprintf("Focus: %q", focus))
+		lines = append(lines, "The summary focused on “"+focus+"”.")
 	}
 	lines = append(lines, tokens)
 	if note != "" {
 		lines = append(lines, note)
 	}
+	if failure := strings.TrimSpace(result.Failure); failure != "" && (result.Aborted || result.Fallback) {
+		lines = append(lines, "Reason: "+sentence(maskedFailure(failure)))
+	}
 	switch {
 	case result.Aborted:
-		lines = append(lines, fmt.Sprintf("⚠️ Compression aborted (%s). No messages were dropped — conversation is unchanged. Run /compress to retry, /new "+
-			"for a clean session, or check your auxiliary.compression model configuration.", maskedFailure(cmp.Or(result.Failure, "unknown error"))))
+		lines = append(lines, "⚠ Type /compress to try again, /new for a new session, or check Summaries in /settings under Helper models.")
 	case result.AuxModel != "":
-		lines = append(lines, fmt.Sprintf("ℹ️ Configured compression model `%s` failed (%s). Recovered using your main model — context is intact — but you "+
-			"may want to check `auxiliary.compression.model` in config.yaml.", result.AuxModel, maskedFailure(cmp.Or(result.AuxFailure, "unknown error"))))
+		lines = append(lines, fmt.Sprintf("⚠ The summary model `%s` failed, so your main model made the summary and nothing was lost. Check Model in "+
+			"/settings under Helper models › Summaries.", result.AuxModel), "Reason: "+sentence(maskedFailure(cmp.Or(result.AuxFailure, "none given"))))
 	}
 	return strings.Join(lines, "\n")
 }
 
+// Lines of the context view that say nothing is there yet, and what its totals count
+const (
+	emptyContext   = "Nothing is in the context window yet. Send a message first."
+	throughputNote = "_These count every call, not the context size, because each call sends the context again._"
+)
+
 // Glyphs of the categories of the context view, in their order, and of the free part of the window
 var categories = []struct{ id, label, glyph string }{
 	{"system_prompt", "System prompt", "■"},
-	{"tool_definitions", "Tool definitions", "▣"},
+	{"tool_definitions", "Tools", "▣"},
 	{"rules", "Rules", "▩"},
 	{"skills", "Skills", "▤"},
-	{"mcp", "MCP", "▥"},
-	{"subagent_definitions", "Subagent definitions", "▦"},
+	{"mcp", "MCP tools", "▥"},
+	{"subagent_definitions", "Subagents", "▦"},
 	{"memory", "Memory", "▧"},
-	{"conversation", "Conversation", "▨"},
+	{"conversation", "Messages", "▨"},
 }
 
 const (
@@ -324,7 +326,7 @@ func (a *Agent) Context(ctx context.Context, id, argument string) (string, error
 	settings := a.settings(r)
 	instance, route, routeErr := a.current(r)
 	if routeErr != nil && len(history) == 0 {
-		return "No context data available yet. Send a message to start a session.", nil
+		return emptyContext, nil
 	}
 	env := a.contextEnv(ctx, r, settings, instance, route, a.helpers(r, settings, route))
 	var status contexts.Status
@@ -351,58 +353,58 @@ func (a *Agent) Context(ctx context.Context, id, argument string) (string, error
 	r.mu.Lock()
 	anchor, spent := r.cx.usage, r.spent
 	r.mu.Unlock()
-	used, source := estimated, "local estimate"
+	used, source := estimated, "icebath's estimate"
 	if tokens, held, more := anchor.Tokens(history); held {
-		used, source = tokens, "provider usage"
+		used, source = tokens, "the provider"
 		if more {
-			source = "provider usage + estimated new messages"
+			source = "the provider, with newer messages estimated"
 		}
 	}
-	mark := "~"
-	if source == "provider usage" {
+	mark := "about "
+	if source == "the provider" {
 		mark = ""
 	}
 	if used <= 0 || window <= 0 {
 		if len(history) == 0 {
-			return "No context data available yet. Send a message to start a session.", nil
+			return emptyContext, nil
 		}
-		return strings.Join([]string{"🧠 **Context Window**", "", fmt.Sprintf("Estimated context: ~%s tokens across %d messages", strs.Thousands(estimated),
-			len(history)), "_(Full compression and throughput stats available after the first agent response)_"}, "\n"), nil
+		return strings.Join([]string{"**Context window**", "", fmt.Sprintf("About %s tokens across %s.", strs.Thousands(estimated),
+			strs.Count(len(history), "message")), "_The full picture shows after the agent's first reply._"}, "\n"), nil
 	}
 	share := float64(used) / float64(window) * 100
 	filled := int(math.RoundToEven(share / 100 * 24))
 	filled = min(max(filled, 0), 24)
-	lines := []string{"🧠 **Context Window**", "", "Model: `" + cmp.Or(route.Model, "?") + "`", "Window: " + strs.Thousands(window) + " tokens",
-		fmt.Sprintf("In use: %s%s / %s (%s%.0f%%)", mark, strs.Thousands(used), strs.Thousands(window), mark, share),
-		strings.Repeat("█", filled) + strings.Repeat("░", 24-filled), "Headroom to limit: " + mark + strs.Thousands(max(0, window-used)) + " tokens", ""}
+	lines := []string{"**Context window**", "", "Model: `" + cmp.Or(route.Model, "Not known") + "`", "Window: " + strs.Thousands(window) + " tokens",
+		fmt.Sprintf("In use: %s%s of %s tokens, %.0f%%", mark, strs.Thousands(used), strs.Thousands(window), share),
+		strings.Repeat("█", filled) + strings.Repeat("░", 24-filled), "Room left: " + mark + strs.Thousands(max(0, window-used)) + " tokens", ""}
 	if engine != nil {
 		if threshold := status.Threshold; threshold > 0 {
 			percent := fmt.Sprintf("%.0f", status.Percent*100)
 			if used >= threshold {
-				lines = append(lines, fmt.Sprintf("⚠️ **Over auto-compression threshold (%s, %s%%)**", strs.Thousands(threshold), percent))
+				lines = append(lines, fmt.Sprintf("⚠ **Past the point where the session is summarized: %s tokens, %s%%**", strs.Thousands(threshold), percent))
 			} else {
-				lines = append(lines, fmt.Sprintf("Auto-compresses at: %s (%s%%) — %s%s to go", strs.Thousands(threshold), percent, mark,
+				lines = append(lines, fmt.Sprintf("Summarized at: %s tokens, %s%%, %s%s tokens from now", strs.Thousands(threshold), percent, mark,
 					strs.Thousands(threshold-used)))
 			}
 		}
-		lines = append(lines, fmt.Sprintf("Compressions this session: %d", status.Compressions))
+		lines = append(lines, "Summaries in this session: "+strs.Number(float64(status.Compressions)))
 		if status.Compressions > 0 {
-			lines = append(lines, fmt.Sprintf("Last compression freed: %.0f%% of context", status.Savings))
+			lines = append(lines, fmt.Sprintf("The last summary freed %.0f%% of the context.", status.Savings))
 		}
 		if status.Blocked != "" {
-			lines = append(lines, "Compression held off: "+status.Blocked)
+			lines = append(lines, "Summarizing is held off "+heldOff(status.Blocked)+".")
 		}
 		lines = append(lines, status.Lines...)
 	}
 	if total := session.GetUsage(); total != nil && total.GetApiCalls() > 0 {
 		input := total.GetInput() + total.GetCacheRead() + total.GetCacheWrite()
-		lines = append(lines, "", fmt.Sprintf("Session totals (cumulative across %d API calls)", total.GetApiCalls()),
-			fmt.Sprintf("Input %s · Output %s · Reasoning %s", strs.Thousands(input), strs.Thousands(total.GetOutput()), strs.Thousands(total.GetReasoning())),
-			"Total billed: "+strs.Thousands(input+total.GetOutput()), "_Throughput, not context size — each call re-sends the window above._")
+		lines = append(lines, "", "Session totals over "+strs.Count(int(total.GetApiCalls()), "model call"),
+			fmt.Sprintf("Input %s · Output %s · Reasoning %s tokens", strs.Thousands(input), strs.Thousands(total.GetOutput()), strs.Thousands(total.GetReasoning())),
+			"Total billed: "+strs.Thousands(input+total.GetOutput())+" tokens", throughputNote)
 	} else if spent.calls > 0 {
-		lines = append(lines, "", fmt.Sprintf("Session totals (cumulative across %d API calls)", spent.calls),
-			fmt.Sprintf("Input %s · Output %s · Reasoning %s", strs.Thousands(spent.Prompt()), strs.Thousands(spent.Output), strs.Thousands(spent.Reasoning)),
-			"Total billed: "+strs.Thousands(spent.Prompt()+spent.Output), "_Throughput, not context size — each call re-sends the window above._")
+		lines = append(lines, "", "Session totals over "+strs.Count(spent.calls, "model call"),
+			fmt.Sprintf("Input %s · Output %s · Reasoning %s tokens", strs.Thousands(spent.Prompt()), strs.Thousands(spent.Output), strs.Thousands(spent.Reasoning)),
+			"Total billed: "+strs.Thousands(spent.Prompt()+spent.Output)+" tokens", throughputNote)
 	}
 	lines = append(lines, "")
 	lines = append(lines, grid(breakdown, window)...)
@@ -412,17 +414,17 @@ func (a *Agent) Context(ctx context.Context, id, argument string) (string, error
 		width = max(width, utf8.RuneCountInString(part.label))
 	}
 	row := func(glyph, label string, tokens int, share float64) string {
-		return fmt.Sprintf("%s %-*s ~%9s tokens ~%5.1f%%", glyph, width, label, strs.Thousands(tokens), share)
+		return fmt.Sprintf("%s %-*s %9s tokens %5.1f%%", glyph, width, label, strs.Thousands(tokens), share)
 	}
 	for _, part := range breakdown {
 		lines = append(lines, row(part.glyph, part.label, part.tokens, float64(part.tokens)/float64(window)*100))
 	}
 	free := max(0, window-estimated)
 	lines = append(lines, row(freeGlyph, "Free space", free, float64(free)/float64(window)*100), "",
-		fmt.Sprintf("Context window: %s%s / %s tokens (%s%.0f%%)", mark, strs.Thousands(used), strs.Thousands(window), mark, share),
-		"Source: "+source+"; category counts are local estimates.")
+		fmt.Sprintf("Context window: %s%s of %s tokens, %.0f%%", mark, strs.Thousands(used), strs.Thousands(window), share),
+		"In use is counted by "+source+". The categories are icebath's estimates.")
 	if !expanded {
-		return strings.Join(append(lines, "", "Use /context all for per-skill and per-toolset costs."), "\n"), nil
+		return strings.Join(append(lines, "", "Type /context all to see what each skill and group of tools costs."), "\n"), nil
 	}
 	return strings.Join(append(lines, a.costTables(settings, session, offered, definitions)...), "\n"), nil
 }
@@ -542,14 +544,14 @@ func (a *Agent) costTables(settings *config.Config, session *sessionsv1.Session,
 		lines = append(lines, "", title)
 		lines = append(lines, rows[:min(len(rows), tableLimit)]...)
 		if len(rows) > tableLimit {
-			lines = append(lines, fmt.Sprintf("  … and %d more", len(rows)-tableLimit))
+			lines = append(lines, "  And "+strs.Number(float64(len(rows)-tableLimit))+" more")
 		}
 	}
 	var rows []string
 	for _, set := range sets {
-		rows = append(rows, fmt.Sprintf("  %-24s %3d tools ~%8s tokens", set.name, set.count, strs.Thousands(set.tokens)))
+		rows = append(rows, fmt.Sprintf("  %-24s %9s %8s tokens", set.name, strs.Count(set.count, "tool"), strs.Thousands(set.tokens)))
 	}
-	table("Toolsets by schema cost (largest first)", rows)
+	table("Groups of tools by what their descriptions cost, largest first", rows)
 	if a.skills == nil {
 		return lines
 	}
@@ -573,13 +575,14 @@ func (a *Agent) costTables(settings *config.Config, session *sessionsv1.Session,
 		if runes := []rune(name); len(runes) > 28 {
 			name = string(runes[:27]) + "…"
 		}
-		whole := fmt.Sprintf("%8s", "n/a")
+		whole := fmt.Sprintf("%8s", "Unknown")
 		if s.known {
-			whole = "~" + fmt.Sprintf("%8s", strs.Thousands(s.whole))
+			whole = fmt.Sprintf("%8s", strs.Thousands(s.whole))
 		}
-		rows = append(rows, fmt.Sprintf("  %-28s index ~%6s  SKILL.md %s tokens", name, strs.Thousands(s.index), whole))
+		rows = append(rows, fmt.Sprintf("  %-28s listed %6s  loaded %s tokens", name, strs.Thousands(s.index), whole))
 	}
-	table("Skills by cost (index = always-on; SKILL.md = cost when loaded)", rows)
+	table("Skills by cost, largest first. Listed is what a skill always costs in the list of skills, loaded is what it costs once the "+
+		"agent loads it.", rows)
 	return lines
 }
 
@@ -597,14 +600,14 @@ func (a *Agent) contextLines(r *run) string {
 	status := engine.Status()
 	var out strings.Builder
 	if status.Window > 0 && status.Threshold > 0 {
-		fmt.Fprintf(&out, "- **Context window** %s tokens, compresses at %s (%.0f%%)\n", strs.Thousands(status.Window), strs.Thousands(status.Threshold),
+		fmt.Fprintf(&out, "- **Context window** %s tokens, summarized at %s, %.0f%%\n", strs.Thousands(status.Window), strs.Thousands(status.Threshold),
 			status.Percent*100)
 	}
 	if status.Compressions > 0 {
-		fmt.Fprintf(&out, "- **Compressions** %d, the last freed %.0f%%\n", status.Compressions, status.Savings)
+		fmt.Fprintf(&out, "- **Summaries** %s, the last freed %.0f%%\n", strs.Number(float64(status.Compressions)), status.Savings)
 	}
 	if status.Blocked != "" {
-		fmt.Fprintf(&out, "- **Compression held off** %s\n", status.Blocked)
+		fmt.Fprintf(&out, "- **Summarizing** Held off %s\n", heldOff(status.Blocked))
 	}
 	r.mu.Lock()
 	queued := r.compactQueued()
@@ -612,12 +615,12 @@ func (a *Agent) contextLines(r *run) string {
 	r.mu.Unlock()
 	switch {
 	case running:
-		out.WriteString("- **Compressing** now\n")
+		out.WriteString("- **Summarizing** Now\n")
 	case queued:
-		out.WriteString("- **Compression** queued\n")
+		out.WriteString("- **Summarizing** Queued\n")
 	}
 	if !a.settings(r).GetBool(contextsconfig.Enabled) {
-		out.WriteString("- **Automatic compression** off\n")
+		out.WriteString("- **Shorten long sessions** Off\n")
 	}
 	return out.String()
 }

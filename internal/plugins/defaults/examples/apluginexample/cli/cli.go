@@ -22,7 +22,9 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	return []*cobra.Command{{
 		Use:   "apluginexample",
 		Short: "Print the example plugin's greeting",
-		Args:  cobra.NoArgs,
+		Long: "Prints the greeting of the example plugin. The example plugin shows how a plugin adds a command, a screen and settings to " +
+			"icebath.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			response, err := service.Greet(cmd.Context(), &apluginexamplev1.GreetRequest{})
 			if err != nil {

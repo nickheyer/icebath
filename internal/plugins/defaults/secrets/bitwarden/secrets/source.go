@@ -13,8 +13,8 @@ import (
 	"github.com/nickheyer/icebath/internal/secrets"
 )
 
-const authRemedy = "Run `icebath secrets bitwarden token` to paste a fresh access token (create one in the Bitwarden web app: Secrets Manager → " +
-	"Machine accounts → Access tokens).  Wrong region?  Re-run `icebath secrets bitwarden setup` and pick EU/self-hosted."
+const authRemedy = "Make a new access token in the Bitwarden web app under Secrets Manager › Machine accounts › Access tokens, then run icebath " +
+	"secrets bitwarden token. If your account is in another region, run icebath secrets bitwarden setup and pick that region."
 
 // The Bitwarden store, which the source, the service and the commands of the plugin share
 type Store struct {
@@ -62,15 +62,15 @@ func (s *Store) Fetch(ctx context.Context, f secrets.Fetch) secrets.Result {
 	tokenEnv := s.TokenEnv(cfg)
 	token := strings.TrimSpace(f.Env[tokenEnv])
 	if token == "" {
-		return secrets.Failed(fmt.Sprintf("secrets.bitwarden.enabled is true but %s is not set.  Run `icebath secrets bitwarden setup`.", tokenEnv), secrets.NotConfigured)
+		return secrets.Failed(fmt.Sprintf("Bitwarden is on, but %s, the variable for its access token, is not set.", tokenEnv), secrets.NotConfigured)
 	}
 	if missing := s.Unconfigured(cfg); missing != "" {
-		return secrets.Failed(missing+" is empty.  Run `icebath secrets bitwarden setup`.", secrets.NotConfigured)
+		return secrets.Failed("Bitwarden is on, but no project is chosen.", secrets.NotConfigured)
 	}
 	project := strings.TrimSpace(cfg.GetString(bitwardenconfig.ProjectID))
 	binary := s.Find(ctx, cfg, cfg.GetBool(bitwardenconfig.AutoInstall))
 	if binary == "" {
-		result := secrets.Failed("bws binary not available and auto-install is disabled.  Run `icebath secrets bitwarden setup` to install.", secrets.BinaryMissing)
+		result := secrets.Failed("bws is not installed, and Install bws is off in /settings under Secret stores › Bitwarden.", secrets.BinaryMissing)
 		return result
 	}
 	got, warnings, err := s.Pull(ctx, cfg, Pull{Token: token, Project: project, Server: strings.TrimSpace(cfg.GetString(bitwardenconfig.ServerURL)),
@@ -80,8 +80,8 @@ func (s *Store) Fetch(ctx context.Context, f secrets.Fetch) secrets.Result {
 		result := secrets.Failed(err.Error(), secrets.Classify(err.Error(), rules))
 		result.Binary = binary
 		if result.Kind == secrets.AuthFailed {
-			result.Error = fmt.Sprintf("Bitwarden rejected the machine-account access token (%s) — it was likely revoked, expired, or belongs to another region.  (%s)",
-				tokenEnv, err.Error())
+			result.Error = fmt.Sprintf("Bitwarden refused the access token in %s, which may be revoked, expired or for another region. Bitwarden said: %s",
+				tokenEnv, secrets.Sentence(err.Error()))
 		}
 		return result
 	}

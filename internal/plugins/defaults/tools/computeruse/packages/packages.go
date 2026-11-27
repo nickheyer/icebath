@@ -31,9 +31,9 @@ func Register(registry *packages.Registry) {
 
 // trycua's release builds: macOS takes the folder archive carrying the signed app, the other targets the bare binary
 func cuaDriver(pin packages.Pin) packages.Package {
-	gaps := map[string]string{packages.Bionic: "cua-driver does not publish an Android build"}
+	gaps := map[string]string{packages.Bionic: "cua-driver has no build for Android"}
 	for target := range packages.Musl {
-		gaps[target] = "cua-driver does not publish a musl build"
+		gaps[target] = "cua-driver has no build for Linux systems built on musl, such as Alpine"
 	}
 	return packages.Package{
 		Name: CuaDriver, Optional: true, Default: true, Gaps: gaps, Pin: pin,
@@ -47,7 +47,7 @@ func cuaDriver(pin packages.Pin) packages.Package {
 			arch, ok := map[string]string{"darwin-x64": "darwin-universal", "darwin-arm64": "darwin-universal", "linux-x64": "linux-x86_64",
 				"linux-arm64": "linux-arm64", "win32-x64": "windows-x86_64", "win32-arm64": "windows-arm64"}[target]
 			if !ok {
-				return nil, fmt.Errorf("no download for target %s", target)
+				return nil, fmt.Errorf("cua-driver has no download for %s", target)
 			}
 			ext, variant := "tar.gz", "-binary"
 			if strings.HasPrefix(target, "win32") {

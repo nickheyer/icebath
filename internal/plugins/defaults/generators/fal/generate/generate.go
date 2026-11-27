@@ -17,11 +17,11 @@ func Register(registry *generation.Registry) {
 func (services) Services() []generation.Service {
 	return []generation.Service{{
 		Name:  falconfig.Name,
-		Title: "FAL.ai",
+		Title: "FAL",
 		Ready: ready,
 		Setup: generation.Setup{Badge: "paid", Key: falconfig.APIKey, Prompt: "FAL API key", Link: falconfig.KeyLink},
 		Images: &generation.Images{
-			About:    "Pick from flux-2-klein, flux-2-pro, gpt-image, nano-banana-2, nano-banana-pro, etc. — text-to-image & image editing",
+			About:    "Many image models with edits, needs a FAL API key",
 			Settings: []string{falconfig.APIKey, falconfig.KeyID, falconfig.KeySecret, falconfig.RunHost},
 			Models:   imageModels,
 			Default:  func(context.Context, *config.Config) string { return defaultPicture },
@@ -29,8 +29,7 @@ func (services) Services() []generation.Service {
 			Generate: drawImage,
 		},
 		Videos: &generation.Videos{
-			About: "LTX 2.3/2.5, Pixverse, Seedance 2.0/2.5/Mini, Veo 3.1, MiniMax H3, FLUX 3, Kling 3.0/4K/O3, Wan 3.0, Happy Horse, Grok Imagine, " +
-				"Gemini Omni — text-to-video & image-to-video",
+			About:    "Many video models from text or an image, needs a FAL API key",
 			Settings: []string{falconfig.VideoModel, falconfig.APIKey},
 			Model:    falconfig.VideoModel,
 			Models:   videoModels,

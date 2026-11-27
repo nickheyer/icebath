@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"connectrpc.com/connect/v2"
 
@@ -82,14 +83,14 @@ func (s *service) Change(_ context.Context, request *hooksv1.ChangeRequest) (*ho
 		err = s.shell.Add(cfg, event, command, request.GetMatcher(), int(request.GetTimeout()))
 	case "remove":
 		if removed, err = s.shell.Remove(cfg, event, command); err == nil && removed == 0 {
-			err = &shellhooks.Refusal{Message: "no such hook: " + event + " " + command}
+			err = &shellhooks.Refusal{Message: "There is no hook " + command + " on " + event + "."}
 		}
 	case "allow":
 		err = s.shell.Approve(cfg, event, command)
 	case "revoke":
 		removed, err = s.shell.Revoke(cfg, command)
 	default:
-		err = &shellhooks.Refusal{Message: "unknown hooks change: " + request.GetVerb()}
+		err = &shellhooks.Refusal{Message: "icebath can't make the change “" + request.GetVerb() + "” to a hook."}
 	}
 	if err != nil {
 		return nil, refused(err)
@@ -128,7 +129,7 @@ func (s *service) Test(ctx context.Context, request *hooksv1.TestRequest) (*hook
 	var fields map[string]any
 	if payload := request.GetPayload(); payload != "" {
 		if err := json.Unmarshal([]byte(payload), &fields); err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, "The payload is not a JSON object: "+err.Error())
+			return nil, connect.NewError(connect.CodeInvalidArgument, "The sample event is not a JSON object: "+strings.TrimSuffix(err.Error(), ".")+".")
 		}
 	}
 	specs, runs, err := s.shell.Test(ctx, cfg, request.GetEvent(), request.GetTool(), fields)
@@ -153,7 +154,7 @@ func (s *service) Check(ctx context.Context, request *hooksv1.CheckRequest) (*ho
 	} else {
 		spec, ok := s.shell.Find(cfg, request.GetEvent(), request.GetCommand())
 		if !ok {
-			return nil, refused(&shellhooks.Refusal{Message: "no such hook: " + request.GetEvent() + " " + request.GetCommand()})
+			return nil, refused(&shellhooks.Refusal{Message: "There is no hook " + request.GetCommand() + " on " + request.GetEvent() + "."})
 		}
 		specs = []shellhooks.Spec{spec}
 	}

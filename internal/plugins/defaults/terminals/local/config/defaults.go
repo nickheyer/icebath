@@ -9,12 +9,16 @@ func Register(cfg *config.Config) {
 	cfg.Register(config.Sections{{
 		Key:    Key,
 		Parent: terminalconfig.Key,
-		Title:  "This machine",
-		About:  "Commands run directly on this computer",
+		Title:  "This computer",
+		About:  "Commands that run right on this computer",
+		Order:  10,
 		Settings: []config.Setting{
-			{Key: Persistent, Title: "Persistent local shell", About: "Keep the variables a command exports for the commands after it; off starts each command fresh", Default: true, Env: []string{"TERMINAL_LOCAL_PERSISTENT"}},
-			{Key: InitFiles, Title: "Shell init files", About: "Files sourced before commands run, in place of your usual ones; empty falls back to the profile and bashrc files", Default: []string{}},
-			{Key: SourceBashrc, Title: "Load shell profile", About: "Load your usual shell startup files before running commands; ignored when shell init files are set", Default: true},
+			{Key: Persistent, Title: "Keep exported variables", About: "Keep the variables that a command exports for the commands after it.",
+				Help: "When off, each command starts fresh.", Default: true, Env: []string{"TERMINAL_LOCAL_PERSISTENT"}},
+			{Key: SourceBashrc, Title: "Load shell profile", About: "Load your usual shell startup files before commands run.",
+				Help: "Has no effect while Startup files holds any file.", Default: true},
+			{Key: InitFiles, Title: "Startup files", About: "Files loaded before commands run, in place of your usual ones.", Default: []string{},
+				Zero: "Usual startup files"},
 		},
 	}})
 }

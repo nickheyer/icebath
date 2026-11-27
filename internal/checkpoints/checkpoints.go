@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/internal/git"
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Layout of the checkpoint folder of a profile
@@ -174,7 +175,7 @@ const lockWait = 30 * time.Second
 func lock(base string) (func(), error) {
 	release, err := fsx.Lock(context.Background(), lockPath(base), lockWait)
 	if errors.Is(err, os.ErrDeadlineExceeded) {
-		return nil, fmt.Errorf("checkpoint store is busy: %s", base)
+		return nil, fmt.Errorf("Another session is using the checkpoints in %s. Try again in a moment.", base)
 	}
 	return release, err
 }
@@ -226,7 +227,7 @@ func (s *Store) git(workdir string, st step, args ...string) (bool, string, stri
 		return false, "", reason
 	}
 	if _, err := exec.LookPath("git"); err != nil {
-		return false, "", "git is not installed or not on PATH"
+		return false, "", "git is not installed or not on your PATH"
 	}
 	env := environment(s.store(), wd, st.index)
 	maps.Copy(env, st.env)
@@ -236,7 +237,7 @@ func (s *Store) git(workdir string, st step, args ...string) (bool, string, stri
 	}
 	result, err := git.Run(context.Background(), wd, env, timeout, nil, args...)
 	if timed, ok := errors.AsType[*git.TimeoutError](err); ok {
-		reason := fmt.Sprintf("git timed out after %ds: %s", int(timed.Timeout/time.Second), shown)
+		reason := fmt.Sprintf("`%s` took longer than %s", shown, strs.Span(timed.Timeout))
 		slog.Error(reason)
 		return false, "", reason
 	}
@@ -274,7 +275,7 @@ func (s *Store) init() (string, error) {
 	store := s.store()
 	if !fsx.Exists(store) {
 		if err := os.MkdirAll(s.base, 0o700); err != nil {
-			return "Could not create checkpoint base: " + err.Error(), nil
+			return "The checkpoint folder could not be made: " + err.Error(), nil
 		}
 		if err := s.archiveStrays(); err != nil {
 			return "", err
@@ -289,7 +290,7 @@ func (s *Store) init() (string, error) {
 		}
 	}
 	if _, err := exec.LookPath("git"); err != nil {
-		return "Shadow store init failed: git is not installed or not on PATH", nil
+		return "Checkpoints need git, which is not installed or not on your PATH.", nil
 	}
 	env := git.Process()
 	for _, key := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_NAMESPACE", "GIT_ALTERNATE_OBJECT_DIRECTORIES"} {
@@ -298,15 +299,15 @@ func (s *Store) init() (string, error) {
 	maps.Copy(env, map[string]string{"GIT_CONFIG_GLOBAL": os.DevNull, "GIT_CONFIG_SYSTEM": os.DevNull, "GIT_CONFIG_NOSYSTEM": "1"})
 	result, err := git.Run(context.Background(), s.base, env, s.timeout, nil, "init", "--bare", store)
 	if _, ok := errors.AsType[*git.TimeoutError](err); ok {
-		return fmt.Sprintf("Shadow store init failed: git init --bare %s timed out after %d seconds", store, int(s.timeout/time.Second)), nil
+		return fmt.Sprintf("Checkpoints could not be set up: `git init --bare %s` took longer than %s.", store, strs.Span(s.timeout)), nil
 	}
 	if err != nil {
-		return "Shadow store init failed: " + err.Error(), nil
+		return "Checkpoints could not be set up: " + err.Error(), nil
 	}
 	if result.Code != 0 {
-		return "Shadow store init failed: " + strings.TrimSpace(text(result.Stderr)), nil
+		return "Checkpoints could not be set up. git said: " + strings.TrimSpace(text(result.Stderr)), nil
 	}
-	for _, setting := range [][2]string{{"user.email", "icebath@local"}, {"user.name", "Icebath Checkpoint"}, {"commit.gpgsign", "false"},
+	for _, setting := range [][2]string{{"user.email", "icebath@local"}, {"user.name", "icebath checkpoint"}, {"commit.gpgsign", "false"},
 		{"tag.gpgSign", "false"}, {"gc.auto", "0"}} {
 		s.git(s.base, step{}, "config", setting[0], setting[1])
 	}
@@ -519,7 +520,7 @@ func removeTree(path string) error {
 		return err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return &os.PathError{Op: "remove", Path: path, Err: errors.New("Cannot remove a tree through a symbolic link")}
+		return &os.PathError{Op: "remove", Path: path, Err: errors.New("a folder cannot be removed through a symbolic link")}
 	}
 	return removeDir(path)
 }
@@ -567,7 +568,7 @@ func retry(path string, op func() error) error {
 }
 
 // Said when snapshots are off for a session
-const NotEnabled = "Checkpoints are not enabled.\nTurn on File checkpoints in /settings under Tools › Checkpoints, or start icebath with --checkpoints."
+const NotEnabled = "Checkpoints are off. Turn on Save checkpoints in /settings under Tools › Checkpoints, or start icebath with --checkpoints."
 
 // Checkpoints as one session sees them: its profile's store, the project its folder lies in, and why snapshots taken on this machine
 // don't serve its terminal backend, empty when they do

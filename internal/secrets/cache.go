@@ -99,7 +99,7 @@ func (c *Cache) Read(dir, key string, ttl time.Duration) (Entry, bool, error) {
 	}
 	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(data) {
-		return Entry{}, false, fmt.Errorf("secret cache %s is not UTF-8 text; delete it to fetch again", path)
+		return Entry{}, false, fmt.Errorf("The saved copy of your secrets in %s can't be read because it is not text. Delete the file, and icebath asks the store again.", path)
 	}
 	var payload map[string]any
 	if json.Unmarshal(data, &payload) != nil {

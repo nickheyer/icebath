@@ -452,8 +452,8 @@ func setTitle(ctx context.Context, tx *sql.Tx, id, title, source string) (string
 	}
 	if current.String == sessions.BotChat && hidden && title != sessions.BotChat {
 		if source == sessions.TitleUser {
-			return "", errors.New("This is the bot's canonical Bot Chat — its name is its identity, and renaming it would orphan the conversation. " +
-				"To start fresh, create a new bot instead.")
+			return "", errors.New("This session is the Bot Chat of a bot, and its name is how the bot finds it, so renaming it would cut it off. " +
+				"To start fresh, make a new bot instead.")
 		}
 		return "", nil
 	}
@@ -480,7 +480,7 @@ func setTitle(ctx context.Context, tx *sql.Tx, id, title, source string) (string
 		}
 		// A bot chat retired, archived and hidden, gives its title up to the bot's new one
 		if !ancestor && !ghost && !(title == sessions.BotChat && retired) {
-			return "", fmt.Errorf("Title '%s' is already in use by session %s", title, holder)
+			return "", fmt.Errorf("The title %s is taken by the session %s. Pick another title.", title, holder)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE sessions SET title = NULL, title_source = NULL WHERE id = ?`, holder); err != nil {
 			return "", err
@@ -562,7 +562,7 @@ func (s *store) Delete(ctx context.Context, id string) ([]string, error) {
 		if busy, err := guarded(ctx, tx, targets); err != nil {
 			return err
 		} else if len(busy) > 0 {
-			return fmt.Errorf("Cannot delete active session: session '%s' (or a delegate child) has an active turn lease or compression lock", id)
+			return fmt.Errorf("The session %s can't be deleted while it, or one of its subagents, is in the middle of a reply or of being summarized. Try again when it finishes.", id)
 		}
 		if err := deleteRows(ctx, tx, targets); err != nil {
 			return err

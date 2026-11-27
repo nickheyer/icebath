@@ -23,11 +23,11 @@ func (c *compressor) feasibility(ctx context.Context, env *contexts.Env) error {
 	route, err := env.Aux.Route(ctx, Task)
 	if err != nil {
 		configured := strings.TrimSpace(env.Config.GetString("auxiliary." + Task + ".provider"))
-		message := "⚠ No auxiliary LLM provider configured: Icebath has no helper model for summarising long chats, so older messages will be cut " +
-			"without a summary. Connect one with /providers, or set one for Compression in /settings under Helper models."
+		message := "⚠ No helper model can summarize long sessions, so their older messages are cut without a summary. Connect a provider " +
+			"with /providers, or set one in /settings under Helper models › Summaries."
 		if configured != "" && configured != "auto" {
-			message = fmt.Sprintf("⚠ Configured auxiliary compression provider '%s' is unavailable, so older messages in long chats will be cut without a "+
-				"summary. Sign in to that provider again, or change auxiliary.compression in your config.", configured)
+			message = fmt.Sprintf("⚠ The summary provider %s can't be used, so older messages of long sessions are cut without a summary. Sign "+
+				"in to %s again, or pick another provider in /settings under Helper models › Summaries.", configured, configured)
 		}
 		c.say(message)
 		slog.Warn("No auxiliary LLM provider for compression — summaries will be unavailable.")
@@ -48,10 +48,9 @@ func (c *compressor) feasibility(ctx context.Context, env *contexts.Env) error {
 	}
 	if window < minimumWindow {
 		c.feasible = false
-		return fmt.Errorf("Auxiliary compression model %s has a context window of %s tokens, which is below the minimum %s required by Icebath Agent.  "+
-			"Choose a compression model with at least %dK context (set auxiliary.compression.model in config.yaml), or set "+
-			"auxiliary.compression.context_length to override the detected value if it is wrong.", route.Model, strs.Thousands(window),
-			strs.Thousands(minimumWindow), minimumWindow/1000)
+		return fmt.Errorf("The summary model %s reads at most %s tokens, fewer than the %s that summaries need. Pick a model that reads at "+
+			"least %s tokens in /settings under Helper models › Summaries, or set Context window there if icebath has its size wrong.", route.Model,
+			strs.Thousands(window), strs.Thousands(minimumWindow), strs.Thousands(minimumWindow))
 	}
 	if window < c.threshold {
 		c.lower(route.Model, route.Provider, route.BaseURL, window)
@@ -78,22 +77,19 @@ func (c *compressor) lower(model, provider, base string, window int) {
 	if label == "" || label == "auto" {
 		label = cmp.Or(base, "auto")
 	}
-	main := cmp.Or(c.route.Model, "?")
+	main := cmp.Or(c.route.Model, "the main model")
 	if c.route.Provider != "" {
-		main = fmt.Sprintf("%s (%s)", main, c.route.Provider)
+		main = fmt.Sprintf("%s on %s", main, c.route.Provider)
 	}
-	message := fmt.Sprintf("⚠ Compression model %s (%s) context is %s tokens, but the main model %s's compression threshold was %s tokens. Auto-lowered "+
-		"this session's threshold to %s tokens so compression can run.\n", model, label, strs.Thousands(window), main, strs.Thousands(old),
-		strs.Thousands(window))
+	message := fmt.Sprintf("⚠ The summary model %s on %s reads at most %s tokens, but %s was summarized at %s, so this session is now summarized "+
+		"at %s tokens.", model, label, strs.Thousands(window), main, strs.Thousands(old), strs.Thousands(window))
 	if c.window == 0 || recomputed <= window {
-		message += fmt.Sprintf("  To make this permanent, edit config.yaml — either:\n  1. Use a larger compression model:\n       auxiliary:\n         "+
-			"compression:\n           model: <model-with-%s+-context>\n  2. Lower the compression threshold:\n       context:\n         compression:\n"+
-			"           threshold: 0.%02d", strs.Thousands(old), safe)
+		message += fmt.Sprintf("\nTo keep it that way, pick a summary model that reads at least %s tokens in /settings under Helper models › "+
+			"Summaries, or set Start at to %d%% in /settings under Long sessions › Summaries.", strs.Thousands(old), safe)
 	} else {
-		message += fmt.Sprintf("  To make this permanent, use a larger compression model in config.yaml:\n       auxiliary:\n         compression:\n"+
-			"           model: <model-with-%s+-context>\n  (Lowering context.compression.threshold cannot help here — with %s's %s-token window, Icebath's "+
-			"small-context floor and output reservation would recompute the trigger to %s tokens, still above the compression model's %s.)",
-			strs.Thousands(old), main, strs.Thousands(c.window), strs.Thousands(recomputed), strs.Thousands(window))
+		message += fmt.Sprintf("\nTo keep it that way, pick a summary model that reads at least %s tokens in /settings under Helper models › "+
+			"Summaries. Lowering Start at won't help, because with the %s-token window of %s icebath would still summarize at %s tokens, more "+
+			"than the summary model's %s.", strs.Thousands(old), strs.Thousands(c.window), main, strs.Thousands(recomputed), strs.Thousands(window))
 	}
 	c.say(message)
 	slog.Warn(fmt.Sprintf("Auxiliary compression model %s has %d token context, below the main model's compression threshold of %d tokens — auto-lowered "+

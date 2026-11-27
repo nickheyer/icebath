@@ -21,6 +21,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 //go:embed Dockerfile
@@ -116,10 +117,10 @@ func Instructions() ([]Instruction, error) {
 		pending.Reset()
 	}
 	if pending.Len() > 0 {
-		return nil, errors.New("sandbox Dockerfile ends inside a continued line")
+		return nil, errors.New("The sandbox Dockerfile that comes with icebath ends in the middle of a continued line.")
 	}
 	if len(out) == 0 || out[0].Keyword != "FROM" {
-		return nil, errors.New("sandbox Dockerfile does not start with FROM")
+		return nil, errors.New("The sandbox Dockerfile that comes with icebath does not start with FROM.")
 	}
 	return out, nil
 }
@@ -154,7 +155,7 @@ func Apptainer() (string, error) {
 		case "RUN":
 			post = append(post, "( "+step.Args+" )")
 		default:
-			return "", fmt.Errorf("the sandbox Dockerfile instruction %s has no Apptainer definition form", step.Keyword)
+			return "", fmt.Errorf("The sandbox Dockerfile instruction %s has no Apptainer form, so Apptainer cannot build the sandbox image.", step.Keyword)
 		}
 	}
 	return "Bootstrap: docker\nFrom: " + apptainerRef(steps[0].Args) + "\n\n%environment\n    " + strings.Join(env, "\n    ") +
@@ -212,7 +213,7 @@ func Ensure(ctx context.Context, docker, image string, progress func(line string
 		argv = append(argv, "--progress=plain")
 	}
 	argv = append(argv, "--label", DigestLabel+"="+digest, "-t", image, "-")
-	progress(fmt.Sprintf("Building the sandbox image %s from the Dockerfile icebath ships", image), true)
+	progress(fmt.Sprintf("Building the sandbox image %s from the Dockerfile that comes with icebath.", image), true)
 	ctx, cancel := context.WithTimeout(ctx, buildTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, docker, argv...)
@@ -224,7 +225,7 @@ func Ensure(ctx context.Context, docker, image string, progress func(line string
 	}
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("building the sandbox image %s: %w", image, err)
+		return fmt.Errorf("The build of the sandbox image %s could not start: %w", image, err)
 	}
 	var tail []string
 	scanner := bufio.NewScanner(out)
@@ -238,13 +239,13 @@ func Ensure(ctx context.Context, docker, image string, progress func(line string
 	}
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
-			return fmt.Errorf("building the sandbox image %s did not finish within %s", image, buildTimeout)
+			return fmt.Errorf("The build of the sandbox image %s took longer than %s and was stopped.", image, strs.Span(buildTimeout))
 		}
-		return fmt.Errorf("building the sandbox image %s failed: %w\n%s", image, err, strings.Join(tail, "\n"))
+		return fmt.Errorf("The build of the sandbox image %s failed: %w. Its last lines:\n%s", image, err, strings.Join(tail, "\n"))
 	}
 	if got := builtDigest(context.Background(), docker, image); got != digest {
-		return fmt.Errorf("building the sandbox image %s left an image labelled %q, want %s", image, got, digest)
+		return fmt.Errorf("The build of the sandbox image %s finished, but the image it left is labelled %q instead of %s.", image, got, digest)
 	}
-	progress(fmt.Sprintf("Sandbox image %s is ready", image), true)
+	progress(fmt.Sprintf("The sandbox image %s is ready.", image), true)
 	return nil
 }

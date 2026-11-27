@@ -37,9 +37,9 @@ type picture struct {
 
 // Picture models of xAI that are known, in the order the picker lists them
 var pictures = []picture{
-	{id: "grok-imagine-image", title: "Grok Imagine Image", speed: "~5-10s", strengths: "Fast, high-quality"},
-	{id: "grok-imagine-image-2.0", title: "Grok Imagine Image 2.0", speed: "~10-20s", strengths: "Typography/layout-aware; legible small text; strongest quality."},
-	{id: "grok-imagine-image-quality", title: "Grok Imagine Image (Quality)", speed: "~10-20s", strengths: "Higher fidelity / detail; slower than the standard model."},
+	{id: "grok-imagine-image", title: "Grok Imagine Image", speed: "5 to 10 seconds", strengths: "Fast and high quality"},
+	{id: "grok-imagine-image-2.0", title: "Grok Imagine Image 2.0", speed: "10 to 20 seconds", strengths: "Minds lettering and layout, readable small text, the best quality"},
+	{id: "grok-imagine-image-quality", title: "Grok Imagine Image Quality", speed: "10 to 20 seconds", strengths: "More faithful and detailed, slower than the standard model"},
 }
 
 var aspectRatios = map[string]string{"landscape": "16:9", "square": "1:1", "portrait": "9:16"}
@@ -80,7 +80,7 @@ func (s *Services) catalog(ctx context.Context, cfg *config.Config) catalog {
 			if id == "" {
 				continue
 			}
-			p := picture{id: id, title: id, strengths: "New xAI Imagine model (from live xAI catalog)"}
+			p := picture{id: id, title: id, strengths: "A new xAI Imagine model, from the current xAI list"}
 			if i := slices.IndexFunc(pictures, func(known picture) bool { return known.id == id }); i >= 0 {
 				p = pictures[i]
 			}

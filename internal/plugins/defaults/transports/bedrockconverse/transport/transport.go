@@ -29,8 +29,8 @@ import (
 const carrier = string(provider.ModeBedrockConverse)
 
 // Line shown once IAM refuses ConverseStream and the session goes on without streaming
-const deniedNotice = "\n⚠  AWS IAM denied bedrock:InvokeModelWithResponseStream — falling back to non-streaming InvokeModel.\n   Grant that action to " +
-	"restore streaming output.\n"
+const deniedNotice = "⚠ AWS does not allow these credentials to stream replies, so replies come whole instead. Grant " +
+	"bedrock:InvokeModelWithResponseStream in AWS IAM to stream them again."
 
 // Stop reasons as finish reasons
 var finishes = map[string]string{"end_turn": "stop", "stop_sequence": "stop", "tool_use": "tool_calls", "max_tokens": "length",
@@ -54,7 +54,7 @@ func (r *registrant) Factories() map[provider.APIMode]provider.Factory {
 	return map[provider.APIMode]provider.Factory{
 		provider.ModeBedrockConverse: func(route provider.Route) (provider.Client, error) {
 			if strings.TrimSpace(route.BaseURL) == "" {
-				return nil, fmt.Errorf("%s has no Bedrock runtime address for %s.", route.Provider, route.Model)
+				return nil, fmt.Errorf("%s has no Bedrock address for %s. Check the AWS region in /providers.", route.Provider, route.Model)
 			}
 			return &client{r: r, route: route}, nil
 		},
@@ -211,7 +211,7 @@ func denied(text string) bool {
 func (c *client) request(ctx context.Context, p *prepared, operation string) (*http.Request, []byte, error) {
 	payload, err := json.Marshal(p.body)
 	if err != nil {
-		return nil, nil, fmt.Errorf("The Converse request couldn't be encoded: %w", err)
+		return nil, nil, fmt.Errorf("The request to Bedrock could not be built: %w", err)
 	}
 	address := strings.TrimRight(c.route.BaseURL, "/") + aws.ModelPath(p.model, operation)
 	call, err := http.NewRequestWithContext(ctx, http.MethodPost, address, bytes.NewReader(payload))
@@ -231,7 +231,7 @@ func (c *client) request(ctx context.Context, p *prepared, operation string) (*h
 	transport.Extra(call.Header, p.call.Config, p.settings, p.request.SessionID, false)
 	if c.route.Sign != nil {
 		if err := c.route.Sign(call, payload); err != nil {
-			return nil, nil, fmt.Errorf("The request to %s couldn't be signed: %w", c.route.Provider, err)
+			return nil, nil, fmt.Errorf("The request to %s could not be signed: %w", c.route.Provider, err)
 		}
 	} else if key := strings.TrimSpace(c.route.APIKey); key != "" {
 		call.Header.Set("Authorization", "Bearer "+key)
@@ -303,7 +303,7 @@ func (c *client) stream(ctx context.Context, p *prepared, fn provider.StreamFunc
 		return nil, s.delivered, p.refused.Transport(ctx, sent(err))
 	}
 	if !s.stopped {
-		return nil, s.delivered, p.refused.Empty("Bedrock Converse stream ended before messageStop; response is incomplete", nil)
+		return nil, s.delivered, p.refused.Empty("The reply from Bedrock stopped before it ended, so it is incomplete. Send your message again.", nil)
 	}
 	reply := s.parts.build(p, s.ordered(), s.usage, s.reason)
 	reply.Header = response.Header
@@ -339,7 +339,7 @@ func (c *client) complete(ctx context.Context, p *prepared, fn provider.StreamFu
 			return nil, p.refused.Stream(transport.FrameError(string(data), response.Header))
 		}
 		if _, ok := answer["output"]; !ok {
-			return nil, p.refused.Empty("Bedrock Converse response carried no output", nil)
+			return nil, p.refused.Empty("Bedrock sent back a reply with nothing in it. Send your message again.", nil)
 		}
 		reply := c.normalize(p, answer)
 		reply.Header = response.Header
@@ -549,7 +549,7 @@ func (s *stream) frame(f *transport.Frame) (bool, bool, error) {
 	if json.Unmarshal([]byte(f.Data), &payload) != nil {
 		return false, false, transport.FrameError(f.Data, s.header)
 	}
-	if err := s.emit(provider.EventActivity, "receiving stream response"); err != nil {
+	if err := s.emit(provider.EventActivity, "receiving the reply"); err != nil {
 		return true, true, err
 	}
 	switch f.Event {

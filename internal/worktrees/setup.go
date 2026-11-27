@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/git"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // A tree made for a session to work in
@@ -72,25 +73,25 @@ func base(repo string, fetchTimeout, fresh time.Duration) (string, string) {
 	}
 	refresh := func(remote, branch, ref string) (string, string) {
 		if age, ok := fetched(); ok && age < fresh && exists(ref) {
-			return ref, fmt.Sprintf("%s (fetched %ds ago)", ref, int(age.Seconds()))
+			return ref, fmt.Sprintf("%s, fetched %s ago", ref, strs.Span(age.Truncate(time.Second)))
 		}
 		result, err := try(fetchTimeout, "fetch", remote, trackingRefspec(remote, branch))
 		reason := ""
 		switch _, timed := errors.AsType[*git.TimeoutError](err); {
 		case err == nil && result.Code == 0:
-			return ref, ref + " (fetched)"
+			return ref, ref + ", fetched just now"
 		case err == nil:
-			reason = "fetch failed"
+			reason = "the fetch failed"
 		case timed:
-			reason = fmt.Sprintf("fetch timed out after %gs", fetchTimeout.Seconds())
+			reason = "the fetch took longer than " + strs.Span(fetchTimeout)
 		default:
-			reason = "fetch error: " + err.Error()
+			reason = "the fetch could not run: " + strings.TrimRight(err.Error(), ".")
 		}
 		if exists(ref) {
 			slog.Debug("worktree base: " + reason + " — using cached " + ref)
-			return ref, fmt.Sprintf("%s (cached — %s)", ref, reason)
+			return ref, fmt.Sprintf("%s as last fetched, because %s", ref, reason)
 		}
-		return "HEAD", fmt.Sprintf("HEAD (local — %s, no cached %s)", reason, ref)
+		return "HEAD", fmt.Sprintf("Your local HEAD, because %s and %s was never fetched", reason, ref)
 	}
 	upstream, err := try(20*time.Second, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
 	if err != nil {
@@ -99,7 +100,7 @@ func base(repo string, fetchTimeout, fresh time.Duration) (string, string) {
 		remote, branch, _ := strings.Cut(name, "/")
 		return refresh(remote, branch, name)
 	}
-	unreachable := "HEAD (local — could not reach remote)"
+	unreachable := "Your local HEAD, because the remote could not be reached"
 	head, err := try(20*time.Second, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
 	if err != nil {
 		slog.Debug("worktree base: default-branch resolution failed", "error", err)
@@ -166,7 +167,7 @@ func ignoreTrees(repo string) {
 func add(repo, path, branch, ref, label string, say func(string)) (string, string, bool) {
 	env := repoEnv(repo)
 	if env == nil {
-		say("✗ Failed to create worktree: could not read the repository's filter config")
+		say("✗ The worktree could not be made, because the filter settings of the repository could not be read.")
 		return "", "", false
 	}
 	create := func(settings ...string) (*git.Result, error) {
@@ -178,18 +179,18 @@ func add(repo, path, branch, ref, label string, say func(string)) (string, strin
 		if ref != "HEAD" {
 			slog.Warn("worktree add from "+ref+" failed; retrying from local HEAD", "error", strings.TrimSpace(result.Stderr))
 			cleanupFailedAdd(repo, path, branch)
-			ref, label = "HEAD", "HEAD (fallback — remote base failed)"
+			ref, label = "HEAD", "Your local HEAD, because the worktree could not be made from the remote base"
 			result, err = create()
 		}
 		if err == nil && result.Code != 0 {
 			cleanupFailedAdd(repo, path, branch)
-			say("✗ Failed to create worktree: " + strings.TrimSpace(result.Stderr))
+			say("✗ The worktree could not be made. git said: " + strings.TrimSpace(result.Stderr))
 			return "", "", false
 		}
 	}
 	if err != nil {
 		cleanupFailedAdd(repo, path, branch)
-		say("✗ Failed to create worktree: " + err.Error())
+		say("✗ The worktree could not be made: " + err.Error())
 		return "", "", false
 	}
 	return ref, label, true
@@ -210,8 +211,8 @@ type Request struct {
 // what happened saying line by line
 func (w *Worktrees) Create(ctx context.Context, cfg *config.Config, repo string, request Request, sync bool, say func(string)) *Tree {
 	if repo == "" {
-		say("✗ --worktree requires being inside a git repository.")
-		say("  cd into your project repo first, then run icebath -w")
+		say("✗ A worktree needs a git repository, and this folder is not in one.")
+		say("  Change to the folder of your project, then run icebath -w again.")
 		return nil
 	}
 	name := ""
@@ -227,17 +228,17 @@ func (w *Worktrees) Create(ctx context.Context, cfg *config.Config, repo string,
 	branch := "icebath/" + name
 	dir := filepath.Join(repo, ".worktrees")
 	if err := os.MkdirAll(dir, 0o777); err != nil {
-		say("✗ Failed to create worktree: " + err.Error())
+		say("✗ The worktree could not be made: " + err.Error())
 		return nil
 	}
 	path := filepath.Join(dir, name)
 	if _, err := os.Lstat(path); request.Name != "" && err == nil {
-		say("✗ Worktree already exists: " + path)
-		say("  Pick a different name, or remove it with: git worktree remove " + path)
+		say("✗ The worktree " + path + " already exists.")
+		say("  Choose another name, or remove it with `git worktree remove " + path + "`.")
 		return nil
 	}
 	ignoreTrees(repo)
-	ref, label := "HEAD", "HEAD (local — fetching before branching is off)"
+	ref, label := "HEAD", "Your local HEAD, because Fetch before branching is off in /settings under Tools › Worktrees"
 	if sync {
 		ref, label = base(repo, 5*time.Second, 5*time.Minute)
 	}
@@ -260,7 +261,7 @@ func (w *Worktrees) Create(ctx context.Context, cfg *config.Config, repo string,
 	if request.Launch {
 		w.Record(cfg, *tree)
 	}
-	say("✓ Worktree created: " + path)
+	say("✓ Made the worktree " + path + ".")
 	say("  Branch: " + branch)
 	say("  Base:   " + label)
 	return tree

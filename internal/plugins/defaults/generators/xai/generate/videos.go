@@ -44,10 +44,10 @@ var (
 )
 
 var videoModels = []generation.Model{
-	{ID: textVideoModel, Title: "Grok Imagine Video", Speed: "~60-240s", Strengths: "Text-to-video; legacy image-to-video fallback.",
-		Price: "see https://docs.x.ai/developers/models/grok-imagine-video", Modalities: []string{"text", "image"}},
-	{ID: imageVideoModel, Title: "Grok Imagine Video 1.5", Speed: "~60-240s", Strengths: "Latest xAI image-to-video model.",
-		Price: "see https://docs.x.ai/developers/pricing", Modalities: []string{"image"}},
+	{ID: textVideoModel, Title: "Grok Imagine Video", Speed: "1 to 4 minutes", Strengths: "Video from text, and from an image the older way",
+		Price: "See https://docs.x.ai/developers/models/grok-imagine-video", Modalities: []string{"text", "image"}},
+	{ID: imageVideoModel, Title: "Grok Imagine Video 1.5", Speed: "1 to 4 minutes", Strengths: "The newest xAI model that turns an image into video",
+		Price: "See https://docs.x.ai/developers/pricing", Modalities: []string{"image"}},
 }
 
 // Model for what the video is made from: one named explicitly as it is, else the image model for a still and the text model otherwise

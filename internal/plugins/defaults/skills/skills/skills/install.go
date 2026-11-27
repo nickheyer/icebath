@@ -119,7 +119,7 @@ func (h *Hub) Stage(ctx context.Context, scope *skills.Scope, req Install, say S
 		alias := map[string]string{"skills.sh": "skills-sh"}[req.Source]
 		sources = slices.DeleteFunc(sources, func(s Source) bool { return s.ID() != req.Source && s.ID() != alias })
 		if len(sources) == 0 {
-			r.fail("no source adapter for '%s'. Refusing to resolve '%s' against other registries (that would change the skill's provenance).",
+			r.fail("icebath knows no source named %s, and it does not look for %s in other registries, because that would change where the skill comes from.",
 				req.Source, req.Identifier)
 			return Failed, nil, nil
 		}
@@ -129,7 +129,7 @@ func (h *Hub) Stage(ctx context.Context, scope *skills.Scope, req Install, say S
 		return Failed, nil, nil
 	}
 	r.line(Plain, "")
-	r.line(Heading, "Fetching: %s", identifier)
+	r.line(Heading, "Downloading %s…", identifier)
 	meta, bundle, matched := r.resolve(ctx, identifier, sources)
 	if bundle == nil {
 		r.fetchFailure(identifier, meta != nil, matched)
@@ -149,9 +149,9 @@ func (h *Hub) Stage(ctx context.Context, scope *skills.Scope, req Install, say S
 		return Failed, nil, err
 	}
 	if entry := lock.Installed[bundle.Name]; entry != nil {
-		r.line(Warn, "Warning: '%s' is already installed at %s", bundle.Name, entry.InstallPath)
+		r.line(Warn, "⚠ %s is installed already, in %s.", bundle.Name, entry.InstallPath)
 		if !req.Force {
-			r.line(Plain, "Use --force to reinstall.")
+			r.line(Plain, "Add --force to install it again.")
 			return Unchanged, nil, nil
 		}
 	}
@@ -168,8 +168,8 @@ func (h *Hub) Stage(ctx context.Context, scope *skills.Scope, req Install, say S
 	}
 	st := &staged{home: scope.Home(), dir: dir, holder: filepath.Join(r.quarantine(), id), bundle: bundle, category: category, at: time.Now()}
 	rel, _ := filepath.Rel(scope.Dir(), dir)
-	r.line(Dim, "Quarantined to %s", filepath.ToSlash(rel))
-	r.line(Heading, "Running security scan...")
+	r.line(Dim, "Set it aside in %s until it is checked.", filepath.ToSlash(rel))
+	r.line(Heading, "Scanning it for risks…")
 	source := bundle.Identifier
 	switch {
 	case bundle.Source == "official":
@@ -186,26 +186,26 @@ func (h *Hub) Stage(ctx context.Context, scope *skills.Scope, req Install, say S
 		return Failed, nil, err
 	}
 	r.line(Plain, report(st.result))
-	fresh := "cached"
+	fresh := "a saved scan"
 	if st.prov.Fresh {
-		fresh = "fresh"
+		fresh = "a new scan"
 	}
-	r.line(Dim, "Scan provenance: %s; scanner %s; hash %s", fresh, st.prov.ScannerVersion, st.prov.BundleHash)
+	r.line(Dim, "This is %s by scanner %s of the files with the hash %s.", fresh, st.prov.ScannerVersion, st.prov.BundleHash)
 	rules := strings.Join(st.prov.Rules, ", ")
 	if rules == "" {
-		rules = "none"
+		rules = "no rule"
 	}
-	r.line(Dim, "Source: %s; scanned %s; rules: %s", st.prov.SourceURL, st.prov.ScannedAt, rules)
+	r.line(Dim, "Source: %s. Scanned at %s. Rules that matched: %s.", st.prov.SourceURL, st.prov.ScannedAt, rules)
 	if decision, _ := decide(st.result, req.Force); decision != "allow" {
 		r.line(Plain, "")
-		r.line(Bad, "Not installed: %s", blockMessage(st.result, identifier))
+		r.line(Bad, "✗ %s", blockMessage(st.result, identifier))
 		os.RemoveAll(st.holder)
 		r.audit("BLOCKED", bundle.Name, bundle.Source, bundle.Trust, st.result.Verdict, fmt.Sprintf("%d_findings", len(st.result.Findings)))
 		return Failed, nil, nil
 	}
 	r.advise(ctx, dir)
 	if lines := Details(extra); len(lines) > 0 {
-		r.line(Heading, "Upstream Metadata")
+		r.line(Heading, "What its source says about it")
 		for _, line := range lines {
 			r.line(Plain, "  "+line)
 		}
@@ -232,7 +232,7 @@ func (h *Hub) Commit(ctx context.Context, scope *skills.Scope, id, category stri
 	delete(h.staged, id)
 	h.mu.Unlock()
 	if st == nil || st.home != scope.Home() {
-		r.fail("That install is no longer waiting; run the install again.")
+		r.fail("That install is no longer waiting. Run the install again.")
 		return Failed, nil
 	}
 	if category == "" {
@@ -263,12 +263,12 @@ func (h *Hub) commit(ctx context.Context, r *run, st *staged, category string) O
 	if err != nil {
 		rel = dir
 	}
-	r.line(Good, "Installed: %s", filepath.ToSlash(rel))
+	r.line(Good, "✓ Installed the skill in %s.", filepath.ToSlash(rel))
 	var files []string
 	for _, f := range st.bundle.Files {
 		files = append(files, f.Path)
 	}
-	r.line(Dim, "Files: %s", strings.Join(files, ", "))
+	r.line(Dim, "Its files: %s", strings.Join(files, ", "))
 	r.line(Plain, "")
 	r.announce(ctx, st.bundle.Name)
 	h.registry.Forget()
@@ -281,7 +281,7 @@ func (r *run) blocked(bundle *Bundle, err error) (Outcome, *Pending, error) {
 	if !errors.As(err, &refusal) {
 		return Failed, nil, err
 	}
-	r.line(Bad, "Installation blocked: %s", refusal.message)
+	r.line(Bad, "✗ The skill was not installed. %s", strings.TrimSuffix(refusal.message, ".")+".")
 	r.audit("BLOCKED", bundle.Name, bundle.Source, bundle.Trust, "invalid_path", refusal.message)
 	return Failed, nil, nil
 }
@@ -312,17 +312,17 @@ func (r *run) name(bundle *Bundle, meta *Meta, identifier string, req Install) (
 	case req.Name != "" && installable(req.Name):
 		bundle.Name = strings.TrimSpace(req.Name)
 	case req.Name != "":
-		r.line(Bad, "Invalid --name: %q. Must be a lowercase identifier (letters, digits, hyphens, underscores; starts with a letter).", req.Name)
+		r.line(Bad, "✗ “%s” can't be the name of a skill. A name is lower case letters, digits, dashes and underscores, and starts with a letter.", req.Name)
 		return Failed, nil
 	case req.Yes:
-		r.line(Bad, "Cannot install from URL: %s", address)
-		r.line(Warn, "The SKILL.md has no `name:` in its frontmatter, and the URL path doesn't produce a valid identifier.")
+		r.line(Bad, "✗ The skill at %s was not installed, because it has no name.", address)
+		r.line(Warn, "Its SKILL.md names no skill, and its address gives no usable name either.")
 		r.line(Plain, "")
-		r.line(Plain, "Retry with an explicit name:")
-		r.line(Plain, "  /skills install %s --name <your-name>", address)
-		r.line(Plain, "  icebath skills install %s --name <your-name>", address)
+		r.line(Plain, "Install it again with a name:")
+		r.line(Plain, "  /skills install %s --name NAME", address)
+		r.line(Plain, "  icebath skills install %s --name NAME", address)
 		r.line(Plain, "")
-		r.line(Dim, "Or ask the SKILL.md's author to add a `name:` field to its YAML frontmatter.")
+		r.line(Dim, "Or ask the author of the SKILL.md to add a name: line to its front matter.")
 		return Failed, nil
 	default:
 		return NeedsName, &Pending{URL: address, SkillsDir: skills.Display(r.scope.Dir())}
@@ -352,10 +352,10 @@ func (r *run) restore(ctx context.Context, name string) Outcome {
 		if ensured.Path != "" {
 			where = " at " + ensured.Path
 		}
-		r.line(Good, "'%s' is a built-in skill and is already available%s.", name, where)
+		r.line(Good, "✓ %s is a built-in skill, and it is there already%s.", name, where)
 		return Unchanged
 	}
-	r.line(Good, "Restored built-in skill: %s (%s)", name, ensured.Path)
+	r.line(Good, "✓ Put the built-in skill %s back in %s.", name, ensured.Path)
 	r.hub.registry.Forget()
 	return Installed
 }
@@ -365,39 +365,39 @@ func (r *run) full(ctx context.Context, identifier string, sources []Source) str
 	if strings.Contains(identifier, "/") {
 		return identifier
 	}
-	r.line(Dim, "Resolving '%s'...", identifier)
+	r.line(Dim, "Looking up %s…", identifier)
 	results := r.unified(ctx, sources, identifier, "all", 20)
 	exact := exactHits(results, identifier)
 	switch {
 	case len(exact) == 1:
-		r.line(Dim, "Resolved to: %s", exact[0].Identifier)
+		r.line(Dim, "Found %s.", exact[0].Identifier)
 		return exact[0].Identifier
 	case len(exact) > 1:
 		official := slices.DeleteFunc(slices.Clone(exact), func(m Meta) bool { return m.Source != "official" })
 		if len(official) == 1 {
-			r.line(Dim, "Resolved to: %s (official catalog)", official[0].Identifier)
+			r.line(Dim, "Found %s among the optional skills of icebath.", official[0].Identifier)
 			return official[0].Identifier
 		}
 		r.line(Plain, "")
-		r.line(Warn, "Multiple skills named '%s' found:", identifier)
+		r.line(Warn, "⚠ More than one skill is named %s:", identifier)
 		var b strings.Builder
 		table := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(table, "SOURCE\tTRUST\tIDENTIFIER")
+		fmt.Fprintln(table, "From\tTrust\tIdentifier")
 		for _, m := range exact {
 			fmt.Fprintf(table, "%s\t%s\t%s\n", m.Source, trustLabel(m.Trust, m.Source, "official"), m.Identifier)
 		}
 		table.Flush()
 		r.line(Plain, strings.TrimRight(b.String(), "\n"))
-		r.line(Heading, "Use the full identifier to install a specific one.")
+		r.line(Heading, "Install one of them by its identifier.")
 		return ""
 	case len(results) > 0:
-		r.line(Warn, "No exact match for '%s'. Did you mean one of these?", identifier)
+		r.line(Warn, "⚠ No skill is named exactly %s. Did you mean one of these?", identifier)
 		for _, m := range head(results, 5) {
-			r.line(Plain, "  %s — %s", m.Name, m.Identifier)
+			r.line(Plain, "  %s: %s", m.Name, m.Identifier)
 		}
 		return ""
 	}
-	r.fail("No skill named '%s' found in any source.", identifier)
+	r.fail("No source has a skill named %s. Search for it with icebath skills search %s.", identifier, identifier)
 	return ""
 }
 
@@ -470,35 +470,35 @@ func (r *run) fetchFailure(identifier string, listed bool, source Source) {
 		if source != nil {
 			where = source.ID()
 		}
-		r.fail("'%s' is listed in the %s index, but its files no longer exist upstream.", identifier, where)
-		r.line(Dim, "Stale index entry: the skill was likely renamed or removed by its author. Try `icebath skills search` for an alternative.")
+		r.fail("%s lists %s, but its files are gone.", where, identifier)
+		r.line(Dim, "Its author probably renamed or removed it. Look for another with icebath skills search <query>.")
 		return
 	}
-	r.fail("Could not download '%s'.", identifier)
+	r.fail("%s could not be downloaded.", identifier)
 	if len(rejected) > 0 {
-		r.line(Warn, "Hint: GitHub rejected %s (401 Bad credentials). Replace or remove the token (GITHUB_TOKEN, GH_TOKEN or the setting skills.hub.github_token), or re-run gh auth login.",
-			strings.Join(rejected, " and "))
+		r.line(Warn, "⚠ GitHub refused %s as wrong. Replace or remove the token in GITHUB_TOKEN, GH_TOKEN or GitHub token in /settings under Skills › "+
+			"Skills hub, or run gh auth login again.", strings.Join(rejected, " and "))
 	}
 	if limited {
-		r.line(Warn, "Hint: GitHub API rate limit exhausted (unauthenticated: 60 requests/hour).")
-		r.line(Plain, "Set GITHUB_TOKEN or install the gh CLI and run gh auth login to raise the limit to 5,000/hr.")
+		r.line(Warn, "⚠ GitHub allows only 60 requests an hour without a sign-in, and they are used up.")
+		r.line(Plain, "Set GITHUB_TOKEN, or install gh and run gh auth login, to raise the limit to 5,000 requests an hour.")
 		return
 	}
-	r.line(Plain, "Check the name with icebath skills search %s and check your internet connection.", identifier[strings.LastIndex(identifier, "/")+1:])
+	r.line(Plain, "Check the name with icebath skills search %s, and check your internet connection.", identifier[strings.LastIndex(identifier, "/")+1:])
 }
 
 // Why a scan kept a skill out, the force policy and the way to read it without installing
 func blockMessage(result Result, identifier string) string {
-	findings := "high-risk patterns"
+	findings := "risky patterns"
 	if n := len(result.Findings); n > 0 {
-		findings = fmt.Sprintf("%d high-risk pattern(s)", n)
+		findings = strs.Count(n, "risky pattern")
 	}
-	policy := "Re-run with --force to install anyway."
+	policy := "Add --force to install it anyway."
 	if result.Verdict == "dangerous" && (result.Trust == "community" || result.Trust == "trusted") {
-		policy = "Icebath never installs unverified skills with high-risk findings, even with --force."
+		policy = "icebath never installs a skill from an unchecked source with high risks, even with --force."
 	}
-	return fmt.Sprintf("the security scan found %s in '%s' (listed above). %s Review the findings or ask the author to fix them; to read the skill without "+
-		"installing, run `icebath skills inspect %s`.", findings, identifier, policy, identifier)
+	return fmt.Sprintf("%s was not installed, because the scan found %s in it, listed above. %s\nRead the findings or ask the author to fix them. "+
+		"To read the skill without installing it, run icebath skills inspect %s.", identifier, findings, policy, identifier)
 }
 
 // Address a person can read a bundle at: what its metadata names, its GitHub folder, else its identifier
@@ -523,8 +523,8 @@ func sourceURL(b *Bundle) string {
 // Lines of what a registry says of a skill besides: its pages, its install command, its installs and its audits
 func Details(extra map[string]any) []string {
 	var lines []string
-	for _, field := range [][2]string{{"repo_url", "Repo"}, {"detail_url", "Detail Page"}, {"index_url", "Index"}, {"endpoint", "Endpoint"},
-		{"install_command", "Install Command"}, {"installs", "Installs"}, {"weekly_installs", "Weekly Installs"}} {
+	for _, field := range [][2]string{{"repo_url", "Repository"}, {"detail_url", "Page"}, {"index_url", "Index"}, {"endpoint", "Address"},
+		{"install_command", "Install command"}, {"installs", "Installs"}, {"weekly_installs", "Installs a week"}} {
 		if v, ok := extra[field[0]]; ok && v != nil && (config.Truthy(v) || field[0] == "installs") {
 			lines = append(lines, field[1]+": "+fmt.Sprint(v))
 		}
@@ -534,7 +534,7 @@ func Details(extra map[string]any) []string {
 		for _, name := range slices.Sorted(maps.Keys(audits)) {
 			parts = append(parts, name+"="+fmt.Sprint(audits[name]))
 		}
-		lines = append(lines, "Security: "+strings.Join(parts, ", "))
+		lines = append(lines, "Security checks: "+strings.Join(parts, ", "))
 	}
 	return lines
 }
@@ -572,7 +572,7 @@ func (r *run) checkTarget(dir string) error {
 	root := resolved(r.scope.Dir())
 	for ancestor := filepath.Dir(dir); ancestor != root && inside(ancestor, root); ancestor = filepath.Dir(ancestor) {
 		if info, err := os.Stat(filepath.Join(ancestor, "SKILL.md")); err == nil && info.Mode().IsRegular() {
-			return refuse("Refusing to install into '%s': it is an existing skill directory, not a category. Choose a different category.", filepath.Base(ancestor))
+			return refuse("%s is a skill, not a category, so nothing can be installed in it. Pick another category.", filepath.Base(ancestor))
 		}
 	}
 	info, err := os.Stat(dir)
@@ -580,14 +580,14 @@ func (r *run) checkTarget(dir string) error {
 		return nil
 	}
 	if !info.IsDir() {
-		return refuse("Refusing to install: '%s' already exists and is not a directory. Remove it or choose a different skill name.", filepath.Base(dir))
+		return refuse("%s exists already and is not a folder. Remove it, or give the skill another name.", filepath.Base(dir))
 	}
 	if fsx.Exists(filepath.Join(dir, "SKILL.md")) {
 		return nil
 	}
 	if held := skills.Categories(dir); len(held) > 0 {
-		return refuse("Refusing to overwrite category directory '%s' which contains %d skill(s): %s. Use a different --name or install into a subcategory.",
-			dir, len(held), strings.Join(held, ", "))
+		return refuse("%s is a category that holds %s: %s. Give the skill another name with --name, or install it into a category inside it.",
+			dir, strs.Count(len(held), "skill"), strings.Join(held, ", "))
 	}
 	return nil
 }
@@ -608,7 +608,7 @@ func (r *run) place(ctx context.Context, st *staged, category string) (string, e
 		rel = parent + "/" + name
 	}
 	if !inside(resolved(st.dir), resolved(r.quarantine())) {
-		return "", refuse("Unsafe quarantine path: %s", st.dir)
+		return "", refuse("The folder %s, where the skill waited to be checked, is not safe to install from.", st.dir)
 	}
 	dir, err := r.installDir(rel, name)
 	if err != nil {
@@ -629,7 +629,7 @@ func (r *run) place(ctx context.Context, st *staged, category string) (string, e
 		return nil
 	})
 	if linked != "" {
-		return "", refuse("Installed skill contains symlinks, which is not allowed: %s", linked)
+		return "", refuse("The skill holds links, which skills may not: %s.", linked)
 	}
 	if fsx.Exists(dir) {
 		if err := os.RemoveAll(dir); err != nil {
@@ -690,13 +690,13 @@ func (r *run) categories() []string {
 func (r *run) announce(ctx context.Context, name string) {
 	blueprint, err := r.scope.Blueprint(name)
 	if err != nil {
-		r.line(Warn, "Blueprint block present but invalid: %s", err)
+		r.line(Warn, "⚠ The skill describes a job to schedule, but the description is broken: %s", strings.TrimSuffix(err.Error(), ".")+".")
 		return
 	}
 	if blueprint == nil {
 		return
 	}
-	lead := fmt.Sprintf("Blueprint: '%s' is an automation (schedule %s)", name, blueprint.Schedule)
+	lead := fmt.Sprintf("%s describes a job to run on the schedule %s", name, blueprint.Schedule)
 	offered, err := r.hub.registry.Suggest(ctx, r.cfg, blueprint)
 	if err != nil {
 		slog.Debug("The blueprint of an installed skill was not offered", "skill", name, "error", err)
@@ -704,11 +704,11 @@ func (r *run) announce(ctx context.Context, name string) {
 	}
 	if offered {
 		r.line(Accent, lead+".")
-		r.line(Dim, "Added to your suggestions — run /suggestions to schedule or dismiss it.")
+		r.line(Dim, "It was added to your suggested jobs, where you schedule or dismiss it.")
 		return
 	}
-	r.line(Accent, lead+", but it wasn't added to your suggestions (already offered/dismissed, or the pending list is full — run /suggestions to review).")
-	r.line(Dim, "You can still schedule it any time by asking the agent or via icebath cron add.")
+	r.line(Accent, lead+", and it was not added to your suggested jobs.")
+	r.line(Dim, "It was offered or dismissed before, or the list is full. You can still have it scheduled by asking the agent.")
 }
 
 // Short digest of a bundle's files and their paths, the same ContentHash gives the folder once installed

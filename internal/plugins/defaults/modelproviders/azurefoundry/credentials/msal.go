@@ -44,7 +44,7 @@ func (e environment) strictAuthority() (string, error) {
 		return "https://" + strings.TrimRight(strings.TrimSpace(authority), " /"), nil
 	}
 	if parsed.Scheme != "https" {
-		return "", fmt.Errorf("'%s' is an invalid authority. The value must be a TLS protected (https) URL.", authority)
+		return "", fmt.Errorf("The sign-in address %s can't be used, because it does not start with https.", authority)
 	}
 	return strings.TrimRight(strings.TrimSpace(authority), " /"), nil
 }
@@ -204,12 +204,12 @@ func (a *confidential) discover(ctx context.Context) error {
 			return err
 		}
 		if payload["error"] == "invalid_instance" {
-			return fmt.Errorf("The authority provided, %s, is not well-known. If this authority is valid and trustworthy, set AZURE_AUTHORITY_HOST "+
-				"to a host Microsoft lists.", strings.TrimSuffix(a.authority, "/"+tenant))
+			return fmt.Errorf("Microsoft does not know the sign-in address %s. If you trust it, set AZURE_AUTHORITY_HOST to a host Microsoft "+
+				"lists.", strings.TrimSuffix(a.authority, "/"+tenant))
 		}
 		next, ok := payload["tenant_discovery_endpoint"].(string)
 		if !ok {
-			return fmt.Errorf("The Azure tenant discovery reply has no tenant_discovery_endpoint (HTTP %d)", status)
+			return fmt.Errorf("Azure's answer about the tenant, with HTTP status %d, did not say where to sign in.", status)
 		}
 		endpoint = next
 	}
@@ -218,10 +218,10 @@ func (a *confidential) discover(ctx context.Context) error {
 		return err
 	}
 	if status >= 400 && status < 500 {
-		return fmt.Errorf("OIDC Discovery failed on %s. HTTP status: %d, Error: %s", endpoint, status, string(raw))
+		return fmt.Errorf("Azure's sign-in service at %s answered with HTTP status %d: %s", endpoint, status, string(raw))
 	}
 	if status != http.StatusOK {
-		return errors.New("Unexpected response from Microsoft Entra ID")
+		return errors.New("Microsoft Entra ID gave an answer that can't be read.")
 	}
 	var configuration map[string]any
 	if err := json.Unmarshal(raw, &configuration); err != nil {
@@ -229,7 +229,7 @@ func (a *confidential) discover(ctx context.Context) error {
 	}
 	tokenEndpoint, _ := configuration["token_endpoint"].(string)
 	if tokenEndpoint == "" {
-		return errors.New("token_endpoint not found in configuration")
+		return errors.New("Azure's sign-in service did not say where to get tokens.")
 	}
 	a.endpoint = tokenEndpoint
 	return nil
@@ -284,15 +284,15 @@ func (a *confidential) request(ctx context.Context, scopes []string) (token, err
 		return token{}, err
 	}
 	if status >= 500 {
-		return token{}, errors.New("Unexpected response from Microsoft Entra ID")
+		return token{}, errors.New("Microsoft Entra ID gave an answer that can't be read.")
 	}
 	var result map[string]any
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return token{}, fmt.Errorf("Authentication failed: %s", strings.TrimSpace(string(raw)))
+		return token{}, fmt.Errorf("Microsoft Entra ID refused the sign-in: %s", strings.TrimSpace(string(raw)))
 	}
 	value, ok := result["access_token"].(string)
 	if !ok {
-		return token{}, fmt.Errorf("Authentication failed: %v", firstNonEmpty(result["error_description"], result["error"]))
+		return token{}, fmt.Errorf("Microsoft Entra ID refused the sign-in: %v", firstNonEmpty(result["error_description"], result["error"]))
 	}
 	expiresIn, ok := config.Whole(result["expires_in"])
 	if !ok {

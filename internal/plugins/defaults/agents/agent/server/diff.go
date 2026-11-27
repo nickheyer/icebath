@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"slices"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/checkpoints"
 	"github.com/nickheyer/icebath/internal/git"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -49,12 +49,12 @@ func diffGit(ctx context.Context, dir string, env map[string]string, timeout tim
 func gitFailure(err error) string {
 	switch {
 	case errors.Is(err, exec.ErrNotFound):
-		return "git is not installed or not on PATH."
+		return "git is not installed, or not on your PATH. Install git to use /diff."
 	}
 	if _, ok := errors.AsType[*git.TimeoutError](err); ok {
-		return "git diff timed out."
+		return "git took too long to list the changes. Try /diff --stat, or name fewer paths."
 	}
-	return "git failed: " + err.Error()
+	return "git failed. " + sentence(err.Error())
 }
 
 // Changes of the git checkout the folder is in: of the working tree against the index, of the index against HEAD (staged), or of both
@@ -66,7 +66,7 @@ func collect(ctx context.Context, dir, mode string, paths []string) workingDiff 
 	case err != nil:
 		return workingDiff{failure: gitFailure(err)}
 	case inside.Code != 0:
-		return workingDiff{failure: "Not a git repository."}
+		return workingDiff{failure: "This session's folder is not in a git repository, so there are no git changes to show."}
 	}
 	base := []string{"diff"}
 	switch mode {
@@ -111,7 +111,7 @@ func collect(ctx context.Context, dir, mode string, paths []string) workingDiff 
 		}
 	}
 	if len(out.untracked) > untrackedDiffs {
-		chunks = append(chunks, fmt.Sprintf("... (%d more untracked files not shown)", len(out.untracked)-untrackedDiffs))
+		chunks = append(chunks, "And "+strs.Count(len(out.untracked)-untrackedDiffs, "more new file")+" not shown")
 	}
 	if len(chunks) > 0 {
 		out.patch = strings.TrimSpace(out.patch + "\n" + strings.Join(chunks, "\n"))
@@ -155,20 +155,20 @@ func (a *Agent) Diff(ctx context.Context, id, argument string) (string, error) {
 		scope := checkpoints.For(a.settings(r), session.GetDirectory(), a.terminal)
 		switch {
 		case !scope.Enabled():
-			return checkpoints.NotEnabled + "\nPlain /diff still works — it uses git directly.", nil
+			return "", errors.New(checkpoints.NotEnabled + "\nPlain /diff still works, because it uses git.")
 		case scope.Refusal != "":
-			return scope.Refusal, nil
+			return "", errors.New(scope.Refusal)
 		}
 		diff, err := scope.SessionDiff(scope.Directory)
 		if err != nil {
-			return err.Error(), nil
+			return "", err
 		}
 		found = workingDiff{stat: diff.Stat, patch: diff.Patch}
 	} else {
 		found = collect(ctx, session.GetDirectory(), mode, paths)
 	}
 	if found.failure != "" {
-		return found.failure, nil
+		return "", errors.New(found.failure)
 	}
 	return rendered(found, summary), nil
 }
@@ -176,7 +176,7 @@ func (a *Agent) Diff(ctx context.Context, id, argument string) (string, error) {
 // The stat, the untracked files and the patch cut to a chat message
 func rendered(d workingDiff, summary bool) string {
 	if d.stat == "" && d.patch == "" && len(d.untracked) == 0 {
-		return "No changes."
+		return "No changes to show."
 	}
 	var parts []string
 	if d.stat != "" {
@@ -189,9 +189,9 @@ func rendered(d workingDiff, summary bool) string {
 		}
 		more := ""
 		if len(d.untracked) > untrackedListed {
-			more = fmt.Sprintf("\n... and %d more", len(d.untracked)-untrackedListed)
+			more = "\nAnd " + strs.Number(float64(len(d.untracked)-untrackedListed)) + " more"
 		}
-		parts = append(parts, "**Untracked:**\n```\n"+strings.Join(lines, "\n")+more+"\n```")
+		parts = append(parts, "**New files that git does not track**\n```\n"+strings.Join(lines, "\n")+more+"\n```")
 	}
 	if !summary && d.patch != "" {
 		lines := strings.Split(d.patch, "\n")
@@ -204,7 +204,7 @@ func rendered(d workingDiff, summary bool) string {
 		}
 		note := ""
 		if cut {
-			note = fmt.Sprintf("\n... (truncated — %d lines total; use /diff --stat for a summary)", len(lines))
+			note = "\nThe rest is cut, " + strs.Count(len(lines), "line") + " in all. Type /diff --stat for a summary."
 		}
 		parts = append(parts, "```diff\n"+body+note+"\n```")
 	}

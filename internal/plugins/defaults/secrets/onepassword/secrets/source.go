@@ -13,8 +13,11 @@ import (
 )
 
 const (
-	missingHint = "Install the 1Password CLI (" + onepasswordconfig.Docs + ") or set secrets.onepassword.binary_path."
-	authRemedy  = "Run `icebath secrets onepassword token` to paste a fresh service-account token ({token_env}), or `op signin` for an interactive session."
+	// Fix of an op program that is not there
+	InstallHint = "Install the 1Password command line tool from " + onepasswordconfig.Docs + ", or set op program in /settings under Secret " +
+		"stores › 1Password to where it is."
+	authRemedy = "Run icebath secrets onepassword token to paste a new service account token for {token_env}, or run op signin to sign in."
+	emptyHint  = "Add one with icebath secrets onepassword set, such as icebath secrets onepassword set OPENAI_API_KEY op://Private/OpenAI/credential."
 )
 
 func Register(registry *secrets.Registry) *Store {
@@ -31,7 +34,8 @@ func (s *Store) Host() *secrets.Secrets {
 func (s *Store) Spec() secrets.Spec {
 	return secrets.Spec{Name: onepasswordconfig.Name, Label: "1Password", Short: "1Password", Shape: secrets.Mapped, Scheme: "op",
 		TokenSetting: onepasswordconfig.TokenSetting, TokenEnv: onepasswordconfig.DefaultTokenEnv,
-		Hints: map[secrets.Failure]string{secrets.AuthFailed: authRemedy, secrets.AuthExpired: authRemedy, secrets.BinaryMissing: missingHint}}
+		Hints: map[secrets.Failure]string{secrets.AuthFailed: authRemedy, secrets.AuthExpired: authRemedy, secrets.BinaryMissing: InstallHint,
+			secrets.NotConfigured: emptyHint}}
 }
 
 // Variable holding the service account token for the profile
@@ -42,10 +46,9 @@ func (s *Store) TokenEnv(cfg *config.Config) string {
 // Why the op program the settings name is not there
 func Missing(pinned string) string {
 	if pinned != "" {
-		return fmt.Sprintf("secrets.onepassword.binary_path (%q) is not an executable op binary.", pinned)
+		return fmt.Sprintf("%s, the op program set in /settings under Secret stores › 1Password, is not a program icebath can run.", pinned)
 	}
-	return "secrets.onepassword.enabled is true but the op CLI was not found on PATH.  Install it (" + onepasswordconfig.Docs +
-		") or set secrets.onepassword.binary_path."
+	return "1Password is on, but op, the 1Password command line tool, is not installed."
 }
 
 // Seconds values are reused for by the settings
@@ -58,7 +61,7 @@ func (s *Store) Fetch(ctx context.Context, f secrets.Fetch) secrets.Result {
 	valid, warnings := Validate(References(cfg))
 	if len(valid) == 0 {
 		if len(warnings) == 0 {
-			return secrets.Failed("secrets.onepassword.enabled is true but the env: map is empty.  Add ENV_VAR: op://vault/item/field entries.", secrets.NotConfigured)
+			return secrets.Failed("1Password is on, but no variable is set from it yet.", secrets.NotConfigured)
 		}
 		return secrets.Result{Secrets: map[string]string{}, Warnings: warnings}
 	}

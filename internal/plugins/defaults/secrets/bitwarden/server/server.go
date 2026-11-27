@@ -30,6 +30,9 @@ func (s *service) Mount(services *connect.Server) {
 	bitwardenv1connect.RegisterBitwardenServiceHandler(services, s)
 }
 
+// Refusal of a request that carries no access token and finds none kept
+const needsToken = "Bitwarden needs an access token. Make one in the Bitwarden web app under Secrets Manager › Machine accounts › Access tokens."
+
 // Refusal of a change for what was asked or what Bitwarden answered
 func refuse(text string) error {
 	return connect.NewError(connect.CodeFailedPrecondition, text)
@@ -71,11 +74,11 @@ func (s *service) Validate(ctx context.Context, request *bitwardenv1.ValidateReq
 	binary := s.store.Find(ctx, cfg, false)
 	switch {
 	case !cfg.GetBool(bitwardenconfig.Enabled):
-		return &bitwardenv1.ValidateResponse{Skipped: "integration disabled"}, nil
+		return &bitwardenv1.ValidateResponse{Skipped: "Bitwarden is off."}, nil
 	case token == "":
-		return &bitwardenv1.ValidateResponse{Skipped: "token missing"}, nil
+		return &bitwardenv1.ValidateResponse{Skipped: "No access token is set."}, nil
 	case binary == "":
-		return &bitwardenv1.ValidateResponse{Skipped: "bws not installed"}, nil
+		return &bitwardenv1.ValidateResponse{Skipped: "bws is not installed."}, nil
 	}
 	response := &bitwardenv1.ValidateResponse{OddToken: !strings.HasPrefix(token, "0.")}
 	_, refusal := s.store.Projects(ctx, binary, token, strings.TrimSpace(cfg.GetString(bitwardenconfig.ServerURL)), s.store.Host().Existing(cfg))
@@ -114,7 +117,7 @@ func (s *service) SaveToken(_ context.Context, request *bitwardenv1.SaveTokenReq
 	}
 	token := strings.TrimSpace(request.GetToken())
 	if token == "" {
-		return nil, refuse("Bitwarden needs an access token")
+		return nil, refuse(needsToken)
 	}
 	tokenEnv, err := s.keep(cfg, token)
 	if err != nil {
@@ -130,7 +133,7 @@ func (s *service) binary(ctx context.Context, cfg *config.Config) (string, error
 	}
 	binary, err := s.store.Install(ctx, cfg)
 	if err != nil {
-		return "", refuse("could not install the Bitwarden helper: " + err.Error())
+		return "", refuse("icebath could not install bws, the program it reads Bitwarden with: " + secrets.Sentence(err.Error()))
 	}
 	return binary, nil
 }
@@ -145,7 +148,7 @@ func (s *service) Projects(ctx context.Context, request *bitwardenv1.ProjectsReq
 		token = s.stored(cfg)
 	}
 	if token == "" {
-		return nil, refuse("Bitwarden needs an access token")
+		return nil, refuse(needsToken)
 	}
 	binary, err := s.binary(ctx, cfg)
 	if err != nil {
@@ -181,9 +184,9 @@ func (s *service) Setup(ctx context.Context, request *bitwardenv1.SetupRequest) 
 	}
 	switch {
 	case token == "":
-		return nil, refuse("Bitwarden needs an access token")
+		return nil, refuse(needsToken)
 	case project == "":
-		return nil, refuse("Bitwarden needs a project")
+		return nil, refuse("Pick the Bitwarden project whose secrets icebath loads.")
 	}
 	binary, err := s.binary(ctx, cfg)
 	if err != nil {
@@ -216,7 +219,7 @@ func (s *service) Token(ctx context.Context, request *bitwardenv1.TokenRequest) 
 	}
 	token := strings.TrimSpace(request.GetToken())
 	if token == "" {
-		return nil, refuse("Bitwarden needs an access token")
+		return nil, refuse(needsToken)
 	}
 	response := &bitwardenv1.TokenResponse{OddToken: !strings.HasPrefix(token, "0."), Disabled: !cfg.GetBool(bitwardenconfig.Enabled)}
 	if request.GetVerify() {
@@ -251,16 +254,16 @@ func (s *service) Sync(ctx context.Context, request *bitwardenv1.SyncRequest) (*
 	tokenEnv, token, project := s.store.TokenEnv(cfg), s.stored(cfg), strings.TrimSpace(cfg.GetString(bitwardenconfig.ProjectID))
 	switch {
 	case !cfg.GetBool(bitwardenconfig.Enabled):
-		return nil, refuse("Bitwarden integration is disabled.  Run `icebath secrets bitwarden setup` first.")
+		return nil, refuse("Bitwarden is off. Run icebath secrets bitwarden setup to turn it on.")
 	case token == "":
-		return nil, refuse(tokenEnv + " is not set.")
+		return nil, refuse("No access token is set in " + tokenEnv + ". Run icebath secrets bitwarden token to add one.")
 	case project == "":
-		return nil, refuse("No project_id configured.")
+		return nil, refuse("No Bitwarden project is chosen. Run icebath secrets bitwarden setup to pick one.")
 	}
 	pulled, warnings, err := s.store.Pull(ctx, cfg, bitwardensecrets.Pull{Token: token, Project: project, Server: strings.TrimSpace(cfg.GetString(bitwardenconfig.ServerURL)),
 		Dir: cfg.ProfileDir(cfg.Profile()), Env: s.store.Host().Existing(cfg)})
 	if err != nil {
-		return nil, refuse("Fetch failed: " + err.Error())
+		return nil, refuse(err.Error())
 	}
 	apply := request.GetApply()
 	existing, override := s.store.Host().Existing(cfg), cfg.GetBool(bitwardenconfig.Override) || apply

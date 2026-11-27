@@ -22,7 +22,7 @@ const title = "Browserbase"
 
 func Register(registry *browser.Registry) {
 	registry.Register(browser.Declared{Services: []browser.Provider{{
-		Name: "browserbase", Title: title, About: "Cloud browser with stealth and proxies.",
+		Name: "browserbase", Title: title, About: "Cloud browsers that sites find hard to spot, with proxies",
 		Keys: []browser.Key{{Env: bbconfig.APIKeyEnv, Prompt: "Browserbase API key", URL: "https://browserbase.com"},
 			{Env: bbconfig.ProjectIDEnv, Prompt: "Browserbase project ID"}},
 		Detect: 2,

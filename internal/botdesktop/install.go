@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/nickheyer/icebath/pkg/proc"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Exit code of an install on a host without root or sudo, the command to run as root said through the lines
@@ -75,17 +76,17 @@ func (d *Desktop) Install(ctx context.Context, cfg *config.Config, claimed bool,
 	}
 	defer d.unclaim(cfg)
 	if !Supported() {
-		return 0, errors.New("Bot Desktop runs on Linux gateway hosts only")
+		return 0, errors.New("The agent desktop works only when icebath runs on Linux.")
 	}
 	command := InstallCommand()
 	if command == "" {
-		return 0, errors.New("no supported package manager (apt-get, dnf, pacman) found on this host")
+		return 0, errors.New("This computer has none of the package managers that can install the agent desktop: apt-get, dnf or pacman.")
 	}
 	argv := strings.Fields(command)
 	stdin := ""
 	if argv[0] == "sudo" {
 		if which("sudo") == "" {
-			line("install needs root and this host has no sudo; run on the host as root: " + strings.TrimPrefix(command, "sudo "))
+			line("The install needs root, and this computer has no sudo. Run this as root: " + strings.TrimPrefix(command, "sudo "))
 			return NoSudo, nil
 		}
 		check, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -97,7 +98,7 @@ func (d *Desktop) Install(ctx context.Context, cfg *config.Config, claimed bool,
 				return 0, err
 			}
 			if given == "" {
-				line("install cancelled: no sudo password provided")
+				line("The install was cancelled, because no sudo password was given.")
 				return Cancelled, nil
 			}
 			argv = append([]string{"sudo", "-S", "-p", ""}, argv[1:]...)
@@ -156,7 +157,7 @@ func (d *Desktop) Install(ctx context.Context, cfg *config.Config, claimed bool,
 			break
 		}
 	}
-	line(fmt.Sprintf("install timed out after %.0fs; the package manager may still be running as root", installTimeout.Seconds()))
+	line(fmt.Sprintf("The install was stopped after %s. The package manager may still be running as root.", strs.Span(installTimeout)))
 	if exited {
 		<-read
 	}

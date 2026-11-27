@@ -24,26 +24,26 @@ func (e *NonMCPError) Error() string { return e.Msg }
 // Address of a remote server stripped, or why it is unusable
 func ValidURL(server string, raw any) (string, error) {
 	bad := func(detail string) error {
-		return &InvalidURLError{Msg: fmt.Sprintf("Invalid MCP URL for '%s': %s", server, detail)}
+		return &InvalidURLError{Msg: fmt.Sprintf("The address of the MCP server %s cannot be used, because %s.", server, detail)}
 	}
 	text, ok := raw.(string)
 	if !ok {
-		return "", bad(fmt.Sprintf("expected text, got %T", raw))
+		return "", bad("it is not text")
 	}
 	stripped := strings.TrimSpace(text)
 	if stripped == "" {
-		return "", bad("empty url")
+		return "", bad("it is empty")
 	}
 	u, err := url.Parse(stripped)
 	switch {
 	case err != nil:
-		return "", bad(fmt.Sprintf("%q (%v)", stripped, err))
+		return "", bad(fmt.Sprintf("“%s” cannot be read as an address", stripped))
 	case u.Scheme != "http" && u.Scheme != "https":
-		return "", bad(fmt.Sprintf("scheme must be http or https, got %q (%q)", u.Scheme, stripped))
+		return "", bad(fmt.Sprintf("“%s” does not start with http:// or https://", stripped))
 	case u.Host == "":
-		return "", bad(fmt.Sprintf("missing host (%q)", stripped))
+		return "", bad(fmt.Sprintf("“%s” names no computer", stripped))
 	case u.Hostname() == "":
-		return "", bad(fmt.Sprintf("missing hostname (%q)", stripped))
+		return "", bad(fmt.Sprintf("“%s” names no computer", stripped))
 	}
 	return stripped, nil
 }

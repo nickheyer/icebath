@@ -13,8 +13,9 @@ func Register(registry *auxiliary.Registry) {
 }
 
 func (tasks) Tasks() []auxiliary.Task {
-	return []auxiliary.Task{{Name: engine.Task, Title: "Compression", About: "Model that summarises the older messages of long chats", Timeout: 120,
+	return []auxiliary.Task{{Name: engine.Task, Title: "Summaries", About: "The model that summarizes long sessions", Order: 20, Timeout: 120,
 		Settings: []config.Setting{
-			{Key: engine.AuxWindow, Title: "Compression context window", About: "Tokens the compression model takes in at once, when icebath guesses wrong; 0 uses the size icebath knows", Default: 0},
+			{Key: engine.AuxWindow, Title: "Context window", About: "How much text the summary model can read at once.",
+				Help: "Set this only when icebath gets the size wrong.", Default: 0, Zero: "Automatic", Counts: "tokens", Least: config.Num(0), Advanced: true},
 		}}}
 }

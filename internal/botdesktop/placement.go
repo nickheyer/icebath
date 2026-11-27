@@ -40,7 +40,7 @@ func placement(cfg *config.Config) string {
 func (d *Desktop) Resolve(cfg *config.Config) Placement {
 	name := strings.ToLower(strings.TrimSpace(cfg.GetString(terminalconfig.Backend)))
 	if name == "" || name == "local" {
-		return Placement{Gateway, "local", "terminal.backend is local, so the terminal IS the gateway host"}
+		return Placement{Gateway, "local", "The agent's commands run on this computer, so the agent desktop does too."}
 	}
 	if placement(cfg) == bdconfig.Gateway {
 		return Placement{Where: Gateway, Backend: name}
@@ -48,9 +48,13 @@ func (d *Desktop) Resolve(cfg *config.Config) Placement {
 	if backend, ok := d.terminal.Named(cfg, name); ok && backend.Streams {
 		return Placement{Where: Terminal, Backend: name}
 	}
-	return Placement{Refused, name, "terminal.backend is " + name + ", which cannot host a screen yet, and running the desktop on the gateway " +
-		"host would put the agent's screen, browser and computer_use outside the sandbox you chose for it. Set bot_desktop.placement: gateway " +
-		"to allow that explicitly."}
+	title := name
+	if backend, ok := d.terminal.Named(cfg, name); ok {
+		title = backend.Title
+	}
+	return Placement{Refused, name, "The agent's commands run in " + title + ", which cannot hold the agent desktop yet. Running the desktop " +
+		"on this computer would put the agent's screen and browser outside the sandbox you chose, so it runs here only when you set Location in " +
+		"/settings under Agent desktop to This computer."}
 }
 
 // Whether the profile's screen lives in the terminal backend's sandbox
@@ -76,4 +80,4 @@ func (d *Desktop) sandbox(ctx context.Context, cfg *config.Config, create bool, 
 }
 
 // Refusal of a sandbox start when the backend made no environment
-var errNoSandbox = errors.New("the terminal backend's sandbox could not be started, so there is nowhere to put the screen")
+var errNoSandbox = errors.New("The sandbox where the agent's commands run could not be started, so the agent desktop has nowhere to run.")

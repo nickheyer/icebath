@@ -72,7 +72,7 @@ func (h *Packages) install(ctx context.Context, cfg *config.Config, a InstallArg
 			if err := h.RemoveExtra(extra); err != nil {
 				return 0, err
 			}
-			r.Line(fmt.Sprintf("✓ %s removed and left out of later installs", extra))
+			r.Line(fmt.Sprintf("✓ Removed %s. Later installs leave it out.", extra))
 		}
 	}
 	var defaults []string
@@ -95,7 +95,11 @@ func (h *Packages) install(ctx context.Context, cfg *config.Config, a InstallArg
 	}
 	if a.Target == "" && (len(a.Names) == 0 || a.ToolsOnly) && len(extras) == 0 {
 		if problems := h.drift(); len(problems) > 0 {
-			r.Line("✗ tools not on PATH: " + strings.Join(problems, "; "))
+			verb, them := "are", "they are"
+			if len(problems) == 1 {
+				verb, them = "is", "it is"
+			}
+			r.Line(fmt.Sprintf("✗ %s %s missing or out of date, so %s not on your PATH. Run `icebath pm install` again.", joined(problems, "and"), verb, them))
 			return 1, nil
 		}
 	}
@@ -105,7 +109,7 @@ func (h *Packages) install(ctx context.Context, cfg *config.Config, a InstallArg
 	failed = 0
 	for _, extra := range extras {
 		e, _ := h.extra(extra)
-		r.Line(fmt.Sprintf("→ Provisioning %s for %s...", e.Name, e.Feature))
+		r.Line(fmt.Sprintf("Installing the Python packages of %s for %s…", e.Name, e.Feature))
 		if _, err := h.ProvisionExtra(ctx, cfg, e.Name, r); err != nil {
 			if _, ok := errors.AsType[*InstallError](err); !ok {
 				return 0, err
@@ -114,7 +118,7 @@ func (h *Packages) install(ctx context.Context, cfg *config.Config, a InstallArg
 			failed++
 			continue
 		}
-		r.Line("✓ " + e.Name)
+		r.Line("✓ Installed the extra " + e.Name + ".")
 	}
 	receiptOf(ctx).features(extras)
 	if failed != 0 {
@@ -128,19 +132,19 @@ func (h *Packages) installFlagError(a InstallArgs, extras []string) string {
 	names := len(a.Names) > 0
 	if a.Target != "" {
 		if !slices.Contains(Targets, a.Target) {
-			return fmt.Sprintf("unknown target %s; known: %s", a.Target, strings.Join(Targets, ", "))
+			return fmt.Sprintf("There is no platform %s. Use %s.", a.Target, joined(Targets, "or"))
 		}
 		if !names {
-			return "--target requires explicit package names"
+			return "--target needs the names of the programs to prepare."
 		}
 	}
 	switch {
 	case a.ToolsOnly && (len(extras) > 0 || a.Target != "" || names):
-		return "--tools-only installs the tool closure and then stops; it does not take names, --extra, or --target"
+		return "--tools-only installs the default programs and stops, so it takes no names, --extra or --target."
 	case a.TrustRecorded && (len(extras) > 0 || a.Target != "" || names):
-		return "--trust-recorded installs the default closure and then stops; it does not take names, --extra, or --target"
+		return "--trust-recorded installs the default programs and stops, so it takes no names, --extra or --target."
 	case len(extras) > 0 && a.Target != "":
-		return "--extra provisions this machine's Python environments and cannot combine with --target"
+		return "--extra sets up the Python environments of this machine, so it cannot go with --target."
 	}
 	for _, extra := range extras {
 		if _, ok := h.extra(extra); !ok {
@@ -148,11 +152,11 @@ func (h *Packages) installFlagError(a InstallArgs, extras []string) string {
 		}
 	}
 	if len(a.Without) > 0 && (len(extras) > 0 || a.Target != "" || names) {
-		return "--without shapes the default closure; it does not take names, --extra, or --target"
+		return "--without changes which default programs are installed, so it takes no names, --extra or --target."
 	}
 	if _, _, unknown := h.splitWithout(a.Without); len(unknown) > 0 {
-		return fmt.Sprintf("--without accepts only optional default packages (%s) or extras (%s); not %s", strings.Join(h.defaultNames(), ", "),
-			strings.Join(h.extraNames(), ", "), strings.Join(unknown, ", "))
+		return fmt.Sprintf("--without cannot leave out %s. It takes the optional default programs %s, or the extras %s.", joined(unknown, "and"),
+			joined(h.defaultNames(), "and"), joined(h.extraNames(), "and"))
 	}
 	return ""
 }
@@ -209,13 +213,13 @@ func (h *Packages) installNames(ctx context.Context, cfg *config.Config, names [
 						step: func(stage string, done, total int64, label string) { step("", stage, done, total, label) }, held: true, report: r,
 					}); err == nil {
 						bar.finish()
-						r.Line(fmt.Sprintf("✓ %s (staged for %s: %s)", name, target, filepath.Base(entry)))
+						r.Line(fmt.Sprintf("✓ %s is ready for %s in %s.", name, target, filepath.Base(entry)))
 					}
 				}
 			}
 		} else if _, err = h.Ensure(ctx, cfg, name, Ensuring{Explicit: true, SkipVerify: !verify, Step: step, Report: r, op: op}); err == nil {
 			bar.finish()
-			r.Line("✓ " + name)
+			r.Line("✓ Installed " + name + ".")
 			receiptOf(ctx).step("install "+name, true, "")
 		}
 		if err == nil {
@@ -225,7 +229,7 @@ func (h *Packages) installNames(ctx context.Context, cfg *config.Config, names [
 			if _, unknown := errors.AsType[*UnknownError](err); !unknown {
 				return failed, err
 			}
-			err = Failure(name, err.Error(), "run `icebath pm install` with a known package name")
+			err = Failure(name, err.Error(), "Run `icebath pm install` with the name of a program it knows.")
 		}
 		bar.finish()
 		r.Line("✗ " + err.Error())
@@ -243,7 +247,7 @@ func (h *Packages) installDefaults(ctx context.Context, cfg *config.Config, name
 			return err
 		}
 		if failed != 0 {
-			message := fmt.Sprintf("⚠ optional %s was not installed; its tools stay unavailable until `icebath pm install %s` succeeds", name, name)
+			message := fmt.Sprintf("⚠ %s is optional and was not installed. What needs it stays unavailable until `icebath pm install %s` works.", name, name)
 			r.Line(message)
 			receiptOf(ctx).warn(message)
 		}
@@ -251,7 +255,7 @@ func (h *Packages) installDefaults(ctx context.Context, cfg *config.Config, name
 	return nil
 }
 
-// Required packages not installed at their pins, each with why, never installing
+// Required packages not installed at their pins, never installing
 func (h *Packages) drift() []string {
 	l := h.lock()
 	target := CurrentTarget()
@@ -262,7 +266,7 @@ func (h *Packages) drift() []string {
 			continue
 		}
 		if loc, err := h.located(p, l, target, locating{}); err == nil && loc == nil {
-			problems = append(problems, name+": not installed or outdated")
+			problems = append(problems, name)
 		}
 	}
 	return problems
@@ -283,18 +287,19 @@ func (h *Packages) Doctor(ctx context.Context, cfg *config.Config, repair bool, 
 	target := CurrentTarget()
 	s := h.store()
 	bad := 0
+	r.Line("Checking the programs icebath downloaded against the lock file.")
 	for _, name := range l.names() {
 		p, err := h.Package(name)
 		if err != nil {
 			return 0, err
 		}
 		if reason := p.Missing(target); reason != "" {
-			r.Line(fmt.Sprintf("- %s: n/a on %s (%s)", name, target, reason))
+			r.Line(fmt.Sprintf("  %s is not available for %s: %s", name, target, sentence(reason, name)))
 			continue
 		}
-		mark, weight := "✗", 1
+		mark, weight, after := "✗", 1, " Run `icebath pm install "+name+"`."
 		if p.Optional || p.Internal {
-			mark, weight = "?", 0
+			mark, weight, after = " ", 0, " It is optional."
 		}
 		loc, err := h.located(p, l, target, locating{})
 		if err != nil {
@@ -305,18 +310,19 @@ func (h *Packages) Doctor(ctx context.Context, cfg *config.Config, repair bool, 
 			if err != nil {
 				return 0, err
 			}
-			state := "not installed"
+			state := "is not installed"
 			if _, recorded := f.get(name); recorded {
-				state = "outdated"
+				state = "is out of date"
 			}
-			r.Line(fmt.Sprintf("%s %s: %s", mark, name, state))
+			r.Line(fmt.Sprintf("%s %s %s.%s", mark, name, state, after))
 			bad += weight
 			continue
 		}
 		got, _ := loc.facts.get(name)
 		entry := loc.store.entry(got.Entry)
 		if reason := h.verify(p, entry, target); reason != "" {
-			r.Line(fmt.Sprintf("✗ %s: installed but failed verification: %s", name, reason))
+			r.Line(fmt.Sprintf("✗ %s is installed but did not pass its check: %s Run `icebath pm install %s` to install it again.", name,
+				sentence(reason, name), name))
 			bad++
 			continue
 		}
@@ -326,7 +332,8 @@ func (h *Packages) Doctor(ctx context.Context, cfg *config.Config, repair bool, 
 				return 0, err
 			}
 			if digest != got.Digest {
-				r.Line(fmt.Sprintf("✗ %s: realized bytes do not match recorded digest", name))
+				r.Line(fmt.Sprintf("✗ The files of %s no longer match what was recorded when it was installed. Run `icebath pm install %s` to "+
+					"install it again.", name, name))
 				bad++
 				continue
 			}
@@ -344,14 +351,18 @@ func (h *Packages) Doctor(ctx context.Context, cfg *config.Config, repair bool, 
 		case !state.Provisioned:
 			absent = append(absent, state.Name)
 		case state.Current:
-			r.Line(fmt.Sprintf("✓ extra %s: provisioned (%s)", state.Name, state.Feature))
+			r.Line(fmt.Sprintf("✓ The extra %s is installed for %s.", state.Name, state.Feature))
 		default:
-			r.Line(fmt.Sprintf("✗ extra %s: provisioned with older pins, run `%s`", state.Name, installHint(state.Name)))
+			r.Line(fmt.Sprintf("✗ The extra %s was installed from older pins. Run `%s`.", state.Name, installHint(state.Name)))
 			stale++
 		}
 	}
-	if len(absent) > 0 {
-		r.Line("? extras not provisioned: " + strings.Join(absent, ", "))
+	switch len(absent) {
+	case 0:
+	case 1:
+		r.Line("  The extra " + absent[0] + " is not installed. It is optional.")
+	default:
+		r.Line("  The extras " + joined(absent, "and") + " are not installed. They are optional.")
 	}
 	cache, err := h.doctorCache(ctx, cfg, repair, r)
 	if err != nil {
@@ -368,12 +379,12 @@ func (h *Packages) doctorCache(ctx context.Context, cfg *config.Config, repair b
 	cache := h.uvCache()
 	corrupt := slices.Sorted(maps.Keys(corruptCached(cache)))
 	if len(corrupt) == 0 {
-		r.Line("✓ uv cache: no corrupt entries in " + cache)
+		r.Line("✓ The uv cache in " + cache + " has no damaged entries.")
 		return 0, nil
 	}
 	if !repair {
-		r.Line(fmt.Sprintf("✗ uv cache: corrupt entries for %s in %s; run `icebath pm doctor --repair` (installs also remove them when they hit one)",
-			strings.Join(corrupt, ", "), cache))
+		r.Line(fmt.Sprintf("✗ The uv cache in %s has damaged entries for %s. Run `icebath pm doctor --repair`, or let the next install that "+
+			"meets one remove it.", cache, joined(corrupt, "and")))
 		return 1, nil
 	}
 	e, err := h.pyenv(ctx, cfg, cache, nil, true, r)
@@ -382,16 +393,16 @@ func (h *Packages) doctorCache(ctx context.Context, cfg *config.Config, repair b
 	}
 	if err != nil {
 		if _, ok := errors.AsType[*InstallError](err); ok {
-			r.Line("✗ uv cache: " + err.Error())
+			r.Line("✗ The uv cache could not be cleaned. " + err.Error())
 			return 1, nil
 		}
 		return 0, err
 	}
 	if left := slices.Sorted(maps.Keys(corruptCached(cache))); len(left) > 0 {
-		r.Line(fmt.Sprintf("✗ uv cache: still corrupt after cleaning: %s in %s", strings.Join(left, ", "), cache))
+		r.Line(fmt.Sprintf("✗ The uv cache in %s still has damaged entries for %s after cleaning.", cache, joined(left, "and")))
 		return 1, nil
 	}
-	r.Line(fmt.Sprintf("✓ uv cache: removed corrupt entries for %s; they are fetched again on next use", strings.Join(corrupt, ", ")))
+	r.Line(fmt.Sprintf("✓ Removed the damaged uv cache entries for %s. They download again when next used.", joined(corrupt, "and")))
 	return 0, nil
 }
 
@@ -443,7 +454,7 @@ func (h *Packages) repair(ctx context.Context, cfg *config.Config, r Reporter) (
 		return 0, err
 	}
 	if len(environments) == 0 {
-		r.Line("no dependency environment is recorded; nothing to repair")
+		r.Line("No Python environment has been built yet, so there is nothing to repair. Run `icebath pm install --extra NAME` to build one.")
 		return 1, nil
 	}
 	rebuilt, failed := 0, 0
@@ -452,7 +463,7 @@ func (h *Packages) repair(ctx context.Context, cfg *config.Config, r Reporter) (
 		if healthy(venv) {
 			continue
 		}
-		r.Line("→ Rebuilding " + env.name + "...")
+		r.Line("Building " + env.name + " again…")
 		if err := os.Remove(filepath.Join(env.root, "active.json")); err != nil {
 			return 0, err
 		}
@@ -481,7 +492,7 @@ func (h *Packages) repair(ctx context.Context, cfg *config.Config, r Reporter) (
 			failed++
 			continue
 		}
-		r.Line("✓ " + env.name)
+		r.Line("✓ Built " + env.name + " again.")
 		receiptOf(ctx).rebuilt(true, env.name)
 		rebuilt++
 	}
@@ -489,10 +500,10 @@ func (h *Packages) repair(ctx context.Context, cfg *config.Config, r Reporter) (
 	case failed > 0:
 		return 1, nil
 	case rebuilt == 0:
-		r.Line("every recorded dependency environment is healthy")
+		r.Line("✓ Every Python environment works, so nothing needed repair.")
 		return 0, nil
 	}
-	r.Line("Restart icebath to use the repaired dependency environment.")
+	r.Line("Restart icebath to use the repaired Python environments.")
 	return 0, nil
 }
 
@@ -513,7 +524,7 @@ func (h *Packages) SideEnvironment(ctx context.Context, cfg *config.Config, a En
 
 func (h *Packages) sideEnvironment(ctx context.Context, cfg *config.Config, a EnvironmentArgs, r Reporter) (string, int, error) {
 	if (len(a.Extras) > 0) == (len(a.Requirements) > 0) {
-		r.Line("icebath pm environment: pass --extra or --requirement (not both)")
+		r.Line("✗ Give --extra or --requirement, but not both.")
 		return "", 2, nil
 	}
 	var python string
@@ -526,7 +537,7 @@ func (h *Packages) sideEnvironment(ctx context.Context, cfg *config.Config, a En
 	if err != nil {
 		_, install := errors.AsType[*InstallError](err)
 		if _, refused := errors.AsType[invalid](err); install || refused {
-			r.Line("icebath pm environment: " + err.Error())
+			r.Line("✗ " + err.Error())
 			return "", 1, nil
 		}
 		return "", 0, err
@@ -570,7 +581,7 @@ func (h *Packages) Collect(ctx context.Context, cfg *config.Config, r Reporter) 
 			if !entry.IsDir() || (strings.HasPrefix(name, ".") && !strings.HasPrefix(name, ".staging-")) || keep[name] {
 				continue
 			}
-			r.Line("removing " + name)
+			r.Line("Removing " + name + "…")
 			_ = removeTree(s.entry(name))
 			removed++
 		}
@@ -587,7 +598,8 @@ func (h *Packages) Collect(ctx context.Context, cfg *config.Config, r Reporter) 
 			generations += n
 		}
 	}
-	r.Line(fmt.Sprintf("gc: removed %d, kept %d; removed %d dependency generations", removed, kept, generations))
+	r.Line(fmt.Sprintf("✓ Removed %s and %s, and kept %s.", strs.Count(removed, "unused download"), strs.Count(generations, "old Python environment"),
+		strs.Count(kept, "installed program")))
 	return 0, nil
 }
 
@@ -628,7 +640,7 @@ func collectGenerations(root string, minAge time.Duration) (int, error) {
 func (h *Packages) Status(cfg *config.Config) (string, bool) {
 	data, ok := h.latestReceipt(cfg)
 	if !ok {
-		return "no pm sync receipt yet (no package manager operation has run)", false
+		return "No pm command has run yet, so there is no record to show. Run one, such as `icebath pm install`, first.", false
 	}
 	return strings.TrimRight(string(data), "\n"), true
 }
@@ -668,7 +680,7 @@ func (h *Packages) update(ctx context.Context, cfg *config.Config, a UpdateArgs,
 			}
 		}
 		if len(ignored) > 0 {
-			r.Line("::warning::--termux repairs the termux pool pins only; ignoring " + strings.Join(ignored, ", "))
+			r.Line("⚠ --termux repairs only the pins of the Termux pool, so it ignores " + joined(ignored, "and") + ".")
 		}
 		return h.termux(ctx, cfg, a.Check, r)
 	}
@@ -687,7 +699,7 @@ func (h *Packages) update(ctx context.Context, cfg *config.Config, a UpdateArgs,
 	}
 	target := a.Target
 	if target != "" && !a.Check {
-		r.Line("::warning::--target is a CHECK-only cross-resolution flag; ignoring it for apply (the lockfile pins every target)")
+		r.Line("⚠ --target works only with --check, so it is ignored. The lock file pins every platform anyway.")
 		target = ""
 	}
 	var decisions []*decision
@@ -712,13 +724,13 @@ func (h *Packages) update(ctx context.Context, cfg *config.Config, a UpdateArgs,
 		}
 		d, err := resolvePackage(cfg, p, targets, locked, l.pins[name].Artifacts)
 		if err != nil {
-			d = &decision{name: name, locked: locked, style: p.style(), reason: "resolve failed: " + err.Error(), artifacts: map[string][]string{}}
+			d = &decision{name: name, locked: locked, style: p.style(), reason: "could not find its newest version: " + err.Error(), artifacts: map[string][]string{}}
 			failures = append(failures, name)
 		}
 		decisions = append(decisions, d)
 	}
 	if len(decisions) == 0 {
-		r.Line("pm update: nothing to check (no resolvable packages)")
+		r.Line("There is nothing to check, because none of these programs is built for the platforms asked for.")
 		return 0, nil
 	}
 	width := 0
@@ -733,15 +745,15 @@ func (h *Packages) update(ctx context.Context, cfg *config.Config, a UpdateArgs,
 		}
 	}
 	if len(failures) > 0 {
-		r.Line(fmt.Sprintf("pm update: resolution failed for %s; no changes applied", strings.Join(failures, ", ")))
+		r.Line(fmt.Sprintf("✗ The newest version of %s could not be found, so nothing was changed.", joined(failures, "and")))
 		return 1, nil
 	}
 	if a.Check {
 		if a.UV {
-			r.Line("uv deps: would resolve every Python environment again to the newest its requirements allow")
+			r.Line("With --uv, every Python environment would move to the newest packages its requirements allow.")
 		}
 		if a.NPM {
-			r.Line("npm deps: would run `npm update`")
+			r.Line("With --npm, `npm update` would run in every Node package folder.")
 		}
 		if len(changed) > 0 {
 			return 1, nil
@@ -762,26 +774,22 @@ func (h *Packages) update(ctx context.Context, cfg *config.Config, a UpdateArgs,
 	return 0, nil
 }
 
-// Prints one decision of pm update
+// Prints one decision of pm update: the name, then what it is pinned at and what it would move to
 func printDecision(r Reporter, d *decision, width int) {
 	name := d.name + strings.Repeat(" ", max(0, width-utf8.RuneCountInString(d.name)))
-	dash := func(v *string) string {
+	pinned := func(v *string) string {
 		if v == nil || *v == "" {
-			return "—"
+			return "Not pinned"
 		}
 		return *v
 	}
 	switch {
 	case d.version == nil:
-		r.Line(fmt.Sprintf("%s  %s", name, cmp.Or(d.reason, "up to date")))
+		r.Line(fmt.Sprintf("%s  %s", name, sentence(cmp.Or(d.reason, "up to date"), d.name)))
 	case !d.changed():
-		locked := "None"
-		if d.locked != nil {
-			locked = *d.locked
-		}
-		r.Line(fmt.Sprintf("%s  %s up to date", name, locked))
+		r.Line(fmt.Sprintf("%s  %s, up to date", name, pinned(d.locked)))
 	case d.locked != nil && *d.version == *d.locked && len(d.artifacts) > 0:
-		r.Line(fmt.Sprintf("%s  %s: newer artifacts for %s", name, *d.version, strings.Join(slices.Sorted(maps.Keys(d.artifacts)), ", ")))
+		r.Line(fmt.Sprintf("%s  %s, with newer archives for %s", name, *d.version, joined(slices.Sorted(maps.Keys(d.artifacts)), "and")))
 	default:
 		per := ""
 		distinct := map[string]bool{}
@@ -793,18 +801,18 @@ func printDecision(r Reporter, d *decision, width int) {
 			slices.SortFunc(pairs, func(a, b targetVersion) int { return strings.Compare(a.target, b.target) })
 			parts := make([]string, len(pairs))
 			for i, tv := range pairs {
-				parts[i] = tv.target + "=" + tv.version
+				parts[i] = tv.version + " for " + tv.target
 			}
-			per = " (" + strings.Join(parts, ", ") + ")"
+			per = ", by platform " + strings.Join(parts, ", ")
 		}
-		r.Line(fmt.Sprintf("%s  %s → %s%s", name, dash(d.locked), *d.version, per))
+		r.Line(fmt.Sprintf("%s  %s → %s%s", name, pinned(d.locked), *d.version, per))
 	}
 }
 
 // Pins every changed package, one failing pin reported without holding back the rest, then installs what was pinned
 func (h *Packages) applyPins(ctx context.Context, cfg *config.Config, changed []*decision, l *lockfile, r Reporter) (int, error) {
 	if len(changed) == 0 {
-		r.Line("pm update: nothing to update")
+		r.Line("✓ Everything is up to date, so nothing changed.")
 		return 0, nil
 	}
 	var pinned, failedNames []string
@@ -818,22 +826,22 @@ func (h *Packages) applyPins(ctx context.Context, cfg *config.Config, changed []
 		if err != nil {
 			detail := err.Error()
 			if he, ok := errors.AsType[*HTTPError](err); ok && he.URL != "" {
-				detail = fmt.Sprintf("%s (%s)", err, he.URL)
+				detail = fmt.Sprintf("%s, from %s", err, he.URL)
 			}
-			r.Line(fmt.Sprintf("✗ %s pin failed: %s", d.name, detail))
+			r.Line(fmt.Sprintf("✗ %s could not be pinned: %s", d.name, sentence(detail, d.name)))
 			if _, seen := failed[d.name]; !seen {
 				failedNames = append(failedNames, d.name)
 			}
 			failed[d.name] = detail
 			continue
 		}
-		dash := "—"
-		if d.locked != nil && *d.locked != "" {
-			dash = *d.locked
-		}
 		l.set(d.name, *d.version, artifacts)
 		pinned = append(pinned, d.name)
-		r.Line(fmt.Sprintf("✓ %s pinned %s → %s", d.name, dash, *d.version))
+		if d.locked != nil && *d.locked != "" {
+			r.Line(fmt.Sprintf("✓ Pinned %s at %s instead of %s.", d.name, *d.version, *d.locked))
+		} else {
+			r.Line(fmt.Sprintf("✓ Pinned %s at %s.", d.name, *d.version))
+		}
 	}
 	code := 1
 	if len(pinned) > 0 {
@@ -846,12 +854,12 @@ func (h *Packages) applyPins(ctx context.Context, cfg *config.Config, changed []
 		}
 		code = min(failedInstalls, 1)
 	} else {
-		r.Line("pm update: every pin failed; lockfile untouched")
+		r.Line("✗ No program could be pinned, so the lock file is unchanged.")
 	}
 	if len(failed) == 0 {
 		return code, nil
 	}
-	r.Line(fmt.Sprintf("pm update: pinned %d, failed %d: %s", len(pinned), len(failed), strings.Join(failedNames, ", ")))
+	r.Line(fmt.Sprintf("✗ Pinned %s, and %s failed: %s.", strs.Count(len(pinned), "program"), strs.Count(len(failed), "program"), joined(failedNames, "and")))
 	for _, name := range failedNames {
 		receiptOf(ctx).step("pin "+name, false, failed[name])
 	}
@@ -876,10 +884,10 @@ func (h *Packages) refreshPython(ctx context.Context, cfg *config.Config, r Repo
 			if i := slices.IndexFunc(states, func(s ExtraState) bool { return s.Name == env.name }); i >= 0 && states[i].Current {
 				continue
 			}
-			r.Line(fmt.Sprintf("→ Provisioning %s again for this version's pins...", env.name))
+			r.Line(fmt.Sprintf("Installing %s again from the pins of this version…", env.name))
 			_, err = h.ProvisionExtra(ctx, cfg, env.name, r)
 		case env.record["extras"] != nil:
-			r.Line(fmt.Sprintf("→ Checking %s against its extras' pins...", env.name))
+			r.Line(fmt.Sprintf("Checking %s against the pins of its extras…", env.name))
 			_, err = h.ExtrasEnvironment(ctx, cfg, env.name, strings.Split(fmt.Sprint(env.record["extras"]), ","), r)
 		default:
 			var requirements []string
@@ -888,23 +896,23 @@ func (h *Packages) refreshPython(ctx context.Context, cfg *config.Config, r Repo
 					requirements = append(requirements, fmt.Sprint(req))
 				}
 			}
-			r.Line(fmt.Sprintf("→ Resolving %s again...", env.name))
+			r.Line(fmt.Sprintf("Moving %s to the newest packages its requirements allow…", env.name))
 			err = h.upgrade(ctx, cfg, env.name, env.root, requirements, r)
 		}
 		if err != nil {
 			if _, ok := errors.AsType[*InstallError](err); !ok {
 				return 0, err
 			}
-			r.Line("✗ Python lock refresh failed: " + err.Error())
+			r.Line("✗ " + env.name + " could not be brought up to date. " + err.Error())
 			failed++
 			continue
 		}
-		r.Line("✓ " + env.name)
+		r.Line("✓ " + env.name + " is up to date.")
 	}
 	if failed > 0 {
 		return 1, nil
 	}
-	r.Line("✓ Python environments refreshed")
+	r.Line("✓ Every Python environment is up to date.")
 	return 0, nil
 }
 
@@ -947,7 +955,7 @@ func (h *Packages) upgrade(ctx context.Context, cfg *config.Config, name, root s
 func (h *Packages) refreshNode(ctx context.Context, cfg *config.Config, r Reporter) int {
 	trees := slices.DeleteFunc(h.trees(), func(tree string) bool { return !fsx.IsFile(filepath.Join(tree, "package.json")) })
 	if len(trees) == 0 {
-		r.Line("npm deps: no Node dependency trees to refresh")
+		r.Line("There are no Node package folders to update.")
 		return 0
 	}
 	runner, err := h.Ensure(ctx, cfg, NPM, Ensuring{Explicit: true, Report: r})
@@ -956,18 +964,18 @@ func (h *Packages) refreshNode(ctx context.Context, cfg *config.Config, r Report
 		npm = Which("npm", runner.Env[pathKey(runner.Env)])
 	}
 	if npm == "" {
-		r.Line("✗ npm or Node: not installed; run `icebath pm install`")
+		r.Line("✗ npm or Node is not installed. Run `icebath pm install`.")
 		return 1
 	}
 	runner.Env = npmEnv(filepath.Join(h.storeRoot(), ".npm-cache"), runner.Env)
 	code := 0
 	for _, tree := range trees {
 		if message := npmRun(ctx, runner, npm, tree, "update"); message != "" {
-			r.Line(fmt.Sprintf("✗ npm update failed in %s:\n%s", tree, message))
+			r.Line(fmt.Sprintf("✗ The Node packages in %s could not be updated:\n%s", tree, message))
 			code = 1
 			continue
 		}
-		r.Line("✓ " + tree + " refreshed")
+		r.Line("✓ Updated " + tree + ".")
 	}
 	return code
 }
@@ -991,7 +999,11 @@ func (h *Packages) termux(ctx context.Context, cfg *config.Config, check bool, r
 				}
 			}
 		}
-		r.Line(fmt.Sprintf("termux pins: %d rows still served by the pool", rows))
+		if rows == 0 {
+			r.Line("✓ No archive is pinned to the Termux pool.")
+		} else {
+			r.Line(fmt.Sprintf("✓ The Termux pool still serves the %s pinned to it.", strs.Count(rows, "archive")))
+		}
 		return 0, nil
 	}
 	width, unresolved := 0, 0
@@ -1005,7 +1017,7 @@ func (h *Packages) termux(ctx context.Context, cfg *config.Config, check bool, r
 		label := entry.name + "@" + entry.target
 		label += strings.Repeat(" ", max(0, width-utf8.RuneCountInString(label)))
 		if entry.replacement == nil {
-			r.Line(fmt.Sprintf("%s  %s: the pool no longer carries it", label, entry.version))
+			r.Line(fmt.Sprintf("%s  %s, which the pool no longer carries", label, entry.version))
 		} else {
 			r.Line(fmt.Sprintf("%s  %s → %s", label, entry.version, entry.replacement.version))
 		}
@@ -1023,7 +1035,7 @@ func (h *Packages) termux(ctx context.Context, cfg *config.Config, check bool, r
 			return 0, err
 		}
 		if served != entry.replacement.sha256 {
-			return 0, fmt.Errorf("%s: the pool serves %s, the index declares %s", termuxPackage(entry.url), served, entry.replacement.sha256)
+			return 0, fmt.Errorf("The Termux pool serves %s with the SHA-256 %s, but its index says %s.", termuxPackage(entry.url), served, entry.replacement.sha256)
 		}
 		pin := l.pins[entry.name]
 		artifacts := maps.Clone(pin.Artifacts)
@@ -1041,7 +1053,7 @@ func (h *Packages) termux(ctx context.Context, cfg *config.Config, check bool, r
 		if err := l.save(); err != nil {
 			return 0, err
 		}
-		r.Line(fmt.Sprintf("✓ %d termux pins repinned; run `icebath pm install` on the Termux device to pick them up", applied))
+		r.Line(fmt.Sprintf("✓ Pinned %s again. Run `icebath pm install` on the Termux device to use them.", strs.Count(applied, "Termux archive")))
 	}
 	if unresolved > 0 {
 		return 1, nil
@@ -1058,7 +1070,7 @@ type LockArgs struct {
 // The pm lock usage refusal, empty when the arguments go together
 func (a LockArgs) Usage() string {
 	if (a.Name == nil) != (a.Version == nil) {
-		return "--bump NAME and VERSION go together; run with neither to relock the extras"
+		return "--bump NAME and VERSION go together. Give both to pin one program, or neither to work out the Python extras again."
 	}
 	return ""
 }
@@ -1088,7 +1100,11 @@ func (h *Packages) lockCommand(ctx context.Context, cfg *config.Config, a LockAr
 	if err := l.save(); err != nil {
 		return 0, err
 	}
-	r.Line(fmt.Sprintf("pinned %s %s (%d targets)", p.Name, *a.Version, len(artifacts)))
+	where := strs.Count(len(artifacts), "platform")
+	if _, every := artifacts["any"]; every && len(artifacts) == 1 {
+		where = "every platform"
+	}
+	r.Line(fmt.Sprintf("✓ Pinned %s at %s for %s.", p.Name, *a.Version, where))
 	return 0, nil
 }
 
@@ -1100,7 +1116,8 @@ func (h *Packages) Failed(err error) (string, bool) {
 	if pe, ok := errors.AsType[*fs.PathError](err); ok && errors.Is(err, fs.ErrPermission) {
 		denied := resolved(pe.Path)
 		if fsx.Within(denied, resolved(h.stateDir())) || fsx.Within(denied, resolved(h.storeRoot())) {
-			return fmt.Sprintf("✗ install state is not writable by this user (%s); run as the install owner or grant write access", denied), true
+			return fmt.Sprintf("✗ You cannot write to %s, where the package manager keeps its state. Run icebath as the user who installed it, or give "+
+				"yourself write access.", denied), true
 		}
 	}
 	return "", false

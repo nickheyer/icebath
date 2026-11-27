@@ -31,6 +31,7 @@ import (
 	"github.com/nickheyer/icebath/internal/sessions"
 	"github.com/nickheyer/icebath/pkg/fsx"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const name = "sqlite"
@@ -47,15 +48,14 @@ const (
 	walSizeLimit = 64 << 20
 )
 
-const replacedText = "FATAL: the session database was replaced underneath this process; refusing further writes to this file. " +
-	"Restart icebath so it opens the file now at the path."
+const replacedText = "The session database was replaced while icebath had it open, so icebath saves nothing more to it. " +
+	"Restart icebath so it opens the file that is there now."
 
-const corruptText = "FATAL: the session database reported structural corruption (database disk image is malformed outside the search index) on a live handle; " +
-	"refusing further writes and the close-time checkpoint on this file. Stop icebath, then run `icebath sessions recover --source %s --inspect-only`, or " +
-	"`icebath sessions repair`. (cause: %s)"
+const corruptText = "The session database is damaged beyond its search index, so icebath saves nothing more to it. Stop icebath, then run " +
+	"icebath sessions repair, or icebath sessions recover --source %s --inspect-only to see what can be rescued. SQLite said: %s."
 
-const lockedText = "database is locked (another icebath process held the session database write lock for over %.0fs — likely a long maintenance " +
-	"operation such as VACUUM, a large WAL checkpoint, or an older pre-update process; the database itself is healthy)"
+const lockedText = "The session database is busy, because another icebath has held it for more than %s, such as for a long cleanup. The " +
+	"database itself is fine, so try again once the other is done."
 
 type store struct {
 	config *config.Config
@@ -107,6 +107,12 @@ func (s *store) Stores() map[string]sessions.Store {
 	return map[string]sessions.Store{name: s}
 }
 
+// Name of the store where a person picks one
+func (s *store) Title() string { return "SQLite" }
+
+// What the store keeps sessions in, where a person picks one
+func (s *store) About() string { return "A database file on this computer" }
+
 func (s *store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -130,7 +136,7 @@ func (s *store) open(ctx context.Context) (*sql.DB, error) {
 	}
 	path := s.config.GetString(sqliteconfig.Path)
 	if path == "" {
-		return nil, errors.New("No path is set for the session database.")
+		return nil, errors.New("No file is set for the session database. Set Database file in /settings under Sessions › SQLite.")
 	}
 	if !filepath.IsAbs(path) {
 		absolute, err := filepath.Abs(path)
@@ -140,7 +146,7 @@ func (s *store) open(ctx context.Context) (*sql.DB, error) {
 		path = absolute
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, fmt.Errorf("cannot create the folder %s for the session database: %w", filepath.Dir(path), err)
+		return nil, fmt.Errorf("The folder %s for the session database can't be made: %w.", filepath.Dir(path), err)
 	}
 	if err := preflight(path); err != nil {
 		return nil, err
@@ -353,15 +359,16 @@ func (s *store) journal(ctx context.Context, db *sql.DB, path string) (string, e
 	}
 	if configured == sqliteconfig.Delete {
 		if !known {
-			return "", errors.New("could not verify the journal mode before applying the configured journal_mode=delete (database is locked — possible " +
-				"concurrent openers); refusing to downgrade a database this process does not own alone")
+			return "", errors.New("icebath could not check the journal mode of the session database, which another process may have open, so it " +
+				"keeps the mode as it is instead of switching it to delete. Close the other icebath windows and try again.")
 		}
 		mode, err := setMode(ctx, conn, "DELETE")
 		if err != nil {
 			return "", err
 		}
 		if mode != sqliteconfig.Delete {
-			return "", fmt.Errorf("could not set the configured journal_mode=delete (got %s)", cmp.Or(mode, "no result"))
+			return "", fmt.Errorf("The journal mode of the session database could not be set to delete, as Journal mode in /settings under Sessions › "+
+				"SQLite asks. It is %s.", cmp.Or(mode, "unknown"))
 		}
 		return mode, nil
 	}
@@ -509,12 +516,12 @@ func preflight(path string) error {
 			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOENT) {
 				return nil
 			}
-			x := ""
+			x, noun := "", "file"
 			if kind == "directory" {
-				x = "x"
+				x, noun = "x", "folder"
 			}
-			return fmt.Errorf("%s is not writable: %s %s is read-only for this user. Icebath needs read-write access to open the database. Fix with: "+
-				"chmod u+rw%s '%s' (files owned by another user may need sudo/chown).%s", filepath.Base(path), kind, target, x, target, extra)
+			return fmt.Errorf("icebath can't open %s, because the %s %s is read-only for your user and the session database must be written. "+
+				"Make it writable with chmod u+rw%s '%s', or with sudo chown when another user owns it.%s", filepath.Base(path), noun, target, x, target, extra)
 		}
 		return nil
 	}
@@ -524,7 +531,7 @@ func preflight(path string) error {
 	if err := check(path, "file", ""); err != nil {
 		return err
 	}
-	wal := " Do NOT delete the -wal file — it contains committed data that will be merged into the database once it is writable."
+	wal := " Do not delete the -wal file, because it holds saved data that goes into the database once the file is writable."
 	if err := check(path+"-wal", "file", wal); err != nil {
 		return err
 	}
@@ -567,8 +574,8 @@ func quarantine(path string) error {
 	}
 	where := "moved aside to " + backup
 	if err := os.Rename(path, backup); err != nil {
-		return fmt.Errorf("the session database was empty or damaged (%d bytes) and was left in place (it could not be moved aside: %v). "+
-			"Run `icebath sessions recover --source %s --inspect-only` to bring old sessions back.", info.Size(), err, path)
+		return fmt.Errorf("The session database is empty or damaged, at %s, and it could not be moved aside: %v. Run icebath sessions recover "+
+			"--source %s --inspect-only to bring old sessions back.", strs.Size(float64(info.Size())), err, path)
 	}
 	for _, sidecar := range []string{"-wal", "-shm"} {
 		os.Rename(path+sidecar, backup+sidecar)
@@ -669,7 +676,7 @@ func (s *store) writeWithin(ctx context.Context, patience time.Duration, fn func
 				continue
 			}
 			slog.Warn("Session database write lock unavailable", "path", s.path, "after", patience, "holders", describeHolders(lockHolders(s.path)))
-			return fmt.Errorf(lockedText, patience.Seconds())
+			return fmt.Errorf(lockedText, strs.Span(patience.Round(time.Second)))
 		case code == 10 && !ioRetried:
 			ioRetried = true
 			if err := pause(ctx, elapsed); err != nil {

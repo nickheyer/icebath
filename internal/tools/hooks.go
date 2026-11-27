@@ -65,7 +65,7 @@ func (r *Registry) hooked(ctx context.Context, def Def, call *Call, handle func(
 		}
 		block := d.Block
 		if block == "" && d.Approve != nil {
-			block = approval(ctx, call, *d.Approve)
+			block = approval(ctx, def, call, *d.Approve)
 		}
 		if block != "" {
 			result := ErrorResult(errors.New(block))
@@ -97,15 +97,15 @@ func (r *Registry) hooked(ctx context.Context, def Def, call *Call, handle func(
 
 // Asks the user to allow a call a plugin holds for approval, the answer remembered under the plugin's rule: why it may not run, empty when
 // it may
-func approval(ctx context.Context, call *Call, ask hooks.Ask) string {
+func approval(ctx context.Context, def Def, call *Call, ask hooks.Ask) string {
 	name := call.Name
-	description := cmp.Or(ask.Message, "Plugin requires approval for "+name)
+	description := cmp.Or(ask.Message, "a plugin asks before "+def.Label()+" runs")
 	subject := fmt.Sprintf("Tool '%s' requires approval (%s)", name, description)
 	nobody := "BLOCKED: " + subject + " but no interactive user or gateway is present to approve it. A plugin flagged this action for human confirmation."
 	if call.Env.Gate == nil {
 		return nobody
 	}
-	err := call.Env.Gate(ctx, Gate{Key: "plugin_rule:" + cmp.Or(ask.Rule, name), Description: description, Target: fmt.Sprintf("<%s> (plugin approval rule)", name),
+	err := call.Env.Gate(ctx, Gate{Key: "plugin_rule:" + cmp.Or(ask.Rule, name), Description: description, Target: def.Label() + " tool, held for your approval by a plugin",
 		Subject: subject, Advice: "Find an alternative approach.", Unanswered: nobody})
 	if err == nil {
 		return ""

@@ -142,6 +142,8 @@ message Spec {
   repeated string aliases = 13;
   // Whether its accounts keep an API key
   bool keyed = 14;
+  // Place among the well-known kinds offered first, 1 at the top; 0 for a kind listed by name with the rest
+  uint32 rank = 15;
 }
 
 message ListRequest {

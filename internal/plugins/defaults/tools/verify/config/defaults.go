@@ -10,15 +10,18 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: toolsconfig.Key,
 		Title:  "Verification",
-		About:  "Whether the agent checks the code it changed before it finishes",
+		About:  "Whether the agent checks its changes before it finishes",
+		Order:  90,
 		Settings: []config.Setting{
-			{Key: OnStop, Title: "Verify before stop", About: "Asks the agent to check its edits before it finishes", Default: Off, Options: config.Options(
-				config.Option{Value: Auto, Title: "Auto", About: "Check edits everywhere but in chat apps"},
-				config.Option{Value: On, Title: "Always", About: "Always check edits before finishing"},
-				config.Option{Value: Off, Title: "Never", About: "Never ask for a check"},
-			)},
-			{Key: Guidance, Title: "Verify advice", About: "Adds how-to-verify advice to the reminders sent before stopping", Default: true},
-			{Key: MaxNudges, Title: "Verify reminders", About: "Most times per turn the agent is told to verify its work; 0 turns the reminders off", Default: 3},
+			{Key: OnStop, Title: "Check before finishing", About: "When the agent is asked to check its edits before it finishes a reply.", Default: Off,
+				Options: config.Options(
+					config.Option{Value: Auto, Title: "Automatic", About: "Everywhere except in chat apps"},
+					config.Option{Value: On, Title: "Always", About: "After every reply that changed code"},
+					config.Option{Value: Off, Title: "Never", About: "The agent is never asked to check"},
+				)},
+			{Key: Guidance, Title: "How-to advice", About: "Add advice on how to check the work to each reminder.", Default: true},
+			{Key: MaxNudges, Title: "Reminders per reply", About: "How many times in one reply the agent is reminded to check the work.", Default: 3,
+				Zero: "Off", Counts: "reminders", Least: config.Num(0)},
 		},
 	}})
 }

@@ -93,16 +93,19 @@ func failures(err error) []error {
 	return []error{err}
 }
 
-// Line of a failure of what a profile keeps, after what happened to the profile: deleted or renamed, and what failed: identity purge or
-// migration
-func failed(happened, what string, err error) string {
+// Line of a failure of what a profile keeps elsewhere: not removed after a delete, or not moved to the new name after a rename
+func failed(deleted bool, err error) string {
 	if worded, ok := errors.AsType[Worded](err); ok {
 		return "⚠ " + string(worded)
 	}
-	if store, ok := errors.AsType[*StoreError](err); ok {
-		return fmt.Sprintf("⚠ Profile was %s, but %s failed for %s: %v", happened, what, store.Store, store.Err)
+	done := "could not move to the new name"
+	if deleted {
+		done = "could not be removed"
 	}
-	return fmt.Sprintf("⚠ Profile was %s, but %s failed: %v", happened, what, err)
+	if store, ok := errors.AsType[*StoreError](err); ok {
+		return fmt.Sprintf("⚠ What icebath keeps of the profile in %s %s: %s", store.Store, done, sentence(store.Err.Error()))
+	}
+	return fmt.Sprintf("⚠ Some of what icebath keeps of the profile %s: %s", done, sentence(err.Error()))
 }
 
 // What a feature tells of a profile for its listing and description, such as the model it runs or the skills it has
@@ -348,10 +351,11 @@ func (p *Profiles) Load(recovering bool, warn io.Writer) error {
 	case source != config.FromFile:
 		return refuse(warn, missing(name).Error())
 	case recovering:
-		fmt.Fprintf(warn, "Warning: saved profile '%s' no longer exists; running this recovery command in the default profile.\n", picked)
+		fmt.Fprintf(warn, "⚠ The profile icebath started with last time, %s, no longer exists, so this command runs in the default profile.\n", picked)
 		name = Default
 	default:
-		return refuse(warn, fmt.Sprintf("Saved profile '%s' no longer exists. Switch back with: icebath profile use default", picked))
+		return refuse(warn, fmt.Sprintf("The profile icebath started with last time, %s, no longer exists. Run icebath profile use default to go back "+
+			"to the default profile.", picked))
 	}
 	return p.use(name)
 }
@@ -365,7 +369,7 @@ func (refused) ExitCode() int { return 1 }
 
 // Says why the start is refused on a line of its own, as every refusal of a profile picked for a run is said
 func refuse(warn io.Writer, text string) error {
-	fmt.Fprintln(warn, "Error: "+text)
+	fmt.Fprintln(warn, "✗ "+text)
 	return refused{}
 }
 

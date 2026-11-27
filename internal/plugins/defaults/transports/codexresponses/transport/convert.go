@@ -116,7 +116,7 @@ func neutralize(text string) string {
 }
 
 // Reserved tokens in a key can't be neutralized without changing what the object means
-var errHarmonyKey = errors.New("Reserved Harmony tokens in a JSON object key cannot be neutralized without changing its contract.")
+var errHarmonyKey = errors.New("A field name in the request holds words the model reserves, and they can't be made safe without changing the field.")
 
 // Every text of a JSON like value neutralized, an object key that holds a reserved token refused
 func neutralizeAll(value any) (any, error) {
@@ -604,7 +604,7 @@ func responseError(object any, state string) string {
 	case object != nil:
 		return fmt.Sprint(object)
 	}
-	return fmt.Sprintf("Responses API returned status '%s'", state)
+	return fmt.Sprintf("The provider ended the reply with the state %s.", state)
 }
 
 // Reply of a Responses object
@@ -636,7 +636,7 @@ func normalize(p *prepared, response map[string]any, issuer, model string) (*rep
 		case filtered:
 			output = []any{map[string]any{"type": "message", "role": "assistant", "status": "completed", "content": []any{}}}
 		default:
-			return nil, errors.New("Responses API returned no output items")
+			return nil, errors.New("The provider sent back a reply with nothing in it. Send your message again.")
 		}
 	}
 	if state == "failed" || state == "cancelled" {

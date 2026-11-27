@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,7 @@ func (r registrant) Backends() []terminal.Backend {
 	return []terminal.Backend{{
 		Name:      "modal",
 		Title:     "Modal",
-		About:     "Serverless cloud sandbox",
+		About:     "A cloud sandbox on your Modal account",
 		Where:     "a Modal sandbox (Linux)",
 		Remote:    true,
 		Container: true,
@@ -79,11 +80,13 @@ func image(cfg *config.Config) string {
 	return cmp.Or(strings.TrimSpace(cfg.GetString(modalconfig.Image)), sandbox.Image)
 }
 
+// Why a sandbox can't be made, as the agent is told it
 const unavailable = "Modal backend selected but no direct Modal credentials/config was found."
 
 func check(cfg *config.Config) error {
 	if !credentialed(cfg) {
-		return errors.New(unavailable + " Configure Modal or pick another place to run commands in /backends.")
+		return errors.New("No Modal token is set and ~/.modal.toml holds none. Set Token ID and Token secret in /settings under Terminal › " +
+			"Modal, or choose another place to run commands in /backends.")
 	}
 	_, err := terminal.SandboxResources(cfg)
 	return err
@@ -91,22 +94,23 @@ func check(cfg *config.Config) error {
 
 func setup(cfg *config.Config) []string {
 	lines := []string{
-		"Serverless cloud sandboxes. Each session gets its own container.",
-		"Runs on your own Modal account: https://modal.com",
-		"Set the Modal token ID and secret from https://modal.com/settings in the Modal settings (or MODAL_TOKEN_ID and MODAL_TOKEN_SECRET), or sign in with the modal CLI so ~/.modal.toml holds them.",
-		"Readying the backend builds the sandbox image on Modal ahead of the first command.",
+		"Cloud sandboxes that start when needed. Each session gets a container of its own.",
+		"Runs on your own Modal account at https://modal.com.",
+		"Get a token ID and secret at https://modal.com/settings and set Token ID and Token secret in /settings under Terminal › Modal, or export " +
+			"MODAL_TOKEN_ID and MODAL_TOKEN_SECRET. You can also sign in with the modal program so ~/.modal.toml holds them.",
+		"Preparing Modal on this screen builds the sandbox image on Modal before the first command needs it.",
 	}
 	if cfg.GetBool(terminalconfig.ContainerPersistent) {
-		lines = append(lines, "Sandbox files are kept: a session's filesystem is snapshotted when its sandbox goes and restored when it comes back.")
+		lines = append(lines, "Sandbox files are kept. A session's files are saved when its sandbox stops and brought back when the session returns.")
 	}
 	return lines
 }
 
 func doctor(cfg *config.Config) []terminal.Check {
 	if credentialed(cfg) {
-		return []terminal.Check{{OK: true, Label: "Modal credentials", Detail: "(configured)"}}
+		return []terminal.Check{{OK: true, Label: "A Modal token is set."}}
 	}
-	return []terminal.Check{{OK: false, Label: "Modal credentials missing", Detail: "(needed for the 'modal' terminal backend)"}}
+	return []terminal.Check{{OK: false, Label: "No Modal token is set.", Detail: "Commands run on Modal only once one is."}}
 }
 
 // Builds the sandbox image on Modal, so the first command waits for no build
@@ -116,25 +120,25 @@ func prepare(ctx context.Context, cfg *config.Config, say func(string)) error {
 	}
 	client, err := newClient(cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("Could not set up the Modal client: %w", err)
 	}
 	defer client.Close()
-	say("Finding the " + app + " app on Modal...")
+	say("Finding the " + app + " app on Modal…")
 	application, err := client.Apps.FromName(ctx, app, &modal.AppFromNameParams{CreateIfMissing: true})
 	if err != nil {
-		return err
+		return fmt.Errorf("Modal did not open the %s app: %w", app, err)
 	}
 	spec := image(cfg)
 	resolved, err := resolveImage(ctx, client, spec)
 	if err != nil {
-		return err
+		return fmt.Errorf("Modal could not find the image %s: %w", spec, err)
 	}
-	say("Building the sandbox image " + spec + " on Modal; the first build takes a while...")
+	say("Building the sandbox image " + spec + " on Modal. The first build takes a while…")
 	built, err := resolved.Build(ctx, application, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("Modal could not build the image %s: %w", spec, err)
 	}
-	say("Sandbox image ready: " + built.ImageID)
+	say("The sandbox image is ready on Modal as " + built.ImageID + ".")
 	return nil
 }
 

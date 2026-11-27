@@ -89,7 +89,7 @@ type StatusError struct {
 }
 
 func (e *StatusError) Error() string {
-	return fmt.Sprintf("HTTP %d for %s", e.Status, e.URL)
+	return fmt.Sprintf("%s answered with HTTP status %d", e.URL, e.Status)
 }
 
 // Status of an error a request failed with, 0 when it got no answer
@@ -161,7 +161,7 @@ func send(ctx context.Context, method, target string, headers map[string]string,
 			return http.ErrUseLastResponse
 		}
 		if len(via) >= 10 {
-			return errors.New("stopped after 10 redirects")
+			return errors.New("stopped after 10 redirects, so the address may loop")
 		}
 		if origin(next.URL) != origin(via[0].URL) {
 			for name := range headers {
@@ -237,5 +237,5 @@ func Request(ctx context.Context, method, target string, headers map[string]stri
 	case nil:
 		return map[string]any{}, nil
 	}
-	return nil, fmt.Errorf("%s answered with %T, not an object", target, data)
+	return nil, fmt.Errorf("%s answered with something other than a set of fields", target)
 }

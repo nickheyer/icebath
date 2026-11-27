@@ -8,32 +8,37 @@ import (
 
 func Register(cfg *config.Config, providers *provider.Registry) {
 	endpoints := func() []config.Option {
-		return append([]config.Option{{Value: "", Title: "OpenAI", About: "The OpenAI endpoint, or the one OPENAI_BASE_URL names"}}, providers.Options(cfg)()...)
+		return append([]config.Option{{Value: "", Title: "OpenAI", About: "Your OpenAI account in Providers, or OPENAI_BASE_URL when it is set"}},
+			providers.Options(cfg)()...)
 	}
 	cfg.Register(config.Sections{{
 		Key:    Key,
 		Parent: generationconfig.ImageKey,
-		Title:  "OpenAI images",
-		About:  "Pictures GPT Image 2 and GPT Image 2.5 draw and edit through the OpenAI images API, with the OpenAI key or a provider of the profile",
+		Title:  "OpenAI",
+		About:  "Images and edits from OpenAI, with an OpenAI API key",
+		Order:  10,
 		Settings: []config.Setting{
-			{Key: Model, Title: "OpenAI image model", About: "Model OpenAI draws with, a tier name such as gpt-image-2-high or any model id. Empty uses Image model, else GPT Image 2 at medium quality",
-				Default: "", Env: []string{"OPENAI_IMAGE_MODEL"}},
-			{Key: Provider, Title: "OpenAI image endpoint", About: "Provider of the profile whose address and key OpenAI image requests take. Empty uses the OpenAI endpoint",
-				Default: "", Options: endpoints},
-			{Key: BaseURL, Title: "OpenAI image address", About: "Base URL OpenAI image requests go to. Wins over OpenAI image endpoint; empty takes the endpoint's address, else OPENAI_BASE_URL",
-				Default: ""},
-			{Key: KeyEnv, Title: "OpenAI image key", About: "Name of the variable holding the key OpenAI image requests send. Empty takes the endpoint's key, else OPENAI_API_KEY",
-				Default: ""},
+			{Key: Model, Title: "Model", About: "The OpenAI model or quality tier that makes images.",
+				Help: "A tier such as gpt-image-2-high, or any model ID. When neither model is set, GPT Image 2 at medium quality is used.", Default: "",
+				Zero: "The general model", Env: []string{"OPENAI_IMAGE_MODEL"}},
+			{Key: Provider, Title: "Provider", About: "Which provider's address and API key image requests use.", Default: "", Options: endpoints,
+				Advanced: true},
+			{Key: BaseURL, Title: "Base URL", About: "The address image requests go to.", Help: "This wins over Provider.", Default: "",
+				Zero: "The provider's address", Advanced: true},
+			{Key: KeyEnv, Title: "Key variable", About: "The environment variable that holds the API key.", Default: "", Zero: "The provider's key",
+				Advanced: true},
 		},
 	}})
 	cfg.Register(config.Sections{{
 		Key:    CodexKey,
 		Parent: generationconfig.ImageKey,
-		Title:  "OpenAI images via Codex",
-		About:  "Pictures gpt-image-2 draws through your ChatGPT or Codex sign-in, no API key needed",
+		Title:  "OpenAI via ChatGPT",
+		About:  "Images from OpenAI with your ChatGPT sign-in, no API key",
+		Order:  20,
 		Settings: []config.Setting{
-			{Key: CodexModel, Title: "Codex image tier", About: "Quality tier of pictures drawn through your Codex sign-in: gpt-image-2-low, gpt-image-2-medium or gpt-image-2-high. Empty uses Image model, else medium",
-				Default: "", Env: []string{"OPENAI_IMAGE_MODEL"}},
+			{Key: CodexModel, Title: "Model", About: "The quality tier of images made with your ChatGPT sign-in.",
+				Help: "One of gpt-image-2-low, gpt-image-2-medium or gpt-image-2-high. When neither model is set, medium is used.", Default: "",
+				Zero: "The general model", Env: []string{"OPENAI_IMAGE_MODEL"}},
 		},
 	}})
 }

@@ -137,24 +137,24 @@ func (d *Driver) repairAutostart(ctx context.Context, cfg *config.Config, p Prin
 		}
 	}
 	if progress {
-		p.Info("    Registering cua-driver auto-start...")
+		p.Info("Setting up cua-driver to start when you sign in to Windows.")
 	} else {
-		p.Info("    Repairing cua-driver auto-start registration...")
+		p.Info("Repairing how cua-driver starts when you sign in to Windows.")
 	}
 	command := "$exe = " + psQuote(resolved) + "; $proc = Start-Process -FilePath $exe -ArgumentList @('autostart','enable') -Verb RunAs -Wait " +
 		"-PassThru -ErrorAction Stop; exit $proc.ExitCode"
 	out, err := run(ctx, []string{ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command}, 300*time.Second, d.Env(cfg), nil)
 	if err != nil {
 		if _, timedOut := errors.AsType[*timeoutError](err); timedOut {
-			return p.fail("    cua-driver autostart registration timed out.")
+			return p.fail("Setting up cua-driver to start when you sign in took too long.")
 		}
-		return p.fail("    cua-driver autostart registration failed: " + err.Error())
+		return p.fail("Could not set up cua-driver to start when you sign in: " + err.Error() + ".")
 	}
 	if out.code == 0 {
 		return d.autostartRegistered(cfg, resolved)
 	}
-	p.Warning("    cua-driver autostart registration failed.")
+	p.Warning("Could not set up cua-driver to start when you sign in.")
 	p.tail(out)
-	p.Info("    From an elevated shell, run: & " + psQuote(resolved) + " autostart enable")
+	p.Info("To do it yourself, run this in PowerShell as administrator: & " + psQuote(resolved) + " autostart enable")
 	return false
 }

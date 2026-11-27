@@ -41,6 +41,8 @@ func (registrant) Tools() []tools.Def {
 		Name:    "clarify",
 		Toolset: "clarify",
 		Title:   "Ask",
+		About:   "Ask you questions and wait for your answers",
+		Group:   "Questions",
 		Icon:    tools.IconAsk,
 		Schema: tools.Schema(description, []string{"questions"}, map[string]any{
 			"questions": map[string]any{

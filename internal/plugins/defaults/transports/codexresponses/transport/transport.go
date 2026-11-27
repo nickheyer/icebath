@@ -51,7 +51,7 @@ func (r *registrant) Factories() map[provider.APIMode]provider.Factory {
 	return map[provider.APIMode]provider.Factory{
 		provider.ModeCodexResponses: func(route provider.Route) (provider.Client, error) {
 			if strings.TrimSpace(route.BaseURL) == "" {
-				return nil, fmt.Errorf("%s has no base URL for %s.", route.Provider, route.Model)
+				return nil, fmt.Errorf("%s has no address for %s. Set its Base URL in /providers.", route.Provider, route.Model)
 			}
 			return &client{r: r, route: route}, nil
 		},
@@ -370,11 +370,9 @@ func hint(p *prepared) string {
 	if !p.codex || !silentReject.MatchString(strings.ToLower(p.model)) {
 		return ""
 	}
-	return fmt.Sprintf("Codex backend appears to be silently rejecting %q on chatgpt.com/backend-api/codex (no stream events, no error). This is a "+
-		"known backend-side pattern that has affected ChatGPT Plus accounts intermittently. Workaround: try `gpt-5.4` on the same OAuth profile, or "+
-		"switch to a different model/provider in your fallback chain. Some ChatGPT Codex accounts do not support `gpt-5.4-codex`. On an affected "+
-		"account every turn waits out the full stale timeout with no events and no error, and the fallback chain takes over only after that abort, "+
-		"so switch with `/model gpt-5.4` or add a fallback with /model.", p.model)
+	return fmt.Sprintf("OpenAI seems to be quietly refusing %s for this ChatGPT account, which has happened to some ChatGPT Plus accounts. "+
+		"Switch with `/model gpt-5.4`, or add a fallback model in /settings under Agent, because each reply otherwise waits the whole silence "+
+		"limit first. Some accounts can't use gpt-5.4-codex.", p.model)
 }
 
 // Error the consumer of the stream's events returned, which ends the stream as it is
@@ -400,7 +398,7 @@ func (c *client) request(ctx context.Context, p *prepared) (*http.Request, []byt
 	streamed["stream"] = true
 	payload, err := json.Marshal(streamed)
 	if err != nil {
-		return nil, nil, fmt.Errorf("The Responses request couldn't be encoded: %w", err)
+		return nil, nil, fmt.Errorf("The request to the provider could not be built: %w", err)
 	}
 	body := payload
 	header := p.header.Clone()
@@ -418,7 +416,7 @@ func (c *client) request(ctx context.Context, p *prepared) (*http.Request, []byt
 	call.Header = header
 	if c.route.Sign != nil {
 		if err := c.route.Sign(call, body); err != nil {
-			return nil, nil, fmt.Errorf("The request to %s couldn't be signed: %w", c.route.Provider, err)
+			return nil, nil, fmt.Errorf("The request to %s could not be signed: %w", c.route.Provider, err)
 		}
 	}
 	return call, payload, nil
@@ -453,7 +451,7 @@ func (c *client) once(ctx context.Context, p *prepared, w watchdogs, attempt int
 	if err != nil {
 		return nil, 0, err
 	}
-	_ = emit(fn, provider.EventActivity, "waiting for non-streaming API response")
+	_ = emit(fn, provider.EventActivity, "waiting for the provider to answer")
 	type opened struct {
 		response *http.Response
 		err      error
@@ -496,8 +494,7 @@ func (c *client) once(ctx context.Context, p *prepared, w watchdogs, attempt int
 			return nil, events, ctx.Err()
 		case <-attemptCtx.Done():
 			if ctx.Err() == nil && errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
-				return nil, events, &killed{&transport.TimeoutError{Phase: transport.PhaseRead, Err: fmt.Errorf("Request timed out after %.0fs.",
-					timeouts.Request.Seconds())}}
+				return nil, events, &killed{&transport.TimeoutError{Phase: transport.PhaseRead, Err: fmt.Errorf("The request took longer than its time limit of %s.", span(timeouts.Request))}}
 			}
 			return nil, events, attemptCtx.Err()
 		case o := <-result:
@@ -540,35 +537,34 @@ func (c *client) once(ctx context.Context, p *prepared, w watchdogs, attempt int
 				slog.Warn(fmt.Sprintf("Codex stream produced no parsed stream event within TTFB cutoff (%.0fs > %.0fs, model=%s). Backend accepted the "+
 					"connection but sent no stream events. Killing connection so the retry loop can reconnect.", attemptElapsed.Seconds(),
 					w.firstEvent.Seconds(), p.model))
-				return nil, events, kill(with(fmt.Sprintf("⚠️ No first stream event from provider in %ds (codex stream, model: %s). Reconnecting.",
-					int(attemptElapsed.Seconds()), p.model), " "), with(fmt.Sprintf("Codex stream produced no parsed stream event within %ds (TTFB "+
-					"threshold: %ds)", int(attemptElapsed.Seconds()), int(w.firstEvent.Seconds())), ". "))
+				return nil, events, kill(with(fmt.Sprintf("%s sent nothing in its first %s. Connecting again.", p.model, span(attemptElapsed)),
+					"\n"), with(fmt.Sprintf("%s sent nothing in its first %s, past the first output wait of %s. Raise First output wait in "+
+					"/settings under Connections › OpenAI responses API if it needs longer.", p.model, span(attemptElapsed), span(w.firstEvent)), "\n"))
 			case w.progress > 0 && !clocks.event.IsZero() && clocks.progress.IsZero() && attemptElapsed > w.progress:
 				slog.Warn(fmt.Sprintf("Codex stream produced lifecycle events but no substantive model progress for %.0fs (threshold %.0fs, model=%s, "+
 					"context=~%s tokens). Reconnecting.", attemptElapsed.Seconds(), w.progress.Seconds(), p.model, strs.Thousands(w.tokens)))
-				return nil, events, kill(fmt.Sprintf("⚠️ Codex stream opened but made no model progress for %ds (model: %s). Reconnecting.",
-					int(attemptElapsed.Seconds()), p.model), fmt.Sprintf("Codex stream produced no substantive model progress for %ds (progress "+
-					"threshold: %ds)", int(attemptElapsed.Seconds()), int(w.progress.Seconds())))
+				return nil, events, kill(fmt.Sprintf("The reply from %s opened but made no progress for %s. Connecting again.", p.model,
+					span(attemptElapsed)), fmt.Sprintf("The reply from %s made no progress for %s, past the limit of %s.", p.model, span(attemptElapsed),
+					span(w.progress)))
 			case w.idleOn && !clocks.event.IsZero() && (!w.afterProgress || !clocks.progress.IsZero()) && now.Sub(clocks.event) > w.idle:
 				idle := now.Sub(clocks.event)
-				point := "the first parsed event"
+				point := "it began"
 				if w.afterProgress {
-					point = "model progress began"
+					point = "the model began writing"
 				}
 				slog.Warn(fmt.Sprintf("Codex stream produced no SSE events for %.0fs after %s (threshold %.0fs, model=%s, context=~%s tokens). Killing "+
 					"connection so the retry loop can reconnect.", idle.Seconds(), point, w.idle.Seconds(), p.model, strs.Thousands(w.tokens)))
-				return nil, events, kill(fmt.Sprintf("⚠️ Codex stream sent no events for %ds after %s (model: %s). Reconnecting.", int(idle.Seconds()),
-					point, p.model), fmt.Sprintf("Codex stream produced no SSE events for %ds after %s (threshold: %ds)", int(idle.Seconds()), point,
-					int(w.idle.Seconds())))
+				return nil, events, kill(fmt.Sprintf("The reply from %s went quiet for %s after %s. Connecting again.", p.model, span(idle), point),
+					fmt.Sprintf("The reply from %s went quiet for %s after %s, past the silence limit of %s. Raise Silence limit in /settings under "+
+						"Connections › OpenAI responses API if it needs longer.", p.model, span(idle), point, span(w.idle)))
 			case w.stale != transport.Forever && elapsed > w.stale:
 				slog.Warn(fmt.Sprintf("Non-streaming API call stale for %.0fs (threshold %.0fs). model=%s context=~%s tokens. Killing connection.",
 					elapsed.Seconds(), w.stale.Seconds(), p.model, strs.Thousands(w.tokens)))
-				status := "Aborting call."
+				status := "The request is stopped."
 				if h != "" {
 					status = h
 				}
-				_ = emit(fn, provider.EventStatus, fmt.Sprintf("⚠️ No response from provider for %ds (non-streaming, model: %s). %s", int(elapsed.Seconds()),
-					p.model, status))
+				_ = emit(fn, provider.EventStatus, fmt.Sprintf("%s sent nothing for %s. %s", p.model, span(elapsed), status))
 				cancel()
 				return nil, events, &killed{&transport.TimeoutError{Phase: transport.PhaseRead, Err: &transport.StallError{Silence: elapsed,
 					Model: p.model, Limit: w.stale}}}
@@ -619,7 +615,7 @@ func (c *client) once(ctx context.Context, p *prepared, w watchdogs, attempt int
 					clocks.retry = time.Time{}
 				}
 			}
-			_ = emit(fn, provider.EventActivity, "receiving stream response")
+			_ = emit(fn, provider.EventActivity, "receiving the reply")
 			done, err := a.feed(event)
 			if err != nil {
 				return nil, events, err
@@ -711,7 +707,7 @@ func (n *waiting) poll(now time.Time, clocks *clocks, w watchdogs, p *prepared, 
 	n.beat = now
 	silence := now.Sub(last)
 	if silence < time.Minute {
-		return emit(fn, provider.EventActivity, fmt.Sprintf("waiting for provider response (%ds)", int(silence.Seconds())))
+		return emit(fn, provider.EventActivity, fmt.Sprintf("waiting for the provider to answer, %s so far", span(silence)))
 	}
 	phase := "post_event"
 	switch {
@@ -732,7 +728,7 @@ func (n *waiting) poll(now time.Time, clocks *clocks, w watchdogs, p *prepared, 
 		label = deadline.Label
 	}
 	if n.phase == phase && n.labelled == (deadline != nil) && n.label == label && !(near && !n.near) {
-		return emit(fn, provider.EventActivity, fmt.Sprintf("waiting for provider response (%ds, %s)", int(silence.Seconds()), phase))
+		return emit(fn, provider.EventActivity, fmt.Sprintf("waiting for the provider to answer, %s so far", span(silence)))
 	}
 	n.phase, n.label, n.labelled, n.shown = phase, label, deadline != nil, true
 	n.near = n.near || near
@@ -780,4 +776,9 @@ func usageOf(u map[string]any, tier any) *provider.Usage {
 	return &provider.Usage{Input: max(input-read-write, 0), CacheRead: read, CacheWrite: write, Output: count([]string{"output_tokens"}),
 		Reasoning: count([]string{"output_tokens_details", "reasoning_tokens"}, []string{"completion_tokens_details", "reasoning_tokens"}),
 		Tier:      strings.ToLower(tierName)}
+}
+
+// Length of time in words, rounded to whole seconds
+func span(d time.Duration) string {
+	return strs.Span(max(d.Round(time.Second), time.Second))
 }

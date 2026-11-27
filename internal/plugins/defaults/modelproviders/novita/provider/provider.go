@@ -17,7 +17,7 @@ func (specs) Specs() []provider.Spec {
 		Name:               novitaconfig.Name,
 		Carriers:           []string{"reasoning_content", "reasoning_details"},
 		DisplayName:        novitaconfig.Title,
-		Description:        "Model inference cloud",
+		Description:        "Open models hosted by Novita AI, with an API key paid by use",
 		SignupURL:          "https://novita.ai/settings/key-management",
 		BaseURL:            base,
 		BaseURLEnv:         novitaconfig.BaseURLEnv,

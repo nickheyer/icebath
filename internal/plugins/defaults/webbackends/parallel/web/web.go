@@ -42,19 +42,19 @@ func (b backends) Backends() []web.Backend {
 	return []web.Backend{{
 		Name:     name,
 		Title:    title,
-		About:    "Parallel.ai web search + content extraction. Search returns objective-tuned results; extract uses the async SDK for parallel page fetches. Requires PARALLEL_API_KEY — sign up at https://parallel.ai.",
+		About:    "Search tuned for agents, and page reading, free with limits",
 		Settings: []string{parallelconfig.APIKey, parallelconfig.BaseURL, parallelconfig.SearchMode, parallelconfig.Headers},
 		Plans: []web.Plan{
 			{
-				Title: "Parallel · Free (keyless)",
+				Title: "Free plan",
 				Badge: "free · no key",
-				About: "Objective-tuned search + page extraction on Parallel's anonymous free tier. Rate-limited under burst load.",
+				About: "No key needed, slower under heavy use",
 				Tier:  webconfig.Free,
 			},
 			{
-				Title:  "Parallel · Paid (API key)",
+				Title:  "Paid plan",
 				Badge:  "paid",
-				About:  "Objective-tuned search + parallel page extraction via the Parallel SDK. Unthrottled, guaranteed service.",
+				About:  "Your API key, with no slowdowns",
 				Tier:   webconfig.Paid,
 				Key:    parallelconfig.APIKey,
 				Prompt: "Parallel API key",

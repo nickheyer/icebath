@@ -50,15 +50,15 @@ func parseBlueprint(content string) (*Blueprint, error) {
 	}
 	spec := mapping(raw)
 	if spec == nil {
-		return nil, errors.New("metadata.icebath.blueprint must be a mapping")
+		return nil, errors.New("metadata.icebath.blueprint in its SKILL.md must be a set of named values.")
 	}
 	schedule := strings.TrimSpace(text(spec["schedule"]))
 	if schedule == "" {
-		return nil, errors.New("blueprint.schedule is required and must be non-empty")
+		return nil, errors.New("it has no schedule.")
 	}
 	toolsets, isList := spec["enabled_toolsets"].([]any)
 	if spec["enabled_toolsets"] != nil && !isList {
-		return nil, errors.New("blueprint.enabled_toolsets must be a list when present")
+		return nil, errors.New("its enabled_toolsets must be a list.")
 	}
 	out := &Blueprint{Skill: strings.TrimSpace(text(fm["name"])), Schedule: schedule, Deliver: "origin", NoAgent: config.Truthy(spec["no_agent"])}
 	if v, ok := spec["deliver"]; ok {
@@ -96,7 +96,7 @@ func (s *Scope) Blueprint(name string) (*Blueprint, error) {
 			return nil
 		}
 		if !utf8.Valid(data) {
-			problem = fmt.Errorf("%s is not valid UTF-8", p)
+			problem = fmt.Errorf("%s is not text.", p)
 			return fs.SkipAll
 		}
 		if found, problem = parseBlueprint(string(data)); problem != nil || found != nil {

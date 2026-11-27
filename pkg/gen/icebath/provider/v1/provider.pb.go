@@ -575,7 +575,9 @@ type Spec struct {
 	Providers []string `protobuf:"bytes,12,rep,name=providers,proto3" json:"providers,omitempty"`
 	Aliases   []string `protobuf:"bytes,13,rep,name=aliases,proto3" json:"aliases,omitempty"`
 	// Whether its accounts keep an API key
-	Keyed         bool `protobuf:"varint,14,opt,name=keyed,proto3" json:"keyed,omitempty"`
+	Keyed bool `protobuf:"varint,14,opt,name=keyed,proto3" json:"keyed,omitempty"`
+	// Place among the well-known kinds offered first, 1 at the top; 0 for a kind listed by name with the rest
+	Rank          uint32 `protobuf:"varint,15,opt,name=rank,proto3" json:"rank,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -706,6 +708,13 @@ func (x *Spec) GetKeyed() bool {
 		return x.Keyed
 	}
 	return false
+}
+
+func (x *Spec) GetRank() uint32 {
+	if x != nil {
+		return x.Rank
+	}
+	return 0
 }
 
 type ListRequest struct {
@@ -2732,7 +2741,7 @@ const file_icebath_provider_v1_provider_proto_rawDesc = "" +
 	"\fon_exhausted\x18\x1a \x01(\tR\vonExhausted\x12\x16\n" +
 	"\x06pinned\x18\x1b \x01(\bR\x06pinned\x12\x16\n" +
 	"\x06rotate\x18\x1c \x01(\bR\x06rotate\x12\x18\n" +
-	"\aignored\x18\x1d \x03(\tR\aignored\"\xbd\x03\n" +
+	"\aignored\x18\x1d \x03(\tR\aignored\"\xd1\x03\n" +
 	"\x04Spec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12 \n" +
@@ -2751,7 +2760,8 @@ const file_icebath_provider_v1_provider_proto_rawDesc = "" +
 	"\akey_env\x18\v \x03(\tR\x06keyEnv\x12\x1c\n" +
 	"\tproviders\x18\f \x03(\tR\tproviders\x12\x18\n" +
 	"\aaliases\x18\r \x03(\tR\aaliases\x12\x14\n" +
-	"\x05keyed\x18\x0e \x01(\bR\x05keyed\"'\n" +
+	"\x05keyed\x18\x0e \x01(\bR\x05keyed\x12\x12\n" +
+	"\x04rank\x18\x0f \x01(\rR\x04rank\"'\n" +
 	"\vListRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\"K\n" +
 	"\fListResponse\x12;\n" +

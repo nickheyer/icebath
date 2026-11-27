@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/hooks"
 	shellconfig "github.com/nickheyer/icebath/internal/plugins/defaults/hooks/shellhooks/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // One configured hook with its consent
@@ -91,7 +93,7 @@ func drift(spec Spec, entry map[string]any) (int, string, string, error) {
 	}
 	text, ok := recorded.(string)
 	if !ok {
-		return 0, at, now, fmt.Errorf("recorded hook script time is %s where text was expected", kindOf(recorded))
+		return 0, at, now, fmt.Errorf("The allowlist keeps the time of the hook script as %s, where it should be text.", kindOf(recorded))
 	}
 	switch {
 	case now > text:
@@ -213,7 +215,7 @@ func (r *Registrant) Test(ctx context.Context, cfg *config.Config, event, tool s
 func (r *Registrant) TestOne(ctx context.Context, cfg *config.Config, event, command, tool string) (*Run, error) {
 	spec, ok := r.Find(cfg, event, command)
 	if !ok {
-		return nil, &Refusal{Message: "no such hook: " + event + " " + command}
+		return nil, &Refusal{Message: "There is no hook " + command + " on " + event + "."}
 	}
 	return r.once(ctx, cfg, spec, Sample(event, tool))
 }
@@ -276,13 +278,13 @@ func (r *Registrant) Add(cfg *config.Config, event, command, matcher string, tim
 	point, known := hooks.PointOf(event)
 	switch {
 	case !known || point.NoShell:
-		return &Refusal{Message: "unknown hook event: " + event}
+		return &Refusal{Message: "icebath has no hook event “" + event + "”."}
 	case command == "":
-		return &Refusal{Message: "a hook needs a command"}
+		return &Refusal{Message: "A hook needs a command."}
 	case matcher != "" && !point.Tool:
-		return &Refusal{Message: "only hooks before and after a tool call may name tools"}
+		return &Refusal{Message: "Only hooks that run before or after a tool call can name tools."}
 	case timeout < 0 || timeout > MaxTimeout:
-		return &Refusal{Message: fmt.Sprintf("a hook may take at most %d seconds", MaxTimeout)}
+		return &Refusal{Message: "A hook can take at most " + strs.Span(MaxTimeout*time.Second) + "."}
 	}
 	entry := map[string]any{"command": command}
 	if matcher != "" {

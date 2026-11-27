@@ -85,7 +85,7 @@ func (s *service) Add(_ context.Context, request *vaultv1.AddRequest) (*vaultv1.
 	if err != nil {
 		return nil, refusal(err)
 	}
-	return &vaultv1.AddResponse{Item: item(vault.Listed{Item: added, Source: "Icebath vault", Local: true})}, nil
+	return &vaultv1.AddResponse{Item: item(vault.Listed{Item: added, Source: vault.OwnTitle, Local: true})}, nil
 }
 
 func (s *service) Remove(_ context.Context, request *vaultv1.RemoveRequest) (*vaultv1.RemoveResponse, error) {

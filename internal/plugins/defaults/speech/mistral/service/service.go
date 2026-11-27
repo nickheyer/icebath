@@ -28,7 +28,7 @@ func Register(registry *speech.Registry) {
 	setup := speech.Setup{Keys: []string{config.KeyEnv}, Link: config.Link, Badge: "paid"}
 	registry.Register(speech.Services{
 		Speakers: []speech.Voice{{
-			Name: config.Name, Title: "Mistral (Voxtral TTS)", About: "Multilingual, native Opus", Label: "Mistral Voxtral TTS",
+			Name: config.Name, Title: "Mistral Voxtral TTS", About: "Voices in many languages, needs a Mistral API key", Label: "Mistral Voxtral TTS",
 			Ready:      func(job *speech.Job) bool { return key(job) != "" },
 			Limit:      func(*speech.Job) int { return config.DefaultLimit },
 			Synthesize: synthesize,
@@ -36,11 +36,11 @@ func Register(registry *speech.Registry) {
 			Setup:      setup,
 		}},
 		Recognizing: []speech.Recognizer{{
-			Name: config.Name, Title: "Mistral Voxtral", About: "voxtral-mini-latest — multilingual", Cloud: true, Rank: 5,
+			Name: config.Name, Title: "Mistral Voxtral", About: "Speech to text in many languages, needs a Mistral API key", Cloud: true, Rank: 5,
 			Detected: "Mistral Voxtral Transcribe API", Warning: "STT provider 'mistral' configured but " + config.KeyEnv + " not set",
 			Missing: func(_ context.Context, job *speech.Job) string {
 				if key(job) == "" {
-					return config.KeyEnv + " not set"
+					return "Mistral needs an API key. Set " + config.KeyEnv + " in your keys file."
 				}
 				return ""
 			},

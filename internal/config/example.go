@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"strings"
 
@@ -9,14 +10,14 @@ import (
 )
 
 // Text a config.yaml of one scope is made with when there is none to edit: every setting of the scope a person changes, commented out at
-// its default under the titles of its section, with what it does, the values it takes, what unset means, its unit and the variables that
-// override it
+// its default under the titles of its section, in the order the settings screen lists them, with what it does, the values it takes, what
+// an empty or zero value means, its bounds, its unit and the variables that override it
 func (c *Config) Example(global bool) ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteString("# icebath settings, every one at its default.\n")
-	b.WriteString("# Copy a setting into config.yaml without its leading \"# \", change it in the terminal UI with\n")
+	b.WriteString("# To change one, copy it into config.yaml without its leading \"# \", change it in the app with\n")
 	b.WriteString("# /settings, or run: icebath config set <key> <value>\n\n")
-	sections := c.Sections()
+	sections := Listed(c.Sections())
 	titles := map[string]Section{}
 	for _, section := range sections {
 		titles[section.Key] = section
@@ -68,16 +69,20 @@ func sentence(text string) string {
 	return text + "."
 }
 
-// Lines of what a setting does, as the example of a config.yaml says it above the setting
+// Lines of what a setting does, as the example of a config.yaml says it above the setting: what the settings screen says under it and
+// under the field its value is typed into
 func (s Setting) described() []string {
 	lines := []string{s.Title}
 	if s.About != "" {
 		lines[0] += ": " + sentence(s.About)
 	}
+	if s.Help != "" {
+		lines = append(lines, s.Help)
+	}
 	if s.Options != nil && (s.Kind() == Choice || s.Kind() == List) {
 		var values []string
 		for _, option := range s.Options() {
-			values = append(values, option.Value)
+			values = append(values, cmp.Or(option.Value, `""`))
 		}
 		lead := "One of: "
 		if s.Kind() == List {
@@ -87,11 +92,21 @@ func (s Setting) described() []string {
 			lines = append(lines, lead+strings.Join(values, ", ")+".")
 		}
 	}
-	if s.Kind() == Duration {
+	if s.Zero != "" {
+		zero, _ := yaml.Marshal(s.Zeroed())
+		lines = append(lines, strings.TrimSpace(string(zero))+" means: "+s.Zero+".")
+	}
+	if bounds := s.Bounds(); bounds != "" {
+		lines = append(lines, bounds+".")
+	}
+	switch {
+	case s.Kind() == Duration:
 		lines = append(lines, "In "+s.UnitName()+", or a length such as 30s or 5m.")
 		if s.Null != "" {
-			lines = append(lines, "Unset: "+s.Null+".")
+			lines = append(lines, "Left out means: "+capital(s.Null, NotSet)+".")
 		}
+	case s.Kind() == Number && Counting(s.Counts) != "":
+		lines = append(lines, Counting(s.Counts))
 	}
 	if len(s.Env) > 0 {
 		lines = append(lines, "The "+strings.Join(s.Env, " or ")+" environment variable overrides it.")

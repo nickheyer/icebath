@@ -12,7 +12,7 @@ func (a *Agent) Pinnable(settings *config.Config, name string) string {
 	if _, ok := a.provider(settings, name); ok {
 		return ""
 	}
-	return fmt.Sprintf("the profile has no provider named %s and no plugin sets one up; add it in /providers, then pick the model with /model", name)
+	return fmt.Sprintf("The model was not set, because the profile has no provider named %s. Add it in /providers, then pick the model with /model.", name)
 }
 
 // A reply being written on the profile holds its folder in place until it ends
@@ -28,7 +28,7 @@ func (a *Agent) Holds(profile string) string {
 		writing := r.profile == profile && r.busy
 		r.mu.Unlock()
 		if writing {
-			return fmt.Sprintf("A reply is being written on profile %s. Wait for it to finish, or stop it, before renaming or deleting the profile.", profile)
+			return fmt.Sprintf("A reply is running on the profile %s. Wait for it to finish, or stop it, before you rename or delete the profile.", profile)
 		}
 	}
 	return ""

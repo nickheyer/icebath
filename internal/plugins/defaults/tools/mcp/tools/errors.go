@@ -51,22 +51,25 @@ func missing(err error) string {
 
 var nodeBins = map[string]bool{"npx": true, "npm": true, "node": true}
 
+// End of the sentence a failure to find a server's program says, which the next step it offers looks for
+const notFound = "was not found on this computer"
+
 // Short message of a failed connect the person can act on: a missing command, a native addon of another Node, else the text of the failure
 func describe(err error) string {
 	if abi, ok := errors.AsType[*abiError](err); ok {
 		return mcp.Redact(abi.Error())
 	}
 	if name := missing(err); name != "" {
-		message := fmt.Sprintf("missing executable '%s'", name)
+		message := fmt.Sprintf("The program “%s” %s.", name, notFound)
 		if nodeBins[filepath.Base(name)] {
-			message += " (ensure Node.js is installed and PATH includes its bin directory, or set the server's command to an absolute path and include " +
-				"that directory in its env PATH)"
+			message += " Install Node.js and put its folder on your PATH, or give the full path of the program as the server's command and add its " +
+				"folder to the PATH among the server's variables."
 		}
 		return mcp.Redact(message)
 	}
 	text := strings.TrimSpace(err.Error())
 	if text == "" {
-		text = "(empty error message)"
+		text = "It failed without saying why."
 	}
 	return mcp.Redact(text)
 }
@@ -92,38 +95,35 @@ func (p *pool) abiOr(server, stderr string, err error) error {
 		module = cmp.Or(m[1], m[2])
 	}
 	pm := p.m.helpers.Packages
+	add := "A native add-on of this server, " + cmp.Or(module, "named in logs/mcp-stderr.log") + ", "
 	if missing, merr := pm.Missing(packages.NPM); merr == nil && missing == "" {
 		node, _ := pm.Installed(packages.Node, false)
 		npm, _ := pm.Installed(packages.NPM, false)
-		ours := "Icebath's Node"
+		ours := "the Node.js of icebath"
 		if node != nil && node.Version != "" {
-			ours += " " + node.Version
+			ours = "version " + node.Version + " of the Node.js of icebath"
 		}
-		built := "it does not load under " + ours
+		head := add + "does not load under " + ours + ", which runs the MCP servers."
 		if v := abiVersions.FindStringSubmatch(stderr); v != nil {
-			built = fmt.Sprintf("NODE_MODULE_VERSION %s; %s needs %s", v[1], ours, v[2])
+			head = fmt.Sprintf("%swas built for Node.js module version %s, but %s, which runs the MCP servers, needs %s.", add, v[1], ours, v[2])
 		}
-		head := fmt.Sprintf("native addon built for a different Node.js (%s): %s. Icebath runs MCP servers on its own Node; rebuild the server under it",
-			built, cmp.Or(module, "see logs/mcp-stderr.log"))
 		if node == nil || node.Binary == "" || npm == nil || npm.Binary == "" {
-			return &abiError{msg: fmt.Sprintf("%s: install Icebath's Node with `icebath pm install npm`, then run `icebath mcp test %s`", head, server)}
+			return &abiError{msg: fmt.Sprintf("%s Install the Node.js of icebath with icebath pm install npm, then run icebath mcp test %s.", head, server)}
 		}
 		root, pkg := packageOf(module)
-		return &abiError{msg: head + ": " + rebuild(root, pkg, node.Binary, npm.Binary)}
+		return &abiError{msg: head + " To rebuild it under that Node.js, " + rebuild(root, pkg, node.Binary, npm.Binary) + "."}
 	}
-	built := "it does not load under the Node.js on PATH"
+	head := add + "does not load under the Node.js on your PATH."
 	if v := abiVersions.FindStringSubmatch(stderr); v != nil {
-		built = fmt.Sprintf("NODE_MODULE_VERSION %s; the Node.js on PATH needs %s", v[1], v[2])
+		head = fmt.Sprintf("%swas built for Node.js module version %s, but the Node.js on your PATH needs %s.", add, v[1], v[2])
 	}
-	head := fmt.Sprintf("native addon built for a different Node.js (%s): %s. Rebuild the server under the Node.js it runs on",
-		built, cmp.Or(module, "see logs/mcp-stderr.log"))
 	node, nodeErr := exec.LookPath("node")
 	npm, npmErr := exec.LookPath("npm")
 	if nodeErr != nil || npmErr != nil {
-		return &abiError{msg: fmt.Sprintf("%s: install Node.js and npm, then run `icebath mcp test %s`", head, server)}
+		return &abiError{msg: fmt.Sprintf("%s Install Node.js and npm, then run icebath mcp test %s.", head, server)}
 	}
 	root, pkg := packageOf(module)
-	return &abiError{msg: head + ": " + rebuild(root, pkg, node, npm)}
+	return &abiError{msg: head + " To rebuild it under that Node.js, " + rebuild(root, pkg, node, npm) + "."}
 }
 
 // Package folder and name a module path sits in under node_modules, empty when it sits in none
@@ -157,14 +157,14 @@ func rebuild(root, pkg, node, npm string) string {
 		command = fmt.Sprintf("$env:Path = %s + $env:Path; & %s rebuild%s", quote(filepath.Dir(node)+";"), quote(npm), target)
 	}
 	if root == "" {
-		return "in the server's package directory run " + command
+		return "run " + command + " in the folder of the server's package"
 	}
 	if filepath.Base(filepath.Dir(root)) != "_npx" {
-		return command
+		return "run " + command
 	}
 	remove := "rm -rf " + quote(root)
 	if runtime.GOOS == "windows" {
 		remove = "Remove-Item -Recurse -Force " + quote(root)
 	}
-	return remove + " (Icebath reinstalls it on the next start), or " + command
+	return "run " + remove + " and icebath installs it again on the next start, or run " + command
 }

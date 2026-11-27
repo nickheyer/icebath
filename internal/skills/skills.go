@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/internal/config"
@@ -196,12 +197,17 @@ func New(cfg *config.Config, toolset *tools.Registry, pm *packages.Packages, poi
 		scope := s.Scope(cfg, "")
 		var options []config.Option
 		for _, entry := range scope.Loadable(true) {
-			options = append(options, config.Option{Value: entry.Load, Title: entry.Load, About: entry.Description})
+			options = append(options, config.Option{Value: entry.Load, Title: entry.Load, About: phrase(entry.Description)})
 		}
 		for _, p := range scope.Plugins() {
-			options = append(options, config.Option{Value: p.Qualified(), Title: p.Qualified(), About: p.Description})
+			options = append(options, config.Option{Value: p.Qualified(), Title: p.Qualified(), About: phrase(p.Description)})
 		}
 		return options
 	})
 	return s
+}
+
+// Description a skill's author wrote as a choice shows it: whole, one line, without the period that ends it
+func phrase(description string) string {
+	return strings.TrimSuffix(strings.Join(strings.Fields(description), " "), ".")
 }

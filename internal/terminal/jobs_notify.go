@@ -215,37 +215,31 @@ func shortCommand(command string) string {
 // Short title of one or more completions, as the user sees them
 func CompletionTitle(jobs []*Job) string {
 	if len(jobs) != 1 {
-		return fmt.Sprintf("%d Background Processes Finished", len(jobs))
+		return strs.Count(len(jobs), "background process") + " finished"
 	}
 	j := jobs[0]
 	j.mu.Lock()
 	reason, code := j.reason, j.code
 	j.mu.Unlock()
-	exit := "?"
-	if code != nil {
-		exit = strconv.Itoa(*code)
-	}
 	var outcome string
 	switch {
 	case reason == "killed":
-		outcome = "Terminated"
+		outcome = "was stopped"
 	case reason == "lost":
-		outcome = "Lost"
+		outcome = "was lost"
 	case reason == "failed_start":
-		outcome = "Failed to Start"
-	case exit == "0":
-		outcome = "Finished"
+		outcome = "could not start"
+	case code != nil && *code == 0:
+		outcome = "finished"
+	case reason == "exited" && code != nil:
+		outcome = "failed with exit code " + strconv.Itoa(*code)
 	default:
-		outcome = "Failed"
-	}
-	detail := ""
-	if reason == "exited" && exit != "0" {
-		detail = " (exit " + exit + ")"
+		outcome = "failed"
 	}
 	if command := shortCommand(RedactCommand(j.Config, j.Command, false)); command != "" {
-		return fmt.Sprintf("Background Process %s%s: %s", outcome, detail, command)
+		return "Background process " + outcome + ": " + command
 	}
-	return fmt.Sprintf("Background Process %s%s", outcome, detail)
+	return "Background process " + outcome
 }
 
 // How a completion's status reads
@@ -363,7 +357,7 @@ func (r *Jobs) beat(j *Job, now time.Time) {
 	age := Elapsed(now.Sub(j.StartedAt))
 	text := fmt.Sprintf("[Background process %s heartbeat #%d — still running after %s (next in %ds when there is new output; you will also be told "+
 		"when it exits).\nCommand: %s\nOutput since last heartbeat:\n%s]", j.ID, seq, age, interval, RedactCommand(j.Config, j.Command, false), output)
-	title := "Background Process Output after " + age
+	title := "Background process output after " + strs.Span(now.Sub(j.StartedAt).Truncate(time.Second))
 	if command := shortCommand(RedactCommand(j.Config, j.Command, false)); command != "" {
 		title += ": " + command
 	}
@@ -458,7 +452,7 @@ func (r *Jobs) matchPatterns(j *Job, text string) {
 		if suppressed > 0 {
 			text += fmt.Sprintf("\n(%d earlier matches were suppressed by rate limit)", suppressed)
 		}
-		title := fmt.Sprintf("Background Process Matched %q", pattern)
+		title := "Background process printed “" + pattern + "”"
 		if command := shortCommand(RedactCommand(j.Config, j.Command, false)); command != "" {
 			title += ": " + command
 		}

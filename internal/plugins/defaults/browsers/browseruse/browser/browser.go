@@ -24,7 +24,7 @@ const (
 
 func Register(registry *browser.Registry) {
 	registry.Register(browser.Declared{Services: []browser.Provider{{
-		Name: name, Title: title, About: "Cloud browser by Browser Use.",
+		Name: name, Title: title, About: "Cloud browsers run by Browser Use",
 		Keys:      []browser.Key{{Env: buconfig.APIKeyEnv, Prompt: "Browser Use API key", URL: "https://browser-use.com"}},
 		Detect:    1,
 		Available: func(cfg *config.Config) bool { return key(cfg) != "" },

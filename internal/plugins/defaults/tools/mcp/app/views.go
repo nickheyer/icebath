@@ -14,8 +14,8 @@ import (
 // Name of the tool that connects MCP servers, as the engine registers it
 const manageTool = "manage_connections"
 
-// Words a settled operation's head is shown by
-var settledWords = map[string]string{"all_resolved": "done", "continue": "continued", "deadline": "timed out", "interrupt": "interrupted"}
+// Words a settled operation's head ends with, by how it settled
+var settledWords = map[string]string{"continue": "the agent went on", "deadline": "time ran out", "interrupt": "it was stopped"}
 
 // manage_connections shows its action and servers on its line, and each server's outcome under it
 func (screens) Views() []toolsapp.View {
@@ -44,7 +44,7 @@ func manageLine(call toolsapp.Call) string {
 			names = append(names, name)
 		}
 	}
-	return strings.TrimSpace(args.Action + " " + strings.Join(names, ", "))
+	return strings.TrimSpace(cmp.Or(verbs[args.Action], args.Action) + " " + strings.Join(names, ", "))
 }
 
 type manageOutcome struct {
@@ -67,7 +67,7 @@ func manageResult(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 		return nil
 	}
 	if outcome.Error != "" {
-		return &toolsapp.Shown{Head: "refused", Rows: []string{render.Warm(outcome.Error, look)}, Open: true}
+		return &toolsapp.Shown{Head: "Refused", Rows: []string{render.Warm(outcome.Error, look)}, Open: true}
 	}
 	if len(outcome.Targets) == 0 {
 		return nil
@@ -103,8 +103,8 @@ func manageResult(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 		}
 	}
 	shown.Head = fmt.Sprintf("%d of %d connected", connected, len(outcome.Targets))
-	if word := settledWords[outcome.Settled]; word != "" && outcome.Settled != "all_resolved" {
-		shown.Head += ", " + word
+	if word := settledWords[outcome.Settled]; word != "" {
+		shown.Head += ", then " + word
 	}
 	return shown
 }

@@ -23,19 +23,20 @@ const (
 )
 
 var actions = []keys.Action{
-	{ID: "mcp.toggle", Context: serversContext, Label: "on/off", Doc: "turn the selected MCP server on or off", Default: []string{"t"}},
-	{ID: "mcp.test", Context: serversContext, Label: "test", Doc: "connect to the MCP server and count its tools", Default: []string{"T"}},
-	{ID: "mcp.signin", Context: serversContext, Label: "sign in", Doc: "sign in to the MCP server in the browser of this computer", Default: []string{"s"}},
-	{ID: "mcp.signin.open", Context: signinContext, Label: "open", Doc: "open the sign in link in the browser of this computer", Default: []string{"o"}},
-	{ID: "mcp.signin.copy", Context: signinContext, Label: "copy", Doc: "copy the sign in link", Default: []string{"c"}},
-	{ID: "mcp.signin.paste", Context: signinContext, Label: "paste", Doc: "paste the address the browser ended on, when it could not reach icebath", Default: []string{"p"}},
-	{ID: "mcp.connection.open", Context: connectionContext, Label: "open", Doc: "open the connection's link in the browser of this computer", Default: []string{"o"}},
-	{ID: "mcp.connection.wake", Context: connectionContext, Label: "check now", Doc: "look at the connection again at once", Default: []string{"w"}},
-	{ID: "mcp.connection.copy", Context: connectionContext, Label: "copy", Doc: "copy the connection's link", Default: []string{"c"}},
-	{ID: "mcp.connection.paste", Context: connectionContext, Label: "paste", Doc: "paste the address the browser ended on, when it could not reach icebath", Default: []string{"p"}},
-	{ID: "mcp.connection.retry", Context: connectionContext, Label: "try again", Doc: "run the failed connection again", Default: []string{"r"}},
-	{ID: "mcp.connection.skip", Context: connectionContext, Label: "skip", Doc: "go on without this server", Default: []string{"x"}},
-	{ID: "mcp.connection.continue", Context: connectionContext, Label: "continue", Doc: "let the agent go on with the servers as they stand", Default: []string{"enter"}},
+	{ID: "mcp.toggle", Context: serversContext, Label: "turn on/off", Doc: "Turn the highlighted MCP server on or off", Default: []string{"t"}},
+	{ID: "mcp.test", Context: serversContext, Label: "test", Doc: "Connect to the MCP server and count its tools", Default: []string{"T"}},
+	{ID: "mcp.signin", Context: serversContext, Label: "sign in", Doc: "Sign in to the MCP server in the browser on this computer", Default: []string{"s"}},
+	{ID: "mcp.reload", Context: serversContext, Label: "connect again", Doc: "Connect every MCP server again, so open sessions get your changes", Default: []string{"r"}},
+	{ID: "mcp.signin.open", Context: signinContext, Label: "open link", Doc: "Open the sign-in link in the browser on this computer", Default: []string{"o"}},
+	{ID: "mcp.signin.copy", Context: signinContext, Label: "copy link", Doc: "Copy the sign-in link", Default: []string{"c"}},
+	{ID: "mcp.signin.paste", Context: signinContext, Label: "paste address", Doc: "Paste the address the browser ended on, if it could not reach icebath", Default: []string{"p"}},
+	{ID: "mcp.connection.open", Context: connectionContext, Label: "open link", Doc: "Open the connection's link in the browser on this computer", Default: []string{"o"}},
+	{ID: "mcp.connection.wake", Context: connectionContext, Label: "check now", Doc: "Check the connection again now", Default: []string{"w"}},
+	{ID: "mcp.connection.copy", Context: connectionContext, Label: "copy link", Doc: "Copy the connection's link", Default: []string{"c"}},
+	{ID: "mcp.connection.paste", Context: connectionContext, Label: "paste address", Doc: "Paste the address the browser ended on, if it could not reach icebath", Default: []string{"p"}},
+	{ID: "mcp.connection.retry", Context: connectionContext, Label: "try again", Doc: "Try the failed connection again", Default: []string{"r"}},
+	{ID: "mcp.connection.skip", Context: connectionContext, Label: "skip", Doc: "Go on without this server", Default: []string{"x"}},
+	{ID: "mcp.connection.continue", Context: connectionContext, Label: "continue", Doc: "Let the agent go on with the servers it has now", Default: []string{"enter"}},
 }
 
 type screens struct{}
@@ -51,8 +52,10 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 	return []tui.Screen{
 		{
 			ID:      Screen,
+			Group:   tui.GroupAbilities,
+			Order:   30,
 			Title:   "MCP servers",
-			Short:   "Add, test, sign in to and pick the tools of MCP servers",
+			Short:   "Add MCP servers and choose their tools",
 			Slash:   []string{"mcp"},
 			Usage:   "[@profile] [add|<server>]",
 			Actions: actions,
@@ -73,8 +76,10 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 		},
 		{
 			ID:    Screen + ".connect",
+			Group: tui.GroupAbilities,
+			Order: 40,
 			Title: "MCP connections",
-			Short: "Show the connection cards the agent waits on",
+			Short: "Show the MCP connections the agent waits on",
 			Slash: []string{"connections"},
 			Ready: func(*tui.Kit) bool { return watcher.kit != nil },
 			Open:  func(*tui.Kit, string) tea.Cmd { return watcher.reopen() },

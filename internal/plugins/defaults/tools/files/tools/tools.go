@@ -27,6 +27,9 @@ import (
 
 const toolset = "file"
 
+// Heading the Tools screen lists the file tools under
+const group = "Files"
+
 // Tool names
 const (
 	ReadFile    = "read_file"
@@ -110,13 +113,13 @@ func (r *registrant) available(env *tools.Env) bool { return r.terminal.Check(en
 
 func (r *registrant) Tools() []tools.Def {
 	return []tools.Def{
-		{Name: ReadFile, Toolset: toolset, Title: "Read", Icon: tools.IconRead, Subject: "path", Schema: r.readSchema(nil), Dynamic: r.readSchema,
+		{Name: ReadFile, Toolset: toolset, Title: "Read", About: "Read a file, including PDFs and office documents", Group: group, Icon: tools.IconRead, Subject: "path", Schema: r.readSchema(nil), Dynamic: r.readSchema,
 			Handler: r.read, Check: r.available, MaxResultChars: 100_000, Effect: tools.ReadOnly, Paths: paths(false)},
-		{Name: WriteFile, Toolset: toolset, Title: "Write", Icon: tools.IconWrite, Subject: "path", Risks: []string{sshConfigRisk}, Schema: writeSchema,
+		{Name: WriteFile, Toolset: toolset, Title: "Write", About: "Create a file, or replace everything in one", Group: group, Icon: tools.IconWrite, Subject: "path", Risks: []string{sshConfigRisk}, Schema: writeSchema,
 			Handler: r.write, Check: r.available, MaxResultChars: 100_000, Effect: tools.Mutates, Paths: paths(true)},
-		{Name: Patch, Toolset: toolset, Title: "Edit", Icon: tools.IconEdit, Subject: "path", Risks: []string{sshConfigRisk}, Schema: patchSchema(false),
+		{Name: Patch, Toolset: toolset, Title: "Edit", About: "Change part of a file, or of several files at once", Group: group, Icon: tools.IconEdit, Subject: "path", Risks: []string{sshConfigRisk}, Schema: patchSchema(false),
 			Dynamic: r.patchSchema, Handler: r.patch, Check: r.available, MaxResultChars: 100_000, Effect: tools.Mutates, Paths: paths(true)},
-		{Name: SearchFiles, Toolset: toolset, Title: "Search", Icon: tools.IconSearch, Subject: "pattern", Schema: searchSchema, Handler: r.search,
+		{Name: SearchFiles, Toolset: toolset, Title: "Search", About: "Search inside files, or find files by their name", Group: group, Icon: tools.IconSearch, Subject: "pattern", Schema: searchSchema, Handler: r.search,
 			Check: r.available, MaxResultChars: 100_000, Effect: tools.ReadOnly, Paths: paths(false)},
 	}
 }

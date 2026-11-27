@@ -23,10 +23,12 @@ func serve(service mcpv1connect.McpServiceClient) *cobra.Command {
 	var verbose, tools, acceptHooks bool
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Serve icebath to an MCP client over stdio",
-		Long: "Serve icebath to an MCP client over stdio: its messaging conversations, events and approvals, and with --tools its web, browser, " +
-			"vision, image generation, skills and speech tools under this profile's credentials.",
-		Args: cobra.NoArgs,
+		Short: "Let another app use icebath as an MCP server",
+		Long: "Runs icebath as an MCP server on standard input and output, for an app that speaks MCP. The app can read and send messages in " +
+			"your chat apps, follow events and answer approvals. With --tools, the app can also use the agent's tools for the web, the browser, " +
+			"images, skills and speech, with this profile's API keys. The app never gets the terminal, file or subagent tools.",
+		Example: "  icebath mcp serve\n  icebath mcp serve --tools",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			level := slog.LevelWarn
 			if verbose {
@@ -84,9 +86,8 @@ func serve(service mcpv1connect.McpServiceClient) *cobra.Command {
 		},
 	}
 	flags := cmd.Flags()
-	flags.BoolVarP(&verbose, "verbose", "v", false, "log in detail on stderr")
-	flags.BoolVar(&tools, "tools", false, "also expose icebath's web, browser, vision, image generation, skills and speech tools to the MCP client, "+
-		"under this profile's credentials (off by default; never terminal, file or delegation tools)")
-	flags.BoolVar(&acceptHooks, "accept-hooks", false, "with --tools, run the profile's shell hooks without asking for consent on first use")
+	flags.BoolVarP(&verbose, "verbose", "v", false, "Log in detail on standard error")
+	flags.BoolVar(&tools, "tools", false, "Also let the app use the agent's web, browser, image, skills and speech tools")
+	flags.BoolVar(&acceptHooks, "accept-hooks", false, "With --tools, run the hooks of this profile without asking first")
 	return cmd
 }

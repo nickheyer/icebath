@@ -80,7 +80,7 @@ func (s *store) Rekey(ctx context.Context, old, renamed string) error {
 		err := tx.QueryRowContext(ctx, `SELECT a.title FROM sessions a JOIN sessions b ON b.profile = ? AND b.title = a.title WHERE a.profile = ? AND
 			a.title IS NOT NULL LIMIT 1`, renamed, old).Scan(&title)
 		if err == nil {
-			return fmt.Errorf("profile %s already has a session titled %q that %s's would collide with", renamed, title, old)
+			return fmt.Errorf("the profile %s already has a session titled %q, the same as one of %s", renamed, title, old)
 		}
 		if err != sql.ErrNoRows {
 			return err
@@ -90,7 +90,7 @@ func (s *store) Rekey(ctx context.Context, old, renamed string) error {
 			AND b.session_key = ? || substr(a.session_key, ?) WHERE substr(a.session_key, 1, ?) = ? LIMIT 1`,
 			newNS, len(oldNS)+1, newNS, len(oldNS)+1, len(oldNS), oldNS).Scan(&scope, &target)
 		if err == nil {
-			return fmt.Errorf("profile routing collision in scope %q: %q", scope, target)
+			return fmt.Errorf("both profiles hold the route %q in %q", target, scope)
 		}
 		if err != sql.ErrNoRows {
 			return err

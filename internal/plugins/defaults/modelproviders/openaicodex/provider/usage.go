@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/internal/models"
 	codexmodels "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/openaicodex/models"
 	"github.com/nickheyer/icebath/internal/provider"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Share of a window at which it is spent
@@ -69,14 +71,14 @@ func accountUsage(ctx context.Context, route provider.Route) (*provider.AccountU
 	}
 	var details []string
 	if count := banked(payload); count > 0 {
-		details = append(details, fmt.Sprintf("You have %d reset%s banked - use /usage reset to activate", count, plural(count)))
+		details = append(details, fmt.Sprintf("You have %s banked. Type /usage reset to spend one.", strs.Count(count, "reset")))
 	}
 	credits, _ := payload["credits"].(map[string]any)
 	if has, _ := credits["has_credits"].(bool); has {
 		if balance, ok := credits["balance"].(float64); ok {
-			details = append(details, fmt.Sprintf("Credits balance: $%.2f", balance))
+			details = append(details, "Credit left: "+money(balance))
 		} else if unlimited, _ := credits["unlimited"].(bool); unlimited {
-			details = append(details, "Credits balance: unlimited")
+			details = append(details, "Credit left: No limit")
 		}
 	}
 	reading := provider.NewAccountUsage(route.Provider, "usage_api", windows, details)
@@ -94,11 +96,10 @@ func banked(payload map[string]any) int {
 	return int(count)
 }
 
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
+// Dollars with two decimals and digits grouped in thousands
+func money(amount float64) string {
+	cents := int64(math.Round(amount * 100))
+	return fmt.Sprintf("$%s.%02d", strs.Thousands(cents/100), cents%100)
 }
 
 // Words of a slug with their first letters raised
@@ -128,7 +129,7 @@ func resetAt(value any) *time.Time {
 func resetUsage(ctx context.Context, route provider.Route, force bool) string {
 	token := strings.TrimSpace(route.APIKey)
 	if token == "" {
-		return "No Codex credentials available. Sign in with your ChatGPT account in /providers."
+		return "No ChatGPT account is signed in. Sign in with your ChatGPT account in /providers."
 	}
 	route, payload, err := renewed(ctx, route, func(route provider.Route) (map[string]any, error) {
 		address, _, _ := backend(route.BaseURL)
@@ -141,7 +142,7 @@ func resetUsage(ctx context.Context, route provider.Route, force bool) string {
 	_, _, consume := backend(route.BaseURL)
 	available := banked(payload)
 	if available <= 0 {
-		return "No banked reset credits on this account — nothing to redeem."
+		return "This account has no banked resets, so there is nothing to spend."
 	}
 	limits, _ := payload["rate_limit"].(map[string]any)
 	busiest, known := 0.0, false
@@ -152,12 +153,12 @@ func resetUsage(ctx context.Context, route provider.Route, force bool) string {
 		}
 	}
 	if !force && (!known || busiest < exhausted) {
-		note := "your current usage could not be confirmed as exhausted"
+		note := "icebath can't tell that your usage is used up"
 		if known {
-			note = fmt.Sprintf("your busiest window is only %.0f%% used", busiest)
+			note = fmt.Sprintf("your busiest limit is only %.0f%% used", busiest)
 		}
-		return fmt.Sprintf("⚠️ Not redeeming: %s. A banked reset restores your FULL 5h + weekly limits, so spending it now would waste most of it. "+
-			"You have %d reset%s banked. Use `/usage reset --force` to redeem anyway.", note, available, plural(available))
+		return fmt.Sprintf("⚠ No reset was spent, because %s. A reset restores your whole 5-hour and weekly limits, so spending it now would "+
+			"waste most of it.\nYou have %s banked. Type /usage reset --force to spend one anyway.", note, strs.Count(available, "reset"))
 	}
 	request, _ := json.Marshal(map[string]string{"redeem_request_id": uuid.NewString()})
 	consumeHeaders := headers(token)
@@ -173,28 +174,28 @@ func resetUsage(ctx context.Context, route provider.Route, force bool) string {
 		if route.Keeper != nil && route.Keeper.Lifted != nil {
 			route.Keeper.Lifted()
 		}
-		return fmt.Sprintf("✅ Reset redeemed — your usage limits have been reset. %d banked reset%s remaining.", remaining, plural(remaining))
+		return fmt.Sprintf("✓ Your usage limits are reset. You have %s banked.", strs.Count(remaining, "reset"))
 	case "nothing_to_reset":
-		return "Backend reports nothing to reset — your limits aren't exhausted. The credit was NOT spent."
+		return "OpenAI says your limits are not used up, so there was nothing to reset and no reset was spent."
 	case "no_credit":
-		return "Backend reports no available reset credit on this account."
+		return "OpenAI says this account has no banked reset to spend."
 	case "already_redeemed":
-		return "This redemption was already processed — no additional credit was spent."
+		return "OpenAI had already handled this reset, so no other reset was spent."
 	}
 	raw, _ := json.Marshal(body)
-	return "Unexpected response from the Codex backend: " + string(raw)
+	return "OpenAI gave an answer icebath doesn't know: " + string(raw)
 }
 
 // What a failed request to the Codex backend means for the person
 func failure(err error) string {
 	switch status := models.Status(err); {
 	case status == 401 || status == 403:
-		return fmt.Sprintf("Codex backend rejected the request (HTTP %d). Reset credits require ChatGPT-account (OAuth) auth — sign in with your "+
+		return fmt.Sprintf("OpenAI refused the request with HTTP status %d. Resets need a ChatGPT account sign-in, so sign in with your "+
 			"ChatGPT account in /providers.", status)
 	case status != 0:
-		return fmt.Sprintf("Codex backend error (HTTP %d) — try again shortly.", status)
+		return fmt.Sprintf("OpenAI failed with HTTP status %d. Try again shortly.", status)
 	}
-	return "Could not reach the Codex backend: " + err.Error()
+	return "icebath could not reach OpenAI: " + strings.TrimSuffix(err.Error(), ".") + "."
 }
 
 // Answer of a call to the Codex backend, made once more with the sign-in renewed when the backend refused it; the route it ended with

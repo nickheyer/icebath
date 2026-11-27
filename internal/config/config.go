@@ -72,9 +72,12 @@ type Option struct {
 }
 
 type Setting struct {
-	Key     string
-	Title   string
-	About   string
+	Key   string
+	Title string
+	// One sentence saying what it sets
+	About string
+	// Up to two sentences more than About: an example, where its value is found, what follows from it
+	Help    string
 	Default any
 	// Environment variables that set it, the first one set winning over the file
 	Env []string
@@ -84,6 +87,31 @@ type Setting struct {
 	Secret bool
 	// Kept by icebath itself, and left out of the settings a person goes through
 	Internal bool
+	// Changed by few people, and listed behind Advanced on the settings screen
+	Advanced bool
+	// When a change takes hold, said with the setting when it is not at once
+	Apply Apply
+	// Command that changes it as well, without its slash
+	Slash string
+	// What is in effect while it holds its zero value, shown in place of that value, such as No limit: the zero value is 0, empty text, an
+	// empty list or an empty table
+	Zero string
+	// Value Zero speaks of when it is not the zero value of the kind, such as -1
+	ZeroValue any
+	// What a number counts, in the plural, shown after it: tokens, characters, MB. A count of bytes is shown in the largest unit that fits,
+	// a share as a percentage and a number that names a thing digit for digit
+	Counts string
+	// Skill that asks for the value, for a setting a skill declares, said where the setting is explained
+	Skill string
+	// A field of an entry that the entry is nothing without: its form does not save while the field is empty
+	Need bool
+	// What text must start with, one of them, such as https:// for an address; any text when empty
+	Starts []string
+	// Least and most a number may be, no bound when nil; the value Zero speaks of is taken whatever they are
+	Least, Most *float64
+	// What one entry of a table holds, nil for a table whose entries are free. On a list whose default is a list of anything, what one
+	// record of the list holds
+	Entry *Entry
 	// Unit a length of time is kept in, as a number of it: a second when zero
 	Unit time.Duration
 	// Least and most a length of time may be, no bound when nil
@@ -94,17 +122,130 @@ type Setting struct {
 	Null string
 }
 
+// When a change of a setting takes hold
+type Apply int
+
+const (
+	// Nothing is said of it: at once, or not looked into
+	ApplyUnsaid Apply = iota
+	// From the next message sent
+	NextMessage
+	// In the sessions started after it
+	NewSessions
+	// Once icebath is started again
+	Restart
+)
+
+// What a number counts that is not shown as it is counted
+const (
+	// Bytes, shown in the largest unit that fits
+	Bytes = "bytes"
+	// Part of a whole between 0 and 1, shown as a percentage
+	Share = "share"
+	// Nothing: the number names a thing, as a port or a seed does, and is shown digit for digit with no grouping
+	Plain = "plain"
+)
+
+// Bound of a number
+func Num(n float64) *float64 {
+	return &n
+}
+
+// What one entry of a table setting holds, so the settings screen changes it in fields
+type Entry struct {
+	// What one entry is, singular and lower case, such as shortcut or server
+	Noun string
+	// What the name of an entry is called where one is asked for, Name when empty
+	Name string
+	// The names of the entries are names of variables: read in capitals whatever case the file keeps them in, and shown so
+	Capitals bool
+	// Fields of an entry, each keyed by its name inside the entry; an entry that is one value has a single field with an empty key
+	Fields []Setting
+	// The names an entry may have, each with what a person calls it, for a table whose entries are known things such as events: a new
+	// entry is picked from them and every entry shows by its title. Any name when nil
+	Names func() []Option
+}
+
+// Group of the first settings screen a section at the top is listed under
+type Group string
+
+const (
+	GroupModels    Group = "models"
+	GroupSafety    Group = "safety"
+	GroupAbilities Group = "abilities"
+	GroupMedia     Group = "media"
+	GroupVoice     Group = "voice"
+	GroupSessions  Group = "sessions"
+	GroupSecrets   Group = "secrets"
+	GroupApp       Group = "app"
+	// Sections that name no group, such as a plugin's
+	GroupMore Group = ""
+)
+
+// Heading of a group
+type GroupInfo struct {
+	ID    Group
+	Title string
+}
+
+// Groups in the order the first settings screen lists them
+func Groups() []GroupInfo {
+	return []GroupInfo{
+		{GroupModels, "Models"},
+		{GroupSafety, "Safety"},
+		{GroupAbilities, "What the agent can do"},
+		{GroupMedia, "Images and video"},
+		{GroupVoice, "Voice"},
+		{GroupSessions, "Sessions"},
+		{GroupSecrets, "Keys and passwords"},
+		{GroupApp, "This app"},
+		{GroupMore, "More"},
+	}
+}
+
+// Place of a group among the groups, the last place for one that is not known
+func (g Group) place() int {
+	groups := Groups()
+	for i, group := range groups {
+		if group.ID == g {
+			return i
+		}
+	}
+	return len(groups) - 1
+}
+
 type Section struct {
 	// Place of the section in the tree, and so in config.yaml: the key of its parent and one more name, or one name at the top
 	Key string
 	// Section it is listed under, the top when empty
 	Parent string
 	Title  string
-	About  string
+	// Phrase saying what is set there, no period
+	About string
+	// Group of the first settings screen a section at the top is listed under, More when empty
+	Group Group
+	// Place among the sections beside it, lowest first, those of one place by title
+	Order int
 	// Kept once for every profile, in the config.yaml at the top of the config folder rather than in the profile's. Only a section at the
 	// top says so, those under it following it
 	Global   bool
 	Settings []Setting
+}
+
+// Sections in the order the settings screen lists them: those at the top by group, then all by their place beside each other and their
+// title
+func Listed(sections []Section) []Section {
+	listed := slices.Clone(sections)
+	slices.SortStableFunc(listed, func(a, b Section) int {
+		if a.Parent == "" && b.Parent == "" {
+			if byGroup := cmp.Compare(a.Group.place(), b.Group.place()); byGroup != 0 {
+				return byGroup
+			}
+		}
+		return cmp.Or(strings.Compare(a.Parent, b.Parent), cmp.Compare(a.Order, b.Order),
+			strings.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title)))
+	})
+	return listed
 }
 
 func Options(options ...Option) func() []Option {
@@ -117,7 +258,7 @@ func (s Setting) Kind() Kind {
 		return Toggle
 	case int, int64, float64:
 		return Number
-	case []string:
+	case []string, []any:
 		return List
 	case map[string]any:
 		return Table
@@ -152,22 +293,31 @@ func (s Setting) Check(value any) (any, error) {
 		if on, ok := value.(bool); ok {
 			return on, nil
 		}
-		return nil, fmt.Errorf("%s must be true or false", s.Title)
+		return nil, fmt.Errorf("%s takes on or off.", s.Title)
 	case Number:
-		switch number := value.(type) {
+		var number any
+		switch n := value.(type) {
 		case int:
-			return number, nil
+			number = n
 		case int64:
-			return int(number), nil
+			number = int(n)
 		case float64:
 			if _, fraction := s.Default.(float64); fraction {
-				return number, nil
-			}
-			if number == math.Trunc(number) {
-				return int(number), nil
+				number = n
+			} else if n == math.Trunc(n) {
+				number = int(n)
 			}
 		}
-		return nil, fmt.Errorf("%s must be a whole number", s.Title)
+		if number == nil {
+			if _, fraction := s.Default.(float64); fraction {
+				return nil, fmt.Errorf("%s must be a number.", s.Title)
+			}
+			return nil, fmt.Errorf("%s must be a whole number.", s.Title)
+		}
+		if err := s.within(number); err != nil {
+			return nil, err
+		}
+		return number, nil
 	case Text, Choice:
 		var text string
 		switch scalar := value.(type) {
@@ -176,25 +326,37 @@ func (s Setting) Check(value any) (any, error) {
 		case int, int64, float64, bool:
 			text = fmt.Sprint(scalar)
 		default:
-			return nil, fmt.Errorf("%s must be text", s.Title)
+			return nil, fmt.Errorf("%s must be text.", s.Title)
 		}
 		if !s.option(text) {
-			return nil, fmt.Errorf("%s must be one of: %s", s.Title, s.allowed())
+			return nil, fmt.Errorf("%s must be one of: %s.", s.Title, s.allowed())
+		}
+		if err := s.started(text); err != nil {
+			return nil, err
 		}
 		return text, nil
 	case List:
 		items, ok := value.([]any)
 		if !ok {
-			return nil, fmt.Errorf("%s must be a list", s.Title)
+			return nil, fmt.Errorf("%s must be a list.", s.Title)
+		}
+		// A list of records holds groups of named values, kept as they are
+		if _, records := s.Default.([]any); records {
+			for _, item := range items {
+				if _, ok := item.(map[string]any); !ok && s.Entry != nil && len(s.Entry.Fields) > 0 {
+					return nil, fmt.Errorf("Each of the %s must be a set of named values.", strings.ToLower(s.Title))
+				}
+			}
+			return items, nil
 		}
 		list := make([]string, 0, len(items))
 		for _, item := range items {
 			text, ok := item.(string)
 			if !ok {
-				return nil, fmt.Errorf("%s must be a list of text", s.Title)
+				return nil, fmt.Errorf("%s must be a list of text.", s.Title)
 			}
 			if !s.option(text) {
-				return nil, fmt.Errorf("%s can only hold: %s", s.Title, s.allowed())
+				return nil, fmt.Errorf("%s can only hold: %s.", s.Title, s.allowed())
 			}
 			if !slices.Contains(list, text) {
 				list = append(list, text)
@@ -205,7 +367,7 @@ func (s Setting) Check(value any) (any, error) {
 		return s.checkLength(value)
 	}
 	if _, ok := value.(map[string]any); !ok {
-		return nil, fmt.Errorf("%s must be a table", s.Title)
+		return nil, fmt.Errorf("%s must be a set of named values.", s.Title)
 	}
 	return value, nil
 }
@@ -383,7 +545,7 @@ func (c *Config) Backend() (string, error) {
 	case "file", "remote":
 		return name, nil
 	default:
-		return "", fmt.Errorf(`%s=%q is not a config backend this build provides (expected "file" or "remote").`, BackendEnv, name)
+		return "", fmt.Errorf("%s is set to %q, and settings can only be kept in \"file\" or \"remote\".", BackendEnv, name)
 	}
 }
 
@@ -413,7 +575,7 @@ func (c *Config) Of(profile string) (*Config, error) {
 		return c, nil
 	}
 	if !c.Exists(profile) {
-		return nil, fmt.Errorf("No profile is named %s.", profile)
+		return nil, fmt.Errorf("There is no profile named %s. Run `icebath profile list` to see your profiles.", profile)
 	}
 	return c.In(profile), nil
 }
@@ -465,7 +627,7 @@ func (c *Config) Load() error {
 // refused, unless the administrator pins terminal.backend
 func (c *Config) Use(name string) error {
 	if !Named(name) {
-		return fmt.Errorf("%q can't name a profile: use lower case letters, digits, dashes or underscores", name)
+		return fmt.Errorf("%q can't be the name of a profile. Use lower case letters, digits, dashes and underscores.", name)
 	}
 	if _, err := c.In(name).own(); err != nil {
 		return err
@@ -478,9 +640,9 @@ func (c *Config) Use(name string) error {
 	c.mu.Unlock()
 	// Once, as Remote Config first serves the profile in use: an administrator's config.yaml it takes nothing from
 	if path := c.ignoredPins(); path != "" && c.once("ignored", path) {
-		message := "WARNING: " + path + " exists but is IGNORED: ICEBATH_CONFIG_BACKEND=remote takes config and locks only from Remote Config. " +
-			"Remove the file."
-		tell(message, message)
+		message := path + " has no effect. While ICEBATH_CONFIG_BACKEND is remote, settings and locks come only from the remote settings. Remove " +
+			"the file."
+		tell("⚠ "+message, message)
 	}
 	return nil
 }

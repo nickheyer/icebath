@@ -12,6 +12,6 @@ func Register(registry *auxiliary.Registry) {
 }
 
 func (tasks) Tasks() []auxiliary.Task {
-	return []auxiliary.Task{{Name: camofoxconfig.Task, Title: "Camofox browser vision", About: "Screenshot analysis for browser_vision on the Camofox " +
-		"backend", Inherit: "vision", Vision: true}}
+	return []auxiliary.Task{{Name: camofoxconfig.Task, Title: "Camofox browser vision", About: "The model that reads screenshots of the Camofox browser",
+		Order: 70, Inherit: "vision", Vision: true}}
 }

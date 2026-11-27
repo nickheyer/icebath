@@ -34,7 +34,7 @@ func (h *Packages) declined() (map[string]bool, error) {
 		err = json.Unmarshal(data, &doc)
 	}
 	if err != nil {
-		return nil, Failure("defaults", fmt.Sprintf("cannot read %s: %v", path, err), "fix or delete the file, then retry")
+		return nil, Failure("Left-out programs", fmt.Sprintf("The file %s cannot be read: %v", path, err), "Fix or delete the file, then try again.")
 	}
 	out := map[string]bool{}
 	for _, name := range doc.Declined {

@@ -153,7 +153,7 @@ func put(mapping *yaml.Node, key string, value any) error {
 // Changes the fields given of the profile folder's profile.yaml, keeping everything else it holds in its order
 func WriteMeta(dir string, update MetaUpdate) error {
 	if !fsx.IsDir(dir) {
-		return &NotFoundError{fmt.Sprintf("profile directory does not exist: %s", dir)}
+		return &NotFoundError{fmt.Sprintf("The folder of the profile, %s, does not exist.", dir)}
 	}
 	path := filepath.Join(dir, metaFile)
 	mapping := mappingNode(path)

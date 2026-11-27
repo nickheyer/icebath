@@ -19,6 +19,10 @@ message Tool {
   string subject = 7;
   // Turned off in the settings
   bool disabled = 8;
+  // What the tool lets the agent do, in a phrase written for a person; the description is written for the model
+  string about = 9;
+  // Heading the app lists the tool under, the title of its toolset
+  string group = 10;
 }
 
 message ListRequest {}

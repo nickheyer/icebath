@@ -31,10 +31,12 @@ func Register(registry *secrets.Registry) {
 }
 
 func (source) Spec() secrets.Spec {
-	return secrets.Spec{Name: commandconfig.Name, Label: "Command helper", Short: "your helper command", Shape: secrets.Bulk,
+	return secrets.Spec{Name: commandconfig.Name, Label: "Your own command", Short: "your helper command", Shape: secrets.Bulk,
 		Hints: map[secrets.Failure]string{
-			secrets.NotConfigured: "Set Helper command in /settings under Secret stores to a fast, non-interactive helper that prints KEY=VALUE lines.",
-			secrets.Internal:      "Run the helper manually in a shell to see its real error — Icebath discards helper stderr so diagnostics can't leak secret material.",
+			secrets.NotConfigured: "Set Helper command in /settings under Secret stores › Your own command to a quick command that asks nothing and " +
+				"prints NAME=value lines.",
+			secrets.Internal: "Run the command yourself in a shell to see its error. icebath never shows the errors it prints, so no secret can " +
+				"leak that way.",
 		}}
 }
 
@@ -65,11 +67,10 @@ func parse(out string) map[string]string {
 func (source) Fetch(ctx context.Context, f secrets.Fetch) secrets.Result {
 	command := strings.TrimSpace(f.Config.GetString(commandconfig.Command))
 	if command == "" {
-		return secrets.Failed("secrets.command.enabled is true but secrets.command.command is empty.  Set the helper command in /settings under Secret stores.",
-			secrets.NotConfigured)
+		return secrets.Failed("Your own command is on, but no helper command is set.", secrets.NotConfigured)
 	}
 	if runtime.GOOS == "windows" {
-		return secrets.Failed("the 'command' secret source is POSIX-only (needs /bin/sh); skipping on Windows", secrets.NotConfigured)
+		return secrets.Failed("Your own command needs /bin/sh, which Windows does not have, so icebath skipped it.", secrets.NotConfigured)
 	}
 	timeout := helperTimeout
 	if seconds, err := cast.ToFloat64E(f.Config.Get(commandconfig.Helper)); err == nil && seconds > 0 {
@@ -77,11 +78,11 @@ func (source) Fetch(ctx context.Context, f secrets.Fetch) secrets.Result {
 	}
 	out, ok := helper(ctx, command, timeout, f.Env)
 	if !ok {
-		return secrets.Failed("helper command failed (see the log for its exit); no secrets applied", secrets.Internal)
+		return secrets.Failed("Your helper command failed, so it set no variables. The log says how it ended.", secrets.Internal)
 	}
 	found := parse(out)
 	if len(found) == 0 {
-		return secrets.Result{Secrets: map[string]string{}, Warnings: []string{"helper output was not a KEY=VALUE map; nothing to apply"}}
+		return secrets.Result{Secrets: map[string]string{}, Warnings: []string{"Your helper command printed no NAME=value lines, so nothing was set."}}
 	}
 	return secrets.Result{Secrets: found}
 }

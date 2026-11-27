@@ -81,7 +81,7 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
-	return fmt.Sprintf("%s. Status: %s, Error code: %d, Tag: %d", e.Context, e.Status, e.Code, e.Tag)
+	return fmt.Sprintf("%s. The sign-in broker gave the state %s, error code %d and tag %d.", strings.TrimSuffix(e.Context, "."), e.Status, e.Code, e.Tag)
 }
 
 // Library cannot be loaded on this machine, naming the file and the reason
@@ -91,13 +91,15 @@ type LoadError struct {
 }
 
 func (e *LoadError) Error() string {
-	return fmt.Sprintf("msalruntime library %s could not be loaded: %s", e.Path, e.Detail)
+	return fmt.Sprintf("The msalruntime library %s could not be loaded: %s", e.Path, e.Detail)
 }
 
 // MSALRUNTIME_Startup failed, the condition msal answers by turning the broker off
 type StartupError struct{ Err *Error }
 
-func (e *StartupError) Error() string { return "MSALRuntime startup failed: " + e.Err.Error() }
+func (e *StartupError) Error() string {
+	return "The msalruntime library could not start: " + e.Err.Error()
+}
 
 // Native library file Microsoft publishes for this OS and architecture, false where none is published
 func libraryName() (string, bool) {

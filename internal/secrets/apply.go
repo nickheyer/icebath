@@ -146,9 +146,17 @@ func (a *applier) source(spec Spec, result Result, profile string, direct map[st
 			continue
 		}
 		if a.set(&report, spec, override, plain, value) {
-			report.Result.Warnings = append(report.Result.Warnings, fmt.Sprintf("applied profile-scoped %s as %s (active profile %q)", name, plain, profile))
+			report.Result.Warnings = append(report.Result.Warnings, fmt.Sprintf("%s is set from %s, the value for the profile %s.", plain, name, profile))
 		}
 	}
+}
+
+// Name of a store as people read it
+func (a *applier) label(name string) string {
+	if source, ok := a.h.Source(name); ok {
+		return source.Spec().Label
+	}
+	return name
 }
 
 // Sets one variable through the checks every store shares, true when it was set
@@ -163,8 +171,8 @@ func (a *applier) set(report *SourceReport, spec Spec, override bool, name, valu
 	}
 	if owner, taken := a.claimed[name]; taken {
 		report.Claimed = append(report.Claimed, name)
-		a.report.Conflicts = append(a.report.Conflicts, fmt.Sprintf("%s: kept value from %s; %s also supplies it (first source wins — remove one binding or reorder secrets.sources)",
-			name, owner, spec.Name))
+		a.report.Conflicts = append(a.report.Conflicts, fmt.Sprintf("%s and %s both hold %s, and %s comes first, so its value is used. Remove the "+
+			"variable from one store, or change Store order in /settings under Secret stores.", a.label(owner), spec.Label, name, a.label(owner)))
 		return false
 	}
 	existed := a.env[name] != ""

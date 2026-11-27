@@ -3,6 +3,7 @@ package server
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -214,13 +215,13 @@ func (a *Agent) Interrupt(ctx context.Context, session, id string) bool {
 	if c == nil || !a.owns(c, session, a.lineage(ctx, session)) {
 		return false
 	}
-	return c.interrupt("Interrupted via TUI (" + id + ")")
+	return c.interrupt("You stopped subagent " + id + " in the app.")
 }
 
 // Queues guidance for the session's agent, or one subagent of its spawn tree; why it was not queued when it was not
 func (a *Agent) Steer(ctx context.Context, session, id, text string) (bool, string) {
 	if text = strings.TrimSpace(text); text == "" {
-		return false, "Nothing to steer with."
+		return false, "Type a message to send to the agent first."
 	}
 	if id == "" {
 		r, err := a.run(session)
@@ -231,10 +232,10 @@ func (a *Agent) Steer(ctx context.Context, session, id, text string) (bool, stri
 	}
 	c := a.tree.find(id)
 	if c == nil || !a.owns(c, session, a.lineage(ctx, session)) {
-		return false, "Subagent '" + id + "' is no longer running in this conversation's spawn tree."
+		return false, "Subagent " + id + " is no longer running in this session."
 	}
 	if !c.steer(text) {
-		return false, "Subagent '" + id + "' is no longer accepting steering (finishing or already finished)."
+		return false, "Subagent " + id + " is finishing or has finished, so it takes no more messages."
 	}
 	return true, ""
 }
@@ -244,7 +245,7 @@ func (a *Agent) steer(r *run, text string) (bool, string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.busy {
-		return false, "No turn is running, so there is nothing to steer; send the text as a message instead."
+		return false, "No reply is running, so there is nothing to steer. Send the text as a message instead."
 	}
 	r.steering = append(r.steering, text)
 	return true, ""
@@ -330,7 +331,7 @@ func safeName(name string) string {
 // Keeps a finished spawn tree of the session, a tree kept again under its time keeping its one index entry
 func (a *Agent) SaveTree(session string, tree *agentv1.SpawnTree) (string, error) {
 	if len(tree.GetSubagents()) == 0 {
-		return "", connect.NewError(connect.CodeInvalidArgument, "A spawn tree with no subagents was not kept.")
+		return "", connect.NewError(connect.CodeInvalidArgument, "There were no subagents, so nothing was saved.")
 	}
 	r, err := a.run(session)
 	if err != nil {
@@ -352,7 +353,7 @@ func (a *Agent) SaveTree(session string, tree *agentv1.SpawnTree) (string, error
 		return "", err
 	}
 	if err := fsx.Write(path, data, 0o600); err != nil {
-		return "", fmt.Errorf("spawn_tree.save failed: %w", err)
+		return "", errors.New("The subagent tree could not be saved. " + sentence(err.Error()))
 	}
 	if statErr == nil {
 		return path, nil
@@ -433,20 +434,20 @@ func readTree(path string) (*agentv1.SpawnTree, error) {
 func (a *Agent) LoadTree(path string) (*agentv1.SpawnTree, error) {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, "spawn_tree.load failed: "+err.Error())
+		return nil, connect.NewError(connect.CodeNotFound, "The saved subagent tree could not be opened. "+sentence(err.Error()))
 	}
 	profiles, err := filepath.EvalSymlinks(filepath.Dir(a.config.ProfileDir(a.config.Profile())))
 	if err != nil {
-		return nil, connect.NewError(connect.CodePermissionDenied, "path outside spawn-trees root: "+err.Error())
+		return nil, connect.NewError(connect.CodePermissionDenied, "That file is not among the saved subagent trees, so it can't be opened.")
 	}
 	rel, err := filepath.Rel(profiles, resolved)
 	parts := strings.Split(filepath.ToSlash(rel), "/")
 	if err != nil || len(parts) < 3 || parts[0] == ".." || parts[1] != "spawn-trees" {
-		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Sprintf("path outside spawn-trees root: %s is not in the spawn trees of a profile", resolved))
+		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Sprintf("%s is not among the saved subagent trees of any profile, so it can't be opened.", resolved))
 	}
 	tree, err := readTree(resolved)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, "spawn_tree.load failed: "+err.Error())
+		return nil, connect.NewError(connect.CodeInvalidArgument, "The saved subagent tree could not be read. "+sentence(err.Error()))
 	}
 	tree.Path = resolved
 	return tree, nil

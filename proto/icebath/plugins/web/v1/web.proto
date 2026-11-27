@@ -20,6 +20,20 @@ message Plan {
   // What to ask for the key, and where to get one
   string prompt = 6;
   string link = 7;
+  // What a person gives before the plan works
+  Needs needs = 8;
+}
+
+// What a plan asks a person for
+enum Needs {
+  NEEDS_UNSPECIFIED = 0;
+  // Nothing: it answers as it is
+  NEEDS_NOTHING = 1;
+  NEEDS_API_KEY = 2;
+  // The address of a server of the person's own
+  NEEDS_ADDRESS = 3;
+  // A sign-in at a provider
+  NEEDS_SIGN_IN = 4;
 }
 
 message Backend {

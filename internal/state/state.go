@@ -48,7 +48,7 @@ func (s *State) Use(profile string) error {
 	default:
 		defer f.Close()
 		if err := gob.NewDecoder(f).Decode(&read); err != nil {
-			return fmt.Errorf("read state %s: %w", f.Name(), err)
+			return fmt.Errorf("icebath can't read %s, the file where it keeps the server this profile connects to: %w. Delete the file, then run icebath connect again if you used a server.", f.Name(), err)
 		}
 	}
 	s.Backend, s.profile = read.Backend, profile
@@ -78,12 +78,8 @@ func (s *State) Rename(old, renamed string) error {
 
 func (s *State) SetBackend(backend string) error {
 	if backend != "" {
-		u, err := url.Parse(backend)
-		if err != nil {
-			return err
-		}
-		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("%q is not an http or https URL", backend)
+		if u, err := url.Parse(backend); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("%q is not the address of an icebath server. An address starts with http:// or https://, such as http://icebath:PASSWORD@192.168.1.20:7433.", backend)
 		}
 	}
 	s.mu.Lock()
@@ -100,7 +96,7 @@ func (s *State) SetBackend(backend string) error {
 // Called with the lock held
 func (s *State) save() error {
 	if s.profile == "" {
-		return errors.New("state: no profile is in use")
+		return errors.New("No profile is in use, so icebath has nowhere to keep the server address. Run the command again with -p NAME.")
 	}
 	var data bytes.Buffer
 	if err := gob.NewEncoder(&data).Encode(struct{ Backend string }{s.Backend}); err != nil {

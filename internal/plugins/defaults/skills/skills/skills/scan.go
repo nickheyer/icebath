@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/tools"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // One threat pattern or structural problem a scan found
@@ -104,11 +105,11 @@ func demote(id, severity, description, line, owner, suffix string) (string, stri
 	trimmed := strings.TrimLeft(line, " \t")
 	for _, prefix := range commentPrefixes[suffix] {
 		if strings.HasPrefix(trimmed, prefix) {
-			return "low", description + " (in a comment; informational)"
+			return "low", description + ", in a comment, so only for your information"
 		}
 	}
 	if denylistOwner.MatchString(owner) && !actionOnLine.MatchString(line) {
-		return "high", description + " (in a denylist literal; confirm before installing)"
+		return "high", description + ", in a list of things to refuse, so check it before you install"
 	}
 	return severity, description
 }
@@ -311,7 +312,7 @@ var docNotes = map[string]bool{"sudo_usage": true, "bind_all_interfaces": true}
 func communityNote(f Finding) Finding {
 	if (f.Severity == "critical" || f.Severity == "high") && docNotes[f.PatternID] && strings.HasSuffix(strings.ToLower(f.File), ".md") {
 		f.Severity = "medium"
-		f.Description += " (not executed on install; informational)"
+		f.Description += ", which does not run on install, so only for your information"
 	}
 	return f
 }
@@ -426,19 +427,21 @@ func decide(result Result, force bool) (string, string) {
 	}
 	decision, n := rules[index], len(result.Findings)
 	hard := result.Verdict == "dangerous" && (result.Trust == "community" || result.Trust == "trusted")
+	found := strs.Count(n, "finding")
 	switch {
 	case decision == "allow":
-		return "allow", fmt.Sprintf("Allowed (%s source, %s verdict)", result.Trust, result.Verdict)
+		return "allow", fmt.Sprintf("Allowed, because the source has %s trust and the scan says %s.", result.Trust, strings.ToLower(verdictWord(result.Verdict)))
 	case force && !hard:
-		return "allow", fmt.Sprintf("Force-installed despite %s verdict (%d findings)", result.Verdict, n)
+		return "allow", fmt.Sprintf("Installed because you passed --force, though the scan says %s with %s.", strings.ToLower(verdictWord(result.Verdict)), found)
 	case decision == "ask":
-		return "ask", fmt.Sprintf("Requires confirmation (%s source + %s verdict, %d findings)", result.Trust, result.Verdict, n)
+		return "ask", fmt.Sprintf("Needs your yes, because the source has %s trust and the scan says %s with %s.", result.Trust,
+			strings.ToLower(verdictWord(result.Verdict)), found)
 	}
-	blocked := fmt.Sprintf("Blocked (%s source + %s verdict, %d findings). ", result.Trust, result.Verdict, n)
+	blocked := fmt.Sprintf("Blocked, because the source has %s trust and the scan says %s with %s. ", result.Trust, strings.ToLower(verdictWord(result.Verdict)), found)
 	if hard {
-		return "block", blocked + "--force does not override a dangerous verdict."
+		return "block", blocked + "--force can't install a skill the scan calls dangerous."
 	}
-	return "block", blocked + "Use --force to override."
+	return "block", blocked + "Add --force to install it anyway."
 }
 
 var severityOrder = map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -452,19 +455,38 @@ func severityRank(severity string) int {
 
 // The scan as the user reads it: the verdict, every finding from the worst, and what it means for an install
 func report(result Result) string {
-	lines := []string{fmt.Sprintf("Scan: %s (%s/%s)  Verdict: %s", result.Skill, result.Source, result.Trust, strings.ToUpper(result.Verdict))}
+	lines := []string{fmt.Sprintf("Scan of %s, from %s, a source with %s trust: %s.", result.Skill, result.Source, result.Trust, verdictWord(result.Verdict))}
 	if len(result.Findings) > 0 {
 		sorted := slices.Clone(result.Findings)
 		slices.SortStableFunc(sorted, func(a, b Finding) int { return severityRank(a.Severity) - severityRank(b.Severity) })
 		for _, f := range sorted {
-			lines = append(lines, fmt.Sprintf("  %-8s %-14s %-30s \"%s\"", strings.ToUpper(f.Severity), f.Category, fmt.Sprintf("%s:%d", f.File, f.Line),
-				clipRunes(f.Match, 60)))
+			lines = append(lines, fmt.Sprintf("  %s risk, %s, at %s:%d: “%s”", capital(f.Severity), f.Category, f.File, f.Line, clipRunes(f.Match, 60)))
 		}
 		lines = append(lines, "")
 	}
-	decision, reason := decide(result, false)
-	status := map[string]string{"allow": "ALLOWED", "block": "BLOCKED", "ask": "NEEDS CONFIRMATION"}[decision]
-	return strings.Join(append(lines, fmt.Sprintf("Decision: %s - %s", status, reason)), "\n")
+	_, reason := decide(result, false)
+	return strings.Join(append(lines, reason), "\n")
+}
+
+// Verdict of a scan in a word
+func verdictWord(verdict string) string {
+	switch verdict {
+	case "safe":
+		return "Safe"
+	case "caution":
+		return "Caution"
+	case "dangerous":
+		return "Dangerous"
+	}
+	return capital(verdict)
+}
+
+// Text with its first letter in upper case
+func capital(text string) string {
+	if text == "" {
+		return text
+	}
+	return strings.ToUpper(text[:1]) + text[1:]
 }
 
 // Structural problems of a skill's folder: links that break or leave it, too many or too large files, binaries, unexpected executables

@@ -9,6 +9,7 @@ import (
 
 	bdconfig "github.com/nickheyer/icebath/internal/botdesktop/config"
 	"github.com/nickheyer/icebath/internal/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -134,7 +135,8 @@ func blocker(m Memory, need int) string {
 	}
 	limit := ""
 	if m.Limit > 0 {
-		limit = fmt.Sprintf(" of %d MB", m.Limit)
+		limit = " of " + strs.Counted(float64(m.Limit), "MB")
 	}
-	return fmt.Sprintf("Not enough free memory for a desktop: %d MB available%s, %d MB needed (bot_desktop.min_free_memory_mb)", m.Available, limit, need)
+	return fmt.Sprintf("There is not enough free memory for the agent desktop: %s is free%s, and it needs %s. Free some memory, or lower Memory "+
+		"needed in /settings under Agent desktop.", strs.Counted(float64(m.Available), "MB"), limit, strs.Counted(float64(need), "MB"))
 }

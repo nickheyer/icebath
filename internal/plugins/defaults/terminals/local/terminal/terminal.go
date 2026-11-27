@@ -43,8 +43,8 @@ func Register(registry *terminal.Registry, skillset *skills.Registry, pm *packag
 func (r registrant) Backends() []terminal.Backend {
 	return []terminal.Backend{{
 		Name:  "local",
-		Title: "This machine",
-		About: "Runs directly on your computer, with a persistent shell snapshot",
+		Title: "This computer",
+		About: "Commands run right on this computer",
 		Where: "the local machine",
 		Check: func(*config.Config) error {
 			_, err := r.bash.find()
@@ -433,9 +433,9 @@ func findBash(managed string) (string, error) {
 		}
 	}
 	if windows {
-		return "", errors.New("No shell found. icebath needs bash (Git for Windows on Windows). Run `icebath pm install git` or install Git for Windows.")
+		return "", errors.New("This computer has no Bash, which icebath runs commands with. Run `icebath pm install git` or install Git for Windows.")
 	}
-	return "", errors.New("No shell found. icebath needs bash (Git for Windows on Windows): install bash so it is on PATH.")
+	return "", errors.New("This computer has no Bash, which icebath runs commands with. Install Bash so it is on your PATH.")
 }
 
 // Places Git Bash lives on Windows, the override first, a PATH bash that is the WSL or Store launcher never

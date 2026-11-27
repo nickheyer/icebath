@@ -11,20 +11,23 @@ func Register(cfg *config.Config) {
 	cfg.Register(config.Sections{{
 		Key:    Key,
 		Parent: toolsconfig.Key,
-		Title:  "X (Twitter) Search",
-		About:  "Read-only search of public X posts through xAI's built-in x_search tool, with the xAI API key or Grok sign in connected in /providers",
+		Title:  "X search",
+		About:  "Search public posts on X with your xAI account",
+		Order:  120,
 		Settings: []config.Setting{
-			{Key: Model, Title: "X search model", About: "Model that runs X searches", Default: DefaultModel},
-			{Key: ReasoningEffort, Title: "X search effort", About: "How hard the model thinks while searching X", Default: "", Options: config.Options(
-				config.Option{Title: "Default", About: "The model's default"},
-				config.Option{Value: "low", Title: "Low", About: "Fastest, least thinking"},
-				config.Option{Value: "medium", Title: "Medium", About: "Balanced"},
-				config.Option{Value: "high", Title: "High", About: "More thinking"},
-				config.Option{Value: "xhigh", Title: "Extra high", About: "Most thinking"},
+			{Key: Model, Title: "Model", About: "The model that runs searches of X.", Help: "Connect your xAI account in /providers.", Default: DefaultModel,
+				Zero: DefaultModel},
+			{Key: ReasoningEffort, Title: "Reasoning effort", About: "How hard the model thinks while it searches X.", Default: "", Options: config.Options(
+				config.Option{Title: "The model's default", About: "As much as the model does by itself"},
+				config.Option{Value: "low", Title: "Low", About: "The quickest answers, with the least thinking"},
+				config.Option{Value: "medium", Title: "Medium", About: "A balance of speed and thinking"},
+				config.Option{Value: "high", Title: "High", About: "More thinking, slower answers"},
+				config.Option{Value: "xhigh", Title: "Extra high", About: "The most thinking, the slowest answers"},
 			)},
-			{Key: Retries, Title: "X search retries", About: "How many times a failed X search is retried", Default: 2},
-			{Key: TimeoutSeconds, Title: "X search timeout", About: "Longest to wait for an X search, in seconds, never less than 30", Default: 3 * time.Minute,
-				Min: config.Bound(30 * time.Second)},
+			{Key: Retries, Title: "Retries", About: "How many times a failed search is tried again.", Default: 2, Counts: "retries", Least: config.Num(0),
+				Advanced: true},
+			{Key: TimeoutSeconds, Title: "Time limit", About: "How long to wait for one search.", Default: 3 * time.Minute, Min: config.Bound(30 * time.Second),
+				Advanced: true},
 		},
 	}})
 }
