@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package icebath.plugins.egress.v1;
+
+// The iron-proxy egress firewall: sandbox traffic routed through a local TLS intercepting proxy that swaps tokens for the real provider keys
+service EgressService {
+  // How the proxy stands: settings, program, files, process, token mappings and the providers it can't cover
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // Installs the pinned iron-proxy program, or checks and repairs the managed copy
+  rpc Install(InstallRequest) returns (InstallResponse);
+  // Makes the certificate authority the proxy signs with, kept when there is one
+  rpc Authority(AuthorityRequest) returns (AuthorityResponse);
+  // Mints a token for every known provider whose key is set, keeping the tokens of those that had one unless told to rotate
+  rpc Mint(MintRequest) returns (MintResponse);
+  // Writes proxy.yaml and the mappings and turns the integration on
+  rpc Write(WriteRequest) returns (WriteResponse);
+  // Starts the proxy, refusing when the key source can't give it the keys
+  rpc Start(StartRequest) returns (StartResponse);
+  // Stops the proxy
+  rpc Stop(StopRequest) returns (StopResponse);
+  // Reloads the running proxy's rules from proxy.yaml, keeping its connections
+  rpc Reload(ReloadRequest) returns (ReloadResponse);
+  // Turns the integration off
+  rpc Disable(DisableRequest) returns (DisableResponse);
+  // Status as plain lines, what /egress shows
+  rpc Text(TextRequest) returns (TextResponse);
+}
+
+message StatusRequest {
+  // Profile whose proxy is read, the one in use when empty
+  string profile = 1;
+}
+
+// One provider key the proxy swaps for a token of its own
+message Mapping {
+  string token = 1;
+  string env = 2;
+  repeated string hosts = 3;
+  repeated string headers = 4;
+  repeated string aliases = 5;
+}
+
+message StatusResponse {
+  bool enabled = 1;
+  string binary = 2;
+  string version = 3;
+  // proxy.yaml and the certificate, empty while not generated
+  string config = 4;
+  string authority = 5;
+  int32 port = 6;
+  // Process of the running proxy, 0 when it does not run, and whether it listens
+  int32 pid = 7;
+  bool listening = 8;
+  string credential_source = 9;
+  bool enforce = 10;
+  repeated Mapping mappings = 11;
+  // Provider variables set that the proxy can't swap, whose real credentials stay visible inside sandboxes
+  repeated string uncovered = 12;
+}
+
+message InstallRequest {
+  string profile = 1;
+  bool force = 2;
+}
+
+message InstallResponse {
+  string binary = 1;
+  string version = 2;
+}
+
+message AuthorityRequest {
+  string profile = 1;
+}
+
+message AuthorityResponse {
+  string certificate = 1;
+}
+
+message MintRequest {
+  string profile = 1;
+  // Names of the provider keys come from Bitwarden rather than the environment
+  bool from_bitwarden = 2;
+  bool rotate = 3;
+}
+
+message MintResponse {
+  repeated Mapping mappings = 1;
+  repeated string uncovered = 2;
+  // Provider keys the .env adds to the names looked at
+  int32 loaded = 3;
+  // Mappings there were, and the copy kept of them before a rotation, or why it could not be kept
+  int32 existing = 4;
+  string backup = 5;
+  string backup_error = 6;
+  // Names Bitwarden gave, or why it gave none, the setup ending then
+  int32 pulled = 7;
+  repeated string refusal = 8;
+}
+
+message WriteRequest {
+  string profile = 1;
+  repeated Mapping mappings = 2;
+  // Port given for the tunnel, 0 for the one the settings have
+  int32 tunnel_port = 3;
+  bool from_bitwarden = 4;
+  bool no_bitwarden = 5;
+}
+
+message WriteResponse {
+  string config = 1;
+  string mappings = 2;
+  // Audit log made, or why it could not be
+  string audit = 3;
+  string audit_error = 4;
+  // Lines said of the key source
+  repeated string notes = 5;
+  // Port given was out of range, nothing being written
+  bool bad_port = 6;
+}
+
+message StartRequest {
+  string profile = 1;
+  // Started by setup with what it just wrote: no key source checks, the program installed when the settings allow
+  bool setup = 2;
+}
+
+message StartResponse {
+  int32 pid = 1;
+  int32 port = 2;
+  bool listening = 3;
+  // Why the proxy was not started, with what to do about it
+  string refusal = 4;
+  string hint = 5;
+  // Lines said of the key source before it started
+  repeated string notes = 6;
+}
+
+message StopRequest {
+  string profile = 1;
+}
+
+message StopResponse {
+  // It was running
+  bool stopped = 1;
+}
+
+message ReloadRequest {
+  string profile = 1;
+}
+
+message ReloadResponse {}
+
+message DisableRequest {
+  string profile = 1;
+}
+
+message DisableResponse {
+  bool was_enabled = 1;
+  // The proxy still runs
+  bool running = 2;
+}
+
+message TextRequest {
+  string profile = 1;
+  bool show_tokens = 2;
+}
+
+message TextResponse {
+  string text = 1;
+}

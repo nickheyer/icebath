@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/models"
 	actualconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/actual/config"
+	actualprovider "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/actual/provider"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
@@ -18,5 +19,5 @@ func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool
 	if route.Spec != actualconfig.Name {
 		return nil, false
 	}
-	return models.List(ctx, route, actualconfig.NormalizeBaseURL(route.BaseURL)+"/models")
+	return models.List(ctx, route, actualprovider.NormalizeBaseURL(route.BaseURL)+"/models")
 }

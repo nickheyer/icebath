@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package icebath.plugins.computeruse.v1;
+
+// The computer use driver of the machine the server runs on: its install, its state, its health and on macOS its privacy grants. Each
+// command streams what it prints and ends with its exit code
+service ComputerUseService {
+  // Installs or repairs the pinned cua-driver
+  rpc Install(InstallRequest) returns (stream Event);
+  // The selected driver and its runtime contract
+  rpc Status(StatusRequest) returns (stream Event);
+  // The driver's health report with the checks icebath adds
+  rpc Doctor(DoctorRequest) returns (stream Event);
+  // Accessibility and Screen Recording grant state, read only
+  rpc Permissions(PermissionsRequest) returns (stream Event);
+  // Requests the grants, the macOS dialog attributed to CuaDriver
+  rpc Grant(GrantRequest) returns (stream Event);
+}
+
+message InstallRequest {
+  // Profile to read, the one in use when empty
+  string profile = 1;
+  // Paint the lines for a terminal
+  bool color = 2;
+}
+
+message StatusRequest {
+  string profile = 1;
+}
+
+message DoctorRequest {
+  string profile = 1;
+  // Checks of the health report to run, and those to leave out
+  repeated string include = 2;
+  repeated string skip = 3;
+  bool json = 4;
+  bool color = 5;
+}
+
+message PermissionsRequest {
+  string profile = 1;
+  bool json = 2;
+}
+
+message GrantRequest {
+  string profile = 1;
+}
+
+// A piece of what a command prints, or how it ended
+message Event {
+  oneof kind {
+    // Text for standard output, as it is
+    string out = 1;
+    // Text for standard error, as it is
+    string err = 2;
+    int32 exit_code = 3;
+  }
+}

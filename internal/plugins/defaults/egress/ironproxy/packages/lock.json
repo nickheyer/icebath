@@ -1,0 +1,117 @@
+{
+  "packages": {
+    "iron-proxy": {
+      "artifacts": {
+        "darwin-arm64": [
+          {
+            "sha256": "6aa2d3d78ba87bdfacaef8f8465ffd289f8d23ab4d3f433e8c0b2b77f887632a",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_darwin_arm64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ],
+        "darwin-x64": [
+          {
+            "sha256": "9c278663d2e9c04fb3f6b1c18588fc2095974b42347c7885d10014835fc4b24a",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_darwin_amd64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ],
+        "linux-arm64": [
+          {
+            "sha256": "1316cb4f20fcfba5042b06d07cd523ffa617de9de2999cd5f1f44474777c48ad",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_linux_arm64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ],
+        "linux-arm64-musl": [
+          {
+            "sha256": "1316cb4f20fcfba5042b06d07cd523ffa617de9de2999cd5f1f44474777c48ad",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_linux_arm64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ],
+        "linux-x64": [
+          {
+            "sha256": "0ab2e031074a01410caecaa2769c0b38f69cbdf4b6333bce498fe73919f6f9f6",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_linux_amd64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ],
+        "linux-x64-musl": [
+          {
+            "sha256": "0ab2e031074a01410caecaa2769c0b38f69cbdf4b6333bce498fe73919f6f9f6",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_linux_amd64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ]
+      },
+      "version": "0.39.0"
+    }
+  }
+}

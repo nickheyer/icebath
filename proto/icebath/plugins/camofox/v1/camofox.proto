@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package icebath.plugins.camofox.v1;
+
+// The camofox-browser server the camofox browser tools drive: where it is, whether it answers, and saving its address
+service CamofoxService {
+  // The configured server, how sessions pick their Camofox user, and whether it answers
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // Saves the server address and its optional key to the profile
+  rpc Setup(SetupRequest) returns (SetupResponse);
+}
+
+message StatusRequest {
+  // Profile asked about, the one in use when empty
+  string profile = 1;
+}
+
+message StatusResponse {
+  // Server address, empty when none is set
+  string url = 1;
+  // How the sessions pick their Camofox user
+  string identity = 2;
+  bool reachable = 3;
+  // Address a person watches the browser at, empty when the server shows none
+  string vnc = 4;
+}
+
+message SetupRequest {
+  string profile = 1;
+  string url = 2;
+  // Bearer token of the server, kept as it is when empty
+  string api_key = 3;
+}
+
+message SetupResponse {
+  StatusResponse status = 1;
+}

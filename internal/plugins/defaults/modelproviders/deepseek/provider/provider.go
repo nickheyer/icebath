@@ -14,6 +14,9 @@ func Register(registry *provider.Registry) {
 func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:                       deepseekconfig.Name,
+		Shape:                      shape,
+		EchoesReasoning:            true,
+		Native:                     native,
 		DisplayName:                deepseekconfig.Title,
 		Description:                "DeepSeek models",
 		SignupURL:                  "https://platform.deepseek.com/",
@@ -33,5 +36,10 @@ func (specs) Specs() []provider.Spec {
 		VisionToolMessages:         true,
 		UnsupportedResponseFormats: []string{"json_schema"},
 		ModelsDevID:                deepseekconfig.Name,
+		StaticModels:               []string{"deepseek-flash", "deepseek-v4-pro"},
+		ModelMetadata:              flashMetadata(),
+		Prices:                     prices,
+		ListPrices:                 "deepseek.com",
+		Billing:                    []provider.Billing{{Label: "DeepSeek", URL: "https://platform.deepseek.com/top_up"}},
 	}}
 }

@@ -1,0 +1,177 @@
+syntax = "proto3";
+
+package icebath.botdesktop.v1;
+
+// The Bot Desktop of each profile: its screen on the machine the server runs on or in the terminal backend's sandbox, who holds it, a
+// picture of it, its package install and the sandbox image it needs
+service DesktopService {
+  // What the screen is and who holds it
+  rpc Status(StatusRequest) returns (Screen);
+  // Starts the screen, one already up kept
+  rpc Start(StartRequest) returns (Screen);
+  // Stops the screen, handing control back to the agent first; refused while a person holds it unless forced
+  rpc Stop(StopRequest) returns (StopReply);
+  // A picture of the screen saved into the image cache, withheld while a person holds it
+  rpc Thumbnail(ThumbnailRequest) returns (ThumbnailReply);
+  // A person takes the screen under the viewer id of their client
+  rpc Take(TakeRequest) returns (Lease);
+  // Hands the screen back to the agent, by the viewer that took it or with force by anyone
+  rpc Release(ReleaseRequest) returns (Lease);
+  // Installs the screen's packages with the machine's package manager, streaming its lines, a sudo password asked for, and how it ended
+  rpc Install(InstallRequest) returns (stream InstallEvent);
+  // Answers the sudo password an install asked for, empty to cancel it
+  rpc Password(PasswordRequest) returns (PasswordReply);
+  // Moves the sandbox to the image with the desktop, or keeps the one it runs
+  rpc Switch(SwitchRequest) returns (SwitchReply);
+  // Changes of the screen as they happen: started or stopped, or taken or handed back
+  rpc Watch(WatchRequest) returns (stream Change);
+}
+
+message StatusRequest {
+  // Profile of the screen, the one in use when empty
+  string profile = 1;
+}
+
+message StartRequest {
+  string profile = 1;
+}
+
+message StopRequest {
+  string profile = 1;
+  // Stops it while a person holds it
+  bool force = 2;
+}
+
+message StopReply {
+  // Whether a running screen was stopped
+  bool stopped = 1;
+  Screen status = 2;
+}
+
+message ThumbnailRequest {
+  string profile = 1;
+}
+
+message ThumbnailReply {
+  // Where the picture was saved, empty when no screen runs or it was withheld
+  string path = 1;
+  // Why the picture was withheld, human_has_control while a person holds the screen
+  string suppressed = 2;
+}
+
+message TakeRequest {
+  string profile = 1;
+  // Id of the client taking it, random and kept for the life of the client
+  string viewer = 2;
+  // What the person takes it for
+  string reason = 3;
+}
+
+message ReleaseRequest {
+  string profile = 1;
+  string viewer = 2;
+  // Hands it back whoever holds it
+  bool force = 3;
+}
+
+message InstallRequest {
+  string profile = 1;
+}
+
+message InstallEvent {
+  oneof kind {
+    // The command the install runs, once it starts
+    string command = 1;
+    // A line the package manager printed
+    string line = 2;
+    // Id the sudo password is answered under with Password
+    string password = 3;
+    // How it ended, and the screen after it
+    InstallDone done = 4;
+  }
+}
+
+message InstallDone {
+  // Exit code: -1 cancelled, -2 no sudo on the host
+  int32 code = 1;
+  Screen status = 2;
+}
+
+message PasswordRequest {
+  string id = 1;
+  string password = 2;
+}
+
+message PasswordReply {}
+
+message SwitchRequest {
+  string profile = 1;
+  // Moves to the new image, else keeps the one the sandbox runs
+  bool approve = 2;
+}
+
+message SwitchReply {
+  // Image now set for the sandbox
+  string image = 1;
+  Screen status = 2;
+}
+
+message WatchRequest {
+  string profile = 1;
+}
+
+message Change {
+  oneof kind {
+    // The screen started or stopped
+    Screen status = 1;
+    // The screen changed hands
+    Lease lease = 2;
+  }
+}
+
+// Who drives the screen
+message Lease {
+  // agent or human
+  string holder = 1;
+  // Short hash of the client of the person holding it, empty while the agent holds it
+  string viewer_hash = 2;
+  // Unix seconds of the last change of hands
+  double since = 3;
+  string reason = 4;
+  int64 epoch = 5;
+}
+
+// Image change a sandbox waits on
+message ImageSwitch {
+  string current_image = 1;
+  string target_image = 2;
+  int32 containers = 3;
+}
+
+message Screen {
+  string profile = 1;
+  // Screens run on this machine, Linux
+  bool supported = 2;
+  bool installed = 3;
+  repeated string missing = 4;
+  bool running = 5;
+  // Launcher process, zero for none
+  int32 pid = 6;
+  string display = 7;
+  // Socket a viewer reaches the screen through
+  string socket = 8;
+  string geometry = 9;
+  // Command that installs what is missing
+  string install_command = 10;
+  // Chromium the screen runs
+  string browser = 11;
+  // Why it cannot start now
+  string blocker = 12;
+  // Free memory and its limit in MB, -1 when unknown
+  int32 memory_available_mb = 13;
+  int32 memory_limit_mb = 14;
+  // gateway, or terminal:<backend>
+  string placement = 15;
+  ImageSwitch image_switch = 16;
+  Lease lease = 17;
+}

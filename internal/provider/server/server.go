@@ -40,28 +40,31 @@ func (s *service) Mount(services *connect.Server) {
 	providerv1connect.RegisterProviderServiceHandler(services, s)
 }
 
-// Settings of the profile a request names, the one in use when it names none
-func (s *service) in(profile string) (*config.Config, error) {
-	if profile != "" && !s.config.Exists(profile) {
-		return nil, connect.NewError(connect.CodeNotFound, "No profile named "+profile)
-	}
-	return s.config.In(profile), nil
-}
-
-func (s *service) List(_ context.Context, request *providerv1.ListRequest) (*providerv1.ListResponse, error) {
-	cfg, err := s.in(request.GetProfile())
+func (s *service) List(ctx context.Context, request *providerv1.ListRequest) (*providerv1.ListResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
 	wired := s.transports.Factories()
 	response := &providerv1.ListResponse{}
+	var asked []provider.Route
 	for _, instance := range s.providers.Instances(cfg) {
-		response.Providers = append(response.Providers, s.message(instance, wired))
+		message := s.message(cfg, instance, wired)
+		if instance.Spec.AccountUsage != nil {
+			if route, err := s.credentials.Route(instance, ""); err == nil {
+				asked = append(asked, route)
+				if reading := s.models.CachedUsage(cfg, route); !models.StaleUsage(reading) {
+					message.AccountUsage = reading.Message()
+				}
+			}
+		}
+		response.Providers = append(response.Providers, message)
 	}
+	s.models.RefreshUsage(ctx, cfg, asked)
 	return response, nil
 }
 
-func (s *service) message(instance provider.Instance, wired map[provider.APIMode]provider.Factory) *providerv1.Provider {
+func (s *service) message(cfg *config.Config, instance provider.Instance, wired map[provider.APIMode]provider.Factory) *providerv1.Provider {
 	spec := instance.Spec
 	_, usable := wired[spec.Mode]
 	credential, _ := s.credentials.Credential(credentials.Of(instance, ""))
@@ -86,24 +89,22 @@ func (s *service) message(instance provider.Instance, wired map[provider.APIMode
 		Usable:           instance.Known && usable && spec.BaseURL != "",
 		Account:          instance.Account,
 		Known:            instance.Known,
+		Hidden:           s.models.Hidden(cfg, instance.ID, spec.Name),
+		Usage:            spec.AccountUsage != nil,
+		Strategy:         instance.Settings.GetString(providerconfig.Strategy),
+		OnExhausted:      instance.Settings.GetString(providerconfig.OnExhausted),
+		Pinned:           instance.Pinned,
+		Rotate:           instance.Rotate,
+		Ignored:          instance.Settings.GetStringSlice(providerconfig.Ignored),
 	}
 	for _, name := range instance.Accounts {
-		account := credentials.Of(instance, name)
-		found, _ := s.credentials.Credential(account)
-		message.Accounts = append(message.Accounts, &providerv1.Account{
-			Name:             name,
-			Title:            cmp.Or(account.Fields.GetString(providerconfig.Title), name),
-			Section:          account.Fields.Prefix(),
-			Active:           name == instance.Account,
-			CredentialOrigin: origins[found.Origin],
-			CredentialSource: found.Source,
-		})
+		message.Accounts = append(message.Accounts, s.account(instance, name))
 	}
 	return message
 }
 
 func (s *service) Specs(_ context.Context, request *providerv1.SpecsRequest) (*providerv1.SpecsResponse, error) {
-	cfg, err := s.in(request.GetProfile())
+	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,7 @@ func (s *service) Specs(_ context.Context, request *providerv1.SpecsRequest) (*p
 			continue
 		}
 		_, usable := wired[spec.Mode]
-		detected, _ := s.credentials.Detect(spec)
+		detected, _ := s.credentials.Detect(cfg, spec)
 		message := &providerv1.Spec{
 			Name:           spec.Name,
 			DisplayName:    spec.Label(),
@@ -128,6 +129,8 @@ func (s *service) Specs(_ context.Context, request *providerv1.SpecsRequest) (*p
 			DetectedOrigin: origins[detected.Origin],
 			DetectedSource: detected.Source,
 			KeyEnv:         spec.KeyEnvNames(),
+			Aliases:        spec.Aliases,
+			Keyed:          spec.Keyed(),
 		}
 		for _, instance := range instances {
 			if instance.Spec.Name == spec.Name {
@@ -140,7 +143,7 @@ func (s *service) Specs(_ context.Context, request *providerv1.SpecsRequest) (*p
 }
 
 func (s *service) instance(profile, name string) (provider.Instance, error) {
-	cfg, err := s.in(profile)
+	cfg, err := server.Profile(s.config, profile)
 	if err != nil {
 		return provider.Instance{}, err
 	}
@@ -151,9 +154,13 @@ func (s *service) instance(profile, name string) (provider.Instance, error) {
 	return instance, nil
 }
 
-// Models of the provider as it lists them now
+// Models the provider offers with what is known of each: their windows, prices and what they can do
 func (s *service) Models(ctx context.Context, request *providerv1.ModelsRequest) (*providerv1.ModelsResponse, error) {
 	instance, err := s.instance(request.GetProfile(), request.GetProvider())
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
@@ -161,15 +168,86 @@ func (s *service) Models(ctx context.Context, request *providerv1.ModelsRequest)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 	}
-	ids, ok := s.models.Models(ctx, route)
-	if !ok {
+	if request.GetRefresh() {
+		s.models.RefreshCatalogs(cfg)
+	}
+	catalog := s.models.Catalog(ctx, cfg, route, request.GetRefresh())
+	if len(catalog.IDs) == 0 {
 		return nil, connect.NewError(connect.CodeUnavailable, instance.Label()+" didn't return a model list")
 	}
-	return &providerv1.ModelsResponse{Models: ids}, nil
+	prices := s.models.Prices(ctx, cfg, route, request.GetRefresh())
+	response := &providerv1.ModelsResponse{Models: catalog.IDs, Fallback: catalog.Fallback}
+	for _, id := range catalog.IDs {
+		model := route
+		model.Model = id
+		detail := &providerv1.Model{Id: id, Note: catalog.Notes[id]}
+		if caps, ok := s.models.Capabilities(cfg, model, false); ok {
+			detail.Context, detail.MaxOutput, detail.Reasoning = int64(caps.Context), int64(caps.MaxOutput), caps.Reasoning
+		}
+		// Efforts the model takes: those its kind declares, else those the provider's listing names
+		if instance.Spec.Efforts != nil {
+			if efforts, ok := instance.Spec.Efforts(ctx, id); ok {
+				detail.Efforts = efforts
+			}
+		}
+		if thinking, ok := s.models.Thinking(ctx, cfg, model); ok && thinking.Known {
+			if len(detail.Efforts) == 0 {
+				detail.Efforts = thinking.Efforts
+			}
+			detail.MandatoryReasoning = thinking.Mandatory
+			if detail.Reasoning == nil {
+				detail.Reasoning = new(thinking.Takes)
+			}
+		}
+		if info, ok := s.models.Info(cfg, model); ok {
+			detail.Abilities = info.Abilities()
+		}
+		if price, ok := s.models.ShownPrice(cfg, model, prices); ok {
+			detail.InputPrice, detail.OutputPrice, detail.CacheReadPrice = price.Input, price.Output, price.CacheRead
+		}
+		response.Details = append(response.Details, detail)
+	}
+	return response, nil
+}
+
+// What the provider says the account in use may still spend, the reading remembered for its route
+func (s *service) Usage(ctx context.Context, request *providerv1.UsageRequest) (*providerv1.UsageResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	name := request.GetProvider()
+	if name == "" {
+		for _, instance := range s.providers.Instances(cfg) {
+			if _, err := s.credentials.Route(instance, ""); err == nil && instance.Spec.AccountUsage != nil {
+				name = instance.ID
+				break
+			}
+		}
+		if name == "" {
+			return nil, connect.NewError(connect.CodeNotFound, "No connected provider of profile "+cfg.Profile()+" can say what its account may still spend")
+		}
+	}
+	instance, err := s.instance(request.GetProfile(), name)
+	if err != nil {
+		return nil, err
+	}
+	if instance.Spec.AccountUsage == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, instance.Label()+" can't say what its accounts may still spend")
+	}
+	route, err := s.credentials.Route(instance, "")
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
+	}
+	reading := s.models.Usage(ctx, cfg, route)
+	if reading == nil {
+		return &providerv1.UsageResponse{}, nil
+	}
+	return &providerv1.UsageResponse{Usage: reading.Message()}, nil
 }
 
 func (s *service) Add(_ context.Context, request *providerv1.AddRequest) (*providerv1.AddResponse, error) {
-	cfg, err := s.in(request.GetProfile())
+	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
@@ -177,11 +255,11 @@ func (s *service) Add(_ context.Context, request *providerv1.AddRequest) (*provi
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 	}
-	return &providerv1.AddResponse{Provider: s.message(instance, s.transports.Factories())}, nil
+	return &providerv1.AddResponse{Provider: s.message(cfg, instance, s.transports.Factories())}, nil
 }
 
 func (s *service) Remove(_ context.Context, request *providerv1.RemoveRequest) (*providerv1.RemoveResponse, error) {
-	cfg, err := s.in(request.GetProfile())
+	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +270,7 @@ func (s *service) Remove(_ context.Context, request *providerv1.RemoveRequest) (
 }
 
 func (s *service) AddAccount(_ context.Context, request *providerv1.AddAccountRequest) (*providerv1.AddAccountResponse, error) {
-	cfg, err := s.in(request.GetProfile())
+	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +282,7 @@ func (s *service) AddAccount(_ context.Context, request *providerv1.AddAccountRe
 	if err != nil {
 		return nil, err
 	}
-	for _, account := range s.message(instance, nil).GetAccounts() {
+	for _, account := range s.message(cfg, instance, nil).GetAccounts() {
 		if account.GetName() == name {
 			return &providerv1.AddAccountResponse{Account: account}, nil
 		}
@@ -213,18 +291,26 @@ func (s *service) AddAccount(_ context.Context, request *providerv1.AddAccountRe
 }
 
 func (s *service) RemoveAccount(_ context.Context, request *providerv1.RemoveAccountRequest) (*providerv1.RemoveAccountResponse, error) {
-	cfg, err := s.in(request.GetProfile())
+	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
-	if err := s.providers.RemoveAccount(cfg, request.GetProvider(), request.GetAccount()); err != nil {
+	if source := request.GetSource(); source != "" {
+		cleared, err := s.providers.Ignore(cfg, request.GetProvider(), source)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeNotFound, err.Error())
+		}
+		return &providerv1.RemoveAccountResponse{Cleared: cleared}, nil
+	}
+	cleared, err := s.providers.RemoveAccount(cfg, request.GetProvider(), request.GetAccount())
+	if err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, err.Error())
 	}
-	return &providerv1.RemoveAccountResponse{}, nil
+	return &providerv1.RemoveAccountResponse{Cleared: cleared}, nil
 }
 
 func (s *service) UseAccount(_ context.Context, request *providerv1.UseAccountRequest) (*providerv1.UseAccountResponse, error) {
-	cfg, err := s.in(request.GetProfile())
+	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}

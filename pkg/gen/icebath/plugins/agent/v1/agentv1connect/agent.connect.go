@@ -30,10 +30,46 @@ const (
 	AgentServiceStopProcedure = "/icebath.plugins.agent.v1.AgentService/Stop"
 	// AgentServiceWatchProcedure is the procedure name of the AgentService's Watch RPC.
 	AgentServiceWatchProcedure = "/icebath.plugins.agent.v1.AgentService/Watch"
+	// AgentServiceLiveProcedure is the procedure name of the AgentService's Live RPC.
+	AgentServiceLiveProcedure = "/icebath.plugins.agent.v1.AgentService/Live"
+	// AgentServiceShutProcedure is the procedure name of the AgentService's Shut RPC.
+	AgentServiceShutProcedure = "/icebath.plugins.agent.v1.AgentService/Shut"
+	// AgentServiceEditProcedure is the procedure name of the AgentService's Edit RPC.
+	AgentServiceEditProcedure = "/icebath.plugins.agent.v1.AgentService/Edit"
 	// AgentServiceApproveProcedure is the procedure name of the AgentService's Approve RPC.
 	AgentServiceApproveProcedure = "/icebath.plugins.agent.v1.AgentService/Approve"
 	// AgentServiceDenyProcedure is the procedure name of the AgentService's Deny RPC.
 	AgentServiceDenyProcedure = "/icebath.plugins.agent.v1.AgentService/Deny"
+	// AgentServiceConfirmProcedure is the procedure name of the AgentService's Confirm RPC.
+	AgentServiceConfirmProcedure = "/icebath.plugins.agent.v1.AgentService/Confirm"
+	// AgentServiceAnswerProcedure is the procedure name of the AgentService's Answer RPC.
+	AgentServiceAnswerProcedure = "/icebath.plugins.agent.v1.AgentService/Answer"
+	// AgentServiceDismissProcedure is the procedure name of the AgentService's Dismiss RPC.
+	AgentServiceDismissProcedure = "/icebath.plugins.agent.v1.AgentService/Dismiss"
+	// AgentServiceSubagentsProcedure is the procedure name of the AgentService's Subagents RPC.
+	AgentServiceSubagentsProcedure = "/icebath.plugins.agent.v1.AgentService/Subagents"
+	// AgentServiceInterruptProcedure is the procedure name of the AgentService's Interrupt RPC.
+	AgentServiceInterruptProcedure = "/icebath.plugins.agent.v1.AgentService/Interrupt"
+	// AgentServiceSteerProcedure is the procedure name of the AgentService's Steer RPC.
+	AgentServiceSteerProcedure = "/icebath.plugins.agent.v1.AgentService/Steer"
+	// AgentServicePauseProcedure is the procedure name of the AgentService's Pause RPC.
+	AgentServicePauseProcedure = "/icebath.plugins.agent.v1.AgentService/Pause"
+	// AgentServiceTailProcedure is the procedure name of the AgentService's Tail RPC.
+	AgentServiceTailProcedure = "/icebath.plugins.agent.v1.AgentService/Tail"
+	// AgentServiceSaveTreeProcedure is the procedure name of the AgentService's SaveTree RPC.
+	AgentServiceSaveTreeProcedure = "/icebath.plugins.agent.v1.AgentService/SaveTree"
+	// AgentServiceTreesProcedure is the procedure name of the AgentService's Trees RPC.
+	AgentServiceTreesProcedure = "/icebath.plugins.agent.v1.AgentService/Trees"
+	// AgentServiceLoadTreeProcedure is the procedure name of the AgentService's LoadTree RPC.
+	AgentServiceLoadTreeProcedure = "/icebath.plugins.agent.v1.AgentService/LoadTree"
+	// AgentServiceSetLoginProcedure is the procedure name of the AgentService's SetLogin RPC.
+	AgentServiceSetLoginProcedure = "/icebath.plugins.agent.v1.AgentService/SetLogin"
+	// AgentServiceWaitLoginProcedure is the procedure name of the AgentService's WaitLogin RPC.
+	AgentServiceWaitLoginProcedure = "/icebath.plugins.agent.v1.AgentService/WaitLogin"
+	// AgentServiceFinalizeProcedure is the procedure name of the AgentService's Finalize RPC.
+	AgentServiceFinalizeProcedure = "/icebath.plugins.agent.v1.AgentService/Finalize"
+	// AgentServiceObserveProcedure is the procedure name of the AgentService's Observe RPC.
+	AgentServiceObserveProcedure = "/icebath.plugins.agent.v1.AgentService/Observe"
 )
 
 var (
@@ -58,6 +94,27 @@ var (
 			Procedure:  AgentServiceWatchProcedure,
 		}
 	})
+	agentServiceLiveSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Live"),
+			Procedure:  AgentServiceLiveProcedure,
+		}
+	})
+	agentServiceShutSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Shut"),
+			Procedure:  AgentServiceShutProcedure,
+		}
+	})
+	agentServiceEditSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Edit"),
+			Procedure:  AgentServiceEditProcedure,
+		}
+	})
 	agentServiceApproveSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
 			StreamType: connect.StreamTypeUnary,
@@ -72,6 +129,111 @@ var (
 			Procedure:  AgentServiceDenyProcedure,
 		}
 	})
+	agentServiceConfirmSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Confirm"),
+			Procedure:  AgentServiceConfirmProcedure,
+		}
+	})
+	agentServiceAnswerSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Answer"),
+			Procedure:  AgentServiceAnswerProcedure,
+		}
+	})
+	agentServiceDismissSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Dismiss"),
+			Procedure:  AgentServiceDismissProcedure,
+		}
+	})
+	agentServiceSubagentsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Subagents"),
+			Procedure:  AgentServiceSubagentsProcedure,
+		}
+	})
+	agentServiceInterruptSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Interrupt"),
+			Procedure:  AgentServiceInterruptProcedure,
+		}
+	})
+	agentServiceSteerSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Steer"),
+			Procedure:  AgentServiceSteerProcedure,
+		}
+	})
+	agentServicePauseSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Pause"),
+			Procedure:  AgentServicePauseProcedure,
+		}
+	})
+	agentServiceTailSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Tail"),
+			Procedure:  AgentServiceTailProcedure,
+		}
+	})
+	agentServiceSaveTreeSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("SaveTree"),
+			Procedure:  AgentServiceSaveTreeProcedure,
+		}
+	})
+	agentServiceTreesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Trees"),
+			Procedure:  AgentServiceTreesProcedure,
+		}
+	})
+	agentServiceLoadTreeSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("LoadTree"),
+			Procedure:  AgentServiceLoadTreeProcedure,
+		}
+	})
+	agentServiceSetLoginSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("SetLogin"),
+			Procedure:  AgentServiceSetLoginProcedure,
+		}
+	})
+	agentServiceWaitLoginSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("WaitLogin"),
+			Procedure:  AgentServiceWaitLoginProcedure,
+		}
+	})
+	agentServiceFinalizeSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Finalize"),
+			Procedure:  AgentServiceFinalizeProcedure,
+		}
+	})
+	agentServiceObserveSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Observe"),
+			Procedure:  AgentServiceObserveProcedure,
+		}
+	})
 )
 
 // AgentServiceClient is a client for the icebath.plugins.agent.v1.AgentService service.
@@ -79,8 +241,46 @@ type AgentServiceClient interface {
 	Send(context.Context, *v1.SendRequest) (*v1.SendResponse, error)
 	Stop(context.Context, *v1.StopRequest) (*v1.StopResponse, error)
 	Watch(context.Context, *v1.WatchRequest) (AgentServiceWatchClientStream, error)
+	// Sessions the server holds open, and what each is doing
+	Live(context.Context, *v1.LiveRequest) (*v1.LiveResponse, error)
+	// Closes a session the server holds open, stopping its turn; it stays stored
+	Shut(context.Context, *v1.ShutRequest) (*v1.ShutResponse, error)
+	// Takes back a message the user sent and everything after it, then sends the text in its place
+	Edit(context.Context, *v1.EditRequest) (*v1.EditResponse, error)
+	// Answers an approval prompt of the session yes, once, for the session or always
 	Approve(context.Context, *v1.ApproveRequest) (*v1.ApproveResponse, error)
+	// Answers an approval prompt of the session no, with what the user said
 	Deny(context.Context, *v1.DenyRequest) (*v1.DenyResponse, error)
+	// Asks the user in the session's chat before a command that deletes or resets something, unless confirmations are off
+	Confirm(context.Context, *v1.ConfirmRequest) (*v1.ConfirmResponse, error)
+	// Locks the answer of one question the agent asked, the last one settling the set
+	Answer(context.Context, *v1.AnswerRequest) (*v1.AnswerResponse, error)
+	// Dismisses the questions the agent asked, the answers locked so far kept
+	Dismiss(context.Context, *v1.DismissRequest) (*v1.DismissResponse, error)
+	// Live subagents of the session's spawn tree, the spawn pause, the limits of delegation and the session's failed background delegations
+	Subagents(context.Context, *v1.SubagentsRequest) (*v1.SubagentsResponse, error)
+	// Stops one subagent of the session's spawn tree at its next step, its tools asked to cancel
+	Interrupt(context.Context, *v1.InterruptRequest) (*v1.InterruptResponse, error)
+	// Queues guidance for the session's agent, or for one subagent of its spawn tree, delivered right after its next tool results
+	Steer(context.Context, *v1.SteerRequest) (*v1.SteerResponse, error)
+	// Blocks or lets through new subagents everywhere, those running going on; answers the state set
+	Pause(context.Context, *v1.PauseRequest) (*v1.PauseResponse, error)
+	// Newest part of the live transcript of a subagent the session's spawn tree ran, running or finished
+	Tail(context.Context, *v1.TailRequest) (*v1.TailResponse, error)
+	// Keeps a finished spawn tree of the session as the app showed it, for /replay
+	SaveTree(context.Context, *v1.SaveTreeRequest) (*v1.SaveTreeResponse, error)
+	// Spawn trees kept for the session, or for every session, newest first
+	Trees(context.Context, *v1.TreesRequest) (*v1.TreesResponse, error)
+	// One kept spawn tree, by its path
+	LoadTree(context.Context, *v1.LoadTreeRequest) (*v1.LoadTreeResponse, error)
+	// Holds the session to one login of a provider, or to the provider's rotation, and says what it does once that login runs out
+	SetLogin(context.Context, *v1.SetLoginRequest) (*v1.SetLoginResponse, error)
+	// Sends the session's last turn again when its login's limit resets, or at once, or drops a retry armed
+	WaitLogin(context.Context, *v1.WaitLoginRequest) (*v1.WaitLoginResponse, error)
+	// Ends the sessions as their hooks know it, such as those of an app that exits, and gives what the hooks have to tell the person
+	Finalize(context.Context, *v1.FinalizeRequest) (*v1.FinalizeResponse, error)
+	// Tells the session's pre_command hooks of a slash command the app runs itself
+	Observe(context.Context, *v1.ObserveRequest) (*v1.ObserveResponse, error)
 }
 
 // NewAgentServiceClient constructs a client for the icebath.plugins.agent.v1.AgentService service.
@@ -114,8 +314,46 @@ type AgentServiceHandler interface {
 	Send(context.Context, *v1.SendRequest) (*v1.SendResponse, error)
 	Stop(context.Context, *v1.StopRequest) (*v1.StopResponse, error)
 	Watch(context.Context, *v1.WatchRequest, AgentServiceWatchServerStream) error
+	// Sessions the server holds open, and what each is doing
+	Live(context.Context, *v1.LiveRequest) (*v1.LiveResponse, error)
+	// Closes a session the server holds open, stopping its turn; it stays stored
+	Shut(context.Context, *v1.ShutRequest) (*v1.ShutResponse, error)
+	// Takes back a message the user sent and everything after it, then sends the text in its place
+	Edit(context.Context, *v1.EditRequest) (*v1.EditResponse, error)
+	// Answers an approval prompt of the session yes, once, for the session or always
 	Approve(context.Context, *v1.ApproveRequest) (*v1.ApproveResponse, error)
+	// Answers an approval prompt of the session no, with what the user said
 	Deny(context.Context, *v1.DenyRequest) (*v1.DenyResponse, error)
+	// Asks the user in the session's chat before a command that deletes or resets something, unless confirmations are off
+	Confirm(context.Context, *v1.ConfirmRequest) (*v1.ConfirmResponse, error)
+	// Locks the answer of one question the agent asked, the last one settling the set
+	Answer(context.Context, *v1.AnswerRequest) (*v1.AnswerResponse, error)
+	// Dismisses the questions the agent asked, the answers locked so far kept
+	Dismiss(context.Context, *v1.DismissRequest) (*v1.DismissResponse, error)
+	// Live subagents of the session's spawn tree, the spawn pause, the limits of delegation and the session's failed background delegations
+	Subagents(context.Context, *v1.SubagentsRequest) (*v1.SubagentsResponse, error)
+	// Stops one subagent of the session's spawn tree at its next step, its tools asked to cancel
+	Interrupt(context.Context, *v1.InterruptRequest) (*v1.InterruptResponse, error)
+	// Queues guidance for the session's agent, or for one subagent of its spawn tree, delivered right after its next tool results
+	Steer(context.Context, *v1.SteerRequest) (*v1.SteerResponse, error)
+	// Blocks or lets through new subagents everywhere, those running going on; answers the state set
+	Pause(context.Context, *v1.PauseRequest) (*v1.PauseResponse, error)
+	// Newest part of the live transcript of a subagent the session's spawn tree ran, running or finished
+	Tail(context.Context, *v1.TailRequest) (*v1.TailResponse, error)
+	// Keeps a finished spawn tree of the session as the app showed it, for /replay
+	SaveTree(context.Context, *v1.SaveTreeRequest) (*v1.SaveTreeResponse, error)
+	// Spawn trees kept for the session, or for every session, newest first
+	Trees(context.Context, *v1.TreesRequest) (*v1.TreesResponse, error)
+	// One kept spawn tree, by its path
+	LoadTree(context.Context, *v1.LoadTreeRequest) (*v1.LoadTreeResponse, error)
+	// Holds the session to one login of a provider, or to the provider's rotation, and says what it does once that login runs out
+	SetLogin(context.Context, *v1.SetLoginRequest) (*v1.SetLoginResponse, error)
+	// Sends the session's last turn again when its login's limit resets, or at once, or drops a retry armed
+	WaitLogin(context.Context, *v1.WaitLoginRequest) (*v1.WaitLoginResponse, error)
+	// Ends the sessions as their hooks know it, such as those of an app that exits, and gives what the hooks have to tell the person
+	Finalize(context.Context, *v1.FinalizeRequest) (*v1.FinalizeResponse, error)
+	// Tells the session's pre_command hooks of a slash command the app runs itself
+	Observe(context.Context, *v1.ObserveRequest) (*v1.ObserveResponse, error)
 }
 
 // RegisterAgentServiceHandler registers svc as the icebath.plugins.agent.v1.AgentService
@@ -126,8 +364,26 @@ func RegisterAgentServiceHandler(server *connect.Server, svc AgentServiceHandler
 		connect.Method{Spec: agentServiceSendSpec(), Handler: adapter.send},
 		connect.Method{Spec: agentServiceStopSpec(), Handler: adapter.stop},
 		connect.Method{Spec: agentServiceWatchSpec(), Handler: adapter.watch},
+		connect.Method{Spec: agentServiceLiveSpec(), Handler: adapter.live},
+		connect.Method{Spec: agentServiceShutSpec(), Handler: adapter.shut},
+		connect.Method{Spec: agentServiceEditSpec(), Handler: adapter.edit},
 		connect.Method{Spec: agentServiceApproveSpec(), Handler: adapter.approve},
 		connect.Method{Spec: agentServiceDenySpec(), Handler: adapter.deny},
+		connect.Method{Spec: agentServiceConfirmSpec(), Handler: adapter.confirm},
+		connect.Method{Spec: agentServiceAnswerSpec(), Handler: adapter.answer},
+		connect.Method{Spec: agentServiceDismissSpec(), Handler: adapter.dismiss},
+		connect.Method{Spec: agentServiceSubagentsSpec(), Handler: adapter.subagents},
+		connect.Method{Spec: agentServiceInterruptSpec(), Handler: adapter.interrupt},
+		connect.Method{Spec: agentServiceSteerSpec(), Handler: adapter.steer},
+		connect.Method{Spec: agentServicePauseSpec(), Handler: adapter.pause},
+		connect.Method{Spec: agentServiceTailSpec(), Handler: adapter.tail},
+		connect.Method{Spec: agentServiceSaveTreeSpec(), Handler: adapter.saveTree},
+		connect.Method{Spec: agentServiceTreesSpec(), Handler: adapter.trees},
+		connect.Method{Spec: agentServiceLoadTreeSpec(), Handler: adapter.loadTree},
+		connect.Method{Spec: agentServiceSetLoginSpec(), Handler: adapter.setLogin},
+		connect.Method{Spec: agentServiceWaitLoginSpec(), Handler: adapter.waitLogin},
+		connect.Method{Spec: agentServiceFinalizeSpec(), Handler: adapter.finalize},
+		connect.Method{Spec: agentServiceObserveSpec(), Handler: adapter.observe},
 	)
 }
 
@@ -161,12 +417,84 @@ func (UnimplementedAgentServiceHandler) Watch(context.Context, *v1.WatchRequest,
 	return connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Watch is not implemented")
 }
 
+func (UnimplementedAgentServiceHandler) Live(context.Context, *v1.LiveRequest) (*v1.LiveResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Live is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Shut(context.Context, *v1.ShutRequest) (*v1.ShutResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Shut is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Edit(context.Context, *v1.EditRequest) (*v1.EditResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Edit is not implemented")
+}
+
 func (UnimplementedAgentServiceHandler) Approve(context.Context, *v1.ApproveRequest) (*v1.ApproveResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Approve is not implemented")
 }
 
 func (UnimplementedAgentServiceHandler) Deny(context.Context, *v1.DenyRequest) (*v1.DenyResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Deny is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Confirm(context.Context, *v1.ConfirmRequest) (*v1.ConfirmResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Confirm is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Answer(context.Context, *v1.AnswerRequest) (*v1.AnswerResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Answer is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Dismiss(context.Context, *v1.DismissRequest) (*v1.DismissResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Dismiss is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Subagents(context.Context, *v1.SubagentsRequest) (*v1.SubagentsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Subagents is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Interrupt(context.Context, *v1.InterruptRequest) (*v1.InterruptResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Interrupt is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Steer(context.Context, *v1.SteerRequest) (*v1.SteerResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Steer is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Pause(context.Context, *v1.PauseRequest) (*v1.PauseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Pause is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Tail(context.Context, *v1.TailRequest) (*v1.TailResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Tail is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) SaveTree(context.Context, *v1.SaveTreeRequest) (*v1.SaveTreeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.SaveTree is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Trees(context.Context, *v1.TreesRequest) (*v1.TreesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Trees is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) LoadTree(context.Context, *v1.LoadTreeRequest) (*v1.LoadTreeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.LoadTree is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) SetLogin(context.Context, *v1.SetLoginRequest) (*v1.SetLoginResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.SetLogin is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) WaitLogin(context.Context, *v1.WaitLoginRequest) (*v1.WaitLoginResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.WaitLogin is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Finalize(context.Context, *v1.FinalizeRequest) (*v1.FinalizeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Finalize is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Observe(context.Context, *v1.ObserveRequest) (*v1.ObserveResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Observe is not implemented")
 }
 
 type agentServiceClient struct {
@@ -197,6 +525,30 @@ func (c *agentServiceClient) Watch(ctx context.Context, req *v1.WatchRequest) (A
 	return AgentServiceWatchClientStream{stream: stream}, nil
 }
 
+func (c *agentServiceClient) Live(ctx context.Context, req *v1.LiveRequest) (*v1.LiveResponse, error) {
+	var res v1.LiveResponse
+	if err := c.client.CallUnary(ctx, agentServiceLiveSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Shut(ctx context.Context, req *v1.ShutRequest) (*v1.ShutResponse, error) {
+	var res v1.ShutResponse
+	if err := c.client.CallUnary(ctx, agentServiceShutSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Edit(ctx context.Context, req *v1.EditRequest) (*v1.EditResponse, error) {
+	var res v1.EditResponse
+	if err := c.client.CallUnary(ctx, agentServiceEditSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 func (c *agentServiceClient) Approve(ctx context.Context, req *v1.ApproveRequest) (*v1.ApproveResponse, error) {
 	var res v1.ApproveResponse
 	if err := c.client.CallUnary(ctx, agentServiceApproveSpec(), req, &res); err != nil {
@@ -208,6 +560,126 @@ func (c *agentServiceClient) Approve(ctx context.Context, req *v1.ApproveRequest
 func (c *agentServiceClient) Deny(ctx context.Context, req *v1.DenyRequest) (*v1.DenyResponse, error) {
 	var res v1.DenyResponse
 	if err := c.client.CallUnary(ctx, agentServiceDenySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Confirm(ctx context.Context, req *v1.ConfirmRequest) (*v1.ConfirmResponse, error) {
+	var res v1.ConfirmResponse
+	if err := c.client.CallUnary(ctx, agentServiceConfirmSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Answer(ctx context.Context, req *v1.AnswerRequest) (*v1.AnswerResponse, error) {
+	var res v1.AnswerResponse
+	if err := c.client.CallUnary(ctx, agentServiceAnswerSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Dismiss(ctx context.Context, req *v1.DismissRequest) (*v1.DismissResponse, error) {
+	var res v1.DismissResponse
+	if err := c.client.CallUnary(ctx, agentServiceDismissSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Subagents(ctx context.Context, req *v1.SubagentsRequest) (*v1.SubagentsResponse, error) {
+	var res v1.SubagentsResponse
+	if err := c.client.CallUnary(ctx, agentServiceSubagentsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Interrupt(ctx context.Context, req *v1.InterruptRequest) (*v1.InterruptResponse, error) {
+	var res v1.InterruptResponse
+	if err := c.client.CallUnary(ctx, agentServiceInterruptSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Steer(ctx context.Context, req *v1.SteerRequest) (*v1.SteerResponse, error) {
+	var res v1.SteerResponse
+	if err := c.client.CallUnary(ctx, agentServiceSteerSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Pause(ctx context.Context, req *v1.PauseRequest) (*v1.PauseResponse, error) {
+	var res v1.PauseResponse
+	if err := c.client.CallUnary(ctx, agentServicePauseSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Tail(ctx context.Context, req *v1.TailRequest) (*v1.TailResponse, error) {
+	var res v1.TailResponse
+	if err := c.client.CallUnary(ctx, agentServiceTailSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) SaveTree(ctx context.Context, req *v1.SaveTreeRequest) (*v1.SaveTreeResponse, error) {
+	var res v1.SaveTreeResponse
+	if err := c.client.CallUnary(ctx, agentServiceSaveTreeSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Trees(ctx context.Context, req *v1.TreesRequest) (*v1.TreesResponse, error) {
+	var res v1.TreesResponse
+	if err := c.client.CallUnary(ctx, agentServiceTreesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) LoadTree(ctx context.Context, req *v1.LoadTreeRequest) (*v1.LoadTreeResponse, error) {
+	var res v1.LoadTreeResponse
+	if err := c.client.CallUnary(ctx, agentServiceLoadTreeSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) SetLogin(ctx context.Context, req *v1.SetLoginRequest) (*v1.SetLoginResponse, error) {
+	var res v1.SetLoginResponse
+	if err := c.client.CallUnary(ctx, agentServiceSetLoginSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) WaitLogin(ctx context.Context, req *v1.WaitLoginRequest) (*v1.WaitLoginResponse, error) {
+	var res v1.WaitLoginResponse
+	if err := c.client.CallUnary(ctx, agentServiceWaitLoginSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Finalize(ctx context.Context, req *v1.FinalizeRequest) (*v1.FinalizeResponse, error) {
+	var res v1.FinalizeResponse
+	if err := c.client.CallUnary(ctx, agentServiceFinalizeSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Observe(ctx context.Context, req *v1.ObserveRequest) (*v1.ObserveResponse, error) {
+	var res v1.ObserveResponse
+	if err := c.client.CallUnary(ctx, agentServiceObserveSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -247,6 +719,42 @@ func (h agentServiceHandler) watch(ctx context.Context, _ connect.Spec, stream c
 	return h.svc.Watch(ctx, &req, AgentServiceWatchServerStream{stream: stream})
 }
 
+func (h agentServiceHandler) live(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.LiveRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Live(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) shut(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ShutRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Shut(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) edit(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.EditRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Edit(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
 func (h agentServiceHandler) approve(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
 	var req v1.ApproveRequest
 	if err := stream.Receive(&req); err != nil {
@@ -265,6 +773,186 @@ func (h agentServiceHandler) deny(ctx context.Context, _ connect.Spec, stream co
 		return err
 	}
 	res, err := h.svc.Deny(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) confirm(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ConfirmRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Confirm(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) answer(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.AnswerRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Answer(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) dismiss(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DismissRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Dismiss(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) subagents(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SubagentsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Subagents(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) interrupt(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.InterruptRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Interrupt(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) steer(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SteerRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Steer(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) pause(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PauseRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Pause(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) tail(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.TailRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Tail(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) saveTree(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SaveTreeRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SaveTree(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) trees(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.TreesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Trees(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) loadTree(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.LoadTreeRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.LoadTree(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) setLogin(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetLoginRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetLogin(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) waitLogin(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.WaitLoginRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.WaitLogin(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) finalize(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.FinalizeRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Finalize(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) observe(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ObserveRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Observe(ctx, &req)
 	if err != nil {
 		return err
 	}

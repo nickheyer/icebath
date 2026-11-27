@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect/v2"
@@ -56,6 +57,15 @@ type Server struct {
 func New(cfg *config.Config) *Server {
 	serverconfig.Register(cfg)
 	return &Server{config: cfg}
+}
+
+// Settings of the profile a request names, the one in use when it names none; a profile that is not there is not found
+func Profile(cfg *config.Config, name string) (*config.Config, error) {
+	found, err := cfg.Of(strings.TrimSpace(name))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err.Error())
+	}
+	return found, nil
 }
 
 func (s *Server) Services() *connect.Server {

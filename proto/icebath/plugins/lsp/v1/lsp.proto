@@ -1,0 +1,118 @@
+syntax = "proto3";
+
+package icebath.plugins.lsp.v1;
+
+// Language servers that check the files the agent writes, on the machine the server runs on
+service LspService {
+  // The language server service of a profile and every server it knows
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // Installs one server, or every server whose recipe installs by itself
+  rpc Install(InstallRequest) returns (stream InstallEvent);
+  // Program a server runs from
+  rpc Which(WhichRequest) returns (WhichResponse);
+  // Stops every running server of every profile; the next edit starts them again
+  rpc Restart(RestartRequest) returns (RestartResponse);
+}
+
+message StatusRequest {
+  // Profile to read, the one in use when empty
+  string profile = 1;
+}
+
+// A running or starting server process
+message Client {
+  string server = 1;
+  string root = 2;
+  repeated string folders = 3;
+  // starting, running, error or stopped
+  string state = 4;
+  bool running = 5;
+}
+
+// A server and a root
+message Pair {
+  string server = 1;
+  string root = 2;
+}
+
+message Service {
+  string wait_mode = 1;
+  // Seconds
+  double wait_timeout = 2;
+  string install_strategy = 3;
+  repeated Client clients = 4;
+  // Pairs that failed and are not tried again yet
+  repeated Pair broken = 5;
+  // Servers the settings turn off
+  repeated string disabled = 6;
+  double broken_retry_seconds = 7;
+  double warmup_timeout = 8;
+  repeated string exclude_roots = 9;
+  // The exclude setting is no list, which keeps every workspace out
+  bool exclude_roots_invalid = 10;
+  repeated string trusted_workspaces = 11;
+  // Pairs kept out of a workspace the user has not trusted
+  repeated Pair untrusted_skipped = 12;
+}
+
+message Server {
+  string id = 1;
+  repeated string extensions = 2;
+  string description = 3;
+  // installed, missing or manual-only
+  string status = 4;
+  // Where its program is, empty when it is not there
+  string path = 5;
+  // Starts in a workspace the user has not trusted
+  bool untrusted_safe = 6;
+  // Declared by the settings
+  bool custom = 7;
+  // Key of its install recipe, empty for none, and whether the recipe installs by itself
+  string recipe = 8;
+  bool automatic = 9;
+}
+
+message StatusResponse {
+  // The service, absent while language servers are off
+  Service service = 1;
+  // Servers the settings declare, then those icebath knows
+  repeated Server servers = 2;
+  // Servers that start but stay silent for want of a companion tool
+  repeated string warnings = 3;
+}
+
+message InstallRequest {
+  string profile = 1;
+  // Server to install, by its id
+  string server = 2;
+  // Every server whose recipe installs by itself instead
+  bool all = 3;
+  // With all, the servers that install only by hand too, as far as they can
+  bool include_manual = 4;
+}
+
+// One step of an install
+message InstallEvent {
+  oneof kind {
+    // Text for standard output, as it is
+    string out = 1;
+    // A line for standard error
+    string err = 2;
+    // How it ended
+    int32 exit_code = 3;
+  }
+}
+
+message WhichRequest {
+  string profile = 1;
+  string server = 2;
+}
+
+message WhichResponse {
+  // Empty when it is not installed
+  string path = 1;
+}
+
+message RestartRequest {}
+
+message RestartResponse {}

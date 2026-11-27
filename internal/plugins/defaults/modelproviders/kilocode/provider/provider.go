@@ -15,6 +15,8 @@ func (specs) Specs() []provider.Spec {
 	base := kilocodeconfig.BaseURL
 	return []provider.Spec{{
 		Name:               kilocodeconfig.Name,
+		Carriers:           []string{"reasoning_content", "reasoning", "reasoning_details"},
+		Native:             provider.Vendored,
 		DisplayName:        kilocodeconfig.Title,
 		BaseURL:            base,
 		BaseURLEnv:         kilocodeconfig.BaseURLEnv,
@@ -28,7 +30,9 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        kilocodeconfig.Name,
+		ModelsDevID:        "kilo",
+		StaticModels:       []string{"anthropic/claude-opus-4.6", "anthropic/claude-sonnet-4.6", "openai/gpt-5.4", "google/gemini-3-pro-preview", "google/gemini-3-flash-preview"},
+		ModelsDevPreferred: true,
 		DefaultAuxModel:    "google/gemini-3.6-flash",
 	}}
 }

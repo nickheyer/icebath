@@ -14,6 +14,11 @@ func Register(registry *provider.Registry) {
 func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               tencenttokenhubconfig.TokenHubName,
+		DefaultReasoning:   defaultReasoning,
+		Shape:              shape,
+		Carriers:           []string{"reasoning_content", "reasoning_details"},
+		DefaultAuxModel:    "hy4-preview",
+		Hostnames:          []string{"tokenhub.tencentmaas.com", "tokenhub-intl.tencentcloudmaas.com"},
 		DisplayName:        tencenttokenhubconfig.TokenHubTitle,
 		BaseURL:            tencenttokenhubconfig.TokenHubBaseURL,
 		BaseURLEnv:         tencenttokenhubconfig.TokenHubBaseURLEnv,
@@ -25,9 +30,10 @@ func (specs) Specs() []provider.Spec {
 		DefaultModel:       tencenttokenhubconfig.TokenHubDefaultModel,
 		ModelListing:       true,
 		VisionToolMessages: true,
-		ModelsDevID:        tencenttokenhubconfig.TokenHubName,
+		StaticModels:       []string{"hy4-preview", "hy3", "hy3-preview"},
 	}, {
 		Name:               tencenttokenhubconfig.TokenPlanName,
+		DefaultAuxModel:    "hy4-preview",
 		DisplayName:        tencenttokenhubconfig.TokenPlanTitle,
 		BaseURL:            tencenttokenhubconfig.TokenPlanBaseURL,
 		BaseURLEnv:         tencenttokenhubconfig.TokenPlanBaseURLEnv,
@@ -41,6 +47,6 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        tencenttokenhubconfig.TokenPlanName,
+		StaticModels:       []string{"hy4-preview", "hy3", "hy3-preview"},
 	}}
 }

@@ -32,5 +32,7 @@ func (specs) Specs() []provider.Spec {
 		HealthCheck:        true,
 		VisionToolMessages: true,
 		ModelsDevID:        huggingfaceconfig.Name,
+		StaticModels:       []string{"moonshotai/Kimi-K2.5", "Qwen/Qwen3.5-397B-A17B", "Qwen/Qwen3.5-35B-A3B", "deepseek-ai/DeepSeek-V3.2", "MiniMaxAI/MiniMax-M2.5", "zai-org/GLM-5", "XiaomiMiMo/MiMo-V2-Flash", "moonshotai/Kimi-K2-Thinking", "moonshotai/Kimi-K2.6"},
+		ModelsDevPreferred: true,
 	}}
 }

@@ -12,20 +12,27 @@ import (
 
 	"github.com/nickheyer/icebath/internal/app"
 	configapp "github.com/nickheyer/icebath/internal/config/app"
+	"github.com/nickheyer/icebath/internal/models"
 	"github.com/nickheyer/icebath/internal/profile"
+	"github.com/nickheyer/icebath/internal/provider"
 	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
 	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1/providerv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 // Screen of the providers of the profile
 const Screen = "providers"
+
+// Start of the argument of the providers screen that opens the logins of the provider named after it, such as logins:anthropic
+const LoginsOf = "logins:"
 
 type screens struct {
 	connectors *Connectors
@@ -39,14 +46,20 @@ func (s screens) Screens(conn *connect.Client) []tui.Screen {
 	service := providerv1connect.NewProviderServiceClient(conn)
 	settings := configv1connect.NewConfigServiceClient(conn)
 	return []tui.Screen{{
-		ID:    Screen,
-		Title: "Providers",
-		Short: "Add providers to a profile and connect their accounts",
-		Slash: []string{"providers", "connect"},
-		Usage: "[@profile] [search]",
+		ID:      Screen,
+		Title:   "Providers",
+		Short:   "Add providers to a profile and connect their accounts",
+		Slash:   []string{"providers", "connect", "logins"},
+		Usage:   "[@profile] [search]",
+		Actions: append(slices.Clone(signinKeys), loginKeys...),
+		Where:   map[string]string{signinContext: "a sign in in progress", loginsContext: "the accounts of a provider"},
 		Open: func(kit *tui.Kit, argument string) tea.Cmd {
 			name, search := profile.Split(argument)
 			p := &providers{kit: kit, service: service, settings: settings, connectors: s.connectors.Connectors(conn), profile: name}
+			// The logins of one provider open straight away, as the model picker and the prompt of a login that ran out ask
+			if id, ok := strings.CutPrefix(strings.TrimSpace(search), LoginsOf); ok {
+				p.focus, search = strings.TrimSpace(id), ""
+			}
 			return p.open(search)
 		},
 	}}
@@ -59,9 +72,11 @@ type providers struct {
 	connectors []Connector
 	// Profile the providers are of, the one in use when empty
 	profile string
-	hub     *cards.Hub
-	list    *cards.List
-	rows    []*providerv1.Provider
+	// Provider whose logins open once the providers are read, empty for none
+	focus string
+	hub   *cards.Hub
+	list  *cards.List
+	rows  []*providerv1.Provider
 	// Page of one provider while it is open, read again with the list
 	page   *page
 	loaded bool
@@ -133,6 +148,7 @@ func (p *providers) load(selected string) tea.Cmd {
 		return func() tea.Cmd {
 			p.rows, p.err, p.loaded = rows, err, true
 			p.list.Refresh()
+			var opened tea.Cmd
 			for i, entry := range p.rows {
 				if entry.GetName() == selected && !p.list.Filtered() {
 					p.list.Select(i)
@@ -141,8 +157,13 @@ func (p *providers) load(selected string) tea.Cmd {
 					p.page.provider = entry
 					p.page.list.Refresh()
 				}
+				if p.focus != "" && entry.GetName() == p.focus {
+					p.list.Select(i)
+					opened = p.show(entry)
+				}
 			}
-			return nil
+			p.focus = ""
+			return opened
 		}
 	})
 }
@@ -228,6 +249,10 @@ func (p *providers) describe(entry *providerv1.Provider) []string {
 	if base := entry.GetBaseUrl(); base != "" {
 		lines = append(lines, render.Dim(base, t))
 	}
+	if reading := entry.GetAccountUsage(); reading != nil {
+		lines = append(lines, "")
+		lines = append(lines, provider.UsageOf(reading).Lines(false)...)
+	}
 	return append(lines, render.Dim(entry.GetName()+" · "+entry.GetSpec(), t))
 }
 
@@ -242,7 +267,7 @@ func accountTitle(entry *providerv1.Provider, name string) string {
 
 // Opens the settings of the provider
 func (p *providers) configure(entry *providerv1.Provider) tea.Cmd {
-	return tea.Batch(p.kit.WM.DismissCard(p.hub), p.kit.Open(configapp.Settings, strings.TrimSpace(at(p.profile)+" "+entry.GetSection())))
+	return tea.Batch(p.kit.WM.DismissCard(p.hub), p.kit.Open(configapp.Settings, profile.Join(p.profile, entry.GetSection())))
 }
 
 // Title of the screen, naming the profile when it was opened on one
@@ -251,14 +276,6 @@ func title(profile string) string {
 		return "Providers"
 	}
 	return "Providers of " + profile
-}
-
-// Argument naming the profile to open a screen on, none for the one in use
-func at(profile string) string {
-	if profile == "" {
-		return ""
-	}
-	return "@" + profile
 }
 
 // Picks a kind of provider to add to the profile, those found on this machine first
@@ -306,7 +323,8 @@ func (p *providers) add() tea.Cmd {
 func (p *providers) ways(entry *providerv1.Provider) []way {
 	var ways []way
 	if entry.GetKeyed() {
-		ways = append(ways, way{Way: Way{Title: "API key", Open: func(_ *tui.Kit, target Target) tea.Cmd { return p.key(target) }}, inline: true})
+		ways = append(ways, way{Way: Way{Title: "API key", Open: func(_ *tui.Kit, target Target) tea.Cmd { return p.key(target) }}, inline: true},
+			way{Way: Way{Title: "Key from an environment variable", Open: func(_ *tui.Kit, target Target) tea.Cmd { return p.linked(target) }}, inline: true})
 	}
 	for _, connector := range p.connectors {
 		if connector.Spec == entry.GetSpec() {
@@ -387,9 +405,9 @@ func (p *providers) key(target Target) tea.Cmd {
 		Fields: []cards.Field{field},
 		Submit: "Connect",
 		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
-			return tui.Call(p.hub, func() (*configv1.SetResponse, error) {
-				return p.settings.Set(p.kit.Env.Ctx, &configv1.SetRequest{Profile: p.profile, Key: target.Key(providerconfig.APIKeyField), Value: strconv.Quote(strings.TrimSpace(values["key"]))})
-			}, func(*configv1.SetResponse) tea.Cmd {
+			return tui.Call(p.hub, func() (struct{}, error) {
+				return struct{}{}, Store(p.kit.Env.Ctx, p.settings, target, map[string]any{providerconfig.APIKeyField: strings.TrimSpace(values["key"]), providerconfig.KeyEnv: nil})
+			}, func(struct{}) tea.Cmd {
 				return tea.Batch(p.hub.Close(form), p.hub.Done("Connected "+target.Provider.GetDisplayName()), p.load(target.Provider.GetName()))
 			})
 		},
@@ -411,6 +429,8 @@ type entry struct {
 
 const (
 	viewModels   = "models"
+	viewUsage    = "usage"
+	viewRotation = "rotation"
 	viewSettings = "settings"
 )
 
@@ -419,7 +439,25 @@ func (p *page) entries() []entry {
 	for _, account := range p.provider.GetAccounts() {
 		rows = append(rows, entry{account: account})
 	}
-	return append(rows, entry{view: viewModels}, entry{view: viewSettings})
+	rows = append(rows, entry{view: viewModels})
+	if p.provider.GetUsage() {
+		rows = append(rows, entry{view: viewUsage})
+	}
+	if len(p.provider.GetAccounts()) > 1 {
+		rows = append(rows, entry{view: viewRotation})
+	}
+	return append(rows, entry{view: viewSettings})
+}
+
+// First window of a reading as one line: its label, its bar and its share used
+func glance(reading *providerv1.AccountUsage) string {
+	for _, window := range reading.GetWindows() {
+		if window.Used != nil {
+			used := min(max(window.GetUsed(), 0), 100) / 100
+			return window.GetLabel() + " " + provider.Bar(used, 10) + " " + provider.PercentUsed(used) + " used"
+		}
+	}
+	return ""
 }
 
 // Opens the page of the provider over the list
@@ -431,7 +469,8 @@ func (p *providers) show(provider *providerv1.Provider) tea.Cmd {
 		Title:   provider.GetDisplayName(),
 		Glyph:   t.Glyphs.Models,
 		Key:     "providers:" + provider.GetName(),
-		Context: cards.HubContext,
+		Context: loginsContext,
+		Shared:  []string{cards.HubContext},
 		Primary: "hub.use",
 		Pick:    true,
 		Columns: []render.Column{{}, {Max: 40}, {Flex: 1}},
@@ -441,23 +480,32 @@ func (p *providers) show(provider *providerv1.Provider) tea.Cmd {
 			for i, row := range rows {
 				switch {
 				case row.account != nil:
-					mark := ""
-					if row.account.GetActive() {
-						mark = t.Glyphs.Live
+					status := cmp.Or(p.credential(row.account.GetCredentialOrigin(), row.account.GetCredentialSource()), render.Dim("Not connected", t))
+					if state := p.state(row.account); state != "" {
+						status = state
 					}
-					status := p.credential(row.account.GetCredentialOrigin(), row.account.GetCredentialSource())
-					cells[i] = []string{mark, row.account.GetTitle(), cmp.Or(status, render.Dim("Not connected", t))}
+					cells[i] = []string{marks(pg.provider, row.account, t), row.account.GetTitle(), status}
 				case row.view == viewModels:
 					about := "Every model it lists"
 					if n := len(pg.provider.GetModels()); n > 0 {
 						about = render.Count(n, "model") + " picked"
 					}
 					cells[i] = []string{"", "Models " + render.Dim(t.Glyphs.Forward, t), render.Dim(about, t)}
+				case row.view == viewUsage:
+					cells[i] = []string{"", "Usage " + render.Dim(t.Glyphs.Forward, t), render.Dim(cmp.Or(glance(pg.provider.GetAccountUsage()), "What the account may still spend"), t)}
+				case row.view == viewRotation:
+					cells[i] = []string{"", "Rotation " + render.Dim(t.Glyphs.Forward, t), render.Dim(choice(pg.provider), t)}
 				default:
 					cells[i] = []string{"", "Settings " + render.Dim(t.Glyphs.Forward, t), render.Dim("Name, base URL, default model and more", t)}
 				}
 			}
 			return cells
+		},
+		Detail: func(i int) []string {
+			if i < 0 || i >= len(rows) || rows[i].account == nil {
+				return nil
+			}
+			return p.detail(pg.provider, rows[i].account)
 		},
 		Banner: func() string {
 			if len(pg.provider.GetAccounts()) > 0 || !pg.provider.GetKnown() {
@@ -468,15 +516,35 @@ func (p *providers) show(provider *providerv1.Provider) tea.Cmd {
 			}
 			return "No account yet. Add one to connect"
 		},
-		Free: map[string]bool{"hub.add": true, "hub.refresh": true},
+		Status: func() string { return "● in use  ★ default  ↻ in rotation" },
+		Free:   map[string]bool{"hub.add": true, "hub.refresh": true},
 		Hints: func(_ *cards.List, i int) []wm.Hint {
 			var hints []wm.Hint
-			if i >= 0 && rows[i].account != nil {
-				if !rows[i].account.GetActive() {
+			switch {
+			case i >= 0 && rows[i].account != nil:
+				account := rows[i].account
+				if !pg.provider.GetPinned() || pg.provider.GetAccount() != account.GetName() {
 					hints = append(hints, wm.Hint{Action: "hub.use", Label: "use"})
 				}
-				hints = append(hints, wm.Hint{Action: "hub.edit", Label: "connect"}, wm.Hint{Action: "hub.remove"})
-			} else if i >= 0 {
+				label := "connect"
+				if account.GetAuth() == "oauth" && account.GetStatus() != "unavailable" {
+					label = "sign in again"
+				}
+				hints = append(hints, wm.Hint{Action: "hub.edit", Label: label}, wm.Hint{Action: "providers.logins.rotate"})
+				if len(pg.provider.GetAccounts()) > 1 {
+					hints = append(hints, wm.Hint{Action: "providers.logins.up"}, wm.Hint{Action: "providers.logins.down"})
+				}
+				if account.GetResets() != nil || account.GetStatus() == "dead" || account.GetStatus() == "needs_sign_in" || account.GetStatus() == "limited" {
+					hints = append(hints, wm.Hint{Action: "providers.logins.reset"})
+				}
+				if account.GetRenewable() {
+					hints = append(hints, wm.Hint{Action: "providers.logins.renew"})
+				}
+				if account.GetKeyEnv() != "" {
+					hints = append(hints, wm.Hint{Action: "providers.logins.keep"})
+				}
+				hints = append(hints, wm.Hint{Action: "hub.rename"}, wm.Hint{Action: "hub.remove"})
+			case i >= 0:
 				hints = append(hints, wm.Hint{Action: "hub.use", Label: "open"})
 			}
 			return append(hints, wm.Hint{Action: "hub.add", Label: "add account"})
@@ -485,7 +553,7 @@ func (p *providers) show(provider *providerv1.Provider) tea.Cmd {
 			"hub.use": func(_ *cards.List, i int) tea.Cmd {
 				row := rows[i]
 				switch {
-				case row.account != nil && row.account.GetActive():
+				case row.account != nil && pg.provider.GetPinned() && pg.provider.GetAccount() == row.account.GetName():
 					return nil
 				case row.account != nil:
 					return tui.Call(p.hub, func() (*providerv1.UseAccountResponse, error) {
@@ -495,12 +563,22 @@ func (p *providers) show(provider *providerv1.Provider) tea.Cmd {
 					})
 				case row.view == viewModels:
 					return p.models(pg)
+				case row.view == viewUsage:
+					return p.usage(pg)
+				case row.view == viewRotation:
+					return p.rotation(pg)
 				}
 				return p.configure(pg.provider)
 			},
 			"hub.edit": func(_ *cards.List, i int) tea.Cmd {
 				if account := rows[i].account; account != nil {
 					return p.connect(Target{Profile: p.profile, Provider: pg.provider, Account: account})
+				}
+				return nil
+			},
+			"hub.rename": func(_ *cards.List, i int) tea.Cmd {
+				if account := rows[i].account; account != nil {
+					return p.rename(pg, account)
 				}
 				return nil
 			},
@@ -512,8 +590,31 @@ func (p *providers) show(provider *providerv1.Provider) tea.Cmd {
 				l.Confirm("Remove the account "+account.GetTitle()+" and what it keeps?", func() tea.Cmd {
 					return tui.Call(p.hub, func() (*providerv1.RemoveAccountResponse, error) {
 						return p.service.RemoveAccount(p.kit.Env.Ctx, &providerv1.RemoveAccountRequest{Profile: p.profile, Provider: pg.provider.GetName(), Account: account.GetName()})
-					}, func(*providerv1.RemoveAccountResponse) tea.Cmd {
-						return tea.Batch(p.hub.Done("Removed "+account.GetTitle()), p.load(pg.provider.GetName()))
+					}, func(removed *providerv1.RemoveAccountResponse) tea.Cmd {
+						done := "Removed " + account.GetTitle()
+						if cleared := removed.GetCleared(); len(cleared) > 0 {
+							done += " and cleared " + strings.Join(cleared, ", ") + " from .env"
+						}
+						return tea.Batch(p.hub.Done(done), p.load(pg.provider.GetName()))
+					})
+				})
+				return nil
+			},
+			"providers.logins.rotate": func(_ *cards.List, i int) tea.Cmd { return p.toggle(pg, rows[i].account) },
+			"providers.logins.up":     func(_ *cards.List, i int) tea.Cmd { return p.move(pg, rows[i].account, -1) },
+			"providers.logins.down":   func(_ *cards.List, i int) tea.Cmd { return p.move(pg, rows[i].account, 1) },
+			"providers.logins.reset":  func(_ *cards.List, i int) tea.Cmd { return p.reset(pg, rows[i].account) },
+			"providers.logins.renew":  func(_ *cards.List, i int) tea.Cmd { return p.renew(pg, rows[i].account) },
+			"providers.logins.keep": func(l *cards.List, i int) tea.Cmd {
+				account := rows[i].account
+				if account == nil || account.GetKeyEnv() == "" {
+					return nil
+				}
+				l.Confirm("Keep the key of "+account.GetKeyEnv()+" in icebath, so the account no longer reads it from the variable?", func() tea.Cmd {
+					return tui.Call(p.hub, func() (*providerv1.KeepKeyResponse, error) {
+						return p.service.KeepKey(p.kit.Env.Ctx, &providerv1.KeepKeyRequest{Profile: p.profile, Provider: pg.provider.GetName(), Account: account.GetName()})
+					}, func(*providerv1.KeepKeyResponse) tea.Cmd {
+						return tea.Batch(p.hub.Done("Kept the key of "+account.GetTitle()+" in icebath"), p.load(pg.provider.GetName()))
 					})
 				})
 				return nil
@@ -531,6 +632,7 @@ func (p *providers) show(provider *providerv1.Provider) tea.Cmd {
 func (p *providers) models(pg *page) tea.Cmd {
 	t := p.kit.Env.Theme
 	var listed []string
+	details := map[string]*providerv1.Model{}
 	var failed error
 	loaded := false
 	all := func() []string {
@@ -551,19 +653,21 @@ func (p *providers) models(pg *page) tea.Cmd {
 		Primary: "hub.use",
 		Pick:    true,
 		Search:  "Search models",
-		Columns: []render.Column{{}, {Flex: 1}},
+		Columns: []render.Column{{}, {Flex: 1}, {Title: "Context"}, {Title: "$/M in·out"}, {Title: ""}},
 		Rows: func() [][]string {
-			models := all()
-			rows := make([][]string, len(models))
-			for i, model := range models {
+			ids := all()
+			rows := make([][]string, len(ids))
+			for i, model := range ids {
 				mark := ""
 				if slices.Contains(pg.provider.GetModels(), model) {
 					mark = t.Glyphs.Live
 				}
-				rows[i] = []string{mark, model}
+				detail := details[model]
+				rows[i] = []string{mark, model, render.Dim(models.Tokens(detail.GetContext()), t), render.Dim(prices(detail), t), render.Dim(detail.GetNote(), t)}
 			}
 			return rows
 		},
+		Detail: func(i int) []string { return describeModel(details[all()[i]], t) },
 		Banner: func() string {
 			if failed != nil {
 				return "Couldn't list models: " + tui.Reason(failed)
@@ -610,8 +714,98 @@ func (p *providers) models(pg *page) tea.Cmd {
 		response, err := p.service.Models(p.kit.Env.Ctx, &providerv1.ModelsRequest{Profile: p.profile, Provider: pg.provider.GetName()})
 		return func() tea.Cmd {
 			listed, failed, loaded = response.GetModels(), err, true
+			for _, detail := range response.GetDetails() {
+				details[detail.GetId()] = detail
+			}
 			list.Refresh()
 			return nil
 		}
 	}))
+}
+
+// Prices of a model's input and output for a million tokens, empty when not known
+func prices(detail *providerv1.Model) string {
+	if detail.GetInputPrice() == "" && detail.GetOutputPrice() == "" {
+		return ""
+	}
+	shown := func(price string) string {
+		if price == "" {
+			return "?"
+		}
+		return models.PerMillion(price)
+	}
+	return shown(detail.GetInputPrice()) + " · " + shown(detail.GetOutputPrice())
+}
+
+// What is known of a model: its window, its most output, its prices and what it can do
+func describeModel(detail *providerv1.Model, t theme.Theme) []string {
+	if detail == nil {
+		return nil
+	}
+	var lines []string
+	if detail.GetContext() > 0 {
+		lines = append(lines, "Context: "+strs.Thousands(detail.GetContext())+" tokens")
+	}
+	if detail.GetMaxOutput() > 0 {
+		lines = append(lines, "Max output: "+strs.Thousands(detail.GetMaxOutput())+" tokens")
+	}
+	if detail.GetInputPrice() != "" || detail.GetOutputPrice() != "" {
+		line := "Price for a million tokens: " + prices(detail)
+		if detail.GetCacheReadPrice() != "" {
+			line += ", " + models.PerMillion(detail.GetCacheReadPrice()) + " read from cache"
+		}
+		lines = append(lines, line)
+	}
+	if detail.GetAbilities() != "" {
+		lines = append(lines, "Capabilities: "+detail.GetAbilities())
+	}
+	if detail.Reasoning != nil && !detail.GetReasoning() {
+		lines = append(lines, render.Dim("Takes no reasoning effort", t))
+	}
+	if detail.GetNote() != "" {
+		lines = append(lines, render.Dim(detail.GetNote(), t))
+	}
+	return lines
+}
+
+// What the provider says its account in use may still spend, read now; ctrl+r reads it again
+func (p *providers) usage(pg *page) tea.Cmd {
+	t := p.kit.Env.Theme
+	var lines []string
+	var failed error
+	loaded := false
+	var list *cards.List
+	read := func() tea.Cmd {
+		return tui.Async(func() func() tea.Cmd {
+			response, err := p.service.Usage(p.kit.Env.Ctx, &providerv1.UsageRequest{Profile: p.profile, Provider: pg.provider.GetName()})
+			return func() tea.Cmd {
+				failed, loaded, lines = err, true, nil
+				if reading := response.GetUsage(); reading != nil {
+					lines = provider.UsageOf(reading).Lines(false)
+				}
+				list.Refresh()
+				return nil
+			}
+		})
+	}
+	list = cards.NewList(p.kit.Env, cards.ListSpec{
+		Title:   "Usage of " + pg.provider.GetDisplayName(),
+		Glyph:   t.Glyphs.Models,
+		Key:     "providers:" + pg.provider.GetName() + ":usage",
+		Context: cards.HubContext,
+		Columns: []render.Column{{Flex: 1}},
+		Rows: func() [][]string {
+			rows := make([][]string, len(lines))
+			for i, line := range lines {
+				rows[i] = []string{line}
+			}
+			return rows
+		},
+		Empty: func() string {
+			return tui.Waiting(loaded, failed, "No account usage available: no account is connected, or the provider couldn't be asked")
+		},
+		Free:    map[string]bool{"hub.refresh": true},
+		Actions: map[string]func(*cards.List, int) tea.Cmd{"hub.refresh": func(*cards.List, int) tea.Cmd { return read() }},
+	})
+	return tea.Batch(p.hub.Push(list), read())
 }

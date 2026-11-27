@@ -6,6 +6,23 @@ service ConfigService {
   rpc List(ListRequest) returns (ListResponse);
   rpc Get(GetRequest) returns (GetResponse);
   rpc Set(SetRequest) returns (SetResponse);
+  // Value of any key as it is resolved: a setting, a key no setting names, or a variable of the profile's environment
+  rpc Value(ValueRequest) returns (ValueResponse);
+  // Saves a value typed on the command line: a setting, or a variable of the profile's .env for a key shaped like one
+  rpc Put(PutRequest) returns (PutResponse);
+  // Removes the value a key holds, or a variable from the profile's .env
+  rpc Unset(UnsetRequest) returns (UnsetResponse);
+  // Where the settings are kept, what the administrator manages and who else decides them
+  rpc Files(FilesRequest) returns (FilesResponse);
+  // Which variables are set and what the saved settings leave inactive
+  rpc Check(CheckRequest) returns (CheckResponse);
+  // What config show prints beside the settings: the API keys, masked, the messaging platforms, the values skills declare
+  rpc Show(ShowRequest) returns (ShowResponse);
+  // Text of a config file, and that text saved back after an edit
+  rpc Read(ReadRequest) returns (ReadResponse);
+  rpc Write(WriteRequest) returns (WriteResponse);
+  // Makes a config file of the profile that is not there yet: every setting of its scope commented out at its default, with what it does
+  rpc Seed(SeedRequest) returns (SeedResponse);
 }
 
 enum Kind {
@@ -16,6 +33,8 @@ enum Kind {
   KIND_CHOICE = 4;
   KIND_LIST = 5;
   KIND_TABLE = 6;
+  // Length of time, its value the number of its unit
+  KIND_DURATION = 7;
 }
 
 enum Source {
@@ -23,6 +42,8 @@ enum Source {
   SOURCE_DEFAULT = 1;
   SOURCE_FILE = 2;
   SOURCE_ENVIRONMENT = 3;
+  // The administrator pins it
+  SOURCE_MANAGED = 4;
 }
 
 message Option {
@@ -45,6 +66,12 @@ message Setting {
   string variable = 11;
   repeated string env = 12;
   repeated Option options = 13;
+  // Why it can't be changed here, empty when it can
+  string locked = 14;
+  // Unit the number of a length of time counts, such as s or min
+  string unit = 15;
+  // What the setting left unset means, such as no limit, when it has no default
+  string unset = 16;
 }
 
 message Section {
@@ -59,6 +86,8 @@ message Section {
 message ListRequest {
   // Profile to act on, the one in use when empty
   string profile = 1;
+  // Leaves out the values each setting may take, which can cost a check each, such as every terminal backend's
+  bool bare = 2;
 }
 
 message ListResponse {
@@ -86,3 +115,161 @@ message SetRequest {
 }
 
 message SetResponse {}
+
+message ValueRequest {
+  string key = 1;
+  string profile = 2;
+  // Credentials shown as they are rather than masked
+  bool raw = 3;
+}
+
+message ValueResponse {
+  // Whether the key holds a value
+  bool found = 1;
+  // Value as JSON
+  string json = 2;
+  // Value as YAML, lists and tables in block style
+  string yaml = 3;
+  // What to know about where the value came from, such as a stale copy of a variable in config.yaml
+  string note = 4;
+}
+
+message PutRequest {
+  string key = 1;
+  // Text typed for the value
+  string value = 2;
+  string profile = 3;
+}
+
+message PutResponse {
+  // What was saved, as the command says it
+  string shown = 1;
+  // Where it went: a config.yaml, Remote Config, or the profile's .env
+  string destination = 2;
+  // Key as saved, a variable in upper case
+  string key = 3;
+  // Saved as a variable of the profile's .env rather than a setting
+  bool env = 4;
+  // What was taken out of the value before it was saved, such as characters outside ASCII, empty when nothing was
+  string warning = 5;
+}
+
+message UnsetRequest {
+  string key = 1;
+  string profile = 2;
+}
+
+message UnsetResponse {
+  // Whether the key held a value
+  bool found = 1;
+  string destination = 2;
+}
+
+message FilesRequest {
+  string profile = 1;
+}
+
+message FilesResponse {
+  // config.yaml every profile shares
+  string shared = 1;
+  // config.yaml of the profile, empty when Remote Config holds its settings
+  string own = 2;
+  // .env of the profile
+  string env = 3;
+  string profile = 4;
+  // Folder of the administrator's settings, empty when there is none
+  string managed_dir = 5;
+  repeated string managed_keys = 6;
+  repeated string managed_env = 7;
+  // Package manager that keeps the settings of this install, empty when none does
+  string managed_system = 8;
+  // How the profile stands with Remote Config, empty when its settings come from its config.yaml
+  string remote = 9;
+  // Machine the files are on, so a command elsewhere knows it can't open them
+  string host = 10;
+  // Folder of the copies of the profile's config.yaml
+  string backups = 11;
+  // Whether the profile's config.yaml and its .env are there yet
+  bool own_exists = 12;
+  bool env_exists = 13;
+}
+
+message CheckRequest {
+  string profile = 1;
+}
+
+message Variable {
+  string name = 1;
+  bool set = 2;
+  // Settings that read it
+  repeated string settings = 3;
+  bool secret = 4;
+  // What it is, such as the API key of a provider
+  string about = 5;
+}
+
+message ShowRequest {
+  string profile = 1;
+}
+
+// One line of config show beside the settings
+message Shown {
+  string label = 1;
+  // Value as shown, a credential masked; empty when it has none
+  string value = 2;
+  bool set = 3;
+  // Who it belongs to, such as the skill that declares a value
+  string owner = 4;
+}
+
+message ShowResponse {
+  // Credentials of the services icebath reaches, masked
+  repeated Shown keys = 1;
+  // Messaging platforms, set when their bot token is
+  repeated Shown platforms = 2;
+  // Values the profile's skills declare
+  repeated Shown skills = 3;
+  // Folder of the icebath program
+  string install = 4;
+}
+
+message CheckResponse {
+  repeated Variable required = 1;
+  repeated Variable optional = 2;
+  // What the saved settings leave inactive, one line each
+  repeated string diagnostics = 3;
+}
+
+message ReadRequest {
+  // Path of the file, one Files names
+  string path = 1;
+  string profile = 2;
+}
+
+message ReadResponse {
+  string text = 1;
+  // Whether the file is there
+  bool exists = 2;
+}
+
+message WriteRequest {
+  string path = 1;
+  string text = 2;
+  string profile = 3;
+}
+
+message WriteResponse {
+  // What reading the saved file found wrong, empty when it parses
+  string problem = 1;
+}
+
+message SeedRequest {
+  // Path of the file, one Files names
+  string path = 1;
+  string profile = 2;
+}
+
+message SeedResponse {
+  // Whether the file was made, false when it was there already
+  bool seeded = 1;
+}

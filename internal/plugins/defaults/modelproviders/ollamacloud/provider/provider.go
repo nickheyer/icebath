@@ -14,6 +14,9 @@ func Register(registry *provider.Registry) {
 func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               ollamacloudconfig.Name,
+		Shape:              shape,
+		Carriers:           []string{"reasoning_content", "reasoning"},
+		Native:             provider.Unprefixed,
 		DisplayName:        ollamacloudconfig.Title,
 		BaseURL:            ollamacloudconfig.BaseURL,
 		BaseURLEnv:         ollamacloudconfig.BaseURLEnv,
@@ -29,5 +32,6 @@ func (specs) Specs() []provider.Spec {
 		HealthCheck:        true,
 		VisionToolMessages: true,
 		ModelsDevID:        ollamacloudconfig.Name,
+		MetadataHostnames:  []string{"ollama.com"},
 	}}
 }

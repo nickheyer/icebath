@@ -17,24 +17,17 @@ func killPID(pid int) error {
 	return windows.TerminateProcess(h, 137)
 }
 
-// Process table read from a toolhelp snapshot
-func processTable() ([]procRow, error) {
-	h, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+// Live processes of this machine as pid to parent pid, from a toolhelp snapshot; none when it can't be taken
+func Processes() map[int]int {
+	table := map[int]int{}
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return nil, err
+		return table
 	}
-	defer windows.CloseHandle(h)
-	var e windows.ProcessEntry32
-	e.Size = uint32(unsafe.Sizeof(e))
-	if err := windows.Process32First(h, &e); err != nil {
-		return nil, err
+	defer windows.CloseHandle(snapshot)
+	entry := windows.ProcessEntry32{Size: uint32(unsafe.Sizeof(windows.ProcessEntry32{}))}
+	for err = windows.Process32First(snapshot, &entry); err == nil; err = windows.Process32Next(snapshot, &entry) {
+		table[int(entry.ProcessID)] = int(entry.ParentProcessID)
 	}
-	var t []procRow
-	for {
-		t = append(t, procRow{pid: int(e.ProcessID), ppid: int(e.ParentProcessID)})
-		if err := windows.Process32Next(h, &e); err != nil {
-			break
-		}
-	}
-	return t, nil
+	return table
 }

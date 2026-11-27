@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+package icebath.packages.v1;
+
+// The tools, runtimes and Python environments icebath keeps on the machine its server runs on
+service PackageService {
+  // Installs packages: the required ones and the optional defaults when none are named, then the extras asked for
+  rpc Install(InstallRequest) returns (stream Event);
+  // Variables the installed packages give their programs
+  rpc Env(EnvRequest) returns (EnvResponse);
+  // Checks the installed packages against their pins, then the extras and the uv cache
+  rpc Doctor(DoctorRequest) returns (stream Event);
+  // Rebuilds the recorded dependency environments that no longer run
+  rpc Repair(RepairRequest) returns (stream Event);
+  // Makes a named side environment current; the last event carries its interpreter
+  rpc Environment(EnvironmentRequest) returns (stream Event);
+  // Removes store entries, partial downloads and environment generations nothing refers to
+  rpc Collect(CollectRequest) returns (stream Event);
+  // Newest receipt of a package manager operation
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // Resolves the newest versions upstream offers and pins them
+  rpc Update(UpdateRequest) returns (stream Event);
+  // Pins a package to a version, or resolves the extras again
+  rpc Lock(LockRequest) returns (stream Event);
+}
+
+// What shows a command's output: a terminal that redraws statuses in place, or plain lines
+message Terminal {
+  bool live = 1;
+  // Columns of that terminal
+  int32 width = 2;
+}
+
+// One step of a running command
+message Event {
+  oneof kind {
+    // A line of what happened
+    string line = 1;
+    // What goes on now, shown in place of the last status until the next line
+    string status = 2;
+    Done done = 3;
+  }
+}
+
+// How the command ended
+message Done {
+  int32 exit_code = 1;
+  // A failure the command did not report as a line, which ends it with status 1
+  string error = 2;
+  // What the command made, such as the interpreter of an environment
+  string result = 3;
+}
+
+message InstallRequest {
+  // Profile whose settings apply, the one in use when empty
+  string profile = 1;
+  Terminal terminal = 2;
+  repeated string names = 3;
+  repeated string extras = 4;
+  repeated string without = 5;
+  bool tools_only = 6;
+  bool trust_recorded = 7;
+  // Stages the named packages for another target
+  string target = 8;
+}
+
+message EnvRequest {
+  // Packages whose variables are composed, every pinned one when empty
+  repeated string names = 1;
+}
+
+message EnvResponse {
+  map<string, string> env = 1;
+}
+
+message DoctorRequest {
+  string profile = 1;
+  Terminal terminal = 2;
+  // Removes the corrupt entries of the uv cache
+  bool repair = 3;
+}
+
+message RepairRequest {
+  string profile = 1;
+  Terminal terminal = 2;
+}
+
+message EnvironmentRequest {
+  string profile = 1;
+  Terminal terminal = 2;
+  string name = 3;
+  repeated string extras = 4;
+  repeated string requirements = 5;
+}
+
+message CollectRequest {
+  string profile = 1;
+  Terminal terminal = 2;
+}
+
+message StatusRequest {
+  string profile = 1;
+}
+
+message StatusResponse {
+  // The receipt as written, or why there is none
+  string text = 1;
+  bool found = 2;
+}
+
+message UpdateRequest {
+  string profile = 1;
+  Terminal terminal = 2;
+  repeated string names = 3;
+  // Reports what would change and writes nothing
+  bool check = 4;
+  string target = 5;
+  repeated string skip_targets = 6;
+  bool uv = 7;
+  bool npm = 8;
+  bool termux = 9;
+}
+
+message LockRequest {
+  string profile = 1;
+  Terminal terminal = 2;
+  optional string bump = 3;
+  optional string version = 4;
+}

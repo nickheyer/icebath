@@ -9,6 +9,7 @@ package providerv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -86,8 +87,32 @@ type Account struct {
 	Active           bool   `protobuf:"varint,4,opt,name=active,proto3" json:"active,omitempty"`
 	CredentialOrigin Origin `protobuf:"varint,5,opt,name=credential_origin,json=credentialOrigin,proto3,enum=icebath.provider.v1.Origin" json:"credential_origin,omitempty"`
 	CredentialSource string `protobuf:"bytes,6,opt,name=credential_source,json=credentialSource,proto3" json:"credential_source,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// How it signs in: api_key, oauth, aws_sigv4 or gcp_oauth
+	Auth string `protobuf:"bytes,7,opt,name=auth,proto3" json:"auth,omitempty"`
+	// ready, limited, needs_sign_in, dead, or unavailable while it has no credential
+	Status string `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
+	// When a limit it ran into lifts
+	Resets *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=resets,proto3" json:"resets,omitempty"`
+	// What the provider said when it last refused the account
+	Reason string `protobuf:"bytes,10,opt,name=reason,proto3" json:"reason,omitempty"`
+	// Who it signs in as, such as an email
+	Identity string `protobuf:"bytes,11,opt,name=identity,proto3" json:"identity,omitempty"`
+	// Last characters of a hash of its secret, telling two apart without showing either
+	Fingerprint string `protobuf:"bytes,12,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
+	// Takes part in the provider's rotation
+	Rotate bool `protobuf:"varint,13,opt,name=rotate,proto3" json:"rotate,omitempty"`
+	// Place in the order the provider's accounts are tried
+	Priority int32 `protobuf:"varint,14,opt,name=priority,proto3" json:"priority,omitempty"`
+	// Environment variable it reads its key from, for a key kept outside icebath
+	KeyEnv string `protobuf:"bytes,15,opt,name=key_env,json=keyEnv,proto3" json:"key_env,omitempty"`
+	// When its sign-in expires, unset when it doesn't or that isn't known
+	Expires *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=expires,proto3" json:"expires,omitempty"`
+	// Requests made with it, counted for the least used rotation
+	Requests int64 `protobuf:"varint,17,opt,name=requests,proto3" json:"requests,omitempty"`
+	// Whether its sign-in can be renewed
+	Renewable     bool `protobuf:"varint,18,opt,name=renewable,proto3" json:"renewable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Account) Reset() {
@@ -162,6 +187,90 @@ func (x *Account) GetCredentialSource() string {
 	return ""
 }
 
+func (x *Account) GetAuth() string {
+	if x != nil {
+		return x.Auth
+	}
+	return ""
+}
+
+func (x *Account) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *Account) GetResets() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Resets
+	}
+	return nil
+}
+
+func (x *Account) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *Account) GetIdentity() string {
+	if x != nil {
+		return x.Identity
+	}
+	return ""
+}
+
+func (x *Account) GetFingerprint() string {
+	if x != nil {
+		return x.Fingerprint
+	}
+	return ""
+}
+
+func (x *Account) GetRotate() bool {
+	if x != nil {
+		return x.Rotate
+	}
+	return false
+}
+
+func (x *Account) GetPriority() int32 {
+	if x != nil {
+		return x.Priority
+	}
+	return 0
+}
+
+func (x *Account) GetKeyEnv() string {
+	if x != nil {
+		return x.KeyEnv
+	}
+	return ""
+}
+
+func (x *Account) GetExpires() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Expires
+	}
+	return nil
+}
+
+func (x *Account) GetRequests() int64 {
+	if x != nil {
+		return x.Requests
+	}
+	return 0
+}
+
+func (x *Account) GetRenewable() bool {
+	if x != nil {
+		return x.Renewable
+	}
+	return false
+}
+
 type Provider struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name in the profile
@@ -193,7 +302,24 @@ type Provider struct {
 	Account  string     `protobuf:"bytes,19,opt,name=account,proto3" json:"account,omitempty"`
 	Accounts []*Account `protobuf:"bytes,20,rep,name=accounts,proto3" json:"accounts,omitempty"`
 	// Whether a plugin registers its kind
-	Known         bool `protobuf:"varint,21,opt,name=known,proto3" json:"known,omitempty"`
+	Known bool `protobuf:"varint,21,opt,name=known,proto3" json:"known,omitempty"`
+	// Left out of the model pickers by models.catalog.excluded_providers
+	Hidden bool `protobuf:"varint,22,opt,name=hidden,proto3" json:"hidden,omitempty"`
+	// Whether its kind can say what its accounts may still spend
+	Usage bool `protobuf:"varint,23,opt,name=usage,proto3" json:"usage,omitempty"`
+	// What it last said the account in use may still spend, while that is fresh; unset until it has been asked, which a listing does in the
+	// background
+	AccountUsage *AccountUsage `protobuf:"bytes,24,opt,name=account_usage,json=accountUsage,proto3" json:"account_usage,omitempty"`
+	// Order the accounts of its rotation are used in: fill_first, round_robin, least_used or random
+	Strategy string `protobuf:"bytes,25,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	// What it does held to one account that reached its limit: fail or rotate
+	OnExhausted string `protobuf:"bytes,26,opt,name=on_exhausted,json=onExhausted,proto3" json:"on_exhausted,omitempty"`
+	// Held to the account named in account
+	Pinned bool `protobuf:"varint,27,opt,name=pinned,proto3" json:"pinned,omitempty"`
+	// Takes turns between its accounts marked for rotation; neither this nor pinned takes every account in order
+	Rotate bool `protobuf:"varint,28,opt,name=rotate,proto3" json:"rotate,omitempty"`
+	// Variables and programs its credential is not taken from
+	Ignored       []string `protobuf:"bytes,29,rep,name=ignored,proto3" json:"ignored,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -375,6 +501,62 @@ func (x *Provider) GetKnown() bool {
 	return false
 }
 
+func (x *Provider) GetHidden() bool {
+	if x != nil {
+		return x.Hidden
+	}
+	return false
+}
+
+func (x *Provider) GetUsage() bool {
+	if x != nil {
+		return x.Usage
+	}
+	return false
+}
+
+func (x *Provider) GetAccountUsage() *AccountUsage {
+	if x != nil {
+		return x.AccountUsage
+	}
+	return nil
+}
+
+func (x *Provider) GetStrategy() string {
+	if x != nil {
+		return x.Strategy
+	}
+	return ""
+}
+
+func (x *Provider) GetOnExhausted() string {
+	if x != nil {
+		return x.OnExhausted
+	}
+	return ""
+}
+
+func (x *Provider) GetPinned() bool {
+	if x != nil {
+		return x.Pinned
+	}
+	return false
+}
+
+func (x *Provider) GetRotate() bool {
+	if x != nil {
+		return x.Rotate
+	}
+	return false
+}
+
+func (x *Provider) GetIgnored() []string {
+	if x != nil {
+		return x.Ignored
+	}
+	return nil
+}
+
 type Spec struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Name        string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -390,7 +572,10 @@ type Spec struct {
 	DetectedSource string   `protobuf:"bytes,10,opt,name=detected_source,json=detectedSource,proto3" json:"detected_source,omitempty"`
 	KeyEnv         []string `protobuf:"bytes,11,rep,name=key_env,json=keyEnv,proto3" json:"key_env,omitempty"`
 	// Providers of the profile of this kind
-	Providers     []string `protobuf:"bytes,12,rep,name=providers,proto3" json:"providers,omitempty"`
+	Providers []string `protobuf:"bytes,12,rep,name=providers,proto3" json:"providers,omitempty"`
+	Aliases   []string `protobuf:"bytes,13,rep,name=aliases,proto3" json:"aliases,omitempty"`
+	// Whether its accounts keep an API key
+	Keyed         bool `protobuf:"varint,14,opt,name=keyed,proto3" json:"keyed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -507,6 +692,20 @@ func (x *Spec) GetProviders() []string {
 		return x.Providers
 	}
 	return nil
+}
+
+func (x *Spec) GetAliases() []string {
+	if x != nil {
+		return x.Aliases
+	}
+	return nil
+}
+
+func (x *Spec) GetKeyed() bool {
+	if x != nil {
+		return x.Keyed
+	}
+	return false
 }
 
 type ListRequest struct {
@@ -691,7 +890,9 @@ type ModelsRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Provider string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
 	// Profile to act on, the one in use when empty
-	Profile       string `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	Profile string `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Read the catalogs again rather than what is kept
+	Refresh       bool `protobuf:"varint,3,opt,name=refresh,proto3" json:"refresh,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -740,9 +941,20 @@ func (x *ModelsRequest) GetProfile() string {
 	return ""
 }
 
+func (x *ModelsRequest) GetRefresh() bool {
+	if x != nil {
+		return x.Refresh
+	}
+	return false
+}
+
 type ModelsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Models        []string               `protobuf:"bytes,1,rep,name=models,proto3" json:"models,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Models []string               `protobuf:"bytes,1,rep,name=models,proto3" json:"models,omitempty"`
+	// What is known of each model, in the order of models
+	Details []*Model `protobuf:"bytes,2,rep,name=details,proto3" json:"details,omitempty"`
+	// The models stand in for a list the provider could not give
+	Fallback      bool `protobuf:"varint,3,opt,name=fallback,proto3" json:"fallback,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -784,6 +996,442 @@ func (x *ModelsResponse) GetModels() []string {
 	return nil
 }
 
+func (x *ModelsResponse) GetDetails() []*Model {
+	if x != nil {
+		return x.Details
+	}
+	return nil
+}
+
+func (x *ModelsResponse) GetFallback() bool {
+	if x != nil {
+		return x.Fallback
+	}
+	return false
+}
+
+// What is known of one model a provider offers
+type Model struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Such as recommended, free or default
+	Note string `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
+	// Tokens it takes in at once and gives out at most, 0 when not known
+	Context   int64 `protobuf:"varint,3,opt,name=context,proto3" json:"context,omitempty"`
+	MaxOutput int64 `protobuf:"varint,4,opt,name=max_output,json=maxOutput,proto3" json:"max_output,omitempty"`
+	// USD for a million tokens, as decimal text; empty when not known
+	InputPrice     string `protobuf:"bytes,5,opt,name=input_price,json=inputPrice,proto3" json:"input_price,omitempty"`
+	OutputPrice    string `protobuf:"bytes,6,opt,name=output_price,json=outputPrice,proto3" json:"output_price,omitempty"`
+	CacheReadPrice string `protobuf:"bytes,7,opt,name=cache_read_price,json=cacheReadPrice,proto3" json:"cache_read_price,omitempty"`
+	// What it can do, such as reasoning, tools, vision
+	Abilities string `protobuf:"bytes,8,opt,name=abilities,proto3" json:"abilities,omitempty"`
+	// Whether it takes a reasoning effort, when that is known
+	Reasoning *bool `protobuf:"varint,9,opt,name=reasoning,proto3,oneof" json:"reasoning,omitempty"`
+	// Efforts it takes, least first, as its kind or the provider's listing names them; empty when neither does
+	Efforts []string `protobuf:"bytes,10,rep,name=efforts,proto3" json:"efforts,omitempty"`
+	// Its reasoning can't be turned off
+	MandatoryReasoning bool `protobuf:"varint,11,opt,name=mandatory_reasoning,json=mandatoryReasoning,proto3" json:"mandatory_reasoning,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *Model) Reset() {
+	*x = Model{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Model) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Model) ProtoMessage() {}
+
+func (x *Model) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Model.ProtoReflect.Descriptor instead.
+func (*Model) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Model) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Model) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *Model) GetContext() int64 {
+	if x != nil {
+		return x.Context
+	}
+	return 0
+}
+
+func (x *Model) GetMaxOutput() int64 {
+	if x != nil {
+		return x.MaxOutput
+	}
+	return 0
+}
+
+func (x *Model) GetInputPrice() string {
+	if x != nil {
+		return x.InputPrice
+	}
+	return ""
+}
+
+func (x *Model) GetOutputPrice() string {
+	if x != nil {
+		return x.OutputPrice
+	}
+	return ""
+}
+
+func (x *Model) GetCacheReadPrice() string {
+	if x != nil {
+		return x.CacheReadPrice
+	}
+	return ""
+}
+
+func (x *Model) GetAbilities() string {
+	if x != nil {
+		return x.Abilities
+	}
+	return ""
+}
+
+func (x *Model) GetReasoning() bool {
+	if x != nil && x.Reasoning != nil {
+		return *x.Reasoning
+	}
+	return false
+}
+
+func (x *Model) GetEfforts() []string {
+	if x != nil {
+		return x.Efforts
+	}
+	return nil
+}
+
+func (x *Model) GetMandatoryReasoning() bool {
+	if x != nil {
+		return x.MandatoryReasoning
+	}
+	return false
+}
+
+type UsageRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Provider of the profile; when empty, the first connected one whose kind can say
+	Provider string `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	// Profile to act on, the one in use when empty
+	Profile       string `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageRequest) Reset() {
+	*x = UsageRequest{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageRequest) ProtoMessage() {}
+
+func (x *UsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageRequest.ProtoReflect.Descriptor instead.
+func (*UsageRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *UsageRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *UsageRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type UsageResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Nothing when the kind can't say, no account is connected, or the provider couldn't be asked
+	Usage         *AccountUsage `protobuf:"bytes,1,opt,name=usage,proto3" json:"usage,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageResponse) Reset() {
+	*x = UsageResponse{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageResponse) ProtoMessage() {}
+
+func (x *UsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageResponse.ProtoReflect.Descriptor instead.
+func (*UsageResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *UsageResponse) GetUsage() *AccountUsage {
+	if x != nil {
+		return x.Usage
+	}
+	return nil
+}
+
+type AccountUsage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Provider asked, by its name in the profile
+	Provider string `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	// Where the reading came from
+	Source  string                 `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	Title   string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	Plan    string                 `protobuf:"bytes,4,opt,name=plan,proto3" json:"plan,omitempty"`
+	Fetched *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=fetched,proto3" json:"fetched,omitempty"`
+	Windows []*UsageWindow         `protobuf:"bytes,6,rep,name=windows,proto3" json:"windows,omitempty"`
+	Details []string               `protobuf:"bytes,7,rep,name=details,proto3" json:"details,omitempty"`
+	// Why the account's limits can't be read
+	Unavailable string `protobuf:"bytes,8,opt,name=unavailable,proto3" json:"unavailable,omitempty"`
+	// Windows shown as bars under the plan's name
+	Bars          bool `protobuf:"varint,9,opt,name=bars,proto3" json:"bars,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AccountUsage) Reset() {
+	*x = AccountUsage{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccountUsage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccountUsage) ProtoMessage() {}
+
+func (x *AccountUsage) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccountUsage.ProtoReflect.Descriptor instead.
+func (*AccountUsage) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *AccountUsage) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *AccountUsage) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *AccountUsage) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *AccountUsage) GetPlan() string {
+	if x != nil {
+		return x.Plan
+	}
+	return ""
+}
+
+func (x *AccountUsage) GetFetched() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Fetched
+	}
+	return nil
+}
+
+func (x *AccountUsage) GetWindows() []*UsageWindow {
+	if x != nil {
+		return x.Windows
+	}
+	return nil
+}
+
+func (x *AccountUsage) GetDetails() []string {
+	if x != nil {
+		return x.Details
+	}
+	return nil
+}
+
+func (x *AccountUsage) GetUnavailable() string {
+	if x != nil {
+		return x.Unavailable
+	}
+	return ""
+}
+
+func (x *AccountUsage) GetBars() bool {
+	if x != nil {
+		return x.Bars
+	}
+	return false
+}
+
+type UsageWindow struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Label string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	// Share used in percent, unset when the provider didn't say
+	Used *float64 `protobuf:"fixed64,2,opt,name=used,proto3,oneof" json:"used,omitempty"`
+	// When the window starts over, unset when not known
+	Resets *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=resets,proto3" json:"resets,omitempty"`
+	Detail string                 `protobuf:"bytes,4,opt,name=detail,proto3" json:"detail,omitempty"`
+	// Whether it caps one family of models rather than the whole account
+	Model         bool `protobuf:"varint,5,opt,name=model,proto3" json:"model,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UsageWindow) Reset() {
+	*x = UsageWindow{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UsageWindow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UsageWindow) ProtoMessage() {}
+
+func (x *UsageWindow) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UsageWindow.ProtoReflect.Descriptor instead.
+func (*UsageWindow) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *UsageWindow) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *UsageWindow) GetUsed() float64 {
+	if x != nil && x.Used != nil {
+		return *x.Used
+	}
+	return 0
+}
+
+func (x *UsageWindow) GetResets() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Resets
+	}
+	return nil
+}
+
+func (x *UsageWindow) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+func (x *UsageWindow) GetModel() bool {
+	if x != nil {
+		return x.Model
+	}
+	return false
+}
+
 type AddRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Spec  string                 `protobuf:"bytes,1,opt,name=spec,proto3" json:"spec,omitempty"`
@@ -798,7 +1446,7 @@ type AddRequest struct {
 
 func (x *AddRequest) Reset() {
 	*x = AddRequest{}
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[9]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -810,7 +1458,7 @@ func (x *AddRequest) String() string {
 func (*AddRequest) ProtoMessage() {}
 
 func (x *AddRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[9]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -823,7 +1471,7 @@ func (x *AddRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddRequest.ProtoReflect.Descriptor instead.
 func (*AddRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{9}
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *AddRequest) GetSpec() string {
@@ -863,7 +1511,7 @@ type AddResponse struct {
 
 func (x *AddResponse) Reset() {
 	*x = AddResponse{}
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[10]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -875,7 +1523,7 @@ func (x *AddResponse) String() string {
 func (*AddResponse) ProtoMessage() {}
 
 func (x *AddResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[10]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -888,7 +1536,7 @@ func (x *AddResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddResponse.ProtoReflect.Descriptor instead.
 func (*AddResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{10}
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *AddResponse) GetProvider() *Provider {
@@ -909,7 +1557,7 @@ type RemoveRequest struct {
 
 func (x *RemoveRequest) Reset() {
 	*x = RemoveRequest{}
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[11]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -921,7 +1569,7 @@ func (x *RemoveRequest) String() string {
 func (*RemoveRequest) ProtoMessage() {}
 
 func (x *RemoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[11]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -934,7 +1582,7 @@ func (x *RemoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveRequest.ProtoReflect.Descriptor instead.
 func (*RemoveRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{11}
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RemoveRequest) GetProvider() string {
@@ -959,7 +1607,7 @@ type RemoveResponse struct {
 
 func (x *RemoveResponse) Reset() {
 	*x = RemoveResponse{}
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[12]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -971,7 +1619,7 @@ func (x *RemoveResponse) String() string {
 func (*RemoveResponse) ProtoMessage() {}
 
 func (x *RemoveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[12]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -984,7 +1632,7 @@ func (x *RemoveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveResponse.ProtoReflect.Descriptor instead.
 func (*RemoveResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{12}
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{17}
 }
 
 type AddAccountRequest struct {
@@ -1001,7 +1649,7 @@ type AddAccountRequest struct {
 
 func (x *AddAccountRequest) Reset() {
 	*x = AddAccountRequest{}
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[13]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1013,7 +1661,7 @@ func (x *AddAccountRequest) String() string {
 func (*AddAccountRequest) ProtoMessage() {}
 
 func (x *AddAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[13]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1026,7 +1674,7 @@ func (x *AddAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddAccountRequest.ProtoReflect.Descriptor instead.
 func (*AddAccountRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{13}
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AddAccountRequest) GetProvider() string {
@@ -1066,7 +1714,7 @@ type AddAccountResponse struct {
 
 func (x *AddAccountResponse) Reset() {
 	*x = AddAccountResponse{}
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[14]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1078,7 +1726,7 @@ func (x *AddAccountResponse) String() string {
 func (*AddAccountResponse) ProtoMessage() {}
 
 func (x *AddAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[14]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1091,7 +1739,7 @@ func (x *AddAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddAccountResponse.ProtoReflect.Descriptor instead.
 func (*AddAccountResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{14}
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *AddAccountResponse) GetAccount() *Account {
@@ -1106,14 +1754,16 @@ type RemoveAccountRequest struct {
 	Provider string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
 	Account  string                 `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
 	// Profile to act on, the one in use when empty
-	Profile       string `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+	Profile string `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+	// In place of an account: a variable or program the provider takes its credential from outside its accounts, left out from now on
+	Source        string `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RemoveAccountRequest) Reset() {
 	*x = RemoveAccountRequest{}
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[15]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1125,7 +1775,7 @@ func (x *RemoveAccountRequest) String() string {
 func (*RemoveAccountRequest) ProtoMessage() {}
 
 func (x *RemoveAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[15]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1138,7 +1788,7 @@ func (x *RemoveAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveAccountRequest.ProtoReflect.Descriptor instead.
 func (*RemoveAccountRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{15}
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RemoveAccountRequest) GetProvider() string {
@@ -1162,15 +1812,24 @@ func (x *RemoveAccountRequest) GetProfile() string {
 	return ""
 }
 
+func (x *RemoveAccountRequest) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
 type RemoveAccountResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Variables cleared from the profile's .env: the one the account read its key from, or the source left out
+	Cleared       []string `protobuf:"bytes,1,rep,name=cleared,proto3" json:"cleared,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RemoveAccountResponse) Reset() {
 	*x = RemoveAccountResponse{}
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[16]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1182,7 +1841,7 @@ func (x *RemoveAccountResponse) String() string {
 func (*RemoveAccountResponse) ProtoMessage() {}
 
 func (x *RemoveAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[16]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1195,7 +1854,14 @@ func (x *RemoveAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveAccountResponse.ProtoReflect.Descriptor instead.
 func (*RemoveAccountResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{16}
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *RemoveAccountResponse) GetCleared() []string {
+	if x != nil {
+		return x.Cleared
+	}
+	return nil
 }
 
 type UseAccountRequest struct {
@@ -1210,7 +1876,7 @@ type UseAccountRequest struct {
 
 func (x *UseAccountRequest) Reset() {
 	*x = UseAccountRequest{}
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[17]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1222,7 +1888,7 @@ func (x *UseAccountRequest) String() string {
 func (*UseAccountRequest) ProtoMessage() {}
 
 func (x *UseAccountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[17]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1235,7 +1901,7 @@ func (x *UseAccountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UseAccountRequest.ProtoReflect.Descriptor instead.
 func (*UseAccountRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{17}
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *UseAccountRequest) GetProvider() string {
@@ -1267,7 +1933,7 @@ type UseAccountResponse struct {
 
 func (x *UseAccountResponse) Reset() {
 	*x = UseAccountResponse{}
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[18]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1279,7 +1945,7 @@ func (x *UseAccountResponse) String() string {
 func (*UseAccountResponse) ProtoMessage() {}
 
 func (x *UseAccountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_provider_v1_provider_proto_msgTypes[18]
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1292,21 +1958,747 @@ func (x *UseAccountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UseAccountResponse.ProtoReflect.Descriptor instead.
 func (*UseAccountResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{18}
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{23}
+}
+
+type RenewRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Provider string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	// Account to renew, the one in use when empty
+	Account string `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
+	// Profile to act on, the one in use when empty
+	Profile       string `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RenewRequest) Reset() {
+	*x = RenewRequest{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RenewRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RenewRequest) ProtoMessage() {}
+
+func (x *RenewRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RenewRequest.ProtoReflect.Descriptor instead.
+func (*RenewRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *RenewRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *RenewRequest) GetAccount() string {
+	if x != nil {
+		return x.Account
+	}
+	return ""
+}
+
+func (x *RenewRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type RenewResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *Account               `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RenewResponse) Reset() {
+	*x = RenewResponse{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RenewResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RenewResponse) ProtoMessage() {}
+
+func (x *RenewResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RenewResponse.ProtoReflect.Descriptor instead.
+func (*RenewResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *RenewResponse) GetAccount() *Account {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+type ResetRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Provider string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	// Account whose limits to forget, every account of the provider when empty
+	Account string `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
+	// Profile to act on, the one in use when empty
+	Profile       string `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResetRequest) Reset() {
+	*x = ResetRequest{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetRequest) ProtoMessage() {}
+
+func (x *ResetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetRequest.ProtoReflect.Descriptor instead.
+func (*ResetRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ResetRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *ResetRequest) GetAccount() string {
+	if x != nil {
+		return x.Account
+	}
+	return ""
+}
+
+func (x *ResetRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type ResetResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Accounts that had limits to forget
+	Cleared       int32 `protobuf:"varint,1,opt,name=cleared,proto3" json:"cleared,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResetResponse) Reset() {
+	*x = ResetResponse{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetResponse) ProtoMessage() {}
+
+func (x *ResetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetResponse.ProtoReflect.Descriptor instead.
+func (*ResetResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ResetResponse) GetCleared() int32 {
+	if x != nil {
+		return x.Cleared
+	}
+	return 0
+}
+
+type MoveAccountRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Provider string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	Account  string                 `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
+	// Place from 0, the first tried; clamped to the places there are
+	Priority int32 `protobuf:"varint,3,opt,name=priority,proto3" json:"priority,omitempty"`
+	// Profile to act on, the one in use when empty
+	Profile       string `protobuf:"bytes,4,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MoveAccountRequest) Reset() {
+	*x = MoveAccountRequest{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MoveAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MoveAccountRequest) ProtoMessage() {}
+
+func (x *MoveAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MoveAccountRequest.ProtoReflect.Descriptor instead.
+func (*MoveAccountRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *MoveAccountRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *MoveAccountRequest) GetAccount() string {
+	if x != nil {
+		return x.Account
+	}
+	return ""
+}
+
+func (x *MoveAccountRequest) GetPriority() int32 {
+	if x != nil {
+		return x.Priority
+	}
+	return 0
+}
+
+func (x *MoveAccountRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type MoveAccountResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Place it took
+	Priority      int32 `protobuf:"varint,1,opt,name=priority,proto3" json:"priority,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MoveAccountResponse) Reset() {
+	*x = MoveAccountResponse{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MoveAccountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MoveAccountResponse) ProtoMessage() {}
+
+func (x *MoveAccountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MoveAccountResponse.ProtoReflect.Descriptor instead.
+func (*MoveAccountResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *MoveAccountResponse) GetPriority() int32 {
+	if x != nil {
+		return x.Priority
+	}
+	return 0
+}
+
+type RenameAccountRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Provider string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	Account  string                 `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
+	Name     string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	// Profile to act on, the one in use when empty
+	Profile       string `protobuf:"bytes,4,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RenameAccountRequest) Reset() {
+	*x = RenameAccountRequest{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RenameAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RenameAccountRequest) ProtoMessage() {}
+
+func (x *RenameAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RenameAccountRequest.ProtoReflect.Descriptor instead.
+func (*RenameAccountRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *RenameAccountRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *RenameAccountRequest) GetAccount() string {
+	if x != nil {
+		return x.Account
+	}
+	return ""
+}
+
+func (x *RenameAccountRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RenameAccountRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type RenameAccountResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *Account               `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RenameAccountResponse) Reset() {
+	*x = RenameAccountResponse{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RenameAccountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RenameAccountResponse) ProtoMessage() {}
+
+func (x *RenameAccountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RenameAccountResponse.ProtoReflect.Descriptor instead.
+func (*RenameAccountResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *RenameAccountResponse) GetAccount() *Account {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+type StatusRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Provider string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	// Profile to act on, the one in use when empty
+	Profile       string `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StatusRequest) Reset() {
+	*x = StatusRequest{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StatusRequest) ProtoMessage() {}
+
+func (x *StatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
+func (*StatusRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *StatusRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *StatusRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type StatusResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	LoggedIn bool                   `protobuf:"varint,1,opt,name=logged_in,json=loggedIn,proto3" json:"logged_in,omitempty"`
+	// Why it isn't, when it isn't
+	Error string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// What it signs in with, as name and value pairs in the order shown
+	Details       []*Detail `protobuf:"bytes,3,rep,name=details,proto3" json:"details,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StatusResponse) Reset() {
+	*x = StatusResponse{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StatusResponse) ProtoMessage() {}
+
+func (x *StatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
+func (*StatusResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *StatusResponse) GetLoggedIn() bool {
+	if x != nil {
+		return x.LoggedIn
+	}
+	return false
+}
+
+func (x *StatusResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *StatusResponse) GetDetails() []*Detail {
+	if x != nil {
+		return x.Details
+	}
+	return nil
+}
+
+type Detail struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Detail) Reset() {
+	*x = Detail{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Detail) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Detail) ProtoMessage() {}
+
+func (x *Detail) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Detail.ProtoReflect.Descriptor instead.
+func (*Detail) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *Detail) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Detail) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+type KeepKeyRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Provider string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	Account  string                 `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
+	// Profile to act on, the one in use when empty
+	Profile       string `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeepKeyRequest) Reset() {
+	*x = KeepKeyRequest{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeepKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeepKeyRequest) ProtoMessage() {}
+
+func (x *KeepKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeepKeyRequest.ProtoReflect.Descriptor instead.
+func (*KeepKeyRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *KeepKeyRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *KeepKeyRequest) GetAccount() string {
+	if x != nil {
+		return x.Account
+	}
+	return ""
+}
+
+func (x *KeepKeyRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type KeepKeyResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *Account               `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeepKeyResponse) Reset() {
+	*x = KeepKeyResponse{}
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeepKeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeepKeyResponse) ProtoMessage() {}
+
+func (x *KeepKeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_provider_v1_provider_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeepKeyResponse.ProtoReflect.Descriptor instead.
+func (*KeepKeyResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_provider_v1_provider_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *KeepKeyResponse) GetAccount() *Account {
+	if x != nil {
+		return x.Account
+	}
+	return nil
 }
 
 var File_icebath_provider_v1_provider_proto protoreflect.FileDescriptor
 
 const file_icebath_provider_v1_provider_proto_rawDesc = "" +
 	"\n" +
-	"\"icebath/provider/v1/provider.proto\x12\x13icebath.provider.v1\"\xdc\x01\n" +
+	"\"icebath/provider/v1/provider.proto\x12\x13icebath.provider.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcf\x04\n" +
 	"\aAccount\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x18\n" +
 	"\asection\x18\x03 \x01(\tR\asection\x12\x16\n" +
 	"\x06active\x18\x04 \x01(\bR\x06active\x12H\n" +
 	"\x11credential_origin\x18\x05 \x01(\x0e2\x1b.icebath.provider.v1.OriginR\x10credentialOrigin\x12+\n" +
-	"\x11credential_source\x18\x06 \x01(\tR\x10credentialSource\"\x9b\x05\n" +
+	"\x11credential_source\x18\x06 \x01(\tR\x10credentialSource\x12\x12\n" +
+	"\x04auth\x18\a \x01(\tR\x04auth\x12\x16\n" +
+	"\x06status\x18\b \x01(\tR\x06status\x122\n" +
+	"\x06resets\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\x06resets\x12\x16\n" +
+	"\x06reason\x18\n" +
+	" \x01(\tR\x06reason\x12\x1a\n" +
+	"\bidentity\x18\v \x01(\tR\bidentity\x12 \n" +
+	"\vfingerprint\x18\f \x01(\tR\vfingerprint\x12\x16\n" +
+	"\x06rotate\x18\r \x01(\bR\x06rotate\x12\x1a\n" +
+	"\bpriority\x18\x0e \x01(\x05R\bpriority\x12\x17\n" +
+	"\akey_env\x18\x0f \x01(\tR\x06keyEnv\x124\n" +
+	"\aexpires\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\aexpires\x12\x1a\n" +
+	"\brequests\x18\x11 \x01(\x03R\brequests\x12\x1c\n" +
+	"\trenewable\x18\x12 \x01(\bR\trenewable\"\x9a\a\n" +
 	"\bProvider\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04spec\x18\x02 \x01(\tR\x04spec\x12!\n" +
@@ -1332,7 +2724,15 @@ const file_icebath_provider_v1_provider_proto_rawDesc = "" +
 	"\x06usable\x18\x12 \x01(\bR\x06usable\x12\x18\n" +
 	"\aaccount\x18\x13 \x01(\tR\aaccount\x128\n" +
 	"\baccounts\x18\x14 \x03(\v2\x1c.icebath.provider.v1.AccountR\baccounts\x12\x14\n" +
-	"\x05known\x18\x15 \x01(\bR\x05known\"\x8d\x03\n" +
+	"\x05known\x18\x15 \x01(\bR\x05known\x12\x16\n" +
+	"\x06hidden\x18\x16 \x01(\bR\x06hidden\x12\x14\n" +
+	"\x05usage\x18\x17 \x01(\bR\x05usage\x12F\n" +
+	"\raccount_usage\x18\x18 \x01(\v2!.icebath.provider.v1.AccountUsageR\faccountUsage\x12\x1a\n" +
+	"\bstrategy\x18\x19 \x01(\tR\bstrategy\x12!\n" +
+	"\fon_exhausted\x18\x1a \x01(\tR\vonExhausted\x12\x16\n" +
+	"\x06pinned\x18\x1b \x01(\bR\x06pinned\x12\x16\n" +
+	"\x06rotate\x18\x1c \x01(\bR\x06rotate\x12\x18\n" +
+	"\aignored\x18\x1d \x03(\tR\aignored\"\xbd\x03\n" +
 	"\x04Spec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12 \n" +
@@ -1349,7 +2749,9 @@ const file_icebath_provider_v1_provider_proto_rawDesc = "" +
 	"\x0fdetected_source\x18\n" +
 	" \x01(\tR\x0edetectedSource\x12\x17\n" +
 	"\akey_env\x18\v \x03(\tR\x06keyEnv\x12\x1c\n" +
-	"\tproviders\x18\f \x03(\tR\tproviders\"'\n" +
+	"\tproviders\x18\f \x03(\tR\tproviders\x12\x18\n" +
+	"\aaliases\x18\r \x03(\tR\aaliases\x12\x14\n" +
+	"\x05keyed\x18\x0e \x01(\bR\x05keyed\"'\n" +
 	"\vListRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\"K\n" +
 	"\fListResponse\x12;\n" +
@@ -1357,12 +2759,54 @@ const file_icebath_provider_v1_provider_proto_rawDesc = "" +
 	"\fSpecsRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\"@\n" +
 	"\rSpecsResponse\x12/\n" +
-	"\x05specs\x18\x01 \x03(\v2\x19.icebath.provider.v1.SpecR\x05specs\"E\n" +
+	"\x05specs\x18\x01 \x03(\v2\x19.icebath.provider.v1.SpecR\x05specs\"_\n" +
 	"\rModelsRequest\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
-	"\aprofile\x18\x02 \x01(\tR\aprofile\"(\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\x12\x18\n" +
+	"\arefresh\x18\x03 \x01(\bR\arefresh\"z\n" +
 	"\x0eModelsResponse\x12\x16\n" +
-	"\x06models\x18\x01 \x03(\tR\x06models\"d\n" +
+	"\x06models\x18\x01 \x03(\tR\x06models\x124\n" +
+	"\adetails\x18\x02 \x03(\v2\x1a.icebath.provider.v1.ModelR\adetails\x12\x1a\n" +
+	"\bfallback\x18\x03 \x01(\bR\bfallback\"\xec\x02\n" +
+	"\x05Model\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04note\x18\x02 \x01(\tR\x04note\x12\x18\n" +
+	"\acontext\x18\x03 \x01(\x03R\acontext\x12\x1d\n" +
+	"\n" +
+	"max_output\x18\x04 \x01(\x03R\tmaxOutput\x12\x1f\n" +
+	"\vinput_price\x18\x05 \x01(\tR\n" +
+	"inputPrice\x12!\n" +
+	"\foutput_price\x18\x06 \x01(\tR\voutputPrice\x12(\n" +
+	"\x10cache_read_price\x18\a \x01(\tR\x0ecacheReadPrice\x12\x1c\n" +
+	"\tabilities\x18\b \x01(\tR\tabilities\x12!\n" +
+	"\treasoning\x18\t \x01(\bH\x00R\treasoning\x88\x01\x01\x12\x18\n" +
+	"\aefforts\x18\n" +
+	" \x03(\tR\aefforts\x12/\n" +
+	"\x13mandatory_reasoning\x18\v \x01(\bR\x12mandatoryReasoningB\f\n" +
+	"\n" +
+	"_reasoning\"D\n" +
+	"\fUsageRequest\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\"H\n" +
+	"\rUsageResponse\x127\n" +
+	"\x05usage\x18\x01 \x01(\v2!.icebath.provider.v1.AccountUsageR\x05usage\"\xae\x02\n" +
+	"\fAccountUsage\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x16\n" +
+	"\x06source\x18\x02 \x01(\tR\x06source\x12\x14\n" +
+	"\x05title\x18\x03 \x01(\tR\x05title\x12\x12\n" +
+	"\x04plan\x18\x04 \x01(\tR\x04plan\x124\n" +
+	"\afetched\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\afetched\x12:\n" +
+	"\awindows\x18\x06 \x03(\v2 .icebath.provider.v1.UsageWindowR\awindows\x12\x18\n" +
+	"\adetails\x18\a \x03(\tR\adetails\x12 \n" +
+	"\vunavailable\x18\b \x01(\tR\vunavailable\x12\x12\n" +
+	"\x04bars\x18\t \x01(\bR\x04bars\"\xa7\x01\n" +
+	"\vUsageWindow\x12\x14\n" +
+	"\x05label\x18\x01 \x01(\tR\x05label\x12\x17\n" +
+	"\x04used\x18\x02 \x01(\x01H\x00R\x04used\x88\x01\x01\x122\n" +
+	"\x06resets\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x06resets\x12\x16\n" +
+	"\x06detail\x18\x04 \x01(\tR\x06detail\x12\x14\n" +
+	"\x05model\x18\x05 \x01(\bR\x05modelB\a\n" +
+	"\x05_used\"d\n" +
 	"\n" +
 	"AddRequest\x12\x12\n" +
 	"\x04spec\x18\x01 \x01(\tR\x04spec\x12\x12\n" +
@@ -1381,23 +2825,68 @@ const file_icebath_provider_v1_provider_proto_rawDesc = "" +
 	"\x05title\x18\x03 \x01(\tR\x05title\x12\x18\n" +
 	"\aprofile\x18\x04 \x01(\tR\aprofile\"L\n" +
 	"\x12AddAccountResponse\x126\n" +
-	"\aaccount\x18\x01 \x01(\v2\x1c.icebath.provider.v1.AccountR\aaccount\"f\n" +
+	"\aaccount\x18\x01 \x01(\v2\x1c.icebath.provider.v1.AccountR\aaccount\"~\n" +
 	"\x14RemoveAccountRequest\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
 	"\aaccount\x18\x02 \x01(\tR\aaccount\x12\x18\n" +
-	"\aprofile\x18\x03 \x01(\tR\aprofile\"\x17\n" +
-	"\x15RemoveAccountResponse\"c\n" +
+	"\aprofile\x18\x03 \x01(\tR\aprofile\x12\x16\n" +
+	"\x06source\x18\x04 \x01(\tR\x06source\"1\n" +
+	"\x15RemoveAccountResponse\x12\x18\n" +
+	"\acleared\x18\x01 \x03(\tR\acleared\"c\n" +
 	"\x11UseAccountRequest\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
 	"\aaccount\x18\x02 \x01(\tR\aaccount\x12\x18\n" +
 	"\aprofile\x18\x03 \x01(\tR\aprofile\"\x14\n" +
-	"\x12UseAccountResponse*t\n" +
+	"\x12UseAccountResponse\"^\n" +
+	"\fRenewRequest\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
+	"\aaccount\x18\x02 \x01(\tR\aaccount\x12\x18\n" +
+	"\aprofile\x18\x03 \x01(\tR\aprofile\"G\n" +
+	"\rRenewResponse\x126\n" +
+	"\aaccount\x18\x01 \x01(\v2\x1c.icebath.provider.v1.AccountR\aaccount\"^\n" +
+	"\fResetRequest\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
+	"\aaccount\x18\x02 \x01(\tR\aaccount\x12\x18\n" +
+	"\aprofile\x18\x03 \x01(\tR\aprofile\")\n" +
+	"\rResetResponse\x12\x18\n" +
+	"\acleared\x18\x01 \x01(\x05R\acleared\"\x80\x01\n" +
+	"\x12MoveAccountRequest\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
+	"\aaccount\x18\x02 \x01(\tR\aaccount\x12\x1a\n" +
+	"\bpriority\x18\x03 \x01(\x05R\bpriority\x12\x18\n" +
+	"\aprofile\x18\x04 \x01(\tR\aprofile\"1\n" +
+	"\x13MoveAccountResponse\x12\x1a\n" +
+	"\bpriority\x18\x01 \x01(\x05R\bpriority\"z\n" +
+	"\x14RenameAccountRequest\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
+	"\aaccount\x18\x02 \x01(\tR\aaccount\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x18\n" +
+	"\aprofile\x18\x04 \x01(\tR\aprofile\"O\n" +
+	"\x15RenameAccountResponse\x126\n" +
+	"\aaccount\x18\x01 \x01(\v2\x1c.icebath.provider.v1.AccountR\aaccount\"E\n" +
+	"\rStatusRequest\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\"z\n" +
+	"\x0eStatusResponse\x12\x1b\n" +
+	"\tlogged_in\x18\x01 \x01(\bR\bloggedIn\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x125\n" +
+	"\adetails\x18\x03 \x03(\v2\x1b.icebath.provider.v1.DetailR\adetails\"2\n" +
+	"\x06Detail\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"`\n" +
+	"\x0eKeepKeyRequest\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
+	"\aaccount\x18\x02 \x01(\tR\aaccount\x12\x18\n" +
+	"\aprofile\x18\x03 \x01(\tR\aprofile\"I\n" +
+	"\x0fKeepKeyResponse\x126\n" +
+	"\aaccount\x18\x01 \x01(\v2\x1c.icebath.provider.v1.AccountR\aaccount*t\n" +
 	"\x06Origin\x12\x16\n" +
 	"\x12ORIGIN_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fORIGIN_SAVED\x10\x01\x12\x16\n" +
 	"\x12ORIGIN_ENVIRONMENT\x10\x02\x12\x13\n" +
 	"\x0fORIGIN_EXTERNAL\x10\x03\x12\x13\n" +
-	"\x0fORIGIN_UNNEEDED\x10\x042\xc4\x05\n" +
+	"\x0fORIGIN_UNNEEDED\x10\x042\xa7\n" +
+	"\n" +
 	"\x0fProviderService\x12K\n" +
 	"\x04List\x12 .icebath.provider.v1.ListRequest\x1a!.icebath.provider.v1.ListResponse\x12N\n" +
 	"\x05Specs\x12!.icebath.provider.v1.SpecsRequest\x1a\".icebath.provider.v1.SpecsResponse\x12Q\n" +
@@ -1408,7 +2897,14 @@ const file_icebath_provider_v1_provider_proto_rawDesc = "" +
 	"AddAccount\x12&.icebath.provider.v1.AddAccountRequest\x1a'.icebath.provider.v1.AddAccountResponse\x12f\n" +
 	"\rRemoveAccount\x12).icebath.provider.v1.RemoveAccountRequest\x1a*.icebath.provider.v1.RemoveAccountResponse\x12]\n" +
 	"\n" +
-	"UseAccount\x12&.icebath.provider.v1.UseAccountRequest\x1a'.icebath.provider.v1.UseAccountResponseB\xdb\x01\n" +
+	"UseAccount\x12&.icebath.provider.v1.UseAccountRequest\x1a'.icebath.provider.v1.UseAccountResponse\x12N\n" +
+	"\x05Usage\x12!.icebath.provider.v1.UsageRequest\x1a\".icebath.provider.v1.UsageResponse\x12N\n" +
+	"\x05Renew\x12!.icebath.provider.v1.RenewRequest\x1a\".icebath.provider.v1.RenewResponse\x12N\n" +
+	"\x05Reset\x12!.icebath.provider.v1.ResetRequest\x1a\".icebath.provider.v1.ResetResponse\x12`\n" +
+	"\vMoveAccount\x12'.icebath.provider.v1.MoveAccountRequest\x1a(.icebath.provider.v1.MoveAccountResponse\x12f\n" +
+	"\rRenameAccount\x12).icebath.provider.v1.RenameAccountRequest\x1a*.icebath.provider.v1.RenameAccountResponse\x12Q\n" +
+	"\x06Status\x12\".icebath.provider.v1.StatusRequest\x1a#.icebath.provider.v1.StatusResponse\x12T\n" +
+	"\aKeepKey\x12#.icebath.provider.v1.KeepKeyRequest\x1a$.icebath.provider.v1.KeepKeyResponseB\xdb\x01\n" +
 	"\x17com.icebath.provider.v1B\rProviderProtoP\x01ZCgithub.com/nickheyer/icebath/pkg/gen/icebath/provider/v1;providerv1\xa2\x02\x03IPX\xaa\x02\x13Icebath.Provider.V1\xca\x02\x13Icebath\\Provider\\V1\xe2\x02\x1fIcebath\\Provider\\V1\\GPBMetadata\xea\x02\x15Icebath::Provider::V1b\x06proto3"
 
 var (
@@ -1424,7 +2920,7 @@ func file_icebath_provider_v1_provider_proto_rawDescGZIP() []byte {
 }
 
 var file_icebath_provider_v1_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_icebath_provider_v1_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_icebath_provider_v1_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_icebath_provider_v1_provider_proto_goTypes = []any{
 	(Origin)(0),                   // 0: icebath.provider.v1.Origin
 	(*Account)(nil),               // 1: icebath.provider.v1.Account
@@ -1436,47 +2932,92 @@ var file_icebath_provider_v1_provider_proto_goTypes = []any{
 	(*SpecsResponse)(nil),         // 7: icebath.provider.v1.SpecsResponse
 	(*ModelsRequest)(nil),         // 8: icebath.provider.v1.ModelsRequest
 	(*ModelsResponse)(nil),        // 9: icebath.provider.v1.ModelsResponse
-	(*AddRequest)(nil),            // 10: icebath.provider.v1.AddRequest
-	(*AddResponse)(nil),           // 11: icebath.provider.v1.AddResponse
-	(*RemoveRequest)(nil),         // 12: icebath.provider.v1.RemoveRequest
-	(*RemoveResponse)(nil),        // 13: icebath.provider.v1.RemoveResponse
-	(*AddAccountRequest)(nil),     // 14: icebath.provider.v1.AddAccountRequest
-	(*AddAccountResponse)(nil),    // 15: icebath.provider.v1.AddAccountResponse
-	(*RemoveAccountRequest)(nil),  // 16: icebath.provider.v1.RemoveAccountRequest
-	(*RemoveAccountResponse)(nil), // 17: icebath.provider.v1.RemoveAccountResponse
-	(*UseAccountRequest)(nil),     // 18: icebath.provider.v1.UseAccountRequest
-	(*UseAccountResponse)(nil),    // 19: icebath.provider.v1.UseAccountResponse
+	(*Model)(nil),                 // 10: icebath.provider.v1.Model
+	(*UsageRequest)(nil),          // 11: icebath.provider.v1.UsageRequest
+	(*UsageResponse)(nil),         // 12: icebath.provider.v1.UsageResponse
+	(*AccountUsage)(nil),          // 13: icebath.provider.v1.AccountUsage
+	(*UsageWindow)(nil),           // 14: icebath.provider.v1.UsageWindow
+	(*AddRequest)(nil),            // 15: icebath.provider.v1.AddRequest
+	(*AddResponse)(nil),           // 16: icebath.provider.v1.AddResponse
+	(*RemoveRequest)(nil),         // 17: icebath.provider.v1.RemoveRequest
+	(*RemoveResponse)(nil),        // 18: icebath.provider.v1.RemoveResponse
+	(*AddAccountRequest)(nil),     // 19: icebath.provider.v1.AddAccountRequest
+	(*AddAccountResponse)(nil),    // 20: icebath.provider.v1.AddAccountResponse
+	(*RemoveAccountRequest)(nil),  // 21: icebath.provider.v1.RemoveAccountRequest
+	(*RemoveAccountResponse)(nil), // 22: icebath.provider.v1.RemoveAccountResponse
+	(*UseAccountRequest)(nil),     // 23: icebath.provider.v1.UseAccountRequest
+	(*UseAccountResponse)(nil),    // 24: icebath.provider.v1.UseAccountResponse
+	(*RenewRequest)(nil),          // 25: icebath.provider.v1.RenewRequest
+	(*RenewResponse)(nil),         // 26: icebath.provider.v1.RenewResponse
+	(*ResetRequest)(nil),          // 27: icebath.provider.v1.ResetRequest
+	(*ResetResponse)(nil),         // 28: icebath.provider.v1.ResetResponse
+	(*MoveAccountRequest)(nil),    // 29: icebath.provider.v1.MoveAccountRequest
+	(*MoveAccountResponse)(nil),   // 30: icebath.provider.v1.MoveAccountResponse
+	(*RenameAccountRequest)(nil),  // 31: icebath.provider.v1.RenameAccountRequest
+	(*RenameAccountResponse)(nil), // 32: icebath.provider.v1.RenameAccountResponse
+	(*StatusRequest)(nil),         // 33: icebath.provider.v1.StatusRequest
+	(*StatusResponse)(nil),        // 34: icebath.provider.v1.StatusResponse
+	(*Detail)(nil),                // 35: icebath.provider.v1.Detail
+	(*KeepKeyRequest)(nil),        // 36: icebath.provider.v1.KeepKeyRequest
+	(*KeepKeyResponse)(nil),       // 37: icebath.provider.v1.KeepKeyResponse
+	(*timestamppb.Timestamp)(nil), // 38: google.protobuf.Timestamp
 }
 var file_icebath_provider_v1_provider_proto_depIdxs = []int32{
 	0,  // 0: icebath.provider.v1.Account.credential_origin:type_name -> icebath.provider.v1.Origin
-	0,  // 1: icebath.provider.v1.Provider.credential_origin:type_name -> icebath.provider.v1.Origin
-	1,  // 2: icebath.provider.v1.Provider.accounts:type_name -> icebath.provider.v1.Account
-	0,  // 3: icebath.provider.v1.Spec.detected_origin:type_name -> icebath.provider.v1.Origin
-	2,  // 4: icebath.provider.v1.ListResponse.providers:type_name -> icebath.provider.v1.Provider
-	3,  // 5: icebath.provider.v1.SpecsResponse.specs:type_name -> icebath.provider.v1.Spec
-	2,  // 6: icebath.provider.v1.AddResponse.provider:type_name -> icebath.provider.v1.Provider
-	1,  // 7: icebath.provider.v1.AddAccountResponse.account:type_name -> icebath.provider.v1.Account
-	4,  // 8: icebath.provider.v1.ProviderService.List:input_type -> icebath.provider.v1.ListRequest
-	6,  // 9: icebath.provider.v1.ProviderService.Specs:input_type -> icebath.provider.v1.SpecsRequest
-	8,  // 10: icebath.provider.v1.ProviderService.Models:input_type -> icebath.provider.v1.ModelsRequest
-	10, // 11: icebath.provider.v1.ProviderService.Add:input_type -> icebath.provider.v1.AddRequest
-	12, // 12: icebath.provider.v1.ProviderService.Remove:input_type -> icebath.provider.v1.RemoveRequest
-	14, // 13: icebath.provider.v1.ProviderService.AddAccount:input_type -> icebath.provider.v1.AddAccountRequest
-	16, // 14: icebath.provider.v1.ProviderService.RemoveAccount:input_type -> icebath.provider.v1.RemoveAccountRequest
-	18, // 15: icebath.provider.v1.ProviderService.UseAccount:input_type -> icebath.provider.v1.UseAccountRequest
-	5,  // 16: icebath.provider.v1.ProviderService.List:output_type -> icebath.provider.v1.ListResponse
-	7,  // 17: icebath.provider.v1.ProviderService.Specs:output_type -> icebath.provider.v1.SpecsResponse
-	9,  // 18: icebath.provider.v1.ProviderService.Models:output_type -> icebath.provider.v1.ModelsResponse
-	11, // 19: icebath.provider.v1.ProviderService.Add:output_type -> icebath.provider.v1.AddResponse
-	13, // 20: icebath.provider.v1.ProviderService.Remove:output_type -> icebath.provider.v1.RemoveResponse
-	15, // 21: icebath.provider.v1.ProviderService.AddAccount:output_type -> icebath.provider.v1.AddAccountResponse
-	17, // 22: icebath.provider.v1.ProviderService.RemoveAccount:output_type -> icebath.provider.v1.RemoveAccountResponse
-	19, // 23: icebath.provider.v1.ProviderService.UseAccount:output_type -> icebath.provider.v1.UseAccountResponse
-	16, // [16:24] is the sub-list for method output_type
-	8,  // [8:16] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	38, // 1: icebath.provider.v1.Account.resets:type_name -> google.protobuf.Timestamp
+	38, // 2: icebath.provider.v1.Account.expires:type_name -> google.protobuf.Timestamp
+	0,  // 3: icebath.provider.v1.Provider.credential_origin:type_name -> icebath.provider.v1.Origin
+	1,  // 4: icebath.provider.v1.Provider.accounts:type_name -> icebath.provider.v1.Account
+	13, // 5: icebath.provider.v1.Provider.account_usage:type_name -> icebath.provider.v1.AccountUsage
+	0,  // 6: icebath.provider.v1.Spec.detected_origin:type_name -> icebath.provider.v1.Origin
+	2,  // 7: icebath.provider.v1.ListResponse.providers:type_name -> icebath.provider.v1.Provider
+	3,  // 8: icebath.provider.v1.SpecsResponse.specs:type_name -> icebath.provider.v1.Spec
+	10, // 9: icebath.provider.v1.ModelsResponse.details:type_name -> icebath.provider.v1.Model
+	13, // 10: icebath.provider.v1.UsageResponse.usage:type_name -> icebath.provider.v1.AccountUsage
+	38, // 11: icebath.provider.v1.AccountUsage.fetched:type_name -> google.protobuf.Timestamp
+	14, // 12: icebath.provider.v1.AccountUsage.windows:type_name -> icebath.provider.v1.UsageWindow
+	38, // 13: icebath.provider.v1.UsageWindow.resets:type_name -> google.protobuf.Timestamp
+	2,  // 14: icebath.provider.v1.AddResponse.provider:type_name -> icebath.provider.v1.Provider
+	1,  // 15: icebath.provider.v1.AddAccountResponse.account:type_name -> icebath.provider.v1.Account
+	1,  // 16: icebath.provider.v1.RenewResponse.account:type_name -> icebath.provider.v1.Account
+	1,  // 17: icebath.provider.v1.RenameAccountResponse.account:type_name -> icebath.provider.v1.Account
+	35, // 18: icebath.provider.v1.StatusResponse.details:type_name -> icebath.provider.v1.Detail
+	1,  // 19: icebath.provider.v1.KeepKeyResponse.account:type_name -> icebath.provider.v1.Account
+	4,  // 20: icebath.provider.v1.ProviderService.List:input_type -> icebath.provider.v1.ListRequest
+	6,  // 21: icebath.provider.v1.ProviderService.Specs:input_type -> icebath.provider.v1.SpecsRequest
+	8,  // 22: icebath.provider.v1.ProviderService.Models:input_type -> icebath.provider.v1.ModelsRequest
+	15, // 23: icebath.provider.v1.ProviderService.Add:input_type -> icebath.provider.v1.AddRequest
+	17, // 24: icebath.provider.v1.ProviderService.Remove:input_type -> icebath.provider.v1.RemoveRequest
+	19, // 25: icebath.provider.v1.ProviderService.AddAccount:input_type -> icebath.provider.v1.AddAccountRequest
+	21, // 26: icebath.provider.v1.ProviderService.RemoveAccount:input_type -> icebath.provider.v1.RemoveAccountRequest
+	23, // 27: icebath.provider.v1.ProviderService.UseAccount:input_type -> icebath.provider.v1.UseAccountRequest
+	11, // 28: icebath.provider.v1.ProviderService.Usage:input_type -> icebath.provider.v1.UsageRequest
+	25, // 29: icebath.provider.v1.ProviderService.Renew:input_type -> icebath.provider.v1.RenewRequest
+	27, // 30: icebath.provider.v1.ProviderService.Reset:input_type -> icebath.provider.v1.ResetRequest
+	29, // 31: icebath.provider.v1.ProviderService.MoveAccount:input_type -> icebath.provider.v1.MoveAccountRequest
+	31, // 32: icebath.provider.v1.ProviderService.RenameAccount:input_type -> icebath.provider.v1.RenameAccountRequest
+	33, // 33: icebath.provider.v1.ProviderService.Status:input_type -> icebath.provider.v1.StatusRequest
+	36, // 34: icebath.provider.v1.ProviderService.KeepKey:input_type -> icebath.provider.v1.KeepKeyRequest
+	5,  // 35: icebath.provider.v1.ProviderService.List:output_type -> icebath.provider.v1.ListResponse
+	7,  // 36: icebath.provider.v1.ProviderService.Specs:output_type -> icebath.provider.v1.SpecsResponse
+	9,  // 37: icebath.provider.v1.ProviderService.Models:output_type -> icebath.provider.v1.ModelsResponse
+	16, // 38: icebath.provider.v1.ProviderService.Add:output_type -> icebath.provider.v1.AddResponse
+	18, // 39: icebath.provider.v1.ProviderService.Remove:output_type -> icebath.provider.v1.RemoveResponse
+	20, // 40: icebath.provider.v1.ProviderService.AddAccount:output_type -> icebath.provider.v1.AddAccountResponse
+	22, // 41: icebath.provider.v1.ProviderService.RemoveAccount:output_type -> icebath.provider.v1.RemoveAccountResponse
+	24, // 42: icebath.provider.v1.ProviderService.UseAccount:output_type -> icebath.provider.v1.UseAccountResponse
+	12, // 43: icebath.provider.v1.ProviderService.Usage:output_type -> icebath.provider.v1.UsageResponse
+	26, // 44: icebath.provider.v1.ProviderService.Renew:output_type -> icebath.provider.v1.RenewResponse
+	28, // 45: icebath.provider.v1.ProviderService.Reset:output_type -> icebath.provider.v1.ResetResponse
+	30, // 46: icebath.provider.v1.ProviderService.MoveAccount:output_type -> icebath.provider.v1.MoveAccountResponse
+	32, // 47: icebath.provider.v1.ProviderService.RenameAccount:output_type -> icebath.provider.v1.RenameAccountResponse
+	34, // 48: icebath.provider.v1.ProviderService.Status:output_type -> icebath.provider.v1.StatusResponse
+	37, // 49: icebath.provider.v1.ProviderService.KeepKey:output_type -> icebath.provider.v1.KeepKeyResponse
+	35, // [35:50] is the sub-list for method output_type
+	20, // [20:35] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_icebath_provider_v1_provider_proto_init() }
@@ -1484,13 +3025,15 @@ func file_icebath_provider_v1_provider_proto_init() {
 	if File_icebath_provider_v1_provider_proto != nil {
 		return
 	}
+	file_icebath_provider_v1_provider_proto_msgTypes[9].OneofWrappers = []any{}
+	file_icebath_provider_v1_provider_proto_msgTypes[13].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_provider_v1_provider_proto_rawDesc), len(file_icebath_provider_v1_provider_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   19,
+			NumMessages:   37,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

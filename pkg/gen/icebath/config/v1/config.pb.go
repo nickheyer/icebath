@@ -31,6 +31,8 @@ const (
 	Kind_KIND_CHOICE      Kind = 4
 	Kind_KIND_LIST        Kind = 5
 	Kind_KIND_TABLE       Kind = 6
+	// Length of time, its value the number of its unit
+	Kind_KIND_DURATION Kind = 7
 )
 
 // Enum value maps for Kind.
@@ -43,6 +45,7 @@ var (
 		4: "KIND_CHOICE",
 		5: "KIND_LIST",
 		6: "KIND_TABLE",
+		7: "KIND_DURATION",
 	}
 	Kind_value = map[string]int32{
 		"KIND_UNSPECIFIED": 0,
@@ -52,6 +55,7 @@ var (
 		"KIND_CHOICE":      4,
 		"KIND_LIST":        5,
 		"KIND_TABLE":       6,
+		"KIND_DURATION":    7,
 	}
 )
 
@@ -89,6 +93,8 @@ const (
 	Source_SOURCE_DEFAULT     Source = 1
 	Source_SOURCE_FILE        Source = 2
 	Source_SOURCE_ENVIRONMENT Source = 3
+	// The administrator pins it
+	Source_SOURCE_MANAGED Source = 4
 )
 
 // Enum value maps for Source.
@@ -98,12 +104,14 @@ var (
 		1: "SOURCE_DEFAULT",
 		2: "SOURCE_FILE",
 		3: "SOURCE_ENVIRONMENT",
+		4: "SOURCE_MANAGED",
 	}
 	Source_value = map[string]int32{
 		"SOURCE_UNSPECIFIED": 0,
 		"SOURCE_DEFAULT":     1,
 		"SOURCE_FILE":        2,
 		"SOURCE_ENVIRONMENT": 3,
+		"SOURCE_MANAGED":     4,
 	}
 )
 
@@ -195,20 +203,26 @@ func (x *Option) GetDescription() string {
 }
 
 type Setting struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Section       string                 `protobuf:"bytes,2,opt,name=section,proto3" json:"section,omitempty"`
-	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
-	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
-	Kind          Kind                   `protobuf:"varint,5,opt,name=kind,proto3,enum=icebath.config.v1.Kind" json:"kind,omitempty"`
-	Secret        bool                   `protobuf:"varint,6,opt,name=secret,proto3" json:"secret,omitempty"`
-	Internal      bool                   `protobuf:"varint,7,opt,name=internal,proto3" json:"internal,omitempty"`
-	Value         string                 `protobuf:"bytes,8,opt,name=value,proto3" json:"value,omitempty"`
-	DefaultValue  string                 `protobuf:"bytes,9,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
-	Source        Source                 `protobuf:"varint,10,opt,name=source,proto3,enum=icebath.config.v1.Source" json:"source,omitempty"`
-	Variable      string                 `protobuf:"bytes,11,opt,name=variable,proto3" json:"variable,omitempty"`
-	Env           []string               `protobuf:"bytes,12,rep,name=env,proto3" json:"env,omitempty"`
-	Options       []*Option              `protobuf:"bytes,13,rep,name=options,proto3" json:"options,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Key          string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Section      string                 `protobuf:"bytes,2,opt,name=section,proto3" json:"section,omitempty"`
+	Title        string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	Description  string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Kind         Kind                   `protobuf:"varint,5,opt,name=kind,proto3,enum=icebath.config.v1.Kind" json:"kind,omitempty"`
+	Secret       bool                   `protobuf:"varint,6,opt,name=secret,proto3" json:"secret,omitempty"`
+	Internal     bool                   `protobuf:"varint,7,opt,name=internal,proto3" json:"internal,omitempty"`
+	Value        string                 `protobuf:"bytes,8,opt,name=value,proto3" json:"value,omitempty"`
+	DefaultValue string                 `protobuf:"bytes,9,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
+	Source       Source                 `protobuf:"varint,10,opt,name=source,proto3,enum=icebath.config.v1.Source" json:"source,omitempty"`
+	Variable     string                 `protobuf:"bytes,11,opt,name=variable,proto3" json:"variable,omitempty"`
+	Env          []string               `protobuf:"bytes,12,rep,name=env,proto3" json:"env,omitempty"`
+	Options      []*Option              `protobuf:"bytes,13,rep,name=options,proto3" json:"options,omitempty"`
+	// Why it can't be changed here, empty when it can
+	Locked string `protobuf:"bytes,14,opt,name=locked,proto3" json:"locked,omitempty"`
+	// Unit the number of a length of time counts, such as s or min
+	Unit string `protobuf:"bytes,15,opt,name=unit,proto3" json:"unit,omitempty"`
+	// What the setting left unset means, such as no limit, when it has no default
+	Unset         string `protobuf:"bytes,16,opt,name=unset,proto3" json:"unset,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -334,6 +348,27 @@ func (x *Setting) GetOptions() []*Option {
 	return nil
 }
 
+func (x *Setting) GetLocked() string {
+	if x != nil {
+		return x.Locked
+	}
+	return ""
+}
+
+func (x *Setting) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
+func (x *Setting) GetUnset() string {
+	if x != nil {
+		return x.Unset
+	}
+	return ""
+}
+
 type Section struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Key         string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -414,7 +449,9 @@ func (x *Section) GetGlobal() bool {
 type ListRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Profile to act on, the one in use when empty
-	Profile       string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Profile string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Leaves out the values each setting may take, which can cost a check each, such as every terminal backend's
+	Bare          bool `protobuf:"varint,2,opt,name=bare,proto3" json:"bare,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -454,6 +491,13 @@ func (x *ListRequest) GetProfile() string {
 		return x.Profile
 	}
 	return ""
+}
+
+func (x *ListRequest) GetBare() bool {
+	if x != nil {
+		return x.Bare
+	}
+	return false
 }
 
 type ListResponse struct {
@@ -711,6 +755,1258 @@ func (*SetResponse) Descriptor() ([]byte, []int) {
 	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{8}
 }
 
+type ValueRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Key     string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Profile string                 `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Credentials shown as they are rather than masked
+	Raw           bool `protobuf:"varint,3,opt,name=raw,proto3" json:"raw,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ValueRequest) Reset() {
+	*x = ValueRequest{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValueRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValueRequest) ProtoMessage() {}
+
+func (x *ValueRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValueRequest.ProtoReflect.Descriptor instead.
+func (*ValueRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ValueRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *ValueRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ValueRequest) GetRaw() bool {
+	if x != nil {
+		return x.Raw
+	}
+	return false
+}
+
+type ValueResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Whether the key holds a value
+	Found bool `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`
+	// Value as JSON
+	Json string `protobuf:"bytes,2,opt,name=json,proto3" json:"json,omitempty"`
+	// Value as YAML, lists and tables in block style
+	Yaml string `protobuf:"bytes,3,opt,name=yaml,proto3" json:"yaml,omitempty"`
+	// What to know about where the value came from, such as a stale copy of a variable in config.yaml
+	Note          string `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ValueResponse) Reset() {
+	*x = ValueResponse{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValueResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValueResponse) ProtoMessage() {}
+
+func (x *ValueResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValueResponse.ProtoReflect.Descriptor instead.
+func (*ValueResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ValueResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *ValueResponse) GetJson() string {
+	if x != nil {
+		return x.Json
+	}
+	return ""
+}
+
+func (x *ValueResponse) GetYaml() string {
+	if x != nil {
+		return x.Yaml
+	}
+	return ""
+}
+
+func (x *ValueResponse) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type PutRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Key   string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// Text typed for the value
+	Value         string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Profile       string `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutRequest) Reset() {
+	*x = PutRequest{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutRequest) ProtoMessage() {}
+
+func (x *PutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutRequest.ProtoReflect.Descriptor instead.
+func (*PutRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *PutRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *PutRequest) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *PutRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type PutResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What was saved, as the command says it
+	Shown string `protobuf:"bytes,1,opt,name=shown,proto3" json:"shown,omitempty"`
+	// Where it went: a config.yaml, Remote Config, or the profile's .env
+	Destination string `protobuf:"bytes,2,opt,name=destination,proto3" json:"destination,omitempty"`
+	// Key as saved, a variable in upper case
+	Key string `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
+	// Saved as a variable of the profile's .env rather than a setting
+	Env bool `protobuf:"varint,4,opt,name=env,proto3" json:"env,omitempty"`
+	// What was taken out of the value before it was saved, such as characters outside ASCII, empty when nothing was
+	Warning       string `protobuf:"bytes,5,opt,name=warning,proto3" json:"warning,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutResponse) Reset() {
+	*x = PutResponse{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutResponse) ProtoMessage() {}
+
+func (x *PutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutResponse.ProtoReflect.Descriptor instead.
+func (*PutResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *PutResponse) GetShown() string {
+	if x != nil {
+		return x.Shown
+	}
+	return ""
+}
+
+func (x *PutResponse) GetDestination() string {
+	if x != nil {
+		return x.Destination
+	}
+	return ""
+}
+
+func (x *PutResponse) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *PutResponse) GetEnv() bool {
+	if x != nil {
+		return x.Env
+	}
+	return false
+}
+
+func (x *PutResponse) GetWarning() string {
+	if x != nil {
+		return x.Warning
+	}
+	return ""
+}
+
+type UnsetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Profile       string                 `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnsetRequest) Reset() {
+	*x = UnsetRequest{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnsetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnsetRequest) ProtoMessage() {}
+
+func (x *UnsetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnsetRequest.ProtoReflect.Descriptor instead.
+func (*UnsetRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *UnsetRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *UnsetRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type UnsetResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Whether the key held a value
+	Found         bool   `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`
+	Destination   string `protobuf:"bytes,2,opt,name=destination,proto3" json:"destination,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnsetResponse) Reset() {
+	*x = UnsetResponse{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnsetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnsetResponse) ProtoMessage() {}
+
+func (x *UnsetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnsetResponse.ProtoReflect.Descriptor instead.
+func (*UnsetResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *UnsetResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *UnsetResponse) GetDestination() string {
+	if x != nil {
+		return x.Destination
+	}
+	return ""
+}
+
+type FilesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FilesRequest) Reset() {
+	*x = FilesRequest{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FilesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FilesRequest) ProtoMessage() {}
+
+func (x *FilesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FilesRequest.ProtoReflect.Descriptor instead.
+func (*FilesRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *FilesRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type FilesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// config.yaml every profile shares
+	Shared string `protobuf:"bytes,1,opt,name=shared,proto3" json:"shared,omitempty"`
+	// config.yaml of the profile, empty when Remote Config holds its settings
+	Own string `protobuf:"bytes,2,opt,name=own,proto3" json:"own,omitempty"`
+	// .env of the profile
+	Env     string `protobuf:"bytes,3,opt,name=env,proto3" json:"env,omitempty"`
+	Profile string `protobuf:"bytes,4,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Folder of the administrator's settings, empty when there is none
+	ManagedDir  string   `protobuf:"bytes,5,opt,name=managed_dir,json=managedDir,proto3" json:"managed_dir,omitempty"`
+	ManagedKeys []string `protobuf:"bytes,6,rep,name=managed_keys,json=managedKeys,proto3" json:"managed_keys,omitempty"`
+	ManagedEnv  []string `protobuf:"bytes,7,rep,name=managed_env,json=managedEnv,proto3" json:"managed_env,omitempty"`
+	// Package manager that keeps the settings of this install, empty when none does
+	ManagedSystem string `protobuf:"bytes,8,opt,name=managed_system,json=managedSystem,proto3" json:"managed_system,omitempty"`
+	// How the profile stands with Remote Config, empty when its settings come from its config.yaml
+	Remote string `protobuf:"bytes,9,opt,name=remote,proto3" json:"remote,omitempty"`
+	// Machine the files are on, so a command elsewhere knows it can't open them
+	Host string `protobuf:"bytes,10,opt,name=host,proto3" json:"host,omitempty"`
+	// Folder of the copies of the profile's config.yaml
+	Backups string `protobuf:"bytes,11,opt,name=backups,proto3" json:"backups,omitempty"`
+	// Whether the profile's config.yaml and its .env are there yet
+	OwnExists     bool `protobuf:"varint,12,opt,name=own_exists,json=ownExists,proto3" json:"own_exists,omitempty"`
+	EnvExists     bool `protobuf:"varint,13,opt,name=env_exists,json=envExists,proto3" json:"env_exists,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FilesResponse) Reset() {
+	*x = FilesResponse{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FilesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FilesResponse) ProtoMessage() {}
+
+func (x *FilesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FilesResponse.ProtoReflect.Descriptor instead.
+func (*FilesResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *FilesResponse) GetShared() string {
+	if x != nil {
+		return x.Shared
+	}
+	return ""
+}
+
+func (x *FilesResponse) GetOwn() string {
+	if x != nil {
+		return x.Own
+	}
+	return ""
+}
+
+func (x *FilesResponse) GetEnv() string {
+	if x != nil {
+		return x.Env
+	}
+	return ""
+}
+
+func (x *FilesResponse) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *FilesResponse) GetManagedDir() string {
+	if x != nil {
+		return x.ManagedDir
+	}
+	return ""
+}
+
+func (x *FilesResponse) GetManagedKeys() []string {
+	if x != nil {
+		return x.ManagedKeys
+	}
+	return nil
+}
+
+func (x *FilesResponse) GetManagedEnv() []string {
+	if x != nil {
+		return x.ManagedEnv
+	}
+	return nil
+}
+
+func (x *FilesResponse) GetManagedSystem() string {
+	if x != nil {
+		return x.ManagedSystem
+	}
+	return ""
+}
+
+func (x *FilesResponse) GetRemote() string {
+	if x != nil {
+		return x.Remote
+	}
+	return ""
+}
+
+func (x *FilesResponse) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *FilesResponse) GetBackups() string {
+	if x != nil {
+		return x.Backups
+	}
+	return ""
+}
+
+func (x *FilesResponse) GetOwnExists() bool {
+	if x != nil {
+		return x.OwnExists
+	}
+	return false
+}
+
+func (x *FilesResponse) GetEnvExists() bool {
+	if x != nil {
+		return x.EnvExists
+	}
+	return false
+}
+
+type CheckRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckRequest) Reset() {
+	*x = CheckRequest{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckRequest) ProtoMessage() {}
+
+func (x *CheckRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckRequest.ProtoReflect.Descriptor instead.
+func (*CheckRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CheckRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type Variable struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Set   bool                   `protobuf:"varint,2,opt,name=set,proto3" json:"set,omitempty"`
+	// Settings that read it
+	Settings []string `protobuf:"bytes,3,rep,name=settings,proto3" json:"settings,omitempty"`
+	Secret   bool     `protobuf:"varint,4,opt,name=secret,proto3" json:"secret,omitempty"`
+	// What it is, such as the API key of a provider
+	About         string `protobuf:"bytes,5,opt,name=about,proto3" json:"about,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Variable) Reset() {
+	*x = Variable{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Variable) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Variable) ProtoMessage() {}
+
+func (x *Variable) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Variable.ProtoReflect.Descriptor instead.
+func (*Variable) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *Variable) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Variable) GetSet() bool {
+	if x != nil {
+		return x.Set
+	}
+	return false
+}
+
+func (x *Variable) GetSettings() []string {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+func (x *Variable) GetSecret() bool {
+	if x != nil {
+		return x.Secret
+	}
+	return false
+}
+
+func (x *Variable) GetAbout() string {
+	if x != nil {
+		return x.About
+	}
+	return ""
+}
+
+type ShowRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShowRequest) Reset() {
+	*x = ShowRequest{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShowRequest) ProtoMessage() {}
+
+func (x *ShowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShowRequest.ProtoReflect.Descriptor instead.
+func (*ShowRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ShowRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+// One line of config show beside the settings
+type Shown struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Label string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	// Value as shown, a credential masked; empty when it has none
+	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Set   bool   `protobuf:"varint,3,opt,name=set,proto3" json:"set,omitempty"`
+	// Who it belongs to, such as the skill that declares a value
+	Owner         string `protobuf:"bytes,4,opt,name=owner,proto3" json:"owner,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Shown) Reset() {
+	*x = Shown{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Shown) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Shown) ProtoMessage() {}
+
+func (x *Shown) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Shown.ProtoReflect.Descriptor instead.
+func (*Shown) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *Shown) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *Shown) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *Shown) GetSet() bool {
+	if x != nil {
+		return x.Set
+	}
+	return false
+}
+
+func (x *Shown) GetOwner() string {
+	if x != nil {
+		return x.Owner
+	}
+	return ""
+}
+
+type ShowResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Credentials of the services icebath reaches, masked
+	Keys []*Shown `protobuf:"bytes,1,rep,name=keys,proto3" json:"keys,omitempty"`
+	// Messaging platforms, set when their bot token is
+	Platforms []*Shown `protobuf:"bytes,2,rep,name=platforms,proto3" json:"platforms,omitempty"`
+	// Values the profile's skills declare
+	Skills []*Shown `protobuf:"bytes,3,rep,name=skills,proto3" json:"skills,omitempty"`
+	// Folder of the icebath program
+	Install       string `protobuf:"bytes,4,opt,name=install,proto3" json:"install,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShowResponse) Reset() {
+	*x = ShowResponse{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShowResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShowResponse) ProtoMessage() {}
+
+func (x *ShowResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShowResponse.ProtoReflect.Descriptor instead.
+func (*ShowResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ShowResponse) GetKeys() []*Shown {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
+func (x *ShowResponse) GetPlatforms() []*Shown {
+	if x != nil {
+		return x.Platforms
+	}
+	return nil
+}
+
+func (x *ShowResponse) GetSkills() []*Shown {
+	if x != nil {
+		return x.Skills
+	}
+	return nil
+}
+
+func (x *ShowResponse) GetInstall() string {
+	if x != nil {
+		return x.Install
+	}
+	return ""
+}
+
+type CheckResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Required []*Variable            `protobuf:"bytes,1,rep,name=required,proto3" json:"required,omitempty"`
+	Optional []*Variable            `protobuf:"bytes,2,rep,name=optional,proto3" json:"optional,omitempty"`
+	// What the saved settings leave inactive, one line each
+	Diagnostics   []string `protobuf:"bytes,3,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckResponse) Reset() {
+	*x = CheckResponse{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckResponse) ProtoMessage() {}
+
+func (x *CheckResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckResponse.ProtoReflect.Descriptor instead.
+func (*CheckResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *CheckResponse) GetRequired() []*Variable {
+	if x != nil {
+		return x.Required
+	}
+	return nil
+}
+
+func (x *CheckResponse) GetOptional() []*Variable {
+	if x != nil {
+		return x.Optional
+	}
+	return nil
+}
+
+func (x *CheckResponse) GetDiagnostics() []string {
+	if x != nil {
+		return x.Diagnostics
+	}
+	return nil
+}
+
+type ReadRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Path of the file, one Files names
+	Path          string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Profile       string `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadRequest) Reset() {
+	*x = ReadRequest{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadRequest) ProtoMessage() {}
+
+func (x *ReadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadRequest.ProtoReflect.Descriptor instead.
+func (*ReadRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ReadRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ReadRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type ReadResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Text  string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	// Whether the file is there
+	Exists        bool `protobuf:"varint,2,opt,name=exists,proto3" json:"exists,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadResponse) Reset() {
+	*x = ReadResponse{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadResponse) ProtoMessage() {}
+
+func (x *ReadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadResponse.ProtoReflect.Descriptor instead.
+func (*ReadResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ReadResponse) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *ReadResponse) GetExists() bool {
+	if x != nil {
+		return x.Exists
+	}
+	return false
+}
+
+type WriteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	Profile       string                 `protobuf:"bytes,3,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteRequest) Reset() {
+	*x = WriteRequest{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteRequest) ProtoMessage() {}
+
+func (x *WriteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteRequest.ProtoReflect.Descriptor instead.
+func (*WriteRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *WriteRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *WriteRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *WriteRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type WriteResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What reading the saved file found wrong, empty when it parses
+	Problem       string `protobuf:"bytes,1,opt,name=problem,proto3" json:"problem,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteResponse) Reset() {
+	*x = WriteResponse{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteResponse) ProtoMessage() {}
+
+func (x *WriteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteResponse.ProtoReflect.Descriptor instead.
+func (*WriteResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *WriteResponse) GetProblem() string {
+	if x != nil {
+		return x.Problem
+	}
+	return ""
+}
+
+type SeedRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Path of the file, one Files names
+	Path          string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Profile       string `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SeedRequest) Reset() {
+	*x = SeedRequest{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SeedRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SeedRequest) ProtoMessage() {}
+
+func (x *SeedRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SeedRequest.ProtoReflect.Descriptor instead.
+func (*SeedRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *SeedRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SeedRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type SeedResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Whether the file was made, false when it was there already
+	Seeded        bool `protobuf:"varint,1,opt,name=seeded,proto3" json:"seeded,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SeedResponse) Reset() {
+	*x = SeedResponse{}
+	mi := &file_icebath_config_v1_config_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SeedResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SeedResponse) ProtoMessage() {}
+
+func (x *SeedResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_config_v1_config_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SeedResponse.ProtoReflect.Descriptor instead.
+func (*SeedResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_config_v1_config_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *SeedResponse) GetSeeded() bool {
+	if x != nil {
+		return x.Seeded
+	}
+	return false
+}
+
 var File_icebath_config_v1_config_proto protoreflect.FileDescriptor
 
 const file_icebath_config_v1_config_proto_rawDesc = "" +
@@ -719,7 +2015,7 @@ const file_icebath_config_v1_config_proto_rawDesc = "" +
 	"\x06Option\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\"\x9f\x03\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\"\xe1\x03\n" +
 	"\aSetting\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x18\n" +
 	"\asection\x18\x02 \x01(\tR\asection\x12\x14\n" +
@@ -734,15 +2030,19 @@ const file_icebath_config_v1_config_proto_rawDesc = "" +
 	" \x01(\x0e2\x19.icebath.config.v1.SourceR\x06source\x12\x1a\n" +
 	"\bvariable\x18\v \x01(\tR\bvariable\x12\x10\n" +
 	"\x03env\x18\f \x03(\tR\x03env\x123\n" +
-	"\aoptions\x18\r \x03(\v2\x19.icebath.config.v1.OptionR\aoptions\"\x83\x01\n" +
+	"\aoptions\x18\r \x03(\v2\x19.icebath.config.v1.OptionR\aoptions\x12\x16\n" +
+	"\x06locked\x18\x0e \x01(\tR\x06locked\x12\x12\n" +
+	"\x04unit\x18\x0f \x01(\tR\x04unit\x12\x14\n" +
+	"\x05unset\x18\x10 \x01(\tR\x05unset\"\x83\x01\n" +
 	"\aSection\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x16\n" +
 	"\x06parent\x18\x02 \x01(\tR\x06parent\x12\x14\n" +
 	"\x05title\x18\x03 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x16\n" +
-	"\x06global\x18\x05 \x01(\bR\x06global\"'\n" +
+	"\x06global\x18\x05 \x01(\bR\x06global\";\n" +
 	"\vListRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"\x98\x01\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04bare\x18\x02 \x01(\bR\x04bare\"\x98\x01\n" +
 	"\fListResponse\x126\n" +
 	"\bsections\x18\x01 \x03(\v2\x1a.icebath.config.v1.SectionR\bsections\x126\n" +
 	"\bsettings\x18\x02 \x03(\v2\x1a.icebath.config.v1.SettingR\bsettings\x12\x18\n" +
@@ -758,7 +2058,95 @@ const file_icebath_config_v1_config_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12\x18\n" +
 	"\aprofile\x18\x03 \x01(\tR\aprofile\"\r\n" +
-	"\vSetResponse*}\n" +
+	"\vSetResponse\"L\n" +
+	"\fValueRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x18\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\x12\x10\n" +
+	"\x03raw\x18\x03 \x01(\bR\x03raw\"a\n" +
+	"\rValueResponse\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x12\x12\n" +
+	"\x04json\x18\x02 \x01(\tR\x04json\x12\x12\n" +
+	"\x04yaml\x18\x03 \x01(\tR\x04yaml\x12\x12\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\"N\n" +
+	"\n" +
+	"PutRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12\x18\n" +
+	"\aprofile\x18\x03 \x01(\tR\aprofile\"\x83\x01\n" +
+	"\vPutResponse\x12\x14\n" +
+	"\x05shown\x18\x01 \x01(\tR\x05shown\x12 \n" +
+	"\vdestination\x18\x02 \x01(\tR\vdestination\x12\x10\n" +
+	"\x03key\x18\x03 \x01(\tR\x03key\x12\x10\n" +
+	"\x03env\x18\x04 \x01(\bR\x03env\x12\x18\n" +
+	"\awarning\x18\x05 \x01(\tR\awarning\":\n" +
+	"\fUnsetRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x18\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\"G\n" +
+	"\rUnsetResponse\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x12 \n" +
+	"\vdestination\x18\x02 \x01(\tR\vdestination\"(\n" +
+	"\fFilesRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"\xf5\x02\n" +
+	"\rFilesResponse\x12\x16\n" +
+	"\x06shared\x18\x01 \x01(\tR\x06shared\x12\x10\n" +
+	"\x03own\x18\x02 \x01(\tR\x03own\x12\x10\n" +
+	"\x03env\x18\x03 \x01(\tR\x03env\x12\x18\n" +
+	"\aprofile\x18\x04 \x01(\tR\aprofile\x12\x1f\n" +
+	"\vmanaged_dir\x18\x05 \x01(\tR\n" +
+	"managedDir\x12!\n" +
+	"\fmanaged_keys\x18\x06 \x03(\tR\vmanagedKeys\x12\x1f\n" +
+	"\vmanaged_env\x18\a \x03(\tR\n" +
+	"managedEnv\x12%\n" +
+	"\x0emanaged_system\x18\b \x01(\tR\rmanagedSystem\x12\x16\n" +
+	"\x06remote\x18\t \x01(\tR\x06remote\x12\x12\n" +
+	"\x04host\x18\n" +
+	" \x01(\tR\x04host\x12\x18\n" +
+	"\abackups\x18\v \x01(\tR\abackups\x12\x1d\n" +
+	"\n" +
+	"own_exists\x18\f \x01(\bR\townExists\x12\x1d\n" +
+	"\n" +
+	"env_exists\x18\r \x01(\bR\tenvExists\"(\n" +
+	"\fCheckRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"z\n" +
+	"\bVariable\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03set\x18\x02 \x01(\bR\x03set\x12\x1a\n" +
+	"\bsettings\x18\x03 \x03(\tR\bsettings\x12\x16\n" +
+	"\x06secret\x18\x04 \x01(\bR\x06secret\x12\x14\n" +
+	"\x05about\x18\x05 \x01(\tR\x05about\"'\n" +
+	"\vShowRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"[\n" +
+	"\x05Shown\x12\x14\n" +
+	"\x05label\x18\x01 \x01(\tR\x05label\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12\x10\n" +
+	"\x03set\x18\x03 \x01(\bR\x03set\x12\x14\n" +
+	"\x05owner\x18\x04 \x01(\tR\x05owner\"\xc0\x01\n" +
+	"\fShowResponse\x12,\n" +
+	"\x04keys\x18\x01 \x03(\v2\x18.icebath.config.v1.ShownR\x04keys\x126\n" +
+	"\tplatforms\x18\x02 \x03(\v2\x18.icebath.config.v1.ShownR\tplatforms\x120\n" +
+	"\x06skills\x18\x03 \x03(\v2\x18.icebath.config.v1.ShownR\x06skills\x12\x18\n" +
+	"\ainstall\x18\x04 \x01(\tR\ainstall\"\xa3\x01\n" +
+	"\rCheckResponse\x127\n" +
+	"\brequired\x18\x01 \x03(\v2\x1b.icebath.config.v1.VariableR\brequired\x127\n" +
+	"\boptional\x18\x02 \x03(\v2\x1b.icebath.config.v1.VariableR\boptional\x12 \n" +
+	"\vdiagnostics\x18\x03 \x03(\tR\vdiagnostics\";\n" +
+	"\vReadRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\":\n" +
+	"\fReadResponse\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12\x16\n" +
+	"\x06exists\x18\x02 \x01(\bR\x06exists\"P\n" +
+	"\fWriteRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\x12\x18\n" +
+	"\aprofile\x18\x03 \x01(\tR\aprofile\")\n" +
+	"\rWriteResponse\x12\x18\n" +
+	"\aproblem\x18\x01 \x01(\tR\aproblem\";\n" +
+	"\vSeedRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\"&\n" +
+	"\fSeedResponse\x12\x16\n" +
+	"\x06seeded\x18\x01 \x01(\bR\x06seeded*\x90\x01\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tKIND_TEXT\x10\x01\x12\x0f\n" +
@@ -767,16 +2155,27 @@ const file_icebath_config_v1_config_proto_rawDesc = "" +
 	"\vKIND_CHOICE\x10\x04\x12\r\n" +
 	"\tKIND_LIST\x10\x05\x12\x0e\n" +
 	"\n" +
-	"KIND_TABLE\x10\x06*]\n" +
+	"KIND_TABLE\x10\x06\x12\x11\n" +
+	"\rKIND_DURATION\x10\a*q\n" +
 	"\x06Source\x12\x16\n" +
 	"\x12SOURCE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eSOURCE_DEFAULT\x10\x01\x12\x0f\n" +
 	"\vSOURCE_FILE\x10\x02\x12\x16\n" +
-	"\x12SOURCE_ENVIRONMENT\x10\x032\xe4\x01\n" +
+	"\x12SOURCE_ENVIRONMENT\x10\x03\x12\x12\n" +
+	"\x0eSOURCE_MANAGED\x10\x042\x81\a\n" +
 	"\rConfigService\x12G\n" +
 	"\x04List\x12\x1e.icebath.config.v1.ListRequest\x1a\x1f.icebath.config.v1.ListResponse\x12D\n" +
 	"\x03Get\x12\x1d.icebath.config.v1.GetRequest\x1a\x1e.icebath.config.v1.GetResponse\x12D\n" +
-	"\x03Set\x12\x1d.icebath.config.v1.SetRequest\x1a\x1e.icebath.config.v1.SetResponseB\xcb\x01\n" +
+	"\x03Set\x12\x1d.icebath.config.v1.SetRequest\x1a\x1e.icebath.config.v1.SetResponse\x12J\n" +
+	"\x05Value\x12\x1f.icebath.config.v1.ValueRequest\x1a .icebath.config.v1.ValueResponse\x12D\n" +
+	"\x03Put\x12\x1d.icebath.config.v1.PutRequest\x1a\x1e.icebath.config.v1.PutResponse\x12J\n" +
+	"\x05Unset\x12\x1f.icebath.config.v1.UnsetRequest\x1a .icebath.config.v1.UnsetResponse\x12J\n" +
+	"\x05Files\x12\x1f.icebath.config.v1.FilesRequest\x1a .icebath.config.v1.FilesResponse\x12J\n" +
+	"\x05Check\x12\x1f.icebath.config.v1.CheckRequest\x1a .icebath.config.v1.CheckResponse\x12G\n" +
+	"\x04Show\x12\x1e.icebath.config.v1.ShowRequest\x1a\x1f.icebath.config.v1.ShowResponse\x12G\n" +
+	"\x04Read\x12\x1e.icebath.config.v1.ReadRequest\x1a\x1f.icebath.config.v1.ReadResponse\x12J\n" +
+	"\x05Write\x12\x1f.icebath.config.v1.WriteRequest\x1a .icebath.config.v1.WriteResponse\x12G\n" +
+	"\x04Seed\x12\x1e.icebath.config.v1.SeedRequest\x1a\x1f.icebath.config.v1.SeedResponseB\xcb\x01\n" +
 	"\x15com.icebath.config.v1B\vConfigProtoP\x01Z?github.com/nickheyer/icebath/pkg/gen/icebath/config/v1;configv1\xa2\x02\x03ICX\xaa\x02\x11Icebath.Config.V1\xca\x02\x11Icebath\\Config\\V1\xe2\x02\x1dIcebath\\Config\\V1\\GPBMetadata\xea\x02\x13Icebath::Config::V1b\x06proto3"
 
 var (
@@ -792,19 +2191,39 @@ func file_icebath_config_v1_config_proto_rawDescGZIP() []byte {
 }
 
 var file_icebath_config_v1_config_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_icebath_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_icebath_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_icebath_config_v1_config_proto_goTypes = []any{
-	(Kind)(0),            // 0: icebath.config.v1.Kind
-	(Source)(0),          // 1: icebath.config.v1.Source
-	(*Option)(nil),       // 2: icebath.config.v1.Option
-	(*Setting)(nil),      // 3: icebath.config.v1.Setting
-	(*Section)(nil),      // 4: icebath.config.v1.Section
-	(*ListRequest)(nil),  // 5: icebath.config.v1.ListRequest
-	(*ListResponse)(nil), // 6: icebath.config.v1.ListResponse
-	(*GetRequest)(nil),   // 7: icebath.config.v1.GetRequest
-	(*GetResponse)(nil),  // 8: icebath.config.v1.GetResponse
-	(*SetRequest)(nil),   // 9: icebath.config.v1.SetRequest
-	(*SetResponse)(nil),  // 10: icebath.config.v1.SetResponse
+	(Kind)(0),             // 0: icebath.config.v1.Kind
+	(Source)(0),           // 1: icebath.config.v1.Source
+	(*Option)(nil),        // 2: icebath.config.v1.Option
+	(*Setting)(nil),       // 3: icebath.config.v1.Setting
+	(*Section)(nil),       // 4: icebath.config.v1.Section
+	(*ListRequest)(nil),   // 5: icebath.config.v1.ListRequest
+	(*ListResponse)(nil),  // 6: icebath.config.v1.ListResponse
+	(*GetRequest)(nil),    // 7: icebath.config.v1.GetRequest
+	(*GetResponse)(nil),   // 8: icebath.config.v1.GetResponse
+	(*SetRequest)(nil),    // 9: icebath.config.v1.SetRequest
+	(*SetResponse)(nil),   // 10: icebath.config.v1.SetResponse
+	(*ValueRequest)(nil),  // 11: icebath.config.v1.ValueRequest
+	(*ValueResponse)(nil), // 12: icebath.config.v1.ValueResponse
+	(*PutRequest)(nil),    // 13: icebath.config.v1.PutRequest
+	(*PutResponse)(nil),   // 14: icebath.config.v1.PutResponse
+	(*UnsetRequest)(nil),  // 15: icebath.config.v1.UnsetRequest
+	(*UnsetResponse)(nil), // 16: icebath.config.v1.UnsetResponse
+	(*FilesRequest)(nil),  // 17: icebath.config.v1.FilesRequest
+	(*FilesResponse)(nil), // 18: icebath.config.v1.FilesResponse
+	(*CheckRequest)(nil),  // 19: icebath.config.v1.CheckRequest
+	(*Variable)(nil),      // 20: icebath.config.v1.Variable
+	(*ShowRequest)(nil),   // 21: icebath.config.v1.ShowRequest
+	(*Shown)(nil),         // 22: icebath.config.v1.Shown
+	(*ShowResponse)(nil),  // 23: icebath.config.v1.ShowResponse
+	(*CheckResponse)(nil), // 24: icebath.config.v1.CheckResponse
+	(*ReadRequest)(nil),   // 25: icebath.config.v1.ReadRequest
+	(*ReadResponse)(nil),  // 26: icebath.config.v1.ReadResponse
+	(*WriteRequest)(nil),  // 27: icebath.config.v1.WriteRequest
+	(*WriteResponse)(nil), // 28: icebath.config.v1.WriteResponse
+	(*SeedRequest)(nil),   // 29: icebath.config.v1.SeedRequest
+	(*SeedResponse)(nil),  // 30: icebath.config.v1.SeedResponse
 }
 var file_icebath_config_v1_config_proto_depIdxs = []int32{
 	0,  // 0: icebath.config.v1.Setting.kind:type_name -> icebath.config.v1.Kind
@@ -813,17 +2232,40 @@ var file_icebath_config_v1_config_proto_depIdxs = []int32{
 	4,  // 3: icebath.config.v1.ListResponse.sections:type_name -> icebath.config.v1.Section
 	3,  // 4: icebath.config.v1.ListResponse.settings:type_name -> icebath.config.v1.Setting
 	3,  // 5: icebath.config.v1.GetResponse.setting:type_name -> icebath.config.v1.Setting
-	5,  // 6: icebath.config.v1.ConfigService.List:input_type -> icebath.config.v1.ListRequest
-	7,  // 7: icebath.config.v1.ConfigService.Get:input_type -> icebath.config.v1.GetRequest
-	9,  // 8: icebath.config.v1.ConfigService.Set:input_type -> icebath.config.v1.SetRequest
-	6,  // 9: icebath.config.v1.ConfigService.List:output_type -> icebath.config.v1.ListResponse
-	8,  // 10: icebath.config.v1.ConfigService.Get:output_type -> icebath.config.v1.GetResponse
-	10, // 11: icebath.config.v1.ConfigService.Set:output_type -> icebath.config.v1.SetResponse
-	9,  // [9:12] is the sub-list for method output_type
-	6,  // [6:9] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	22, // 6: icebath.config.v1.ShowResponse.keys:type_name -> icebath.config.v1.Shown
+	22, // 7: icebath.config.v1.ShowResponse.platforms:type_name -> icebath.config.v1.Shown
+	22, // 8: icebath.config.v1.ShowResponse.skills:type_name -> icebath.config.v1.Shown
+	20, // 9: icebath.config.v1.CheckResponse.required:type_name -> icebath.config.v1.Variable
+	20, // 10: icebath.config.v1.CheckResponse.optional:type_name -> icebath.config.v1.Variable
+	5,  // 11: icebath.config.v1.ConfigService.List:input_type -> icebath.config.v1.ListRequest
+	7,  // 12: icebath.config.v1.ConfigService.Get:input_type -> icebath.config.v1.GetRequest
+	9,  // 13: icebath.config.v1.ConfigService.Set:input_type -> icebath.config.v1.SetRequest
+	11, // 14: icebath.config.v1.ConfigService.Value:input_type -> icebath.config.v1.ValueRequest
+	13, // 15: icebath.config.v1.ConfigService.Put:input_type -> icebath.config.v1.PutRequest
+	15, // 16: icebath.config.v1.ConfigService.Unset:input_type -> icebath.config.v1.UnsetRequest
+	17, // 17: icebath.config.v1.ConfigService.Files:input_type -> icebath.config.v1.FilesRequest
+	19, // 18: icebath.config.v1.ConfigService.Check:input_type -> icebath.config.v1.CheckRequest
+	21, // 19: icebath.config.v1.ConfigService.Show:input_type -> icebath.config.v1.ShowRequest
+	25, // 20: icebath.config.v1.ConfigService.Read:input_type -> icebath.config.v1.ReadRequest
+	27, // 21: icebath.config.v1.ConfigService.Write:input_type -> icebath.config.v1.WriteRequest
+	29, // 22: icebath.config.v1.ConfigService.Seed:input_type -> icebath.config.v1.SeedRequest
+	6,  // 23: icebath.config.v1.ConfigService.List:output_type -> icebath.config.v1.ListResponse
+	8,  // 24: icebath.config.v1.ConfigService.Get:output_type -> icebath.config.v1.GetResponse
+	10, // 25: icebath.config.v1.ConfigService.Set:output_type -> icebath.config.v1.SetResponse
+	12, // 26: icebath.config.v1.ConfigService.Value:output_type -> icebath.config.v1.ValueResponse
+	14, // 27: icebath.config.v1.ConfigService.Put:output_type -> icebath.config.v1.PutResponse
+	16, // 28: icebath.config.v1.ConfigService.Unset:output_type -> icebath.config.v1.UnsetResponse
+	18, // 29: icebath.config.v1.ConfigService.Files:output_type -> icebath.config.v1.FilesResponse
+	24, // 30: icebath.config.v1.ConfigService.Check:output_type -> icebath.config.v1.CheckResponse
+	23, // 31: icebath.config.v1.ConfigService.Show:output_type -> icebath.config.v1.ShowResponse
+	26, // 32: icebath.config.v1.ConfigService.Read:output_type -> icebath.config.v1.ReadResponse
+	28, // 33: icebath.config.v1.ConfigService.Write:output_type -> icebath.config.v1.WriteResponse
+	30, // 34: icebath.config.v1.ConfigService.Seed:output_type -> icebath.config.v1.SeedResponse
+	23, // [23:35] is the sub-list for method output_type
+	11, // [11:23] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_icebath_config_v1_config_proto_init() }
@@ -837,7 +2279,7 @@ func file_icebath_config_v1_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_config_v1_config_proto_rawDesc), len(file_icebath_config_v1_config_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   9,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

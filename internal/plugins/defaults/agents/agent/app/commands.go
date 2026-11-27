@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
 	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
+	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	slashv1 "github.com/nickheyer/icebath/pkg/gen/icebath/slash/v1"
 	"github.com/nickheyer/icebath/pkg/tui"
@@ -31,13 +33,20 @@ type command struct {
 func locals() []command {
 	return []command{
 		{name: "new", aliases: []string{"clear", "reset"}, usage: "[title]", help: "Start a new session in this window", run: (*chat).fresh},
-		{name: "resume", usage: "[title]", help: "Open a past session", run: (*chat).resume},
+		{name: "resume", usage: "[title|id]", help: "Open a past session here, by its title or id", run: (*chat).resume},
+		{name: "branch", aliases: []string{"fork"}, usage: "[--here] [title]", help: "Branch the current session; this window goes on in the branch", run: (*chat).branch},
+		{name: "save", usage: "<json|md|html> [filename] [redact]", help: "Export the current conversation (bare /save shows usage)", run: (*chat).saveTo},
+		{name: "rewind", usage: "[N | fork N]", help: "Go back to an earlier prompt to edit it, or fork a new session from before it", run: (*chat).rewind},
 		{name: "model", usage: "[model|reset] [--provider name] [--reasoning level] [--global|--session]", help: "Pick a model, or switch by name", run: (*chat).model},
 		{name: "reasoning", usage: "[level|reset|show|hide|full] [--global]", help: "Set the reasoning effort, or how reasoning is shown", run: (*chat).reasoning},
 		{name: "history", usage: "[chars]", help: "Show the session history, each message shortened", run: (*chat).history},
 		{name: "copy", usage: "[n]", help: "Copy the last reply, or the nth from last", run: (*chat).copy},
 		{name: "help", aliases: []string{"commands"}, usage: "[filter]", help: "List commands", run: (*chat).help},
 		{name: "quit", aliases: []string{"exit"}, usage: "[--delete]", help: "Quit; --delete also deletes this session", run: (*chat).quit},
+		{name: "agents", aliases: []string{"tasks"}, usage: "[pause|resume|status]",
+			help: "Open the spawn-tree dashboard (live audit + kill/pause controls); pause, resume and status go to the agent", run: (*chat).agents},
+		{name: "replay", usage: "[N|last|list|load <path>]", help: "Replay a completed spawn tree", run: (*chat).replayTree},
+		{name: "replay-diff", usage: "<baseline> <candidate>", help: "Diff two completed spawn trees (indexes from /replay)", run: (*chat).replayDiff},
 	}
 }
 
@@ -53,6 +62,19 @@ func (c *chat) local(text string) (tea.Cmd, bool) {
 		}
 	}
 	return nil, false
+}
+
+// Tells the session's pre_command hooks of a slash command the app runs, as it is known and as it was typed; nothing for a window with no
+// session yet
+func (c *chat) observe(id, text string) {
+	known, ok := c.command(text)
+	if id == "" || !ok {
+		return
+	}
+	word, argument, _ := strings.Cut(strings.TrimSpace(text), " ")
+	request := &agentv1.ObserveRequest{SessionId: id, Command: known.GetName(), Alias: strings.TrimPrefix(word, "/"), Args: strings.TrimSpace(argument)}
+	ctx := c.kit.Env.Ctx
+	go c.desk.agents.Observe(ctx, request)
 }
 
 func (c *chat) catalog() []*slashv1.Command {
@@ -96,8 +118,15 @@ func (c *chat) say(command, text string) {
 }
 
 func (c *chat) fresh(name string) (tea.Cmd, bool) {
+	running := c.log.busy
+	left := cmp.Or(c.id, c.left)
 	c.reset()
+	c.left = left
 	c.named = name
+	if running {
+		c.say(strings.TrimSpace("/new "+name), "New session started · the previous one keeps running; /sessions lists it.")
+		return nil, true
+	}
 	c.say(strings.TrimSpace("/new "+name), "New session.")
 	return nil, true
 }
@@ -107,26 +136,17 @@ func (c *chat) resume(name string) (tea.Cmd, bool) {
 		return c.kit.Open(sessionsScreen, ""), true
 	}
 	return tui.Async(func() func() tea.Cmd {
-		response, err := c.desk.sessions.List(c.kit.Env.Ctx, &sessionsv1.ListRequest{})
+		response, err := c.desk.sessions.Resolve(c.kit.Env.Ctx, &sessionsv1.ResolveRequest{Ref: name, Profile: c.on(), Tip: true})
 		return func() tea.Cmd {
 			if err != nil {
-				c.say("/resume "+name, tui.Reason(err))
+				c.say("/resume "+name, "No session found matching '"+name+"'. /sessions lists them.")
 				return nil
 			}
-			var found *sessionsv1.Session
-			for _, session := range response.GetSessions() {
-				switch title := session.GetTitle(); {
-				case strings.EqualFold(title, name), session.GetId() == name:
-					return c.desk.open(session)
-				case found == nil && strings.HasPrefix(strings.ToLower(title), strings.ToLower(name)):
-					found = session
-				}
-			}
-			if found == nil {
-				c.say("/resume "+name, "No session named "+name+".")
+			if response.GetSession().GetId() == c.id {
+				c.say("/resume "+name, "Already on session "+cmp.Or(response.GetSession().GetTitle(), name)+".")
 				return nil
 			}
-			return c.desk.open(found)
+			return c.switchTo(response.GetSession())
 		}
 	}), true
 }
@@ -273,14 +293,16 @@ func (c *chat) quit(argument string) (tea.Cmd, bool) {
 	if argument != "--delete" || id == "" {
 		return tea.Quit, true
 	}
-	return tui.Async(func() func() tea.Cmd {
-		_, err := c.desk.sessions.Delete(c.kit.Env.Ctx, &sessionsv1.DeleteRequest{Id: id})
-		return func() tea.Cmd {
-			if err != nil {
-				c.say("/quit --delete", tui.Reason(err))
-				return nil
+	return c.confirm("quit --delete", "The session and its messages are deleted for good, then icebath quits.", func() tea.Cmd {
+		return tui.Async(func() func() tea.Cmd {
+			_, err := c.desk.sessions.Delete(c.kit.Env.Ctx, &sessionsv1.DeleteRequest{Id: id})
+			return func() tea.Cmd {
+				if err != nil {
+					c.say("/quit --delete", "The session was not deleted, so icebath stays open: "+tui.Reason(err))
+					return nil
+				}
+				return tea.Quit
 			}
-			return tea.Quit
-		}
+		})
 	}), true
 }

@@ -14,6 +14,7 @@ func Register(registry *provider.Registry) {
 func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:            commandcodeconfig.ChatName,
+		Shape:           shape,
 		DisplayName:     commandcodeconfig.ChatTitle,
 		Description:     "20+ models, OpenAI-compatible API",
 		SignupURL:       "https://commandcode.ai/",
@@ -33,9 +34,10 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        commandcodeconfig.ChatName,
+		ListsContext:       true,
 	}, {
 		Name:               commandcodeconfig.AnthropicName,
+		Shape:              shape,
 		DisplayName:        commandcodeconfig.AnthropicTitle,
 		Description:        "Claude models via the Anthropic API",
 		SignupURL:          "https://commandcode.ai/",
@@ -53,6 +55,6 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        commandcodeconfig.AnthropicName,
+		ListsContext:       true,
 	}}
 }

@@ -1,0 +1,912 @@
+package sessions
+
+import (
+	"cmp"
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io/fs"
+	"log/slog"
+	"math"
+	mathrand "math/rand/v2"
+	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
+	"modernc.org/sqlite"
+
+	"github.com/nickheyer/icebath/internal/config"
+	sqliteconfig "github.com/nickheyer/icebath/internal/plugins/defaults/sessions/sqlite/config"
+	"github.com/nickheyer/icebath/internal/sessions"
+	"github.com/nickheyer/icebath/pkg/fsx"
+	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+)
+
+const name = "sqlite"
+
+const (
+	// How long a write waits out another process's transaction, a checkpoint or a VACUUM before it gives up
+	writePatience = 20 * time.Second
+	// Transcript writes wait longer, since losing one loses what the model said
+	transcriptPatience = 60 * time.Second
+	// Writes between passive checkpoints and between bounded merges of the search index
+	checkpointEvery = 50
+	mergeEvery      = 1000
+	// Byte cap of the write-ahead log once checkpointed
+	walSizeLimit = 64 << 20
+)
+
+const replacedText = "FATAL: the session database was replaced underneath this process; refusing further writes to this file. " +
+	"Restart icebath so it opens the file now at the path."
+
+const corruptText = "FATAL: the session database reported structural corruption (database disk image is malformed outside the search index) on a live handle; " +
+	"refusing further writes and the close-time checkpoint on this file. Stop icebath, then run `icebath sessions recover --source %s --inspect-only`, or " +
+	"`icebath sessions repair`. (cause: %s)"
+
+const lockedText = "database is locked (another icebath process held the session database write lock for over %.0fs — likely a long maintenance " +
+	"operation such as VACUUM, a large WAL checkpoint, or an older pre-update process; the database itself is healthy)"
+
+type store struct {
+	config *config.Config
+	// Registry the store is registered in, whose hooks hear of the sessions it takes out
+	registry *sessions.Registry
+
+	mu   sync.Mutex
+	db   *sql.DB
+	path string
+	// Device and inode of the file opened, to tell when it is replaced
+	dev, ino uint64
+	// Journal mode the file runs in once opened
+	mode string
+	// Set once the file is found replaced or structurally corrupt; every write is refused from then on
+	halted error
+	// Set while the search indexes are left out of step after damage, so searches scan instead
+	stale   atomic.Bool
+	trigram atomic.Bool
+	// Set while this process rebuilds the search indexes in the background
+	mending atomic.Bool
+	// Life of the running server, which background work of the store ends with; nil until it starts
+	background context.Context
+	writes     atomic.Int64
+	feedMu     sync.Mutex
+	watchers   map[chan []string]struct{}
+	polling    bool
+}
+
+func Register(registry *sessions.Registry, cfg *config.Config) {
+	registry.Register(&store{config: cfg, registry: registry, watchers: map[chan []string]struct{}{}})
+}
+
+// Tells the session hooks of the sessions taken out of the store, by the profile each was of
+func (s *store) deleted(ctx context.Context, listed []*sessionsv1.Session, removed []string, reason, primary string) {
+	owners := map[string]string{}
+	for _, session := range listed {
+		owners[session.GetId()] = session.GetProfile()
+	}
+	byProfile := map[string][]string{}
+	for _, id := range removed {
+		byProfile[owners[id]] = append(byProfile[owners[id]], id)
+	}
+	for profile, ids := range byProfile {
+		s.registry.Deleted(ctx, s.config.In(profile), ids, reason, primary)
+	}
+}
+
+func (s *store) Stores() map[string]sessions.Store {
+	return map[string]sessions.Store{name: s}
+}
+
+func (s *store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
+		return nil
+	}
+	if s.halted == nil && s.mode == sqliteconfig.WAL {
+		s.db.Exec("PRAGMA wal_checkpoint(PASSIVE)")
+	}
+	err := s.db.Close()
+	s.db = nil
+	return err
+}
+
+// Database of the store, opened the first time it is asked for
+func (s *store) open(ctx context.Context) (*sql.DB, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db != nil {
+		return s.db, nil
+	}
+	path := s.config.GetString(sqliteconfig.Path)
+	if path == "" {
+		return nil, errors.New("No path is set for the session database.")
+	}
+	if !filepath.IsAbs(path) {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return nil, err
+		}
+		path = absolute
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("cannot create the folder %s for the session database: %w", filepath.Dir(path), err)
+	}
+	if err := preflight(path); err != nil {
+		return nil, err
+	}
+	var db *sql.DB
+	// The first open of a file, and the moving aside of a damaged one, happen one process at a time
+	err := withFlock(path+".quarantine.lock", 5*time.Second, func(locked bool) error {
+		if locked {
+			if err := quarantine(path); err != nil {
+				return err
+			}
+		} else {
+			slog.Warn("The lock of the session database's first open was not taken within 5s; opening without it, and a damaged file is left in place",
+				"path", path)
+		}
+		if err := secure(path, true); err != nil {
+			return err
+		}
+		dsn, err := s.dsn(path, 5*time.Second)
+		if err != nil {
+			return err
+		}
+		if db, err = sql.Open("sqlite", dsn); err != nil {
+			return err
+		}
+		if err := s.init(ctx, db, path); err != nil {
+			db.Close()
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.db, s.path = db, path
+	if info, err := os.Stat(path); err == nil {
+		s.dev, s.ino = identity(info)
+	}
+	return db, nil
+}
+
+// Connection string of the store: the pragmas every connection runs, and writes that take the write lock as they begin
+func (s *store) dsn(path string, busy time.Duration) (string, error) {
+	pragmas := []string{fmt.Sprintf("busy_timeout(%d)", busy.Milliseconds()), "foreign_keys(1)"}
+	whole := func(key, pragma string, least *int) error {
+		text := strings.TrimSpace(s.config.GetString(key))
+		if text == "" {
+			return nil
+		}
+		n, err := strconv.Atoi(text)
+		if err != nil {
+			_, setting, _ := s.config.Setting(key)
+			return fmt.Errorf("%s takes a whole number, not %q.", setting.Title, text)
+		}
+		if least != nil {
+			n = max(n, *least)
+		}
+		pragmas = append(pragmas, fmt.Sprintf("%s(%d)", pragma, n))
+		return nil
+	}
+	zero := 0
+	if err := whole(sqliteconfig.CacheSize, "cache_size", nil); err != nil {
+		return "", err
+	}
+	if err := whole(sqliteconfig.MmapSize, "mmap_size", &zero); err != nil {
+		return "", err
+	}
+	if store := s.config.GetString(sqliteconfig.TempStore); store != "" {
+		pragmas = append(pragmas, "temp_store("+store+")")
+	}
+	if err := whole(sqliteconfig.WALAutocheckpoint, "wal_autocheckpoint", nil); err != nil {
+		return "", err
+	}
+	if err := whole(sqliteconfig.JournalSizeLimit, "journal_size_limit", nil); err != nil {
+		return "", err
+	}
+	if level := strings.ToUpper(s.config.GetString(sqliteconfig.Synchronous)); level != "" {
+		if runtime.GOOS == "darwin" && level != "FULL" && level != "EXTRA" {
+			slog.Warn("Refusing the configured synchronous level on macOS; keeping FULL. Darwin's fsync() does not guarantee write ordering, so a lower level "+
+				"readmits the half-written btree pages FULL exists to prevent.", "synchronous", level)
+		} else {
+			pragmas = append(pragmas, "synchronous("+level+")")
+		}
+	}
+	query := url.Values{"_pragma": pragmas, "_txlock": {"immediate"}}
+	return "file:" + path + "?" + query.Encode(), nil
+}
+
+// Journal mode, schema, search indexes and the file's generation stamp, waiting out another opener's write lock
+func (s *store) init(ctx context.Context, db *sql.DB, path string) error {
+	deadline := time.Now().Add(writePatience)
+	for {
+		err := s.prepare(ctx, db, path)
+		if err == nil || !busy(err) {
+			return err
+		}
+		if time.Now().After(deadline) {
+			slog.Warn("Session database write lock unavailable at open", "path", path, "holders", describeHolders(lockHolders(path)))
+			return err
+		}
+		time.Sleep(time.Duration(250+mathrand.IntN(750)) * time.Millisecond)
+	}
+}
+
+func (s *store) prepare(ctx context.Context, db *sql.DB, path string) error {
+	mode, err := s.journal(ctx, db, path)
+	if err != nil {
+		return err
+	}
+	s.mode = mode
+	if err := secure(path, false); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, schema); err != nil {
+		return err
+	}
+	cjk := s.config.GetBool(sqliteconfig.CJKFTS)
+	// An index made over messages already stored starts a backfill of them in the same transaction, so its triggers and the backfill
+	// never index one message twice
+	if err := s.once(ctx, db, func(tx *sql.Tx) error {
+		for _, i := range []index{wordIndex, trigramIndex} {
+			if i == trigramIndex && !cjk {
+				_, err := tx.ExecContext(ctx, `DROP TRIGGER IF EXISTS messages_fts_trigram_insert; DROP TRIGGER IF EXISTS messages_fts_trigram_delete;
+					DROP TRIGGER IF EXISTS messages_fts_trigram_update; DROP TABLE IF EXISTS messages_fts_trigram; DROP VIEW IF EXISTS messages_fts_trigram_src;
+					DELETE FROM state_meta WHERE key IN ('`+trigramBackfill+`_high_water', '`+trigramBackfill+`_progress');`)
+				if err != nil {
+					return err
+				}
+				continue
+			}
+			var present int
+			err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, i.table).Scan(&present)
+			if err != nil {
+				return err
+			}
+			if present == 0 {
+				if err := seed(ctx, tx, i.prefix); err != nil {
+					return err
+				}
+			}
+			ddl := ftsSchema
+			if i == trigramIndex {
+				ddl = trigramSchema
+			}
+			if _, err := tx.ExecContext(ctx, ddl); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	s.trigram.Store(cjk)
+	var stale sql.NullString
+	if err := db.QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key = 'fts_stale'`).Scan(&stale); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	s.stale.Store(stale.Valid)
+	return stamp(ctx, db)
+}
+
+// Generation of the file, minted by its first opener, and the header id it lets a copy be told apart by
+func stamp(ctx context.Context, db *sql.DB) error {
+	generation := rand.Text()
+	if _, err := db.ExecContext(ctx, `INSERT OR IGNORE INTO state_meta (key, value) VALUES ('db_file_generation', ?)`, generation); err != nil {
+		return err
+	}
+	if err := db.QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key = 'db_file_generation'`).Scan(&generation); err != nil {
+		return err
+	}
+	var application int64
+	if err := db.QueryRowContext(ctx, "PRAGMA application_id").Scan(&application); err != nil {
+		return err
+	}
+	if application == 0 {
+		sum := hex.EncodeToString([]byte(generation))
+		id, _ := strconv.ParseInt(sum[:8], 16, 64)
+		if id &= 0x7FFFFFFF; id == 0 {
+			id = 1
+		}
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("PRAGMA application_id=%d", id)); err != nil {
+			slog.Debug("Session database generation stamp skipped", "error", err)
+		}
+	}
+	return nil
+}
+
+// Journal mode the file runs in: a WAL file always stays one, since switching it under other processes would unlink the log they still use;
+// delete is set only on a file not in WAL, WAL only where the file system can share its memory
+func (s *store) journal(ctx context.Context, db *sql.DB, path string) (string, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	current, known := diskMode(ctx, conn)
+	configured := s.config.GetString(sqliteconfig.JournalMode)
+	if current == sqliteconfig.WAL {
+		if configured == sqliteconfig.Delete {
+			once("delete_overridden", "The session database is configured for journal_mode=delete but the file is already in WAL; keeping WAL, since a "+
+				"live downgrade under open connections can corrupt it. To apply journal_mode=delete, stop every icebath process using it and run "+
+				"`icebath sessions set-journal-mode delete`.")
+		}
+		if crossVM(filepath.Dir(path)) {
+			once("cross_vm_fs_existing_wal", "The WAL session database is on a cross-VM file system (virtiofs or 9p, as Docker Desktop, OrbStack and "+
+				"Podman bind mounts are), whose shared memory is not coherent across the VM boundary, so concurrent writers can silently corrupt it. "+
+				"Stop every icebath process using it and run `icebath sessions set-journal-mode delete`, or move it onto a native volume.")
+		}
+		return sqliteconfig.WAL, companions(ctx, conn)
+	}
+	if configured == sqliteconfig.Delete {
+		if !known {
+			return "", errors.New("could not verify the journal mode before applying the configured journal_mode=delete (database is locked — possible " +
+				"concurrent openers); refusing to downgrade a database this process does not own alone")
+		}
+		mode, err := setMode(ctx, conn, "DELETE")
+		if err != nil {
+			return "", err
+		}
+		if mode != sqliteconfig.Delete {
+			return "", fmt.Errorf("could not set the configured journal_mode=delete (got %s)", cmp.Or(mode, "no result"))
+		}
+		return mode, nil
+	}
+	if !known {
+		once("wal_probe_unknown", "Could not read the session database's journal mode (database is locked or busy); leaving the file as it is rather than "+
+			"setting a mode while another connection may hold it.")
+		return current, nil
+	}
+	if crossVM(filepath.Dir(path)) {
+		once("cross_vm_fs", "The session database is on a cross-VM file system (virtiofs or 9p, as Docker Desktop, OrbStack and Podman bind mounts are), "+
+			"whose WAL shared memory is not coherent across the VM boundary, so journal_mode=delete is used instead. Move it onto a native volume to "+
+			"restore WAL.")
+		mode, err := setMode(ctx, conn, "DELETE")
+		return cmp.Or(mode, sqliteconfig.Delete), err
+	}
+	mode, err := setMode(ctx, conn, "WAL")
+	if err != nil {
+		text := strings.ToLower(err.Error())
+		if !strings.Contains(text, "locking protocol") && !strings.Contains(text, "not authorized") && !strings.Contains(text, "disk i/o error") {
+			return "", err
+		}
+		once("wal_fallback", fmt.Sprintf("WAL journal mode is not supported on this file system (%s); falling back to journal_mode=delete, slower but "+
+			"working on NFS, SMB, FUSE and ZFS.", err))
+		if mode, err = setMode(ctx, conn, "DELETE"); err != nil {
+			once("wal_delete_fallback_failed", "Both WAL and delete journal modes failed; going on in the connection's current journal mode.")
+			mode, _ = diskMode(ctx, conn)
+		}
+		return cmp.Or(mode, sqliteconfig.Delete), nil
+	}
+	if mode != sqliteconfig.WAL {
+		once("wal_fallback", "WAL journal mode is not supported on this file system; falling back to journal_mode="+mode+".")
+		return mode, nil
+	}
+	if current != "" && current != sqliteconfig.WAL && hasContent(ctx, conn) {
+		once("journal_upgrade", "The session database was in journal_mode="+current+" and has been switched to WAL. Set the journal mode to delete in "+
+			"/settings under Sessions → SQLite to keep it as it was.")
+	}
+	return mode, companions(ctx, conn)
+}
+
+// Journal mode of the file, false when it can't be read
+func diskMode(ctx context.Context, conn *sql.Conn) (string, bool) {
+	for range 4 {
+		var mode string
+		err := conn.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode)
+		if err == nil {
+			return strings.ToLower(mode), true
+		}
+		if !strings.Contains(strings.ToLower(err.Error()), "disk i/o error") {
+			return "", false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return "", false
+}
+
+// Sets the journal mode with no wait for the lock, so any other opener makes it fail rather than have its log unlinked underneath it
+func setMode(ctx context.Context, conn *sql.Conn, mode string) (string, error) {
+	if _, err := conn.ExecContext(ctx, "PRAGMA busy_timeout=0"); err != nil {
+		return "", err
+	}
+	defer conn.ExecContext(ctx, "PRAGMA busy_timeout=5000")
+	var got string
+	if err := conn.QueryRowContext(ctx, "PRAGMA journal_mode="+mode).Scan(&got); err != nil {
+		return "", err
+	}
+	return strings.ToLower(got), nil
+}
+
+// What every WAL activation carries: the log's size cap, and on macOS checkpoints that reach the disk
+func companions(ctx context.Context, conn *sql.Conn) error {
+	conn.ExecContext(ctx, fmt.Sprintf("PRAGMA journal_size_limit=%d", walSizeLimit))
+	if runtime.GOOS == "darwin" {
+		conn.ExecContext(ctx, "PRAGMA checkpoint_fullfsync=1")
+		conn.ExecContext(ctx, "PRAGMA synchronous=FULL")
+	}
+	return nil
+}
+
+func hasContent(ctx context.Context, conn *sql.Conn) bool {
+	var pages int64
+	return conn.QueryRowContext(ctx, "PRAGMA page_count").Scan(&pages) == nil && pages > 1
+}
+
+// Whether the folder is on a file system shared across a virtual machine boundary, whose shared memory WAL can't trust
+func crossVM(dir string) bool {
+	data, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		return false
+	}
+	best, kind := -1, ""
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		dash := -1
+		for i, field := range fields {
+			if field == "-" {
+				dash = i
+				break
+			}
+		}
+		if len(fields) < 5 || dash < 0 || dash+1 >= len(fields) {
+			continue
+		}
+		mount := unescapeMount(fields[4])
+		if (dir == mount || strings.HasPrefix(dir, strings.TrimSuffix(mount, "/")+"/") || mount == "/") && len(mount) >= best {
+			best, kind = len(mount), fields[dash+1]
+		}
+	}
+	switch kind {
+	case "virtiofs", "fuse.virtiofs", "9p", "9p2000", "9p2000.l", "9p2000.u":
+		return true
+	}
+	return false
+}
+
+// Path of a mount table field, its octal escapes such as \040 decoded
+func unescapeMount(field string) string {
+	var out strings.Builder
+	for i := 0; i < len(field); i++ {
+		if field[i] == '\\' && i+3 < len(field) {
+			if n, err := strconv.ParseUint(field[i+1:i+4], 8, 8); err == nil {
+				out.WriteByte(byte(n))
+				i += 3
+				continue
+			}
+		}
+		out.WriteByte(field[i])
+	}
+	return out.String()
+}
+
+var logged sync.Map
+
+// Logs a warning about the database once per process
+func once(key, text string) {
+	if _, seen := logged.LoadOrStore(key, true); !seen {
+		slog.Warn(text)
+	}
+}
+
+// Fails with a plain account when the folder or a file of the database is not writable, rather than SQLite's
+func preflight(path string) error {
+	check := func(target, kind, extra string) error {
+		if err := syscall.Access(target, 0x2|0x4); err != nil {
+			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOENT) {
+				return nil
+			}
+			x := ""
+			if kind == "directory" {
+				x = "x"
+			}
+			return fmt.Errorf("%s is not writable: %s %s is read-only for this user. Icebath needs read-write access to open the database. Fix with: "+
+				"chmod u+rw%s '%s' (files owned by another user may need sudo/chown).%s", filepath.Base(path), kind, target, x, target, extra)
+		}
+		return nil
+	}
+	if err := check(filepath.Dir(path), "directory", ""); err != nil {
+		return err
+	}
+	if err := check(path, "file", ""); err != nil {
+		return err
+	}
+	wal := " Do NOT delete the -wal file — it contains committed data that will be merged into the database once it is writable."
+	if err := check(path+"-wal", "file", wal); err != nil {
+		return err
+	}
+	return check(path+"-shm", "file", "")
+}
+
+// Moves an empty or damaged file aside, so icebath starts on a fresh database rather than failing every open
+func quarantine(path string) error {
+	header := make([]byte, 16)
+	f, err := os.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	n, _ := f.Read(header)
+	info, statErr := f.Stat()
+	f.Close()
+	if statErr != nil {
+		return statErr
+	}
+	if n == 16 && string(header) == "SQLite format 3\x00" {
+		return nil
+	}
+	kind := "notadb"
+	if info.Size() == 0 || strings.Trim(string(header[:n]), "\x00") == "" {
+		kind = "zeroed"
+	}
+	backup := ""
+	base := fmt.Sprintf("%s.%s-%s-%d", path, kind, time.Now().Format("20060102-150405"), os.Getpid())
+	for i := 0; ; i++ {
+		backup = base + ".bak"
+		if i > 0 {
+			backup = fmt.Sprintf("%s-%d.bak", base, i)
+		}
+		if _, err := os.Stat(backup); errors.Is(err, fs.ErrNotExist) {
+			break
+		}
+	}
+	where := "moved aside to " + backup
+	if err := os.Rename(path, backup); err != nil {
+		return fmt.Errorf("the session database was empty or damaged (%d bytes) and was left in place (it could not be moved aside: %v). "+
+			"Run `icebath sessions recover --source %s --inspect-only` to bring old sessions back.", info.Size(), err, path)
+	}
+	for _, sidecar := range []string{"-wal", "-shm"} {
+		os.Rename(path+sidecar, backup+sidecar)
+	}
+	slog.Error(fmt.Sprintf("The session database was empty or damaged (%d bytes) and has been %s; icebath started with a fresh, empty session "+
+		"database. To bring old sessions back, run `icebath sessions recover --source %s --inspect-only`.", info.Size(), where, backup))
+	return nil
+}
+
+// Makes the database owner only whatever the umask: created that way before SQLite opens it, its logs tightened after
+func secure(path string, create bool) error {
+	if create {
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
+		switch {
+		case err == nil:
+			f.Close()
+		case !errors.Is(err, fs.ErrExist) && !errors.Is(err, syscall.EISDIR):
+			return err
+		}
+	}
+	for _, target := range []string{path, path + "-wal", path + "-shm"} {
+		if info, err := os.Lstat(target); err == nil && info.Mode().IsRegular() && info.Mode().Perm() != 0o600 {
+			if err := os.Chmod(target, 0o600); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Runs the function holding an exclusive lock file, waiting for it until the timeout; told whether it got the lock
+func withFlock(path string, timeout time.Duration, fn func(locked bool) error) error {
+	release, err := fsx.Lock(context.Background(), path, timeout)
+	if err != nil {
+		return fn(false)
+	}
+	defer release()
+	return fn(true)
+}
+
+func identity(info fs.FileInfo) (uint64, uint64) {
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		return uint64(stat.Dev), uint64(stat.Ino)
+	}
+	return 0, 0
+}
+
+// Error that stops writes: the file at the path is no longer the one opened, or it was found corrupt
+func (s *store) health() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.halted != nil {
+		return s.halted
+	}
+	info, err := os.Stat(s.path)
+	if err == nil {
+		if dev, ino := identity(info); dev == s.dev && ino == s.ino {
+			return nil
+		}
+	}
+	s.halted = sessions.Halted(errors.New(replacedText))
+	slog.Error(replacedText, "path", s.path)
+	return s.halted
+}
+
+// Runs the function in one transaction that holds the write lock from its start, retried with jitter while another process holds the lock
+func (s *store) write(ctx context.Context, fn func(tx *sql.Tx) error) error {
+	return s.writeWithin(ctx, writePatience, fn)
+}
+
+func (s *store) writeWithin(ctx context.Context, patience time.Duration, fn func(tx *sql.Tx) error) error {
+	db, err := s.open(ctx)
+	if err != nil {
+		return err
+	}
+	start := time.Now()
+	ioRetried := false
+	for {
+		if err := s.health(); err != nil {
+			return err
+		}
+		err := s.once(ctx, db, fn)
+		if err == nil {
+			s.committed(ctx, db)
+			return nil
+		}
+		var problem *sqlite.Error
+		if !errors.As(err, &problem) {
+			return err
+		}
+		elapsed := time.Since(start)
+		switch code := problem.Code() & 0xff; {
+		case code == 5 || code == 6:
+			if elapsed < patience {
+				if err := pause(ctx, elapsed); err != nil {
+					return err
+				}
+				continue
+			}
+			slog.Warn("Session database write lock unavailable", "path", s.path, "after", patience, "holders", describeHolders(lockHolders(s.path)))
+			return fmt.Errorf(lockedText, patience.Seconds())
+		case code == 10 && !ioRetried:
+			ioRetried = true
+			if err := pause(ctx, elapsed); err != nil {
+				return err
+			}
+			continue
+		case code == 11 || code == 26:
+			if indexDamage(err) {
+				if s.detachIndexes(ctx, db, err) == nil {
+					continue
+				}
+				return err
+			}
+			s.mu.Lock()
+			if s.halted == nil {
+				s.halted = sessions.Halted(fmt.Errorf(corruptText, s.path, err))
+				slog.Error("The session database reported structural corruption outside the search index; refusing further writes", "path", s.path, "error", err)
+			}
+			halted := s.halted
+			s.mu.Unlock()
+			return halted
+		}
+		return err
+	}
+}
+
+func (s *store) once(ctx context.Context, db *sql.DB, fn func(tx *sql.Tx) error) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// Sleeps a jittered while before a write tries again: short in the first two seconds, longer after
+func pause(ctx context.Context, elapsed time.Duration) error {
+	low, high := 20, 150
+	if elapsed >= 2*time.Second {
+		low, high = 250, 1000
+	}
+	timer := time.NewTimer(time.Duration(low+mathrand.IntN(high-low)) * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// After a commit: a passive checkpoint every so often, and a bounded merge of the search index
+func (s *store) committed(ctx context.Context, db *sql.DB) {
+	n := s.writes.Add(1)
+	if n%checkpointEvery == 0 && s.mode == sqliteconfig.WAL {
+		if _, err := db.ExecContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)"); err != nil {
+			slog.Warn("WAL checkpoint (PASSIVE) failed", "error", err)
+		}
+	}
+	if n%mergeEvery == 0 && !s.stale.Load() {
+		for _, table := range s.indexes() {
+			if _, err := db.ExecContext(ctx, "INSERT INTO "+table+"("+table+", rank) VALUES ('merge', 500)"); err != nil {
+				slog.Debug("Search index merge failed", "index", table, "error", err)
+			}
+		}
+	}
+}
+
+// Search indexes the store keeps
+func (s *store) indexes() []string {
+	if s.trigram.Load() {
+		return []string{"messages_fts", "messages_fts_trigram"}
+	}
+	return []string{"messages_fts"}
+}
+
+// Whether a corruption error is of a search index, which a rebuild repairs, rather than of the messages
+func indexDamage(err error) bool {
+	var problem *sqlite.Error
+	if errors.As(err, &problem) && problem.Code() == 267 {
+		return true
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "messages_fts") || strings.Contains(text, "fts5") && strings.Contains(text, "corrupt")
+}
+
+// Drops the triggers of the damaged search indexes and marks them stale, so writes go on and searches scan until a repair rebuilds them
+func (s *store) detachIndexes(ctx context.Context, db *sql.DB, cause error) error {
+	if s.isStale(ctx, db) {
+		return cause
+	}
+	slog.Error("The session search index is damaged; messages are kept and searches scan them until it is rebuilt from them in the background",
+		"error", cause)
+	err := s.once(ctx, db, func(tx *sql.Tx) error {
+		for _, trigger := range indexTriggers {
+			if _, err := tx.ExecContext(ctx, "DROP TRIGGER IF EXISTS "+trigger); err != nil {
+				return err
+			}
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO state_meta (key, value) VALUES ('fts_stale', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			cause.Error())
+		return err
+	})
+	if err == nil {
+		s.stale.Store(true)
+		s.remend()
+	}
+	return err
+}
+
+// Whether the error is SQLite saying the database is busy or locked
+func busy(err error) bool {
+	if err == nil {
+		return false
+	}
+	var problem *sqlite.Error
+	if errors.As(err, &problem) {
+		code := problem.Code() & 0xff
+		return code == 5 || code == 6
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "database is locked") || strings.Contains(text, "database is busy")
+}
+
+// Database for reading, which under WAL never waits for the writer, and still reads a file whose writes are stopped
+func (s *store) read(ctx context.Context) (*sql.DB, error) {
+	return s.open(ctx)
+}
+
+// Value of a state_meta key, false when absent
+func meta(ctx context.Context, q querier, key string) (string, bool, error) {
+	var value sql.NullString
+	err := q.QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key = ?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	return value.String, value.Valid, err
+}
+
+func setMeta(ctx context.Context, q querier, key, value string) error {
+	_, err := q.ExecContext(ctx, `INSERT INTO state_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
+}
+
+// What runs statements: the database or a transaction
+type querier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// Seconds since the epoch, as times are stored
+func now() float64 {
+	return float64(time.Now().UnixNano()) / 1e9
+}
+
+func seconds(t time.Time) float64 {
+	return float64(t.UnixNano()) / 1e9
+}
+
+func fromSeconds(value float64) time.Time {
+	whole, fraction := math.Modf(value)
+	return time.Unix(int64(whole), int64(fraction*1e9))
+}
+
+func timestampOf(t time.Time) *timestamppb.Timestamp {
+	return timestamppb.New(t)
+}
+
+// Tells every watcher which sessions changed, none for all of them
+func (s *store) changed(ids ...string) {
+	s.feedMu.Lock()
+	defer s.feedMu.Unlock()
+	for watcher := range s.watchers {
+		select {
+		case watcher <- ids:
+		default:
+		}
+	}
+}
+
+func (s *store) Subscribe() (<-chan []string, func()) {
+	changes := make(chan []string, 64)
+	s.feedMu.Lock()
+	s.watchers[changes] = struct{}{}
+	start := !s.polling
+	s.polling = true
+	s.feedMu.Unlock()
+	if start {
+		go s.poll()
+	}
+	return changes, func() {
+		s.feedMu.Lock()
+		defer s.feedMu.Unlock()
+		delete(s.watchers, changes)
+	}
+}
+
+// Watches for commits of other processes while anyone watches the store, telling the watchers anything may have changed
+func (s *store) poll() {
+	ctx := context.Background()
+	var conn *sql.Conn
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+	last := int64(-1)
+	for range time.Tick(2 * time.Second) {
+		s.feedMu.Lock()
+		if len(s.watchers) == 0 {
+			s.polling = false
+			s.feedMu.Unlock()
+			return
+		}
+		s.feedMu.Unlock()
+		if conn == nil {
+			db, err := s.read(ctx)
+			if err != nil {
+				continue
+			}
+			if conn, err = db.Conn(ctx); err != nil {
+				continue
+			}
+		}
+		var version int64
+		if err := conn.QueryRowContext(ctx, "PRAGMA data_version").Scan(&version); err != nil {
+			conn.Close()
+			conn = nil
+			continue
+		}
+		if last >= 0 && version != last {
+			s.changed()
+		}
+		last = version
+	}
+}

@@ -1,0 +1,155 @@
+syntax = "proto3";
+
+package icebath.plugins.hooks.v1;
+
+// The user's shell hooks and outbound webhooks of a profile: what they are, whether each may run, and running them on sample events
+service HooksService {
+  // Every shell hook and outbound webhook of the profile, with the events a hook may be set on
+  rpc List(ListRequest) returns (ListResponse);
+  // One change to the hooks: add, remove, allow or revoke; answered with the hooks after it
+  rpc Change(ChangeRequest) returns (ChangeResponse);
+  // Runs hooks of an event once on its sample event: the one the command names, or every one of the event whose matcher names the tool
+  rpc Test(TestRequest) returns (TestResponse);
+  // Checks one hook, or every hook: whether its script can run, is allowed, is unchanged since and answers well
+  rpc Check(CheckRequest) returns (CheckResponse);
+  // Allows every hook the profile's settings set, as a launch with --accept-hooks does
+  rpc Accept(AcceptRequest) returns (AcceptResponse);
+}
+
+message ListRequest {
+  // Profile to read, the one in use when empty
+  string profile = 1;
+}
+
+// One shell hook: the event it runs on, its command and whether it may run
+message Hook {
+  string event = 1;
+  string command = 2;
+  // Pattern of the tools it is for, empty for every tool or an event that is not about tools
+  string matcher = 3;
+  // Seconds its command may take
+  int32 timeout = 4;
+  // A failure of its command blocks the call it was asked about
+  bool fail_closed = 5;
+  bool allowed = 6;
+  // When it was allowed, empty when not known
+  string approved_at = 7;
+  // Its script changed since it was allowed, with its time then and now
+  bool changed = 8;
+  string changed_was = 9;
+  string changed_now = 10;
+}
+
+// One address events are posted to
+message Webhook {
+  // Its name, its address when it has none
+  string label = 1;
+  string url = 2;
+  repeated string events = 3;
+  string matcher = 4;
+  int32 timeout = 5;
+  // Posts carry a signature made with its secret
+  bool signed = 6;
+}
+
+message ListResponse {
+  repeated Hook hooks = 1;
+  repeated Webhook webhooks = 2;
+  // Events a shell hook may be set on
+  repeated string events = 3;
+  // Every hook point
+  repeated string points = 4;
+  // The profile approves every hook without asking, by its auto accept setting or ICEBATH_ACCEPT_HOOKS
+  bool accept_all = 5;
+}
+
+message ChangeRequest {
+  string profile = 1;
+  // add, remove, allow or revoke
+  string verb = 2;
+  string event = 3;
+  string command = 4;
+  // Tools a new hook is for and the seconds it may take, both left to their defaults when empty
+  string matcher = 5;
+  int32 timeout = 6;
+}
+
+message ChangeResponse {
+  ListResponse hooks = 1;
+  // Entries a remove took out of the settings, or a revoke off the allowlist
+  int32 removed = 2;
+}
+
+// How one run of a hook's command ended
+message Run {
+  // Why the command could not run, empty when it ran
+  string error = 1;
+  bool timed_out = 2;
+  // It ran to its end, with this exit code
+  bool exited = 3;
+  int32 exit_code = 4;
+  double seconds = 5;
+  string stdout = 6;
+  string stderr = 7;
+  // What it answered in the shape icebath acts on, empty when it answered nothing
+  string directive = 8;
+}
+
+message TestRequest {
+  string profile = 1;
+  string event = 2;
+  // Hook to run, every hook of the event when empty
+  string command = 3;
+  // Tool the sample event names; with no command, only the hooks of tool calls whose matcher names it run
+  string tool = 4;
+  // JSON object of fields laid over the sample event, none when empty
+  string payload = 5;
+}
+
+message Tested {
+  string command = 1;
+  Run run = 2;
+}
+
+message TestResponse {
+  repeated Tested runs = 1;
+}
+
+message CheckRequest {
+  string profile = 1;
+  // Hook to check, every hook when both are empty
+  string event = 2;
+  string command = 3;
+}
+
+// What a check of one hook found
+message Checked {
+  string event = 1;
+  string command = 2;
+  int32 timeout = 3;
+  // Its script is there and can run as the command runs it
+  bool runnable = 4;
+  bool allowed = 5;
+  // When it was allowed, a question mark when not known
+  string approved_at = 6;
+  // Its script could be compared with the one allowed, and it changed
+  bool compared = 7;
+  bool changed = 8;
+  string changed_was = 9;
+  string changed_now = 10;
+  // Run on a sample event, absent for a hook that is not allowed or cannot run
+  Run run = 11;
+  // What a finished run printed: empty, json or invalid
+  string output = 12;
+  int32 problems = 13;
+}
+
+message CheckResponse {
+  repeated Checked checks = 1;
+}
+
+message AcceptRequest {
+  string profile = 1;
+}
+
+message AcceptResponse {}

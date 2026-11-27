@@ -15,17 +15,18 @@ type catalog struct{}
 
 func Register(registry *models.Registry) {
 	registry.Register(catalog{})
+	registry.Register(&reasoning{held: map[string]options{}})
 }
 
 func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool) {
 	if route.Spec != lmstudioconfig.Name {
 		return nil, false
 	}
-	root := serverRoot(route.BaseURL)
+	root := models.LMStudioRoot(route.BaseURL)
 	if root == "" {
 		return nil, false
 	}
-	headers := map[string]string{"User-Agent": "icebath-cli/dev"}
+	headers := map[string]string{"User-Agent": provider.UserAgent("icebath-cli")}
 	if token := strings.TrimSpace(route.APIKey); token != "" {
 		headers["Authorization"] = "Bearer " + token
 	}
@@ -53,14 +54,4 @@ func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool
 		}
 	}
 	return keys, true
-}
-
-func serverRoot(base string) string {
-	root := strings.TrimRight(strings.TrimSpace(base), "/")
-	for _, suffix := range []string{"/api/v1", "/api", "/v1"} {
-		if strings.HasSuffix(root, suffix) {
-			return strings.TrimRight(strings.TrimSuffix(root, suffix), "/")
-		}
-	}
-	return root
 }

@@ -30,6 +30,7 @@ import (
 	anthropicconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/anthropic/config"
 	"github.com/nickheyer/icebath/internal/provider"
 	browserutil "github.com/nickheyer/icebath/pkg/browser"
+	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/spf13/cast"
 )
 
@@ -119,14 +120,11 @@ func loadJSONIfExists(env PoolEnv, path, what string) map[string]any {
 	return data
 }
 
-// Private atomic writer behind every singleton commit, swappable so tests can fail the durable write
-var atomicWritePrivate = atomicWrite
-
 // Atomic private write whose failure becomes CredentialPersistError
 func commitPrivateJSON(env PoolEnv, path string, payload any, what string) error {
 	raw, err := json.MarshalIndent(payload, "", "  ")
 	if err == nil {
-		err = atomicWritePrivate(path, raw, 0o600)
+		err = fsx.Write(path, raw, 0o600)
 	}
 	if err != nil {
 		env.log().Error(fmt.Sprintf("Failed to write refreshed %s to %s: %v", what, path, err))
@@ -196,10 +194,7 @@ func appendSpentRotationSidecar(env PoolEnv, sourcePath string, fingerprints []s
 		err = os.MkdirAll(filepath.Dir(sidecar), 0o755)
 	}
 	if err == nil {
-		tmp := sidecar + ".tmp"
-		if err = os.WriteFile(tmp, payload, 0o644); err == nil {
-			err = os.Rename(tmp, sidecar)
-		}
+		err = fsx.Write(sidecar, payload, 0o644)
 	}
 	if err != nil {
 		env.log().Debug(fmt.Sprintf("Failed to persist spent-rotation fingerprints to %s: %v", sidecar, err))
@@ -374,7 +369,7 @@ func ClaudeCodeCredentialsPath() string {
 	override := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR"))
 	root := ""
 	if override != "" {
-		root = expandTildePath(override)
+		root = fsx.ExpandHome(override)
 	} else {
 		userHome, err := os.UserHomeDir()
 		if err != nil {
@@ -383,15 +378,6 @@ func ClaudeCodeCredentialsPath() string {
 		root = filepath.Join(userHome, ".claude")
 	}
 	return filepath.Join(root, ".credentials.json")
-}
-
-func expandTildePath(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
-		if userHome, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(userHome, strings.TrimPrefix(p, "~"))
-		}
-	}
-	return p
 }
 
 func readClaudeCodeCredentialsFromFile(env PoolEnv) map[string]any {
@@ -404,7 +390,7 @@ func readClaudeCodeCredentialsFromFile(env PoolEnv) map[string]any {
 
 // ReadClaudeCodeCredentials reads the borrowed login from Keychain and file, preferring the only valid one
 func ReadClaudeCodeCredentials(env PoolEnv) map[string]any {
-	if !AdoptExternalLoginsEnabled(env) {
+	if !AdoptExternalLoginsEnabled(env) || env.Ignores != nil && env.Ignores(claudeCode) {
 		return nil
 	}
 	kc := readClaudeCodeCredentialsFromKeychain(env)
@@ -581,7 +567,7 @@ var (
 
 // Refreshes an expired Claude Code token under the path keyed lock, adopting an already rotated one first
 func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
-	refreshTimeout := envFloat("ICEBATH_ANTHROPIC_REFRESH_TIMEOUT_SECONDS", 20)
+	refreshTimeout := env.envFloat("ICEBATH_ANTHROPIC_REFRESH_TIMEOUT_SECONDS", 20)
 	lockTimeout := time.Duration((refreshTimeout + 5) * float64(time.Second))
 	if lockTimeout < AuthLockTimeout {
 		lockTimeout = AuthLockTimeout
@@ -834,7 +820,7 @@ func generatePKCE() (string, string) {
 }
 
 // RunIcebathOAuthLoginTo runs the Claude Pro/Max PKCE sign in, printing its link and messages to out and opening a browser only when asked
-func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string) (string, bool), openBrowser bool) map[string]any {
+func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string) (string, bool), show func(link string), openBrowser bool) map[string]any {
 	verifier, challenge := generatePKCE()
 	var stateRaw [32]byte
 	fillRandom(stateRaw[:])
@@ -852,6 +838,9 @@ func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string
 		"╰───────────────────────────────────────────────────╯",
 		"", "  " + authURL, "",
 	}, "\n"))
+	if show != nil {
+		show(authURL)
+	}
 	if openBrowser && canOpenGraphicalBrowser() {
 		if err := browserutil.Open(context.Background(), authURL); err == nil {
 			fmt.Fprintln(out, "  (Browser opened automatically)")
@@ -915,8 +904,10 @@ type PoolEnv struct {
 	// Fields of the account signed in with, and settings of its provider
 	Account  config.View
 	Provider config.View
-	Log      *slog.Logger
-	HTTP     *http.Client
+	// Whether the provider may not take its credential from a variable or program, by name
+	Ignores func(source string) bool
+	Log     *slog.Logger
+	HTTP    *http.Client
 	// Call context of the token requests and the setup command
 	Ctx context.Context
 }
@@ -946,7 +937,11 @@ func (env PoolEnv) secretStr(name string) string {
 	if value := env.Account.GetString(field); bound && value != "" {
 		return value
 	}
-	return os.Getenv(name)
+	if env.Ignores != nil && env.Ignores(name) {
+		return ""
+	}
+	value, _ := env.Account.LookupEnv(name)
+	return value
 }
 
 // fileLock takes the cross process advisory lock for an auth path and returns its releaser
@@ -955,7 +950,7 @@ func (env PoolEnv) fileLock(authPath string, timeout time.Duration) (func(), err
 	if timeout < time.Second {
 		timeout = time.Second
 	}
-	return lockFile(env.ctx(), lockPath, timeout)
+	return fsx.Lock(env.ctx(), lockPath, timeout)
 }
 
 // ExternalLoginsNotAdoptedNotice is printed once per process when a borrowed CLI login is skipped
@@ -1073,9 +1068,10 @@ func encodeQuery(pairs [][2]string) string {
 	return b.String()
 }
 
-// Float value of an environment variable, an infinity for one too large, def when unset, blank or not a number
-func envFloat(name string, def float64) float64 {
-	raw := strings.TrimSpace(os.Getenv(name))
+// Float value of a variable of the account's environment, an infinity for one too large, def when unset, blank or not a number
+func (env PoolEnv) envFloat(name string, def float64) float64 {
+	value, _ := env.Account.LookupEnv(name)
+	raw := strings.TrimSpace(value)
 	if raw == "" {
 		return def
 	}
@@ -1084,43 +1080,6 @@ func envFloat(name string, def float64) float64 {
 		return def
 	}
 	return f
-}
-
-// Writes data to path through a temporary sibling and a rename
-func atomicWrite(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpName) }
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		cleanup()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		cleanup()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := os.Chmod(tmpName, mode); err != nil {
-		cleanup()
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		cleanup()
-		return err
-	}
-	return nil
 }
 
 // Install prefixes probed in addition to PATH for the Claude Code CLI
@@ -1154,7 +1113,7 @@ func findClaudeCodeCLI(command string) string {
 		return hit
 	}
 	for _, prefix := range anthClaudeCodePrefixes {
-		p := filepath.Join(expandTildePath(prefix), command)
+		p := filepath.Join(fsx.ExpandHome(prefix), command)
 		if anthIsRegularFile(p) {
 			return p
 		}

@@ -1,4 +1,4 @@
-.PHONY: test build build-full build-noextras build-core dev release setup
+.PHONY: test build build-full build-noextras build-core dev release setup gen
 
 GOTAGS ?= goolm
 # Flags of the binaries make builds: no debug tables and no build paths, as the release builds have
@@ -20,6 +20,9 @@ go = @echo 'GOMEMLIMIT=$(GOMEMLIMIT) go $(1)'; $(scratch) GOMEMLIMIT=$(GOMEMLIMI
 
 test:
 	$(call go,test -tags "$(GOTAGS)" ./...)
+
+gen:
+	buf generate
 
 build: build-full
 

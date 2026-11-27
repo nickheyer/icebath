@@ -15,6 +15,7 @@ func (specs) Specs() []provider.Spec {
 	base := deepinfraconfig.BaseURL
 	return []provider.Spec{{
 		Name:               deepinfraconfig.Name,
+		Shape:              shape,
 		DisplayName:        deepinfraconfig.Title,
 		Description:        "100+ open models, pay per use",
 		SignupURL:          "https://deepinfra.com/dash/api_keys",
@@ -31,7 +32,6 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        deepinfraconfig.Name,
 		DefaultAuxModel:    "deepseek-ai/DeepSeek-V4-Flash",
 	}}
 }

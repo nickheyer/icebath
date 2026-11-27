@@ -1,0 +1,435 @@
+syntax = "proto3";
+
+package icebath.plugins.mcp.v1;
+
+// MCP servers of a profile: their settings, their state, the catalog they come from, signing in to them, and the connection cards the agent
+// asks the app to draw
+service McpService {
+  // Servers of the profile with how each stands; nothing connects for it
+  rpc List(ListRequest) returns (ListResponse);
+  // Entries of the catalog, with those the profile installed marked and the values each still lacks
+  rpc Catalog(CatalogRequest) returns (CatalogResponse);
+  // Keeps the settings of a server, refusing a backdoor shape
+  rpc Save(SaveRequest) returns (SaveResponse);
+  // Why the settings of a server would be refused, nothing when they would be kept
+  rpc Check(CheckRequest) returns (CheckResponse);
+  rpc Remove(RemoveRequest) returns (RemoveResponse);
+  rpc Enable(EnableRequest) returns (EnableResponse);
+  // Connects a server once, lists what it offers and disconnects
+  rpc Probe(ProbeRequest) returns (ProbeResponse);
+  // Keeps the tool filter of a server
+  rpc SetFilter(SetFilterRequest) returns (SetFilterResponse);
+  // Keeps a value the servers' settings name as ${NAME}
+  rpc SetValue(SetValueRequest) returns (SetValueResponse);
+  // Whether a value the servers' settings name is set
+  rpc HasValue(HasValueRequest) returns (HasValueResponse);
+  // Keeps a bearer token of a server, the header naming it
+  rpc SaveBearer(SaveBearerRequest) returns (SaveBearerResponse);
+  // Settings a catalog entry installs as
+  rpc InstallConfig(InstallConfigRequest) returns (InstallConfigResponse);
+  // Clones the repository of a catalog entry that runs from source and runs its bootstrap
+  rpc GitInstall(GitInstallRequest) returns (GitInstallResponse);
+  // Signs in to a server: its link first, the outcome last
+  rpc Login(LoginRequest) returns (stream LoginEvent);
+  // Where the browser was sent at the end of a sign in, pasted
+  rpc Callback(CallbackRequest) returns (CallbackResponse);
+  rpc CancelLogin(CancelLoginRequest) returns (CancelLoginResponse);
+  // Stops every server of the profile and connects them again
+  rpc Reload(ReloadRequest) returns (ReloadResponse);
+  // Connection operations of a session, every session for none, as they change; the profile's servers start connecting
+  rpc Watch(WatchRequest) returns (stream Operation);
+  // Answer of a connection card
+  rpc Respond(RespondRequest) returns (RespondResponse);
+  // Looks at an operation again at once
+  rpc Wake(WakeRequest) returns (WakeResponse);
+  // Runs targets of an operation again
+  rpc Retry(RetryRequest) returns (RetryResponse);
+  // Runs one of the agent's tools, for icebath serving MCP itself
+  rpc CallTool(CallToolRequest) returns (CallToolResponse);
+  // Tools icebath serves over MCP itself, with their schemas: the messaging bridge's, and with tools the agent's own it may expose
+  rpc ServeTools(ServeToolsRequest) returns (ServeToolsResponse);
+  // Runs one of the messaging bridge's tools
+  rpc Bridge(BridgeRequest) returns (BridgeResponse);
+}
+
+// Value an install asks for
+message EnvSpec {
+  string name = 1;
+  string prompt = 2;
+  bool required = 3;
+  bool secret = 4;
+  string default = 5;
+}
+
+message Server {
+  string name = 1;
+  // stdio, http or sse
+  string transport = 2;
+  // connected, configured, connecting, failed, lazy, disabled or recycled
+  string state = 3;
+  string error = 4;
+  int32 tools = 5;
+  bool enabled = 6;
+  // Plugin that ships it, empty for one the profile sets up
+  string plugin = 7;
+  bool oauth = 8;
+  bool signed_in = 9;
+  string url = 10;
+  string command = 11;
+  repeated string args = 12;
+  // Names of the variables its env sets
+  repeated string env = 13;
+  // Values its settings name that are not set
+  repeated string missing = 14;
+  // Tool filter: only the include names when included, else all but the exclude names
+  bool included = 15;
+  repeated string include = 16;
+  repeated string exclude = 17;
+  string auth = 18;
+  // Settings as kept, JSON
+  string settings = 19;
+  map<string, int32> sampling = 20;
+  map<string, int32> elicitation = 21;
+}
+
+message ListRequest {
+  string profile = 1;
+}
+
+message ListResponse {
+  repeated Server servers = 1;
+}
+
+message Entry {
+  string name = 1;
+  string description = 2;
+  string source = 3;
+  // stdio or http
+  string transport = 4;
+  string url = 5;
+  string command = 6;
+  repeated string args = 7;
+  // none, api_key or oauth
+  string auth = 8;
+  string provider = 9;
+  repeated EnvSpec requires = 10;
+  // Values it asks for that have none yet
+  repeated EnvSpec missing = 11;
+  bool installed = 12;
+  bool enabled = 13;
+  string post_install = 14;
+  string connector_slug = 15;
+  // It clones a repository at install
+  bool from_source = 16;
+  repeated string default_enabled = 17;
+  repeated string default_excluded = 18;
+  bool has_oauth_client = 19;
+  // Why it can't be installed, and whether that is for needing a newer icebath
+  string problem = 20;
+  bool future = 21;
+  string manifest = 22;
+}
+
+message CatalogRequest {
+  string profile = 1;
+}
+
+message CatalogResponse {
+  repeated Entry entries = 1;
+}
+
+message SaveRequest {
+  string profile = 1;
+  string name = 2;
+  // JSON table
+  string settings = 3;
+}
+
+message SaveResponse {
+  // Why it was refused, nothing when it was kept
+  repeated string issues = 1;
+}
+
+message CheckRequest {
+  string name = 1;
+  // JSON table
+  string settings = 2;
+}
+
+message CheckResponse {
+  repeated string issues = 1;
+}
+
+message RemoveRequest {
+  string profile = 1;
+  string name = 2;
+  // Its cloned files too
+  bool purge = 3;
+}
+
+message RemoveResponse {
+  bool removed = 1;
+}
+
+message EnableRequest {
+  string profile = 1;
+  string name = 2;
+  bool enabled = 3;
+}
+
+message EnableResponse {}
+
+message ProbeRequest {
+  string profile = 1;
+  string name = 2;
+  // JSON table to probe, the server's kept settings when empty
+  string settings = 3;
+  // Seconds a connect may take, the settings' when zero
+  double connect_timeout = 4;
+  // Values the settings name, over the profile's own
+  map<string, string> values = 5;
+}
+
+message ToolSummary {
+  string name = 1;
+  string description = 2;
+}
+
+message ProbeResponse {
+  bool ok = 1;
+  repeated ToolSummary tools = 2;
+  string error = 3;
+  // config_rejected, config_invalid, auth_required, server_start_failed, missing_credentials or connect_failed
+  string class = 4;
+  string next_step = 5;
+  optional int32 prompts = 6;
+  optional int32 resources = 7;
+  bool initialized = 8;
+  map<string, int32> schema_chars = 9;
+}
+
+message SetFilterRequest {
+  string profile = 1;
+  string name = 2;
+  // include or exclude
+  string mode = 3;
+  repeated string values = 4;
+  // Drops the filter
+  bool clear = 5;
+}
+
+message SetFilterResponse {}
+
+message SetValueRequest {
+  string profile = 1;
+  string name = 2;
+  string value = 3;
+}
+
+message SetValueResponse {}
+
+message HasValueRequest {
+  string profile = 1;
+  string name = 2;
+}
+
+message HasValueResponse {
+  bool set = 1;
+}
+
+message SaveBearerRequest {
+  string profile = 1;
+  string name = 2;
+  string token = 3;
+}
+
+message SaveBearerResponse {
+  // JSON table of the headers
+  string headers = 1;
+  // Name the token is kept under
+  string key = 2;
+}
+
+message InstallConfigRequest {
+  string profile = 1;
+  string entry = 2;
+  string install_dir = 3;
+  map<string, string> values = 4;
+}
+
+message InstallConfigResponse {
+  string settings = 1;
+}
+
+message GitInstallRequest {
+  string profile = 1;
+  string entry = 2;
+}
+
+message GitInstallResponse {
+  string dir = 1;
+  // What git and the bootstrap printed
+  string output = 2;
+  // Why it failed, and the class of the failure: git_missing, clone_failed or bootstrap_failed
+  string error = 3;
+  string class = 4;
+}
+
+message LoginRequest {
+  string profile = 1;
+  string name = 2;
+  // browser or device, the server's setting when empty
+  string flow = 3;
+  // JSON table to sign in with in place of the kept settings, for a server not saved yet
+  string settings = 4;
+}
+
+message LoginEvent {
+  string id = 1;
+  // Link to open, and the code to enter there for a device sign in
+  string link = 2;
+  string code = 3;
+  // Where the browser comes back to
+  string redirect = 4;
+  bool done = 5;
+  string error = 6;
+  int32 tools = 7;
+  // It ended with no token
+  bool no_token = 8;
+}
+
+message CallbackRequest {
+  string id = 1;
+  string pasted = 2;
+}
+
+message CallbackResponse {}
+
+message CancelLoginRequest {
+  string id = 1;
+}
+
+message CancelLoginResponse {}
+
+message ReloadRequest {
+  string profile = 1;
+  // Session asking, whose profile is used when no profile is named
+  string session = 2;
+}
+
+message ReloadResponse {
+  repeated string reconnected = 1;
+  repeated string added = 2;
+  repeated string removed = 3;
+  repeated string failed = 4;
+  int32 tools = 5;
+  int32 servers = 6;
+}
+
+message Target {
+  string name = 1;
+  string action = 2;
+  // pending, initiated, connected, skipped, failed or not_connected
+  string state = 3;
+  string detail = 4;
+  string instructions = 5;
+  string connect_url = 6;
+  repeated EnvSpec required = 7;
+  repeated string tools = 8;
+  string discovery_error = 9;
+  // Sign in the link belongs to, which takes the address the browser ended on through Callback
+  string signin = 10;
+}
+
+message Operation {
+  string id = 1;
+  string session = 2;
+  string action = 3;
+  int64 deadline_unix = 4;
+  // all_resolved, continue, deadline or interrupt once settled
+  string settled = 5;
+  int32 seq = 6;
+  repeated Target targets = 7;
+  string tool_call = 8;
+}
+
+message WatchRequest {
+  string profile = 1;
+  string session = 2;
+}
+
+message TargetAnswer {
+  string name = 1;
+  // approved or skipped
+  string status = 2;
+  map<string, string> env = 3;
+}
+
+message RespondRequest {
+  string id = 1;
+  repeated TargetAnswer answers = 2;
+  // Continue: settle with the targets as they stand
+  bool settle = 3;
+}
+
+message RespondResponse {}
+
+message WakeRequest {
+  string id = 1;
+}
+
+message WakeResponse {}
+
+message RetryRequest {
+  string id = 1;
+  repeated string names = 2;
+}
+
+message RetryResponse {}
+
+message CallToolRequest {
+  string profile = 1;
+  string name = 2;
+  // JSON object
+  string arguments = 3;
+  // Folder the tool works in
+  string directory = 4;
+}
+
+message CallToolResponse {
+  string result = 1;
+  bool failed = 2;
+}
+
+message ServeTool {
+  string name = 1;
+  string description = 2;
+  // JSON schema of the arguments
+  string schema = 3;
+  // One of the agent's own tools rather than the bridge's
+  bool agent = 4;
+}
+
+message ServeToolsRequest {
+  string profile = 1;
+  // The agent's own tools too
+  bool tools = 2;
+  // Runs the profile's shell hooks with the tools without asking for consent on first use
+  bool accept_hooks = 3;
+}
+
+message ServeToolsResponse {
+  repeated ServeTool tools = 1;
+  string instructions = 2;
+}
+
+message BridgeRequest {
+  string profile = 1;
+  string name = 2;
+  // JSON object
+  string arguments = 3;
+}
+
+message BridgeResponse {
+  string result = 1;
+}

@@ -2,305 +2,348 @@ package transport
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
-	"net/url"
-	"regexp"
-	"slices"
+	"path/filepath"
 	"strings"
-
-	"github.com/anthropics/anthropic-sdk-go/v2"
-	"github.com/anthropics/anthropic-sdk-go/v2/option"
-	"github.com/anthropics/anthropic-sdk-go/v2/packages/param"
-	"github.com/anthropics/anthropic-sdk-go/v2/shared/constant"
+	"sync"
 
 	"github.com/nickheyer/icebath/internal/config"
-	anthropicmessagesconfig "github.com/nickheyer/icebath/internal/plugins/defaults/transports/anthropicmessages/config"
+	"github.com/nickheyer/icebath/internal/models"
 	"github.com/nickheyer/icebath/internal/provider"
 	"github.com/nickheyer/icebath/internal/transport"
-	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 )
 
+// Carrier of the replies of this API in a stored message
 const carrier = string(provider.ModeAnthropicMessages)
 
+// Requests one call may send again after a refusal it can fix: the 1M beta dropped, refused thinking taken out, fast mode turned off
+const recoveries = 3
+
+// Rate limit headers that say a model has no fast mode capacity when they are 0
+var fastLimits = []string{"anthropic-fast-input-tokens-limit", "anthropic-fast-output-tokens-limit"}
+
 type registrant struct {
-	config *config.Config
+	config    *config.Config
+	providers *provider.Registry
+	models    *models.Models
+	registry  *transport.Registry
+	pool      transport.Pool
+	claude    claudeCode
+	rejected  *rejections
+	// What endpoints showed, remembered from then on, by route: the 1M beta refused, tool input to be buffered, streaming refused
+	drop1M, buffer, unstreamed sync.Map
+	// Models without fast mode capacity, by session
+	slowModels sync.Map
 }
 
-func Register(registry *transport.Registry, cfg *config.Config) {
-	registry.Register(registrant{config: cfg})
+func Register(registry *transport.Registry, cfg *config.Config, providers *provider.Registry, m *models.Models) {
+	registry.Register(&registrant{config: cfg, providers: providers, models: m, registry: registry,
+		rejected: &rejections{dir: filepath.Join(cfg.Dir(), "cache"), sessions: map[string]map[string]bool{}}})
 }
 
-func (r registrant) Factories() map[provider.APIMode]provider.Factory {
+func (r *registrant) Factories() map[provider.APIMode]provider.Factory {
 	return map[provider.APIMode]provider.Factory{
 		provider.ModeAnthropicMessages: func(route provider.Route) (provider.Client, error) {
-			return &client{config: r.config, route: route}, nil
+			return &client{r: r, route: route}, nil
 		},
 	}
 }
 
+// Whether the session found the model has no fast mode capacity
+func (r *registrant) slow(session, model string) bool {
+	_, ok := r.slowModels.Load(session + "\x00" + model)
+	return ok
+}
+
 type client struct {
-	config *config.Config
-	route  provider.Route
+	r     *registrant
+	route provider.Route
 }
 
 func (c *client) Route() provider.Route {
 	return c.route
 }
 
-func (c *client) Stream(ctx context.Context, request *provider.Request, fn provider.StreamFunc) (*provider.Response, error) {
-	options := []option.RequestOption{option.WithMaxRetries(0), option.WithBaseURL(normalized(c.route.BaseURL))}
-	token := isOAuthToken(strings.TrimSpace(c.route.APIKey))
-	subscription := token && !bearer(c.route.BaseURL) && !isThirdPartyAnthropicEndpoint(c.route.BaseURL)
-	identity := token && (isNativeAnthropicHost(c.route.BaseURL) || c.route.Spec == "anthropic")
-	switch key := c.route.APIKey; {
-	case key == "":
-	case c.route.Auth == provider.AuthOAuth || bearer(c.route.BaseURL) || subscription:
-		options = append(options, option.WithAuthToken(key))
-	case official(c.route.BaseURL):
-		options = append(options, option.WithAPIKey(key))
-	default:
-		options = append(options, option.WithAPIKey(key), option.WithMiddleware(func(call *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-			call.Header.Del("Authorization")
-			call.Header.Set("X-Api-Key", key)
-			return next(call)
-		}))
-	}
-	for name, value := range c.route.Headers {
-		options = append(options, option.WithHeader(name, value))
-	}
-	if subscription {
-		options = append(options, option.WithHeader("User-Agent", anthClaudeCodeUserAgent()), option.WithHeader("x-app", "cli"))
-	}
-	if identity {
-		options = append(options, option.WithMiddleware(identify))
-	}
-	params := anthropic.BetaMessageNewParams{
-		Model:        request.Model,
-		MaxTokens:    int64(cmp.Or(request.MaxTokens, c.config.GetInt(anthropicmessagesconfig.MaxTokens))),
-		CacheControl: anthropic.NewBetaCacheControlEphemeralParam(),
-	}
-	if request.Reasoning.Effort != "none" {
-		params.Thinking = anthropic.BetaThinkingConfigParamUnion{OfAdaptive: &anthropic.BetaThinkingConfigAdaptiveParam{Display: anthropic.BetaThinkingConfigAdaptiveDisplaySummarized}}
-		params.OutputConfig.Effort = anthropic.BetaOutputConfigEffort(request.Reasoning.Effort)
-	}
-	if c.config.GetBool(anthropicmessagesconfig.Fallbacks) && official(c.route.BaseURL) && !subscription {
-		params.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01}
-		params.Fallbacks = anthropic.BetaFallbacksParamUnion{OfDefault: constant.ValueOf[constant.Default]()}
-	}
-	if subscription {
-		params.Betas = append(params.Betas, anthropicOAuthOnlyBetas...)
-	}
-	known := map[string]bool{}
-	for _, tool := range request.Tools {
-		function, _ := tool["function"].(map[string]any)
-		name, _ := function["name"].(string)
-		known[name] = true
-		description, _ := function["description"].(string)
-		params.Tools = append(params.Tools, anthropic.BetaToolUnionParam{OfTool: &anthropic.BetaToolParam{
-			Name:        name,
-			Description: anthropic.String(description),
-			InputSchema: param.Override[anthropic.BetaToolInputSchemaParam](function["parameters"]),
-		}})
-	}
-	results := false
-	for _, message := range request.Messages {
-		switch message.GetRole() {
-		case sessionsv1.Role_ROLE_SYSTEM:
-			params.System = append(params.System, anthropic.BetaTextBlockParam{Text: message.GetText()})
-		case sessionsv1.Role_ROLE_USER:
-			params.Messages = append(params.Messages, anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(message.GetText())))
-		case sessionsv1.Role_ROLE_TOOL:
-			result := anthropic.NewBetaToolResultBlock(message.GetToolCallId(), message.GetText(), message.GetFailed())
-			if results {
-				last := params.Messages[len(params.Messages)-1].OfUser
-				last.Content = append(last.Content, result)
-			} else {
-				params.Messages = append(params.Messages, anthropic.NewBetaUserMessage(result))
-			}
-		case sessionsv1.Role_ROLE_ASSISTANT:
-			if content := echo(message, known); len(content) > 0 {
-				params.Messages = append(params.Messages, anthropic.BetaMessageParam{OfAssistant: &anthropic.BetaAssistantMessageParam{Content: content}})
-			}
-		}
-		results = message.GetRole() == sessionsv1.Role_ROLE_TOOL
-	}
+// Key of the route, which what its endpoint showed is remembered under
+func (c *client) key() string {
+	return c.route.Provider + "\x00" + c.route.Model + "\x00" + strings.TrimRight(c.route.BaseURL, "/")
+}
 
-	api := anthropic.NewClient(options...)
-	stream := api.Beta.Messages.NewStreaming(ctx, params)
-	defer stream.Close()
-	var reply anthropic.BetaMessage
-	for stream.Next() {
-		event := stream.Current()
-		if err := reply.Accumulate(event); err != nil {
+func (c *client) buffered(p *prepared) bool {
+	_, ok := c.r.buffer.Load(c.key())
+	return ok
+}
+
+// Error of a request that asked for fast mode on a model with no fast capacity, sent again at standard speed
+type slowError struct{ failure *provider.APIError }
+
+func (e *slowError) Error() string { return e.failure.Error() }
+
+func (e *slowError) Unwrap() error { return e.failure }
+
+func (c *client) Stream(ctx context.Context, request *provider.Request, fn provider.StreamFunc) (*provider.Response, error) {
+	bare := false
+	for attempt := 0; ; attempt++ {
+		p, err := c.prepare(ctx, request)
+		if err != nil {
 			return nil, err
 		}
-		if block, ok := event.AsAny().(anthropic.BetaRawContentBlockDeltaEvent); ok {
-			var err error
-			switch part := block.Delta.AsAny().(type) {
-			case anthropic.BetaTextDelta:
-				err = fn(provider.StreamEvent{Kind: provider.EventTextDelta, Text: part.Text})
-			case anthropic.BetaThinkingDelta:
-				err = fn(provider.StreamEvent{Kind: provider.EventReasoningDelta, Text: part.Thinking})
+		if bare {
+			c.unsign(p)
+		}
+		var response *provider.Response
+		delivered := false
+		if _, off := c.r.unstreamed.Load(c.key()); off {
+			response, err = c.complete(ctx, p, fn)
+		} else {
+			response, delivered, err = c.stream(ctx, p, fn)
+		}
+		if err == nil || delivered || ctx.Err() != nil {
+			return response, err
+		}
+		if attempt < recoveries {
+			if again, rebuild := c.recover(p, err, fn); again {
+				bare = bare || rebuild
+				continue
 			}
+		}
+		if _, off := c.r.unstreamed.Load(c.key()); !off && streamless(err, p.where) {
+			slog.Info(fmt.Sprintf("Anthropic Messages stream unavailable for %s/%s; switching to non-streaming for this session: %s", c.route.Provider,
+				c.route.Model, err))
+			c.r.unstreamed.Store(c.key(), true)
+			response, err := c.complete(ctx, p, fn)
 			if err != nil {
 				return nil, err
 			}
+			return response, nil
 		}
+		return nil, err
 	}
-	if err := stream.Err(); err != nil {
-		return nil, c.failure(ctx, request, err)
-	}
-	finish := "stop"
-	switch reply.StopReason {
-	case anthropic.BetaStopReasonRefusal:
-		return nil, &provider.APIError{Provider: c.route.Provider, Model: request.Model, Kind: provider.ErrContentFilter,
-			Message: strings.TrimSpace("the model declined this request " + reply.StopDetails.Explanation)}
-	case anthropic.BetaStopReasonMaxTokens, anthropic.BetaStopReasonModelContextWindowExceeded:
-		finish = "length"
-	case anthropic.BetaStopReasonToolUse:
-		finish = "tool_calls"
-	}
-	message := &sessionsv1.Message{Role: sessionsv1.Role_ROLE_ASSISTANT, Carriers: map[string][]byte{carrier: []byte(reply.RawJSON())}}
-	edge := boundary(reply.Content)
-	for i, block := range reply.Content {
-		switch block.Type {
-		case "text":
-			message.Text += block.Text
-		case "thinking":
-			message.Reasoning += block.Thinking
-		case "tool_use":
-			if i > edge {
-				name := block.Name
-				if subscription || identity {
-					name = inboundToolName(name, known)
-				}
-				message.ToolCalls = append(message.ToolCalls, &sessionsv1.ToolCall{Id: block.ID, Name: name, Arguments: string(block.Input)})
-			}
-		}
-	}
-	return &provider.Response{Message: message, FinishReason: finish}, nil
 }
 
-func (c *client) failure(ctx context.Context, request *provider.Request, err error) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
+// Takes every thinking block out of the prepared messages, for a request whose signatures were refused with none known to blame
+func (c *client) unsign(p *prepared) {
+	messages, _ := p.body["messages"].([]any)
+	converted := make([]map[string]any, 0, len(messages))
+	for _, m := range messages {
+		if message, ok := m.(map[string]any); ok {
+			converted = append(converted, message)
+		}
 	}
-	failure := &provider.APIError{Provider: c.route.Provider, Model: request.Model, Message: err.Error(), Kind: provider.ErrNetwork, Err: err}
-	var status *anthropic.Error
-	if errors.As(err, &status) {
-		failure.StatusCode, failure.Kind = status.StatusCode, provider.KindOf(status.StatusCode)
+	strip(converted, nil, true)
+	p.thinking = nil
+}
+
+// Whether a refused request is sent again, and whether its thinking all goes: the 1M beta a subscription can't use dropped, the refused
+// thinking signatures remembered and taken out, fast mode turned off for a model without its capacity
+func (c *client) recover(p *prepared, err error, fn provider.StreamFunc) (bool, bool) {
+	if slow, ok := errors.AsType[*slowError](err); ok {
+		c.r.slowModels.Store(p.request.SessionID+"\x00"+p.model, true)
+		transport.Say(fn, provider.EventStatus, fmt.Sprintf("⚠️  Fast mode isn't available for %s on this Anthropic organization — using "+
+			"standard speed for this session, retrying...", p.model))
+		slog.Warn(fmt.Sprintf("Fast mode: %s has a fast-mode limit of 0; standard speed for this session", p.model), "error", slow.failure)
+		return true, false
+	}
+	failure, ok := errors.AsType[*provider.APIError](err)
+	if !ok {
+		return false, false
+	}
+	text := strings.ToLower(failure.Message)
+	if failure.StatusCode == 400 && strings.Contains(text, "long context beta") && strings.Contains(text, "not yet available") {
+		if _, dropped := c.r.drop1M.LoadOrStore(c.key(), true); !dropped {
+			slog.Info(fmt.Sprintf("Anthropic rejected the 1M context beta for %s; retrying without it for this client.", p.model))
+			return true, false
+		}
+		return false, false
+	}
+	if signatureRefused(failure) {
+		if len(p.thinking) == 0 {
+			slog.Warn("Anthropic refused a thinking signature the request carried none known of; sending it again without its thinking")
+			return true, true
+		}
+		c.r.rejected.add(p.request.SessionID, p.thinking)
+		slog.Warn(fmt.Sprintf("Anthropic refused %d replayed thinking signature(s); sending the request again without them for the rest of the "+
+			"session", len(p.thinking)))
+		return true, false
+	}
+	return false, false
+}
+
+// One streamed attempt: the reply, whether any of it reached the person, and the error that ended it
+func (c *client) stream(ctx context.Context, p *prepared, fn provider.StreamFunc) (*provider.Response, bool, error) {
+	address, payload, err := p.target(true)
+	if err != nil {
+		return nil, false, err
+	}
+	timeouts := p.limits.Stream(ctx)
+	watch := &transport.Watch{Timeouts: timeouts, Model: p.model, Tokens: p.tokens, Emit: fn}
+	attempt, cancel := context.WithCancel(ctx)
+	defer cancel()
+	call, err := c.request(attempt, p, address, payload, true)
+	if err != nil {
+		return nil, false, err
+	}
+	stop := watch.Headers(cancel)
+	response, err := c.r.pool.Client(p.settings, timeouts.Connect, false).Do(call)
+	stop()
+	sent := func(err error) error { return &transport.SentError{URL: address, Bytes: len(payload), Err: err} }
+	if err != nil {
+		return nil, false, p.refused.Transport(ctx, sent(watch.Failed(ctx, err)))
+	}
+	defer response.Body.Close()
+	if attempt.Err() != nil {
+		return nil, false, p.refused.Transport(ctx, sent(watch.Failed(ctx, attempt.Err())))
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(response.Body, transport.ErrorBodyLimit))
+		return nil, false, c.refusal(p, response, data)
+	}
+	kind := strings.ToLower(response.Header.Get("Content-Type"))
+	if strings.Contains(kind, "application/json") && !strings.Contains(kind, "event-stream") && p.where != onBedrock {
+		data, err := io.ReadAll(response.Body)
+		if err != nil {
+			return nil, false, p.refused.Transport(ctx, sent(err))
+		}
+		var message map[string]any
+		if json.Unmarshal(data, &message) != nil {
+			return nil, false, p.refused.Stream(transport.FrameError(string(data), response.Header))
+		}
+		if object, ok := message["error"]; ok && object != nil {
+			return nil, false, p.refused.HTTP(response.StatusCode, data, response.Header)
+		}
+		slog.Info(fmt.Sprintf("Streaming request returned a final message object instead of an event stream; switching %s/%s to non-streaming "+
+			"for this session.", c.route.Provider, c.route.Model))
+		c.r.unstreamed.Store(c.key(), true)
+		reply, err := c.normalize(p, message, response.Header, response.StatusCode)
+		if err != nil {
+			return nil, false, err
+		}
+		return reply, false, transport.Replay(reply, fn)
+	}
+	s := &stream{c: c, p: p, fn: fn, acc: newAccumulator(), header: response.Header.Clone(), status: response.StatusCode}
+	next := transport.NewEvents(response.Body).Next
+	if p.where == onBedrock {
+		next = bedrockEvents(response.Body, response.Header)
+	}
+	if err := watch.Run(ctx, next, s.frame); err != nil {
+		return nil, s.delivered, c.failed(ctx, p, sent, err)
+	}
+	reply, err := s.finish()
+	return reply, s.delivered, err
+}
+
+// Error of a stream as its caller reads it: the consumer's own as it was, a provider's error in the stream as its refusal, a failure of
+// the connection classified
+func (c *client) failed(ctx context.Context, p *prepared, sent func(error) error, err error) error {
+	if stop, ok := errors.AsType[*stopped](err); ok {
+		return stop.err
+	}
+	if stream, ok := errors.AsType[*transport.StreamError](err); ok {
+		return p.refused.Stream(stream)
+	}
+	if order, ok := errors.AsType[*orderError](err); ok {
+		return p.refused.Empty(order.Error(), order)
+	}
+	if _, ok := errors.AsType[*provider.APIError](err); ok {
+		return err
+	}
+	return p.refused.Transport(ctx, sent(err))
+}
+
+// Error of a refused request, one that asked for fast mode on a model with no fast capacity told apart
+func (c *client) refusal(p *prepared, response *http.Response, data []byte) error {
+	failure := p.refused.HTTP(response.StatusCode, data, response.Header)
+	if response.StatusCode == http.StatusTooManyRequests && p.fast {
+		for _, name := range fastLimits {
+			if strings.TrimSpace(response.Header.Get(name)) == "0" {
+				return &slowError{failure: failure}
+			}
+		}
 	}
 	return failure
 }
 
-var trailingV1 = regexp.MustCompile(`/v1/?$`)
-
-var minimaxPrefixes = []string{"https://api.minimax.io/anthropic", "https://api.minimaxi.com/anthropic"}
-
-func normalized(base string) string {
-	return trailingV1.ReplaceAllString(strings.TrimRight(strings.TrimSpace(base), "/"), "")
-}
-
-func bearer(base string) bool {
-	lower := strings.ToLower(strings.TrimRight(strings.TrimSpace(base), "/"))
-	if strings.Contains(lower, "azure.com") || slices.ContainsFunc(minimaxPrefixes, func(prefix string) bool { return strings.HasPrefix(lower, prefix) }) {
-		return true
-	}
-	for _, domain := range []string{"palantirfoundry.com", "api.commandcode.ai"} {
-		if provider.BaseHostMatches(lower, domain) {
-			return true
-		}
-	}
-	return false
-}
-
-func official(base string) bool {
-	parsed, err := url.Parse(base)
-	return err == nil && strings.EqualFold(parsed.Hostname(), "api.anthropic.com")
-}
-
-func identify(call *http.Request, next option.MiddlewareNext) (*http.Response, error) {
-	if call.Body == nil {
-		return next(call)
-	}
-	raw, err := io.ReadAll(call.Body)
+// One request that isn't streamed, waited on for its answer under the silent request limit
+func (c *client) complete(ctx context.Context, p *prepared, fn provider.StreamFunc) (*provider.Response, error) {
+	address, payload, err := p.target(false)
 	if err != nil {
 		return nil, err
 	}
-	if err := call.Body.Close(); err != nil {
+	timeouts := p.limits.Stream(ctx)
+	watch := &transport.Watch{Timeouts: transport.Timeouts{Stale: p.limits.Call(ctx, p.call.Ask.Requested(), 1)}, Model: p.model, Tokens: p.tokens,
+		Emit: fn}
+	response, err := transport.Await(ctx, watch, func(ctx context.Context) (*provider.Response, error) {
+		return c.once(ctx, p, address, payload, timeouts)
+	})
+	if err != nil {
 		return nil, err
 	}
-	var body map[string]any
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if err := decoder.Decode(&body); err != nil {
+	return response, transport.Replay(response, fn)
+}
+
+// The request sent once and its whole answer read, within its time limit
+func (c *client) once(ctx context.Context, p *prepared, address string, payload []byte, timeouts transport.Timeouts) (*provider.Response, error) {
+	limit := timeouts.Request
+	bounded, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	call, err := c.request(bounded, p, address, payload, false)
+	if err != nil {
 		return nil, err
 	}
-	tools, messages := objects(body["tools"]), objects(body["messages"])
-	body["system"] = anthApplyClaudeCodeIdentity(body["system"], tools, messages, anthOAuthWireNamer(tools))
-	var encoded bytes.Buffer
-	encoder := json.NewEncoder(&encoded)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(body); err != nil {
+	timedOut := func(err error) error {
+		if ctx.Err() == nil && errors.Is(bounded.Err(), context.DeadlineExceeded) {
+			return &transport.TimeoutError{Phase: transport.PhaseRead, Err: fmt.Errorf("Request timed out after %.0fs.", limit.Seconds())}
+		}
+		return err
+	}
+	response, err := c.r.pool.Client(p.settings, timeouts.Connect, false).Do(call)
+	if err != nil {
+		return nil, p.refused.Transport(ctx, transport.Timed(timedOut(err), transport.PhaseConnect))
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, p.refused.Transport(ctx, transport.Timed(timedOut(err), transport.PhaseRead))
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, c.refusal(p, response, data)
+	}
+	var message map[string]any
+	if err := json.Unmarshal(data, &message); err != nil {
+		failure := p.refused.HTTP(response.StatusCode, data, response.Header)
+		failure.Message = "Provider returned a non-JSON message body: " + transport.FrameError(string(data), nil).Text
+		failure.Err = err
+		return nil, failure
+	}
+	if object, ok := message["error"]; ok && object != nil && message["type"] == "error" {
+		return nil, p.refused.HTTP(response.StatusCode, data, response.Header)
+	}
+	return c.normalize(p, message, response.Header, response.StatusCode)
+}
+
+// HTTP request of the body at the address with the prepared headers, signed when the route signs its requests
+func (c *client) request(ctx context.Context, p *prepared, address string, payload []byte, stream bool) (*http.Request, error) {
+	call, err := http.NewRequestWithContext(ctx, http.MethodPost, address, bytes.NewReader(payload))
+	if err != nil {
 		return nil, err
 	}
-	sent := bytes.TrimSuffix(encoded.Bytes(), []byte("\n"))
-	call.Body, call.ContentLength = io.NopCloser(bytes.NewReader(sent)), int64(len(sent))
-	call.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(sent)), nil }
-	return next(call)
-}
-
-func objects(value any) []map[string]any {
-	list, _ := value.([]any)
-	out := make([]map[string]any, 0, len(list))
-	for _, item := range list {
-		if object, ok := item.(map[string]any); ok {
-			out = append(out, object)
+	call.Header = p.header.Clone()
+	if stream && p.where == direct {
+		call.Header.Set("Accept", "text/event-stream")
+	}
+	if p.where == onBedrock && stream {
+		call.Header.Set("Accept", "application/vnd.amazon.eventstream")
+	}
+	if c.route.Sign != nil {
+		if err := c.route.Sign(call, payload); err != nil {
+			return nil, fmt.Errorf("The request to %s couldn't be signed: %w", c.route.Provider, err)
 		}
 	}
-	return out
-}
-
-func echo(message *sessionsv1.Message, known map[string]bool) []anthropic.BetaContentBlockParamUnion {
-	var content []anthropic.BetaContentBlockParamUnion
-	var reply anthropic.BetaMessage
-	if raw := message.GetCarriers()[carrier]; len(raw) > 0 && json.Unmarshal(raw, &reply) == nil {
-		edge := boundary(reply.Content)
-		for i, block := range reply.Content {
-			if block.Type == "text" && block.Text != "" || block.Type != "text" && i > edge {
-				part := block.ToParam()
-				if use := part.OfToolUse; use != nil {
-					use.Name = inboundToolName(use.Name, known)
-				}
-				content = append(content, part)
-			}
-		}
-		return content
-	}
-	if message.GetText() != "" {
-		content = append(content, anthropic.NewBetaTextBlock(message.GetText()))
-	}
-	for _, call := range message.GetToolCalls() {
-		input := json.RawMessage(call.GetArguments())
-		if !json.Valid(input) {
-			input = json.RawMessage("{}")
-		}
-		content = append(content, anthropic.NewBetaToolUseBlock(call.GetId(), input, call.GetName()))
-	}
-	return content
-}
-
-func boundary(content []anthropic.BetaContentBlockUnion) int {
-	edge := -1
-	for i, block := range content {
-		if block.Type == "fallback" {
-			edge = i
-		}
-	}
-	return edge
+	return call, nil
 }

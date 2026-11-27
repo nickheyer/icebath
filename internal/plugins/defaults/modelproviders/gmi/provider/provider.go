@@ -28,11 +28,12 @@ func (specs) Specs() []provider.Spec {
 		Aliases:            []string{"gmi-cloud", "gmicloud"},
 		DefaultModel:       gmiconfig.DefaultModel,
 		FallbackModels:     []string{"zai-org/GLM-5.1-FP8", "deepseek-ai/DeepSeek-V3.2", "moonshotai/Kimi-K2.5", "google/gemini-3.1-flash-lite-preview", "anthropic/claude-sonnet-5", "anthropic/claude-sonnet-4.6", "openai/gpt-5.4"},
-		Headers:            map[string]string{"User-Agent": "IcebathAgent/dev"},
+		Headers:            map[string]string{"User-Agent": provider.UserAgent("IcebathAgent")},
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        gmiconfig.Name,
+		StaticModels:       []string{"zai-org/GLM-5.1-FP8", "deepseek-ai/DeepSeek-V3.2", "moonshotai/Kimi-K2.5", "google/gemini-3.1-flash-lite-preview", "anthropic/claude-sonnet-5", "anthropic/claude-sonnet-4.6", "openai/gpt-5.4"},
+		ListsContext:       true,
 		DefaultAuxModel:    "google/gemini-3.1-flash-lite-preview",
 	}}
 }

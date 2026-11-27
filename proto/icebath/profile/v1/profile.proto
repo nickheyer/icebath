@@ -4,9 +4,28 @@ package icebath.profile.v1;
 
 service ProfileService {
   rpc List(ListRequest) returns (ListResponse);
+  rpc Show(ShowRequest) returns (ShowResponse);
   rpc Create(CreateRequest) returns (CreateResponse);
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc Use(UseRequest) returns (UseResponse);
+  // Renames a profile, or sets the name the default profile shows
+  rpc Rename(RenameRequest) returns (RenameResponse);
+  // Reads, sets, or has the helper model write what profiles are good at
+  rpc Describe(DescribeRequest) returns (DescribeResponse);
+  // Removes again what features keep of a deleted profile
+  rpc PurgeIdentity(PurgeIdentityRequest) returns (PurgeIdentityResponse);
+  // Moves again what features keep under a renamed profile's old name
+  rpc MigrateIdentity(MigrateIdentityRequest) returns (MigrateIdentityResponse);
+  // Archive of a profile without its credentials
+  rpc Export(ExportRequest) returns (ExportResponse);
+  rpc Import(ImportRequest) returns (ImportResponse);
+  // What installing a distribution would do, staged and thrown away
+  rpc Plan(PlanRequest) returns (PlanResponse);
+  rpc Install(InstallRequest) returns (InstallResponse);
+  // Pulls an installed distribution again from where it came from
+  rpc Update(UpdateRequest) returns (UpdateResponse);
+  // Manifest of a profile's distribution
+  rpc Info(InfoRequest) returns (InfoResponse);
 }
 
 message Profile {
@@ -15,29 +34,92 @@ message Profile {
   bool active = 2;
   // The profile that is always there and can't be deleted
   bool default = 3;
+  string path = 4;
+  // The profile icebath starts with
+  bool sticky = 5;
+  string model = 6;
+  string provider = 7;
+  int32 skills = 8;
+  bool has_env = 9;
+  bool has_soul = 10;
+  // Distribution it was installed from, empty for one made here
+  string distribution = 11;
+  string distribution_version = 12;
+  string distribution_source = 13;
+  string description = 14;
+  // The description was written by the helper model
+  bool description_auto = 15;
+  string display_name = 16;
+  string bot_title = 17;
+  repeated string previous_names = 18;
 }
 
 message ListRequest {}
 
 message ListResponse {
   repeated Profile profiles = 1;
+  // Profile in use
+  string active = 2;
+}
+
+message ShowRequest {
+  string name = 1;
+}
+
+message ShowResponse {
+  Profile profile = 1;
 }
 
 message CreateRequest {
   string name = 1;
-  // Profile whose settings the new one starts with, none when empty
+  // Profile whose settings the new one starts with, the one in use when clone is set and this is empty
   string from = 2;
+  bool clone = 3;
+  // Copies every file of the source but its history
+  bool all = 4;
+  // Copies the messaging channels of the source too
+  bool channels = 5;
+  bool sync_imports = 6;
+  bool no_skills = 7;
+  string description = 8;
+  string soul = 9;
+  // Takes no keys, logins or model from the profile in use
+  bool no_credentials = 10;
+  string model = 11;
+  string provider = 12;
 }
 
 message CreateResponse {
   Profile profile = 1;
+  string path = 2;
+  // Profile it was cloned from, or took keys from
+  string source = 3;
+  // What each feature did for it
+  repeated string notes = 4;
+  // Steps that failed, the profile made all the same
+  repeated string warnings = 5;
+  // Keys of the profile in use were copied into its .env
+  bool keys = 6;
+  // What features put into it, said before its alias
+  repeated string seeded = 7;
+  // Profile the request came from, whose keys, logins and model a fresh profile takes
+  string launch = 8;
 }
 
 message DeleteRequest {
   string name = 1;
 }
 
-message DeleteResponse {}
+message DeleteResponse {
+  string path = 1;
+  // What the delete did, line by line: before the profile's alias is removed, and after
+  repeated string lines = 2;
+  repeated string later = 5;
+  // Every feature removed what it keeps of the profile
+  bool settled = 3;
+  // Why the folder would not go, the rest done all the same
+  string failure = 4;
+}
 
 message UseRequest {
   string name = 1;
@@ -45,4 +127,162 @@ message UseRequest {
 
 message UseResponse {
   Profile profile = 1;
+}
+
+message RenameRequest {
+  string old = 1;
+  string new = 2;
+}
+
+message RenameResponse {
+  string path = 1;
+  // What the rename did, line by line: before the profile's alias follows it, and after
+  repeated string lines = 2;
+  repeated string later = 4;
+  // Every feature moved what it keeps under the old name
+  bool settled = 3;
+}
+
+message DescribeRequest {
+  // Profile to describe, none with all
+  string name = 1;
+  // Description to keep, as a person wrote it
+  string text = 2;
+  // Has the helper model write it
+  bool auto = 3;
+  // Replaces a description a person wrote
+  bool overwrite = 4;
+  // Every profile without a description a person wrote, with auto
+  bool all = 5;
+}
+
+message Outcome {
+  string name = 1;
+  bool ok = 2;
+  string reason = 3;
+  string description = 4;
+}
+
+message DescribeResponse {
+  repeated Outcome outcomes = 1;
+  // Description the profile has, when asked for neither text nor auto
+  string description = 2;
+  bool description_auto = 3;
+}
+
+message PurgeIdentityRequest {
+  string name = 1;
+}
+
+message PurgeIdentityResponse {
+  // What failed again, line by line
+  repeated string lines = 1;
+  bool settled = 2;
+}
+
+message MigrateIdentityRequest {
+  string old = 1;
+  string new = 2;
+}
+
+message MigrateIdentityResponse {
+  // What moved and what failed again, line by line
+  repeated string lines = 1;
+  bool settled = 2;
+}
+
+message ExportRequest {
+  // Profile to export, the one in use when empty
+  string name = 1;
+}
+
+message ExportResponse {
+  bytes archive = 1;
+  // Name the archive takes when no output is given
+  string file_name = 2;
+  string name = 3;
+}
+
+message ImportRequest {
+  bytes archive = 1;
+  // Name of the new profile, the archive's top folder when empty
+  string name = 2;
+}
+
+message ImportResponse {
+  string name = 1;
+  string path = 2;
+}
+
+message Requirement {
+  string name = 1;
+  string description = 2;
+  bool required = 3;
+  // Default the manifest gives, as YAML
+  string default = 4;
+  // The environment or the profile's .env sets it
+  bool set = 5;
+}
+
+message Manifest {
+  string name = 1;
+  string version = 2;
+  string description = 3;
+  string requires = 4;
+  string author = 5;
+  string license = 6;
+  repeated Requirement env = 7;
+  repeated string owned = 8;
+  string source = 9;
+  string installed_at = 10;
+}
+
+message Plan {
+  Manifest manifest = 1;
+  string provenance = 2;
+  string target = 3;
+  // The profile is there already
+  bool existing = 4;
+  // The profile there is a distribution itself
+  bool distribution = 5;
+  bool preserves_config = 6;
+  bool has_cron = 7;
+}
+
+message PlanRequest {
+  string source = 1;
+  string name = 2;
+}
+
+message PlanResponse {
+  Plan plan = 1;
+}
+
+message InstallRequest {
+  string source = 1;
+  string name = 2;
+  bool force = 3;
+}
+
+message InstallResponse {
+  Plan plan = 1;
+}
+
+message UpdateRequest {
+  string name = 1;
+  bool force_config = 2;
+}
+
+message UpdateResponse {
+  Plan plan = 1;
+}
+
+message InfoRequest {
+  string name = 1;
+}
+
+message InfoResponse {
+  // Whether the profile is a distribution
+  bool found = 1;
+  Manifest manifest = 2;
 }

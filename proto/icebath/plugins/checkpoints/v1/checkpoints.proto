@@ -1,0 +1,148 @@
+syntax = "proto3";
+
+package icebath.plugins.checkpoints.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service CheckpointService {
+  // Snapshots of the project a session works in, newest first
+  rpc List(ListRequest) returns (ListResponse);
+  // What changed in the session's project since one of its snapshots
+  rpc Diff(DiffRequest) returns (DiffResponse);
+  // Puts the session's project, or one file of it, back as a snapshot has it
+  rpc Restore(RestoreRequest) returns (RestoreResponse);
+  // What the snapshots of the profile in use take
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // Deletes the projects whose folder is gone and those not snapshotted lately, then brings the store within its size
+  rpc Prune(PruneRequest) returns (PruneResponse);
+  // Deletes every snapshot of the profile in use
+  rpc Clear(ClearRequest) returns (ClearResponse);
+  // Deletes the archives of what the checkpoint folder held before its store was made
+  rpc ClearLegacy(ClearLegacyRequest) returns (ClearLegacyResponse);
+}
+
+message Checkpoint {
+  string hash = 1;
+  string short = 2;
+  google.protobuf.Timestamp when = 3;
+  // Why it was taken, such as "before patch"
+  string reason = 4;
+  // What it changed against the snapshot before it
+  int32 files = 5;
+  int32 insertions = 6;
+  int32 deletions = 7;
+}
+
+message ListRequest {
+  string session_id = 1;
+}
+
+message ListResponse {
+  // Snapshots are on for the session's profile
+  bool enabled = 1;
+  // Why snapshots taken on this machine don't serve the session's terminal backend, empty when they do
+  string refusal = 2;
+  // Project the snapshots are of
+  string directory = 3;
+  repeated Checkpoint checkpoints = 4;
+}
+
+message DiffRequest {
+  string session_id = 1;
+  // Number of the snapshot in the listing, counted from one, or its hash
+  string checkpoint = 2;
+}
+
+message DiffResponse {
+  string hash = 1;
+  string stat = 2;
+  string diff = 3;
+}
+
+message RestoreRequest {
+  string session_id = 1;
+  // Number of the snapshot in the listing, counted from one, or its hash
+  string checkpoint = 2;
+  // File of the project to put back alone, relative to it; empty for all of them
+  string file = 3;
+  // Put back the files the user changed since too
+  bool all = 4;
+}
+
+message RestoreResponse {
+  // Short hash of the snapshot put back and why it was taken
+  string restored_to = 1;
+  string reason = 2;
+  string directory = 3;
+  string file = 4;
+  // The restore went by what the agent wrote, keeping what the user changed since
+  bool safe = 5;
+  repeated string restored = 6;
+  repeated string kept_edits = 7;
+  repeated string kept_oversize = 8;
+  repeated string failed_deletes = 9;
+}
+
+message StatusRequest {}
+
+message Project {
+  string hash = 1;
+  string workdir = 2;
+  // Its folder is there now
+  bool exists = 3;
+  google.protobuf.Timestamp created = 4;
+  google.protobuf.Timestamp touched = 5;
+  int32 commits = 6;
+}
+
+message Archive {
+  string name = 1;
+  int64 bytes = 2;
+  google.protobuf.Timestamp modified = 3;
+}
+
+message StatusResponse {
+  string base = 1;
+  bool exists = 2;
+  int64 store_bytes = 3;
+  int64 legacy_bytes = 4;
+  int64 total_bytes = 5;
+  repeated Project projects = 6;
+  repeated Archive archives = 7;
+  // Way out the user is told of when snapshots are on and the store is at or above its size, empty otherwise
+  string footprint = 8;
+}
+
+message PruneRequest {
+  // Projects not snapshotted for this many days go, none for zero
+  int32 retention_days = 1;
+  // Megabytes the store is brought within, none for zero
+  int32 max_size_mb = 2;
+  // Projects whose folder is gone go
+  bool orphans = 3;
+  // Only the projects listed, by hash, go for their folder being gone
+  bool allow_listed = 4;
+  repeated string allow = 5;
+}
+
+message PruneResponse {
+  int32 scanned = 1;
+  int32 orphans = 2;
+  int32 stale = 3;
+  int32 errors = 4;
+  int64 freed = 5;
+}
+
+message ClearRequest {}
+
+message ClearResponse {
+  int64 freed = 1;
+}
+
+message ClearLegacyRequest {}
+
+message ClearLegacyResponse {
+  int32 deleted = 1;
+  int64 freed = 2;
+  int32 errors = 3;
+}

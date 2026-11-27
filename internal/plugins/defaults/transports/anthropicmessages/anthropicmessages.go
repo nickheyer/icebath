@@ -8,5 +8,5 @@ import (
 
 func Register(registries *plugins.Registries) {
 	config.Register(registries.Config)
-	transport.Register(registries.Transport, registries.Config)
+	transport.Register(registries.Transport, registries.Config, registries.Provider, registries.Models.Host())
 }

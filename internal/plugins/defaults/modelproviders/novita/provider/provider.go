@@ -15,6 +15,7 @@ func (specs) Specs() []provider.Spec {
 	base := novitaconfig.BaseURL
 	return []provider.Spec{{
 		Name:               novitaconfig.Name,
+		Carriers:           []string{"reasoning_content", "reasoning_details"},
 		DisplayName:        novitaconfig.Title,
 		Description:        "Model inference cloud",
 		SignupURL:          "https://novita.ai/settings/key-management",
@@ -31,7 +32,9 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        novitaconfig.Name,
+		ModelsDevID:        "novita-ai",
+		StaticModels:       []string{"moonshotai/kimi-k2.5", "minimax/minimax-m2.7", "zai-org/glm-5", "deepseek/deepseek-v3-0324", "deepseek/deepseek-r1-0528", "qwen/qwen3-235b-a22b-fp8"},
+		ListsContext:       true,
 		DefaultAuxModel:    "deepseek/deepseek-v3-0324",
 	}}
 }

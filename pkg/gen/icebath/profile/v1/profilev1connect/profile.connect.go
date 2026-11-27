@@ -26,12 +26,36 @@ const (
 const (
 	// ProfileServiceListProcedure is the procedure name of the ProfileService's List RPC.
 	ProfileServiceListProcedure = "/icebath.profile.v1.ProfileService/List"
+	// ProfileServiceShowProcedure is the procedure name of the ProfileService's Show RPC.
+	ProfileServiceShowProcedure = "/icebath.profile.v1.ProfileService/Show"
 	// ProfileServiceCreateProcedure is the procedure name of the ProfileService's Create RPC.
 	ProfileServiceCreateProcedure = "/icebath.profile.v1.ProfileService/Create"
 	// ProfileServiceDeleteProcedure is the procedure name of the ProfileService's Delete RPC.
 	ProfileServiceDeleteProcedure = "/icebath.profile.v1.ProfileService/Delete"
 	// ProfileServiceUseProcedure is the procedure name of the ProfileService's Use RPC.
 	ProfileServiceUseProcedure = "/icebath.profile.v1.ProfileService/Use"
+	// ProfileServiceRenameProcedure is the procedure name of the ProfileService's Rename RPC.
+	ProfileServiceRenameProcedure = "/icebath.profile.v1.ProfileService/Rename"
+	// ProfileServiceDescribeProcedure is the procedure name of the ProfileService's Describe RPC.
+	ProfileServiceDescribeProcedure = "/icebath.profile.v1.ProfileService/Describe"
+	// ProfileServicePurgeIdentityProcedure is the procedure name of the ProfileService's PurgeIdentity
+	// RPC.
+	ProfileServicePurgeIdentityProcedure = "/icebath.profile.v1.ProfileService/PurgeIdentity"
+	// ProfileServiceMigrateIdentityProcedure is the procedure name of the ProfileService's
+	// MigrateIdentity RPC.
+	ProfileServiceMigrateIdentityProcedure = "/icebath.profile.v1.ProfileService/MigrateIdentity"
+	// ProfileServiceExportProcedure is the procedure name of the ProfileService's Export RPC.
+	ProfileServiceExportProcedure = "/icebath.profile.v1.ProfileService/Export"
+	// ProfileServiceImportProcedure is the procedure name of the ProfileService's Import RPC.
+	ProfileServiceImportProcedure = "/icebath.profile.v1.ProfileService/Import"
+	// ProfileServicePlanProcedure is the procedure name of the ProfileService's Plan RPC.
+	ProfileServicePlanProcedure = "/icebath.profile.v1.ProfileService/Plan"
+	// ProfileServiceInstallProcedure is the procedure name of the ProfileService's Install RPC.
+	ProfileServiceInstallProcedure = "/icebath.profile.v1.ProfileService/Install"
+	// ProfileServiceUpdateProcedure is the procedure name of the ProfileService's Update RPC.
+	ProfileServiceUpdateProcedure = "/icebath.profile.v1.ProfileService/Update"
+	// ProfileServiceInfoProcedure is the procedure name of the ProfileService's Info RPC.
+	ProfileServiceInfoProcedure = "/icebath.profile.v1.ProfileService/Info"
 )
 
 var (
@@ -40,6 +64,13 @@ var (
 			StreamType: connect.StreamTypeUnary,
 			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("List"),
 			Procedure:  ProfileServiceListProcedure,
+		}
+	})
+	profileServiceShowSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("Show"),
+			Procedure:  ProfileServiceShowProcedure,
 		}
 	})
 	profileServiceCreateSpec = sync.OnceValue(func() connect.Spec {
@@ -63,14 +94,103 @@ var (
 			Procedure:  ProfileServiceUseProcedure,
 		}
 	})
+	profileServiceRenameSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("Rename"),
+			Procedure:  ProfileServiceRenameProcedure,
+		}
+	})
+	profileServiceDescribeSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("Describe"),
+			Procedure:  ProfileServiceDescribeProcedure,
+		}
+	})
+	profileServicePurgeIdentitySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("PurgeIdentity"),
+			Procedure:  ProfileServicePurgeIdentityProcedure,
+		}
+	})
+	profileServiceMigrateIdentitySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("MigrateIdentity"),
+			Procedure:  ProfileServiceMigrateIdentityProcedure,
+		}
+	})
+	profileServiceExportSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("Export"),
+			Procedure:  ProfileServiceExportProcedure,
+		}
+	})
+	profileServiceImportSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("Import"),
+			Procedure:  ProfileServiceImportProcedure,
+		}
+	})
+	profileServicePlanSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("Plan"),
+			Procedure:  ProfileServicePlanProcedure,
+		}
+	})
+	profileServiceInstallSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("Install"),
+			Procedure:  ProfileServiceInstallProcedure,
+		}
+	})
+	profileServiceUpdateSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("Update"),
+			Procedure:  ProfileServiceUpdateProcedure,
+		}
+	})
+	profileServiceInfoSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("Info"),
+			Procedure:  ProfileServiceInfoProcedure,
+		}
+	})
 )
 
 // ProfileServiceClient is a client for the icebath.profile.v1.ProfileService service.
 type ProfileServiceClient interface {
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
+	Show(context.Context, *v1.ShowRequest) (*v1.ShowResponse, error)
 	Create(context.Context, *v1.CreateRequest) (*v1.CreateResponse, error)
 	Delete(context.Context, *v1.DeleteRequest) (*v1.DeleteResponse, error)
 	Use(context.Context, *v1.UseRequest) (*v1.UseResponse, error)
+	// Renames a profile, or sets the name the default profile shows
+	Rename(context.Context, *v1.RenameRequest) (*v1.RenameResponse, error)
+	// Reads, sets, or has the helper model write what profiles are good at
+	Describe(context.Context, *v1.DescribeRequest) (*v1.DescribeResponse, error)
+	// Removes again what features keep of a deleted profile
+	PurgeIdentity(context.Context, *v1.PurgeIdentityRequest) (*v1.PurgeIdentityResponse, error)
+	// Moves again what features keep under a renamed profile's old name
+	MigrateIdentity(context.Context, *v1.MigrateIdentityRequest) (*v1.MigrateIdentityResponse, error)
+	// Archive of a profile without its credentials
+	Export(context.Context, *v1.ExportRequest) (*v1.ExportResponse, error)
+	Import(context.Context, *v1.ImportRequest) (*v1.ImportResponse, error)
+	// What installing a distribution would do, staged and thrown away
+	Plan(context.Context, *v1.PlanRequest) (*v1.PlanResponse, error)
+	Install(context.Context, *v1.InstallRequest) (*v1.InstallResponse, error)
+	// Pulls an installed distribution again from where it came from
+	Update(context.Context, *v1.UpdateRequest) (*v1.UpdateResponse, error)
+	// Manifest of a profile's distribution
+	Info(context.Context, *v1.InfoRequest) (*v1.InfoResponse, error)
 }
 
 // NewProfileServiceClient constructs a client for the icebath.profile.v1.ProfileService service.
@@ -82,9 +202,28 @@ func NewProfileServiceClient(client *connect.Client) ProfileServiceClient {
 // ProfileServiceHandler is an implementation of the icebath.profile.v1.ProfileService service.
 type ProfileServiceHandler interface {
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
+	Show(context.Context, *v1.ShowRequest) (*v1.ShowResponse, error)
 	Create(context.Context, *v1.CreateRequest) (*v1.CreateResponse, error)
 	Delete(context.Context, *v1.DeleteRequest) (*v1.DeleteResponse, error)
 	Use(context.Context, *v1.UseRequest) (*v1.UseResponse, error)
+	// Renames a profile, or sets the name the default profile shows
+	Rename(context.Context, *v1.RenameRequest) (*v1.RenameResponse, error)
+	// Reads, sets, or has the helper model write what profiles are good at
+	Describe(context.Context, *v1.DescribeRequest) (*v1.DescribeResponse, error)
+	// Removes again what features keep of a deleted profile
+	PurgeIdentity(context.Context, *v1.PurgeIdentityRequest) (*v1.PurgeIdentityResponse, error)
+	// Moves again what features keep under a renamed profile's old name
+	MigrateIdentity(context.Context, *v1.MigrateIdentityRequest) (*v1.MigrateIdentityResponse, error)
+	// Archive of a profile without its credentials
+	Export(context.Context, *v1.ExportRequest) (*v1.ExportResponse, error)
+	Import(context.Context, *v1.ImportRequest) (*v1.ImportResponse, error)
+	// What installing a distribution would do, staged and thrown away
+	Plan(context.Context, *v1.PlanRequest) (*v1.PlanResponse, error)
+	Install(context.Context, *v1.InstallRequest) (*v1.InstallResponse, error)
+	// Pulls an installed distribution again from where it came from
+	Update(context.Context, *v1.UpdateRequest) (*v1.UpdateResponse, error)
+	// Manifest of a profile's distribution
+	Info(context.Context, *v1.InfoRequest) (*v1.InfoResponse, error)
 }
 
 // RegisterProfileServiceHandler registers svc as the icebath.profile.v1.ProfileService
@@ -93,9 +232,20 @@ func RegisterProfileServiceHandler(server *connect.Server, svc ProfileServiceHan
 	adapter := profileServiceHandler{svc: svc}
 	server.Register(
 		connect.Method{Spec: profileServiceListSpec(), Handler: adapter.list},
+		connect.Method{Spec: profileServiceShowSpec(), Handler: adapter.show},
 		connect.Method{Spec: profileServiceCreateSpec(), Handler: adapter.create},
 		connect.Method{Spec: profileServiceDeleteSpec(), Handler: adapter.delete},
 		connect.Method{Spec: profileServiceUseSpec(), Handler: adapter.use},
+		connect.Method{Spec: profileServiceRenameSpec(), Handler: adapter.rename},
+		connect.Method{Spec: profileServiceDescribeSpec(), Handler: adapter.describe},
+		connect.Method{Spec: profileServicePurgeIdentitySpec(), Handler: adapter.purgeIdentity},
+		connect.Method{Spec: profileServiceMigrateIdentitySpec(), Handler: adapter.migrateIdentity},
+		connect.Method{Spec: profileServiceExportSpec(), Handler: adapter.export},
+		connect.Method{Spec: profileServiceImportSpec(), Handler: adapter._import},
+		connect.Method{Spec: profileServicePlanSpec(), Handler: adapter.plan},
+		connect.Method{Spec: profileServiceInstallSpec(), Handler: adapter.install},
+		connect.Method{Spec: profileServiceUpdateSpec(), Handler: adapter.update},
+		connect.Method{Spec: profileServiceInfoSpec(), Handler: adapter.info},
 	)
 }
 
@@ -104,6 +254,10 @@ type UnimplementedProfileServiceHandler struct{}
 
 func (UnimplementedProfileServiceHandler) List(context.Context, *v1.ListRequest) (*v1.ListResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.List is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) Show(context.Context, *v1.ShowRequest) (*v1.ShowResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Show is not implemented")
 }
 
 func (UnimplementedProfileServiceHandler) Create(context.Context, *v1.CreateRequest) (*v1.CreateResponse, error) {
@@ -118,6 +272,46 @@ func (UnimplementedProfileServiceHandler) Use(context.Context, *v1.UseRequest) (
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Use is not implemented")
 }
 
+func (UnimplementedProfileServiceHandler) Rename(context.Context, *v1.RenameRequest) (*v1.RenameResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Rename is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) Describe(context.Context, *v1.DescribeRequest) (*v1.DescribeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Describe is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) PurgeIdentity(context.Context, *v1.PurgeIdentityRequest) (*v1.PurgeIdentityResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.PurgeIdentity is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) MigrateIdentity(context.Context, *v1.MigrateIdentityRequest) (*v1.MigrateIdentityResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.MigrateIdentity is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) Export(context.Context, *v1.ExportRequest) (*v1.ExportResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Export is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) Import(context.Context, *v1.ImportRequest) (*v1.ImportResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Import is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) Plan(context.Context, *v1.PlanRequest) (*v1.PlanResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Plan is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) Install(context.Context, *v1.InstallRequest) (*v1.InstallResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Install is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) Update(context.Context, *v1.UpdateRequest) (*v1.UpdateResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Update is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) Info(context.Context, *v1.InfoRequest) (*v1.InfoResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Info is not implemented")
+}
+
 type profileServiceClient struct {
 	client *connect.Client
 }
@@ -125,6 +319,14 @@ type profileServiceClient struct {
 func (c *profileServiceClient) List(ctx context.Context, req *v1.ListRequest) (*v1.ListResponse, error) {
 	var res v1.ListResponse
 	if err := c.client.CallUnary(ctx, profileServiceListSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) Show(ctx context.Context, req *v1.ShowRequest) (*v1.ShowResponse, error) {
+	var res v1.ShowResponse
+	if err := c.client.CallUnary(ctx, profileServiceShowSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -154,6 +356,86 @@ func (c *profileServiceClient) Use(ctx context.Context, req *v1.UseRequest) (*v1
 	return &res, nil
 }
 
+func (c *profileServiceClient) Rename(ctx context.Context, req *v1.RenameRequest) (*v1.RenameResponse, error) {
+	var res v1.RenameResponse
+	if err := c.client.CallUnary(ctx, profileServiceRenameSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) Describe(ctx context.Context, req *v1.DescribeRequest) (*v1.DescribeResponse, error) {
+	var res v1.DescribeResponse
+	if err := c.client.CallUnary(ctx, profileServiceDescribeSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) PurgeIdentity(ctx context.Context, req *v1.PurgeIdentityRequest) (*v1.PurgeIdentityResponse, error) {
+	var res v1.PurgeIdentityResponse
+	if err := c.client.CallUnary(ctx, profileServicePurgeIdentitySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) MigrateIdentity(ctx context.Context, req *v1.MigrateIdentityRequest) (*v1.MigrateIdentityResponse, error) {
+	var res v1.MigrateIdentityResponse
+	if err := c.client.CallUnary(ctx, profileServiceMigrateIdentitySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) Export(ctx context.Context, req *v1.ExportRequest) (*v1.ExportResponse, error) {
+	var res v1.ExportResponse
+	if err := c.client.CallUnary(ctx, profileServiceExportSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) Import(ctx context.Context, req *v1.ImportRequest) (*v1.ImportResponse, error) {
+	var res v1.ImportResponse
+	if err := c.client.CallUnary(ctx, profileServiceImportSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) Plan(ctx context.Context, req *v1.PlanRequest) (*v1.PlanResponse, error) {
+	var res v1.PlanResponse
+	if err := c.client.CallUnary(ctx, profileServicePlanSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) Install(ctx context.Context, req *v1.InstallRequest) (*v1.InstallResponse, error) {
+	var res v1.InstallResponse
+	if err := c.client.CallUnary(ctx, profileServiceInstallSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) Update(ctx context.Context, req *v1.UpdateRequest) (*v1.UpdateResponse, error) {
+	var res v1.UpdateResponse
+	if err := c.client.CallUnary(ctx, profileServiceUpdateSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) Info(ctx context.Context, req *v1.InfoRequest) (*v1.InfoResponse, error) {
+	var res v1.InfoResponse
+	if err := c.client.CallUnary(ctx, profileServiceInfoSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 type profileServiceHandler struct{ svc ProfileServiceHandler }
 
 func (h profileServiceHandler) list(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
@@ -162,6 +444,18 @@ func (h profileServiceHandler) list(ctx context.Context, _ connect.Spec, stream 
 		return err
 	}
 	res, err := h.svc.List(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) show(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ShowRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Show(ctx, &req)
 	if err != nil {
 		return err
 	}
@@ -198,6 +492,126 @@ func (h profileServiceHandler) use(ctx context.Context, _ connect.Spec, stream c
 		return err
 	}
 	res, err := h.svc.Use(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) rename(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RenameRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Rename(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) describe(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DescribeRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Describe(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) purgeIdentity(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PurgeIdentityRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PurgeIdentity(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) migrateIdentity(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.MigrateIdentityRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.MigrateIdentity(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) export(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ExportRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Export(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) _import(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ImportRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Import(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) plan(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PlanRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Plan(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) install(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.InstallRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Install(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) update(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.UpdateRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Update(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) info(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.InfoRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Info(ctx, &req)
 	if err != nil {
 		return err
 	}

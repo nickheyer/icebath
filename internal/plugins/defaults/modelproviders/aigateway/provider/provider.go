@@ -15,6 +15,9 @@ func (specs) Specs() []provider.Spec {
 	base := aigatewayconfig.BaseURL
 	return []provider.Spec{{
 		Name:               aigatewayconfig.Name,
+		Shape:              shape,
+		Carriers:           []string{"reasoning_content", "reasoning", "reasoning_details"},
+		Native:             provider.Vendored,
 		DisplayName:        aigatewayconfig.Title,
 		BaseURL:            base,
 		BaseURLEnv:         aigatewayconfig.BaseURLEnv,

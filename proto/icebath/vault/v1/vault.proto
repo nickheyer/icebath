@@ -1,0 +1,139 @@
+syntax = "proto3";
+
+package icebath.vault.v1;
+
+// The autofill vault: logins, cards and addresses the agent may fill in for the user, kept in an encrypted file of the profile or in the
+// password managers it reads, never shown to the agent
+service VaultService {
+  // Every item of the unlocked sources, the password managers and whether each is used, where the vault key lives and the kinds of items
+  rpc List(ListRequest) returns (ListResponse);
+  // Saves an item in the profile's own vault
+  rpc Add(AddRequest) returns (AddResponse);
+  // Removes an item of the profile's own vault
+  rpc Remove(RemoveRequest) returns (RemoveResponse);
+  // Starts or stops using a password manager
+  rpc SetSource(SetSourceRequest) returns (SetSourceResponse);
+  // Moves the vault key to the OS keychain or back to its file, proving the copy before the original goes
+  rpc MoveKey(MoveKeyRequest) returns (Key);
+  // Unlocks a password manager with its master password for this session of icebath
+  rpc Unlock(UnlockRequest) returns (UnlockResponse);
+  // Locks a password manager again, every one for no name
+  rpc Lock(LockRequest) returns (LockResponse);
+}
+
+message ListRequest {
+  // Profile whose vault is read, the one in use when empty
+  string profile = 1;
+}
+
+// One item the agent may fill in, never its secret
+message Item {
+  string handle = 1;
+  // Name of the source it comes from
+  string source = 2;
+  // login, payment or address
+  string kind = 3;
+  string label = 4;
+  string identifier = 5;
+  string origin = 6;
+  // Kept in the profile's own vault, so it can be removed here
+  bool local = 7;
+  bool otp = 8;
+}
+
+// One password manager: on, off or missing, and whether it waits to be unlocked
+message Source {
+  string name = 1;
+  string display_name = 2;
+  string state = 3;
+  bool locked = 4;
+}
+
+// Where the key of the profile's own vault lives: file, keychain, or none before the first item
+message Key {
+  string storage = 1;
+  string path = 2;
+  string service = 3;
+  string account = 4;
+  // Where a new vault's key goes, file or keychain
+  string configured = 5;
+  // Keychain of this computer, or why there is none
+  string keychain = 6;
+  // Keychain copy a move back to the file could not remove yet
+  string keychain_left = 7;
+}
+
+// One field of an item of a kind besides its label and site
+message Field {
+  string key = 1;
+  bool required = 2;
+  bool secret = 3;
+  // Values it takes, empty for free text
+  repeated string choices = 4;
+}
+
+message Kind {
+  string kind = 1;
+  repeated Field fields = 2;
+}
+
+message ListResponse {
+  repeated Item items = 1;
+  // Display names of the password managers that wait to be unlocked
+  repeated string locked = 2;
+  repeated Source sources = 3;
+  Key key = 4;
+  repeated Kind kinds = 5;
+}
+
+message AddRequest {
+  string profile = 1;
+  string kind = 2;
+  string label = 3;
+  string origin = 4;
+  map<string, string> values = 5;
+}
+
+message AddResponse {
+  Item item = 1;
+}
+
+message RemoveRequest {
+  string profile = 1;
+  string handle = 2;
+}
+
+message RemoveResponse {
+  bool removed = 1;
+}
+
+message SetSourceRequest {
+  string profile = 1;
+  string name = 2;
+  bool on = 3;
+}
+
+message SetSourceResponse {
+  string display_name = 1;
+}
+
+message MoveKeyRequest {
+  string profile = 1;
+  // keychain or file
+  string to = 2;
+}
+
+message UnlockRequest {
+  string profile = 1;
+  string name = 2;
+  string master_password = 3;
+}
+
+message UnlockResponse {}
+
+message LockRequest {
+  string profile = 1;
+  string name = 2;
+}
+
+message LockResponse {}

@@ -7,4 +7,5 @@ import (
 
 func Register(registry *credentials.Registry) {
 	registry.Register(credentials.Keyed{Provider: xaiconfig.XAIName, Variables: []string{xaiconfig.APIKeyEnv}})
+	registry.Register(oauth{})
 }

@@ -1,34 +1,20 @@
 package term
 
-// One row of the process table
-type procRow struct {
-	pid, ppid int
-	// Exited but not yet reaped by its parent
-	zombie bool
-}
-
 // Every live descendant of pid, parents before their children, zombies left for their parent to reap
-func descendants(table []procRow, pid int) []int {
-	kids := map[int][]int{}
-	for _, p := range table {
-		if p.zombie {
-			continue
-		}
-		kids[p.ppid] = append(kids[p.ppid], p.pid)
+func Descendants(pid int) []int {
+	children := map[int][]int{}
+	for child, parent := range Processes() {
+		children[parent] = append(children[parent], child)
 	}
 	seen := map[int]bool{pid: true}
 	var out []int
-	queue := []int{pid}
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
-		for _, k := range kids[id] {
-			if seen[k] {
-				continue
+	for queue := []int{pid}; len(queue) > 0; queue = queue[1:] {
+		for _, child := range children[queue[0]] {
+			if !seen[child] {
+				seen[child] = true
+				out = append(out, child)
+				queue = append(queue, child)
 			}
-			seen[k] = true
-			out = append(out, k)
-			queue = append(queue, k)
 		}
 	}
 	return out
@@ -37,12 +23,7 @@ func descendants(table []procRow, pid int) []int {
 // Kills pid and every descendant, sweeping twice so children forked during the first pass die too
 func killTree(pid int) {
 	for range 2 {
-		table, err := processTable()
-		if err != nil {
-			killPID(pid)
-			return
-		}
-		for _, id := range append([]int{pid}, descendants(table, pid)...) {
+		for _, id := range append([]int{pid}, Descendants(pid)...) {
 			killPID(id)
 		}
 	}

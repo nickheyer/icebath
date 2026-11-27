@@ -1,0 +1,636 @@
+syntax = "proto3";
+
+package icebath.plugins.skills.v1;
+
+service SkillsService {
+  // Skills of a profile: where each comes from, whether it is on, and how it is used
+  rpc List(ListRequest) returns (ListResponse);
+  // One skill as the agent loads it, with its files, what it needs, its usage and how it is written
+  rpc Show(ShowRequest) returns (ShowResponse);
+  // Turns skills on or off for the agent, everywhere or on one surface
+  rpc Toggle(ToggleRequest) returns (ToggleResponse);
+  // Lets a built in skill follow its source again, or puts the shipped copy back
+  rpc Reset(ResetRequest) returns (ResetResponse);
+  // Built in skills the user changed
+  rpc Modified(ModifiedRequest) returns (ModifiedResponse);
+  // How the profile's copy of a built in skill differs from the shipped one
+  rpc Diff(DiffRequest) returns (DiffResponse);
+  // Stops the built in skills from being seeded into the profile, or seeds them again
+  rpc OptOut(OptOutRequest) returns (OptOutResponse);
+  // Records official optional skills found in the profile as installed from the hub, or puts their official copies back
+  rpc Repair(RepairRequest) returns (RepairResponse);
+  // Scans the skills again and says which slash commands came and went
+  rpc Reload(ReloadRequest) returns (ReloadResponse);
+  // Bundles of a profile: several skills loaded under one slash command
+  rpc Bundles(BundlesRequest) returns (BundlesResponse);
+  rpc SaveBundle(SaveBundleRequest) returns (SaveBundleResponse);
+  rpc DeleteBundle(DeleteBundleRequest) returns (DeleteBundleResponse);
+
+  // Skills the hub's registries offer for a query, the most trusted first
+  rpc Search(SearchRequest) returns (SearchResponse);
+  // One page of every skill the registries offer, official ones first: each registry as it answers, then the page
+  rpc Browse(BrowseRequest) returns (stream BrowseResponse);
+  // A skill of the hub read without installing it: what it says of itself and the start of its SKILL.md, after what was said finding it
+  rpc Inspect(InspectRequest) returns (stream InspectResponse);
+  // Fetches a skill into quarantine and scans it; installs it at once when asked to go ahead, else leaves it for the user's yes
+  rpc Stage(StageRequest) returns (stream StageResponse);
+  // Installs a skill Stage left for the user's yes
+  rpc Commit(CommitRequest) returns (stream CommitResponse);
+  // Drops a skill Stage left for the user's yes
+  rpc Discard(DiscardRequest) returns (DiscardResponse);
+  // How each installed hub skill stands against the source it came from
+  rpc Check(CheckRequest) returns (CheckResponse);
+  // Updates the installed hub skills that have a newer version
+  rpc Update(UpdateRequest) returns (stream UpdateResponse);
+  // Scans the installed hub skills again
+  rpc Audit(AuditRequest) returns (stream AuditResponse);
+  // Removes a skill the hub installed
+  rpc Uninstall(UninstallRequest) returns (UninstallResponse);
+  // Shares a skill on a registry, as a pull request to a GitHub repository of skills
+  rpc Publish(PublishRequest) returns (stream PublishResponse);
+  // The hub's skills and sources of a profile, to install elsewhere
+  rpc Export(ExportRequest) returns (ExportResponse);
+  // GitHub repositories the user added to those the hub searches
+  rpc Taps(TapsRequest) returns (TapsResponse);
+  // Adds a GitHub repository to those the hub searches, or removes it
+  rpc Tap(TapRequest) returns (TapResponse);
+  // Trusts a project with its own skills, or stops trusting it
+  rpc Trust(TrustRequest) returns (TrustResponse);
+}
+
+// How a line of the hub reads
+enum Tone {
+  TONE_UNSPECIFIED = 0;
+  TONE_DIM = 1;
+  TONE_GOOD = 2;
+  TONE_WARN = 3;
+  TONE_BAD = 4;
+  TONE_HEADING = 5;
+  TONE_ACCENT = 6;
+}
+
+// One line the hub says as it works, of one line or more
+message Line {
+  string text = 1;
+  Tone tone = 2;
+}
+
+// A skill a registry offers
+message HubSkill {
+  string name = 1;
+  string description = 2;
+  // Registry it comes from, such as official, skills.sh or clawhub
+  string source = 3;
+  string identifier = 4;
+  // builtin, trusted or community
+  string trust = 5;
+  // Source as shown: a GitHub tap's provider in place of github
+  string label = 6;
+  repeated string tags = 7;
+  // What the registry says of it besides, one labelled line each
+  repeated string details = 8;
+  // Installed from the hub in this profile already
+  bool installed = 9;
+  // Its category in its registry, empty for none
+  string category = 10;
+}
+
+message SearchRequest {
+  Scope scope = 1;
+  string query = 2;
+  // all, a source such as official or clawhub, or a provider such as openai
+  string source = 3;
+  int32 limit = 4;
+}
+
+message SearchResponse {
+  repeated HubSkill skills = 1;
+}
+
+message BrowseRequest {
+  Scope scope = 1;
+  // From 1
+  int32 page = 2;
+  int32 size = 3;
+  // all, a source or a provider
+  string source = 4;
+  // Asks fewer skills of each registry, as a screen does
+  bool screen = 5;
+}
+
+// How many skills a registry found
+message SourceCount {
+  string source = 1;
+  int32 count = 2;
+}
+
+message BrowsePage {
+  repeated HubSkill skills = 1;
+  // Page shown, from 1, of how many
+  int32 page = 2;
+  int32 pages = 3;
+  // Skills of every page, and the place of the page's first among them
+  int32 total = 4;
+  int32 start = 5;
+  // How many skills each registry found, in the order they answered
+  repeated SourceCount counts = 6;
+  // Registries that did not answer in time
+  repeated string timed_out = 7;
+  // How many official skills there are
+  int32 official = 8;
+}
+
+message BrowseResponse {
+  // A registry that answered, as each does
+  SourceCount answered = 1;
+  // The page, last
+  BrowsePage page = 2;
+}
+
+message InspectRequest {
+  Scope scope = 1;
+  string identifier = 2;
+}
+
+message InspectResponse {
+  Line line = 1;
+  // Set on the last message, the skill empty when none was found
+  bool done = 2;
+  HubSkill skill = 3;
+  // The start of its SKILL.md
+  string preview = 4;
+}
+
+// What an operation of the hub came to
+enum Outcome {
+  // Nothing changed, such as a skill installed already
+  OUTCOME_UNSPECIFIED = 0;
+  OUTCOME_INSTALLED = 1;
+  // Fetched and scanned, waiting for the user's yes
+  OUTCOME_STAGED = 2;
+  // A skill at a URL with no usable name, waiting for one
+  OUTCOME_NEEDS_NAME = 3;
+  OUTCOME_FAILED = 4;
+}
+
+// What an install waiting for the user tells them
+message Pending {
+  string id = 1;
+  string name = 2;
+  string source = 3;
+  // An official skill of icebath, which ships with it
+  bool official = 4;
+  // Asks for a category, offering those the skills folder has
+  bool ask_category = 5;
+  repeated string categories = 6;
+  // Category it goes in unless the user gives one
+  string category = 7;
+  // The skills folder as the user reads it
+  string skills_dir = 8;
+  // Address of a skill that needs a name
+  string url = 9;
+}
+
+message StageRequest {
+  Scope scope = 1;
+  // An identifier, a short name, or the URL of a SKILL.md
+  string identifier = 2;
+  string category = 3;
+  // Name of a skill at a URL that has none
+  string name = 4;
+  // Installs over an installed copy and despite a verdict its source's trust does not let pass, without asking
+  bool force = 5;
+  // Asks nothing
+  bool yes = 6;
+  // Source the identifier is pinned to, any when empty
+  string source = 7;
+}
+
+message StageResponse {
+  Line line = 1;
+  // Set on the last message
+  bool done = 2;
+  Outcome outcome = 3;
+  Pending pending = 4;
+}
+
+message CommitRequest {
+  Scope scope = 1;
+  string id = 2;
+  // Category it goes in, its own when empty
+  string category = 3;
+}
+
+message CommitResponse {
+  Line line = 1;
+  bool done = 2;
+  Outcome outcome = 3;
+}
+
+message DiscardRequest {
+  string id = 1;
+}
+
+message DiscardResponse {}
+
+message CheckRequest {
+  Scope scope = 1;
+  // One skill, all when empty
+  string name = 2;
+}
+
+message UpdateCheck {
+  string name = 1;
+  string identifier = 2;
+  string source = 3;
+  // up_to_date, update_available, unavailable, orphaned or invalid_install
+  string status = 4;
+}
+
+message CheckResponse {
+  repeated UpdateCheck skills = 1;
+}
+
+message UpdateRequest {
+  Scope scope = 1;
+  string name = 2;
+  // Overwrites the skills the user changed
+  bool force = 3;
+}
+
+message UpdateResponse {
+  Line line = 1;
+  bool done = 2;
+  // Whether every update that was tried went through
+  bool ok = 3;
+}
+
+message AuditRequest {
+  Scope scope = 1;
+  string name = 2;
+  // Also reads the skills' Python for code loaded by computed names
+  bool deep = 3;
+}
+
+message AuditResponse {
+  Line line = 1;
+  bool done = 2;
+  bool ok = 3;
+}
+
+message UninstallRequest {
+  Scope scope = 1;
+  string name = 2;
+}
+
+message UninstallResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message PublishRequest {
+  Scope scope = 1;
+  // Skill folder, in the skills folder or absolute
+  string path = 2;
+  // github or clawhub
+  string to = 3;
+  // GitHub repository the pull request goes to
+  string repo = 4;
+}
+
+message PublishResponse {
+  Line line = 1;
+  bool done = 2;
+  bool ok = 3;
+}
+
+message ExportRequest {
+  Scope scope = 1;
+}
+
+message ExportResponse {
+  // The snapshot as JSON
+  string snapshot = 1;
+  int32 skills = 2;
+  int32 taps = 3;
+}
+
+message TapsRequest {
+  Scope scope = 1;
+}
+
+message SkillTap {
+  string repo = 1;
+  // Folder of the skills in it
+  string path = 2;
+}
+
+message TapsResponse {
+  repeated SkillTap taps = 1;
+}
+
+message TapRequest {
+  Scope scope = 1;
+  string repo = 2;
+  bool remove = 3;
+}
+
+message TapResponse {
+  // Whether the taps changed: false for one added again, or removed that was not there
+  bool changed = 1;
+}
+
+message TrustRequest {
+  Scope scope = 1;
+  // Project folder, the git checkout of the scope's folder when empty
+  string path = 2;
+  bool untrust = 3;
+}
+
+message TrustResponse {
+  repeated Line lines = 1;
+  bool ok = 2;
+}
+
+// What a request is about: the profile and the folder project skills are found in
+message Scope {
+  // Profile to read, the one in use when empty
+  string profile = 1;
+  // Folder the user works in, where a trusted project's skills are found; none for no project
+  string directory = 2;
+}
+
+message Skill {
+  // Name the agent loads it by
+  string name = 1;
+  string description = 2;
+  // Folder it sits under, empty for none
+  string category = 3;
+  // Where it comes from: builtin, hub, local, project, create_dir, external or plugin
+  string source = 4;
+  // How far the hub trusts it: builtin, trusted or community; the source for one not from the hub
+  string trust = 5;
+  // On for the agent on every surface
+  bool enabled = 6;
+  // Surfaces it is turned off on, besides everywhere
+  repeated string disabled_on = 7;
+  // Its SKILL.md
+  string path = 8;
+  // Can't be turned off, since the system prompt points at it
+  bool essential = 9;
+  // A built in one the user changed, so syncs leave it be
+  bool modified = 10;
+  // Its slash command, empty when it has none
+  string command = 11;
+  // Why its slash command is missing, empty when it has one or none was expected
+  string command_note = 12;
+  int64 use_count = 13;
+  int64 view_count = 14;
+  int64 patch_count = 15;
+  // Latest time it was used, viewed or changed, empty for never
+  string last_activity = 16;
+  // Lifecycle state: active, stale or archived
+  string state = 17;
+  bool pinned = 18;
+  // The user locked its content from the agent
+  bool locked = 19;
+}
+
+message ListRequest {
+  Scope scope = 1;
+}
+
+message ListResponse {
+  repeated Skill skills = 1;
+  // Surfaces skills can be turned off on alone
+  repeated Surface surfaces = 2;
+  // Folder new skills are created in, as the user reads it
+  string create_dir = 3;
+  // Folder of the profile's own skills
+  string skills_dir = 4;
+  // Untrusted project the folder is in whose skills don't load, and how many it holds
+  string untrusted_project = 5;
+  int32 untrusted_count = 6;
+  // The profile opted out of the bundled skills being copied into it
+  bool opted_out = 7;
+}
+
+message Surface {
+  string name = 1;
+  string title = 2;
+}
+
+message ShowRequest {
+  Scope scope = 1;
+  string name = 2;
+}
+
+message Finding {
+  string severity = 1;
+  string rule = 2;
+  string message = 3;
+}
+
+message ShowResponse {
+  Skill skill = 1;
+  // SKILL.md as the agent reads it
+  string content = 2;
+  // Its folder, empty for a flat markdown skill
+  string dir = 3;
+  // Supporting files by their path in the folder
+  repeated string files = 4;
+  // available, setup_needed or unsupported
+  string readiness = 5;
+  // What it still needs before it can be used, empty when nothing
+  string setup_note = 6;
+  repeated string tags = 7;
+  repeated string related = 8;
+  // Advisory findings about how it is written
+  repeated Finding findings = 9;
+  // Automation the skill sets up, none when it sets up none
+  Blueprint blueprint = 10;
+  // Why its blueprint can't be read, empty when it can
+  string blueprint_error = 11;
+}
+
+// A job that runs a skill on a schedule
+message Blueprint {
+  string schedule = 1;
+  // Where its output goes, origin for where it was set up
+  string deliver = 2;
+  // Prompt of each run, empty for the skill's own
+  string prompt = 3;
+  // Runs its script without the agent
+  bool no_agent = 4;
+  string model = 5;
+  string provider = 6;
+  repeated string toolsets = 7;
+}
+
+message ToggleRequest {
+  Scope scope = 1;
+  repeated string names = 2;
+  bool enabled = 3;
+  // Surface to turn them on or off on alone, everywhere when empty
+  string surface = 4;
+}
+
+message ToggleResponse {
+  // Names that were changed; essential skills never are
+  repeated string changed = 1;
+  int32 enabled = 2;
+  int32 disabled = 3;
+}
+
+message Synced {
+  repeated string copied = 1;
+  repeated string updated = 2;
+  int32 skipped = 3;
+  repeated string modified = 4;
+  repeated string cleaned = 5;
+  repeated string suppressed = 6;
+  repeated string relocated = 7;
+  repeated string deferred = 8;
+  repeated string backfilled = 9;
+  int32 total = 10;
+  bool opted_out = 11;
+  // What happened to each skill, as the user reads it
+  repeated string lines = 12;
+}
+
+message ResetRequest {
+  Scope scope = 1;
+  string name = 2;
+  // Replaces the profile's copy with the shipped one
+  bool restore = 3;
+}
+
+message ResetResponse {
+  string message = 1;
+  Synced synced = 2;
+}
+
+message ModifiedRequest {
+  Scope scope = 1;
+}
+
+message ModifiedResponse {
+  repeated string names = 1;
+}
+
+message DiffRequest {
+  Scope scope = 1;
+  string name = 2;
+}
+
+message FileDiff {
+  string path = 1;
+  // added, removed, modified or binary
+  string status = 2;
+  // Unified diff of a modified file
+  string diff = 3;
+}
+
+message DiffResponse {
+  repeated FileDiff files = 1;
+}
+
+message OptOutRequest {
+  Scope scope = 1;
+  // Opts out when true, back in when false
+  bool out = 2;
+  // Opting out, also deletes the built in skills still as they were copied
+  bool remove = 3;
+  // Only says which would be deleted
+  bool dry = 4;
+  // Opting back in, seeds the built in skills now
+  bool sync = 5;
+}
+
+message KeptSkill {
+  string name = 1;
+  string reason = 2;
+}
+
+message OptOutResponse {
+  string message = 1;
+  // Marker file of the opt out
+  string marker = 2;
+  repeated string removed = 3;
+  repeated KeptSkill kept = 4;
+  Synced synced = 5;
+}
+
+message RepairRequest {
+  Scope scope = 1;
+  // Official optional skill, or all
+  string name = 2;
+  bool restore = 3;
+}
+
+message RepairResponse {
+  repeated string restored = 1;
+  repeated string backfilled = 2;
+  repeated string backed_up = 3;
+  string backup_dir = 4;
+}
+
+message ReloadRequest {
+  Scope scope = 1;
+}
+
+message Command {
+  string name = 1;
+  string description = 2;
+}
+
+message ReloadResponse {
+  repeated Command added = 1;
+  repeated Command removed = 2;
+  // Slash commands of skills and bundles now
+  int32 total = 3;
+}
+
+message BundlesRequest {
+  Scope scope = 1;
+}
+
+message Bundle {
+  string name = 1;
+  // Its slash command, without the slash
+  string slug = 2;
+  repeated string skills = 3;
+  string path = 4;
+  string description = 5;
+  string instruction = 6;
+}
+
+message BundlesResponse {
+  repeated Bundle bundles = 1;
+  // Folder bundles are kept in
+  string dir = 2;
+}
+
+message SaveBundleRequest {
+  Scope scope = 1;
+  string name = 2;
+  repeated string skills = 3;
+  string description = 4;
+  string instruction = 5;
+  // Replaces a bundle of the name
+  bool overwrite = 6;
+}
+
+message SaveBundleResponse {
+  Bundle bundle = 1;
+}
+
+message DeleteBundleRequest {
+  Scope scope = 1;
+  string name = 2;
+}
+
+message DeleteBundleResponse {
+  // File that was deleted
+  string path = 1;
+}

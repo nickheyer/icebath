@@ -1,21 +1,30 @@
 package config
 
 import (
+	"bytes"
 	"cmp"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
+	"log/slog"
 	"maps"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/spf13/cast"
 	"github.com/spf13/viper"
+
+	"github.com/nickheyer/icebath/internal/config/remote"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 type Kind int
@@ -27,6 +36,8 @@ const (
 	Choice
 	List
 	Table
+	// Length of time, kept in config.yaml as a number of its unit and written as one or as text such as 30s or 5m
+	Duration
 )
 
 type Source int
@@ -35,10 +46,15 @@ const (
 	FromDefault Source = iota
 	FromFile
 	FromEnvironment
+	// The administrator pins it
+	FromManaged
 )
 
 // Folder of the profiles under the config folder, one folder each
 const profiles = "profiles"
+
+// Variable naming where every profile's settings come from: file, the config.yaml of its folder, or remote, Remote Config's plane
+const BackendEnv = "ICEBATH_CONFIG_BACKEND"
 
 // Name a key can hold as one of its parts, such as a profile, a provider or an account: lower case letters, digits, dashes and underscores.
 // Keys are split on dots and folded to lower case, so a name holds neither
@@ -68,6 +84,14 @@ type Setting struct {
 	Secret bool
 	// Kept by icebath itself, and left out of the settings a person goes through
 	Internal bool
+	// Unit a length of time is kept in, as a number of it: a second when zero
+	Unit time.Duration
+	// Least and most a length of time may be, no bound when nil
+	Min, Max *time.Duration
+	// A stored length of time under the least gives way to the default rather than to the least
+	DefaultBelow bool
+	// What a length of time left unset means, such as no limit, when it has no default: the setting then holds nothing until one is written
+	Null string
 }
 
 type Section struct {
@@ -97,6 +121,8 @@ func (s Setting) Kind() Kind {
 		return List
 	case map[string]any:
 		return Table
+	case time.Duration:
+		return Duration
 	}
 	if s.Options != nil {
 		return Choice
@@ -175,6 +201,8 @@ func (s Setting) Check(value any) (any, error) {
 			}
 		}
 		return list, nil
+	case Duration:
+		return s.checkLength(value)
 	}
 	if _, ok := value.(map[string]any); !ok {
 		return nil, fmt.Errorf("%s must be a table", s.Title)
@@ -267,11 +295,42 @@ type core struct {
 	// Top keys of the sections every profile shares
 	global map[string]bool
 	// config.yaml at the top of the config folder
-	shared *viper.Viper
+	shared layer
 	// Profile in use, the one settings are read in unless another is named
 	active string
-	// config.yaml of each profile read so far, by name
-	profiles map[string]*viper.Viper
+	// Settings of each profile read so far, by name: its config.yaml, or what Remote Config holds for it
+	profiles map[string]layer
+	// Variables profiles read beyond their .env and this process's, nil reading those alone
+	environment Environment
+	// .env of each profile read so far, by path; what each has beside it, by name; the administrator's .env as loaded
+	envMu    sync.Mutex
+	dotenvs  map[string]envFile
+	layers   map[string]envLayers
+	adminEnv map[string]string
+	// Backend the settings of this process come from once a profile is in use, chosen once as a deployment is
+	backend string
+	// The administrator's files as last read, by path
+	adminMu sync.Mutex
+	admin   map[string]adminFile
+	// Remote Config of the profiles whose settings its plane holds
+	plane *remote.Backend
+	// Notices given, each told once
+	toldMu sync.Mutex
+	told   map[string]bool
+	// Names of the variables that start a program of icebath's, which the .env writer refuses, nil before the provider host tells them
+	launching func() []string
+}
+
+// Whether the notice is given for the first time, which tells it
+func (c *core) once(parts ...string) bool {
+	id := strings.Join(parts, "\x00")
+	c.toldMu.Lock()
+	defer c.toldMu.Unlock()
+	if c.told[id] {
+		return false
+	}
+	c.told[id] = true
+	return true
 }
 
 // Settings of one profile over those every profile shares: the profile in use, or the one named with In. Values come from the environment
@@ -280,21 +339,83 @@ type Config struct {
 	*core
 	// Profile the settings are of, empty for the one in use
 	profile string
+	// Variables come from the .env and this process alone, not the environment profiles read through
+	plain bool
+	// What one session sets over the files, nil for none
+	session *Layer
 }
 
 func New(dir string) *Config {
-	return &Config{core: &core{dir: dir, global: map[string]bool{}, shared: file(filepath.Join(dir, "config.yaml")), profiles: map[string]*viper.Viper{}}}
+	c := &Config{core: &core{dir: dir, global: map[string]bool{}, profiles: map[string]layer{}, dotenvs: map[string]envFile{},
+		layers: map[string]envLayers{}, admin: map[string]adminFile{}, plane: remote.New(), told: map[string]bool{}}}
+	c.shared = newFile(c.core, filepath.Join(dir, "config.yaml"))
+	c.Register(general())
+	return c
 }
 
-func file(path string) *viper.Viper {
-	v := viper.New()
-	v.SetConfigFile(path)
-	return v
+// Stops polling Remote Config
+func (c *Config) Close() error {
+	c.plane.Close()
+	return nil
+}
+
+// Backend every profile's settings come from: file, or remote; an error naming the variable when it names neither. The variable is read from
+// this process, the administrator's .env and the .env files of the profile in use, once that profile is known, as a deployment is chosen once
+// for the process
+func (c *Config) Backend() (string, error) {
+	c.mu.RLock()
+	name, active := c.backend, cmp.Or(c.active, c.profile)
+	c.mu.RUnlock()
+	if name == "" {
+		if active != "" {
+			name = strings.ToLower(strings.TrimSpace(c.In(active).Plain().Getenv(BackendEnv)))
+		} else {
+			name = strings.ToLower(strings.TrimSpace(cmp.Or(c.loadedAdminEnv()[BackendEnv], os.Getenv(BackendEnv))))
+		}
+		name = cmp.Or(name, "file")
+		if active != "" {
+			c.mu.Lock()
+			c.backend = name
+			c.mu.Unlock()
+		}
+	}
+	switch name {
+	case "file", "remote":
+		return name, nil
+	default:
+		return "", fmt.Errorf(`%s=%q is not a config backend this build provides (expected "file" or "remote").`, BackendEnv, name)
+	}
+}
+
+// Variables no secret store may supply: while the profile's settings come from Remote Config, the one choosing it and those that decide which
+// bearer goes to which plane
+func (c *Config) ProtectedEnv() []string {
+	if !c.remote() {
+		return nil
+	}
+	return append([]string{BackendEnv}, remote.CredentialEnv...)
+}
+
+// Whether the profile's settings come from Remote Config
+func (c *Config) remote() bool {
+	name, err := c.Backend()
+	return err == nil && name == "remote"
 }
 
 // Settings of the profile with the name, the one in use for no name. They share everything with these but the profile
 func (c *Config) In(profile string) *Config {
-	return &Config{core: c.core, profile: profile}
+	return &Config{core: c.core, profile: profile, plain: c.plain}
+}
+
+// Settings of the profile with the name, the one in use for no name, an error saying so when there is no profile of the name
+func (c *Config) Of(profile string) (*Config, error) {
+	if profile == "" {
+		return c, nil
+	}
+	if !c.Exists(profile) {
+		return nil, fmt.Errorf("No profile is named %s.", profile)
+	}
+	return c.In(profile), nil
 }
 
 // Folder of the settings every profile shares, and of the profiles
@@ -326,18 +447,22 @@ func (c *Config) Profile() string {
 	return c.active
 }
 
-// Reads the settings every profile shares, and again those of every profile read so far
+// Reads the settings every profile shares, and again those of every profile read so far. A config.yaml that does not read or parse is told
+// and served from its last good read, so only Remote Config failing can fail it
 func (c *Config) Load() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	errs := []error{read(c.shared)}
-	for _, own := range c.profiles {
-		errs = append(errs, read(own))
+	c.mu.RLock()
+	layers := append([]layer{c.shared}, slices.Collect(maps.Values(c.profiles))...)
+	c.mu.RUnlock()
+	var errs []error
+	for _, l := range layers {
+		errs = append(errs, l.load())
 	}
+	c.forgetDotenv("")
 	return errors.Join(errs...)
 }
 
-// Uses the settings of the profile with the name from now on, wherever no other profile is named
+// Uses the settings of the profile with the name from now on, wherever no other profile is named; a profile whose .env does not read is
+// refused, unless the administrator pins terminal.backend
 func (c *Config) Use(name string) error {
 	if !Named(name) {
 		return fmt.Errorf("%q can't name a profile: use lower case letters, digits, dashes or underscores", name)
@@ -345,21 +470,33 @@ func (c *Config) Use(name string) error {
 	if _, err := c.In(name).own(); err != nil {
 		return err
 	}
+	if err := c.In(name).readableEnv(); err != nil {
+		return err
+	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.active = name
+	c.mu.Unlock()
+	// Once, as Remote Config first serves the profile in use: an administrator's config.yaml it takes nothing from
+	if path := c.ignoredPins(); path != "" && c.once("ignored", path) {
+		message := "WARNING: " + path + " exists but is IGNORED: ICEBATH_CONFIG_BACKEND=remote takes config and locks only from Remote Config. " +
+			"Remove the file."
+		tell(message, message)
+	}
 	return nil
 }
 
-// Forgets the settings read of a profile, once it is deleted
+// Forgets the settings read of a profile, once it is deleted or renamed
 func (c *Config) Forget(name string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.profiles, name)
+	c.forgetDotenv(name)
+	c.plane.Forget(name)
 }
 
-// File of the profile the settings are of, read the first time it is asked for
-func (c *Config) own() (*viper.Viper, error) {
+// Settings of the profile the settings are of, read the first time they are asked for: its config.yaml, or what Remote Config holds for
+// it, which fails closed when the plane can't be reached
+func (c *Config) own() (layer, error) {
 	name := c.Profile()
 	if name == "" {
 		return nil, errors.New("config: no profile is in use")
@@ -370,9 +507,21 @@ func (c *Config) own() (*viper.Viper, error) {
 	if ok {
 		return own, nil
 	}
-	own = file(filepath.Join(c.ProfileDir(name), "config.yaml"))
-	if err := read(own); err != nil {
+	backend, err := c.Backend()
+	if err != nil {
 		return nil, err
+	}
+	if backend == "remote" {
+		plain := c.In(name).Plain()
+		profile, err := c.plane.Profile(context.Background(), name, plain.Getenv)
+		if err != nil {
+			return nil, err
+		}
+		own = &remoteLayer{profile: profile}
+	} else {
+		f := newFile(c.core, filepath.Join(c.ProfileDir(name), "config.yaml"))
+		f.load()
+		own = f
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -383,17 +532,50 @@ func (c *Config) own() (*viper.Viper, error) {
 	return own, nil
 }
 
+// Where writes of the key go, as a person reads them: a config.yaml, or the profile's level of Remote Config
+func (c *Config) Destination(key string) (string, error) {
+	store, err := c.store(key)
+	if err != nil {
+		return "", err
+	}
+	return store.where(), nil
+}
+
+// Remote Config of the profile as it stands, empty when its settings come from its config.yaml
+func (c *Config) RemoteState() string {
+	store, err := c.own()
+	if err != nil {
+		return ""
+	}
+	if r, ok := store.(*remoteLayer); ok {
+		return r.profile.Describe()
+	}
+	return ""
+}
+
+// File of the settings every profile shares and of the profile's own, empty for one Remote Config holds
+func (c *Config) Files() (shared, own string) {
+	shared = filepath.Join(c.dir, "config.yaml")
+	if !c.remote() {
+		own = filepath.Join(c.ProfileDir(c.Profile()), "config.yaml")
+	}
+	return shared, own
+}
+
 // Adds sections. A fixed section is checked as it comes: its key must be its place in the tree under a parent registered before it, only a
 // section at the top may say it is global, and a key registered twice is a mistake of the code. All of them panic
 func (c *Config) Register(registrant Registrant) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if fixed, ok := registrant.(Sections); ok {
-		for i, section := range fixed {
-			fixed[i] = c.check(section)
-		}
+	fixed, ok := registrant.(Sections)
+	if !ok {
+		c.registry.Register(registrant)
+		return
 	}
-	c.registry.Register(registrant)
+	// One at a time, so a section's parent may be an earlier one of its own batch
+	for _, section := range fixed {
+		c.registry.Register(Sections{c.check(section)})
+	}
 }
 
 func (c *Config) check(section Section) Section {
@@ -420,6 +602,9 @@ func (c *Config) check(section Section) Section {
 		section.Settings[i] = setting
 		if !strings.HasPrefix(setting.Key, key+".") {
 			panic("config: setting " + setting.Key + " is in section " + key + ", so its key starts with it")
+		}
+		if _, _, taken := find(Sections{{Key: key, Settings: section.Settings[:i]}}, setting.Key); taken {
+			panic("config: setting " + setting.Key + " is registered twice")
 		}
 		for _, registrant := range c.registry.registrants {
 			if fixed, ok := registrant.(Sections); ok {
@@ -462,6 +647,33 @@ func (c *Config) Setting(key string) (Section, Setting, bool) {
 	return c.snapshot().Setting(c, key)
 }
 
+// Table setting a key below it names a part of, such as one entry or a field of one, with the dotted path of the part inside the table;
+// false when no table setting is above the key
+func (c *Config) Under(key string) (Setting, string, bool) {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(key)), ".")
+	for n := len(parts) - 1; n > 0; n-- {
+		if _, setting, ok := c.Setting(strings.Join(parts[:n], ".")); ok {
+			if setting.Kind() != Table {
+				break
+			}
+			return setting, strings.Join(parts[n:], "."), true
+		}
+	}
+	return Setting{}, "", false
+}
+
+// Part of a value of tables under the dotted path, nil when it holds nothing there
+func Dig(value any, path string) any {
+	for _, part := range strings.Split(path, ".") {
+		table, ok := value.(map[string]any)
+		if !ok {
+			return nil
+		}
+		value = table[part]
+	}
+	return value
+}
+
 // Registry as it is now, read without holding the lock, since sections that come and go read settings to make themselves
 func (c *Config) snapshot() *Registry {
 	c.mu.RLock()
@@ -477,8 +689,8 @@ func (c *Config) Global(key string) bool {
 	return c.global[root]
 }
 
-// File the key is kept in
-func (c *Config) store(key string) (*viper.Viper, error) {
+// Settings of the scope the key is kept in
+func (c *Config) store(key string) (layer, error) {
 	if c.Global(key) {
 		return c.shared, nil
 	}
@@ -487,54 +699,141 @@ func (c *Config) store(key string) (*viper.Viper, error) {
 
 // Where the value of a setting comes from, and the environment variable when it is one
 func (c *Config) Source(setting Setting) (Source, string) {
+	if _, pinned := c.pinnedAt(setting.Key); pinned {
+		return FromManaged, ""
+	}
 	for _, variable := range setting.Env {
-		if os.Getenv(variable) != "" {
-			return FromEnvironment, variable
+		if value := c.Getenv(variable); strings.TrimSpace(value) != "" {
+			if _, ok := c.fromEnv(setting, variable, value); ok {
+				return FromEnvironment, variable
+			}
 		}
+	}
+	if value, ok := c.layered(setting.Key); ok {
+		if value != nil {
+			return FromFile, ""
+		}
+		return FromDefault, ""
 	}
 	store, err := c.store(setting.Key)
 	if err != nil {
 		return FromDefault, ""
 	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if store.InConfig(setting.Key) {
+	if store.holds(setting.Key) {
 		return FromFile, ""
 	}
 	return FromDefault, ""
 }
 
-// Value kept in the file under the key, nil when there is none, without looking at environment variables or defaults. Sections that come
-// and go read what they are made of with it
+// Value kept under the key, nil when there is none, without looking at environment variables or defaults: what the file of its scope holds,
+// the administrator's pins over it. Sections that come and go read what they are made of with it
 func (c *Config) Stored(key string) any {
 	key = strings.ToLower(key)
+	value := c.stored(key)
+	if pin, pinned := c.pinnedAt(key); pinned {
+		return overlay(value, pin)
+	}
+	return value
+}
+
+// Value the session's layer or the file of the key's scope holds, as written
+func (c *Config) stored(key string) any {
+	if value, ok := c.layered(key); ok {
+		return value
+	}
 	store, err := c.store(key)
 	if err != nil {
 		return nil
 	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return store.Get(key)
+	return store.get(key)
 }
 
-// Value of the key: from the first environment variable set of its setting, else the file, else the default of its setting
+// Value of the key: what the administrator pins, else the first environment variable of its setting set to more than spaces, else the file
+// with the variables its text references read from the profile's environment, else the default of its setting. A pin of keys below a table
+// setting adds them to the value the rest gives; a key below a table setting is the part of the table's value under it. A length of time is
+// the number of its unit it comes to, its default for a value that spells none
 func (c *Config) Get(key string) any {
 	key = strings.ToLower(key)
 	_, setting, known := c.Setting(key)
-	if known {
-		for _, variable := range setting.Env {
-			if value := os.Getenv(variable); value != "" {
-				return value
-			}
+	if !known {
+		if table, path, under := c.Under(key); under {
+			return Dig(c.Get(table.Key), path)
 		}
 	}
-	if value := c.Stored(key); value != nil {
-		return value
+	pin, pinned := c.pinnedAt(key)
+	_, partial := pin.(map[string]any)
+	partial = partial && (!known || setting.Kind() == Table)
+	if pinned && !partial {
+		return pinValue(setting, known, pin)
 	}
-	if known {
-		return setting.Default
+	value := func() any {
+		if known {
+			for _, variable := range setting.Env {
+				if value := c.Getenv(variable); strings.TrimSpace(value) != "" {
+					if typed, ok := c.fromEnv(setting, variable, value); ok {
+						return typed
+					}
+				}
+			}
+		}
+		if value := c.stored(key); value != nil {
+			value = c.expand(value, c.LookupEnv, func() string { return display(c.EnvPath()) })
+			if !known || setting.Kind() != Duration {
+				return value
+			}
+			if length, ok := setting.readLength(value); ok {
+				return length
+			}
+		}
+		if known {
+			return setting.DefaultValue()
+		}
+		return nil
+	}()
+	if pinned {
+		return overlay(value, pin)
 	}
-	return nil
+	return value
+}
+
+// Words a variable may set a toggle with
+var toggleWords = map[string]bool{"1": true, "on": true, "true": true, "yes": true, "y": true, "enable": true, "enabled": true,
+	"0": false, "off": false, "false": false, "no": false, "n": false, "disable": false, "disabled": false}
+
+// Value of a variable as the setting takes it: a toggle's on or off, a number's number, a length of time's number of its unit, any other's
+// text. One the setting can't take is told once and ignored, so the file or the default applies
+func (c *Config) fromEnv(setting Setting, variable, text string) (any, bool) {
+	word := strings.ToLower(strings.TrimSpace(text))
+	takes := ""
+	switch setting.Kind() {
+	case Toggle:
+		if on, ok := toggleWords[word]; ok {
+			return on, true
+		}
+		takes = "takes on or off"
+	case Number:
+		if _, fraction := setting.Default.(float64); fraction {
+			if f, err := strconv.ParseFloat(word, 64); err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) {
+				return f, true
+			}
+			takes = "takes a number"
+		} else if n, err := strconv.Atoi(word); err == nil {
+			return n, true
+		} else {
+			takes = "takes a whole number"
+		}
+	case Duration:
+		if length, ok := setting.readLength(text); ok {
+			return length, true
+		}
+		takes = "takes a length of time such as 30s or 5m"
+	default:
+		return text, true
+	}
+	if c.once("env", variable, text) {
+		slog.Warn(fmt.Sprintf("The %s environment variable is set to %q, but %s %s. It is ignored.", variable, text, setting.Key, takes))
+	}
+	return nil, false
 }
 
 func (c *Config) GetString(key string) string {
@@ -553,43 +852,94 @@ func (c *Config) GetStringSlice(key string) []string {
 	return cast.ToStringSlice(c.Get(key))
 }
 
-// Saves the value under the key in the file of its scope, nil removing the key and all under it
+// Length of time the setting under the key holds, its number counting the setting's unit, seconds for a setting that names none; zero when
+// it holds no length
+func (c *Config) GetDuration(key string) time.Duration {
+	_, setting, _ := c.Setting(key)
+	length, _ := Length(c.Get(key), setting.unit())
+	return length
+}
+
+// Whether a value decoded from YAML or JSON counts as given: true, a number other than zero, a text, list or map that is not empty, and
+// anything else but nil
+func Truthy(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return t
+	case string:
+		return t != ""
+	}
+	value := reflect.ValueOf(v)
+	switch value.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return value.Int() != 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return value.Uint() != 0
+	case reflect.Float32, reflect.Float64:
+		return value.Float() != 0
+	case reflect.Slice, reflect.Map, reflect.Array, reflect.String:
+		return value.Len() > 0
+	}
+	return true
+}
+
+// Whether a variable's text says yes: 1, true, yes or on in any case, spaces around it ignored
+func Yes(text string) bool {
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// Saves the value under the key in the settings of its scope, nil removing the key and all under it; a *LockedError when something above the
+// person decides the key, or when the administrator pins keys below it that a value other than a mapping would replace, and the refusal of a
+// config.yaml that does not read or parse rather than replacing it
 func (c *Config) Set(key string, value any) error {
 	key = strings.ToLower(key)
+	if locked := c.Lock(key); locked != nil {
+		return locked
+	}
+	if _, below := c.pinnedAt(key); below && value != nil {
+		if _, mapping := value.(map[string]any); !mapping {
+			return &LockedError{Key: key, By: ByAdministrator, Source: managedSource("config.yaml")}
+		}
+	}
 	store, err := c.store(key)
 	if err != nil {
 		return err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	path := store.ConfigFileUsed()
-	stored := file(path)
-	if err := stored.ReadInConfig(); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	return store.set(key, value)
+}
+
+// Why a write of the key can't be saved now, nil when it can: the refusal of a config.yaml of its scope that does not read or parse, which a
+// write would replace
+func (c *Config) Writable(key string) error {
+	store, err := c.store(strings.ToLower(key))
+	if err != nil {
 		return err
 	}
-	settings := stored.AllSettings()
-	parts := strings.Split(key, ".")
-	node, last := settings, len(parts)-1
-	for _, part := range parts[:last] {
-		child, ok := node[part].(map[string]any)
-		if !ok {
-			if value == nil {
-				return read(store)
-			}
-			child = map[string]any{}
-			node[part] = child
-		}
-		node = child
+	return store.writable()
+}
+
+// Whether the settings of the key's scope hold a value under it, which unsetting it removes
+func (c *Config) Holds(key string) bool {
+	store, err := c.store(strings.ToLower(key))
+	return err == nil && store.holds(strings.ToLower(key))
+}
+
+// Everything the file of a scope holds: the settings every profile shares, or the profile's own
+func (c *Config) Held(global bool) map[string]any {
+	if global {
+		return c.shared.all()
 	}
-	if value == nil {
-		delete(node, parts[last])
-	} else {
-		node[parts[last]] = value
+	store, err := c.own()
+	if err != nil {
+		return nil
 	}
-	if err := Write(path, settings); err != nil {
-		return err
-	}
-	return read(store)
+	return store.all()
 }
 
 // Writes settings to a config file at once, so a reader never sees half of them
@@ -598,40 +948,57 @@ func Write(path string, settings map[string]any) error {
 	if err := changed.MergeConfigMap(settings); err != nil {
 		return err
 	}
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	changed.SetConfigType(strings.TrimPrefix(filepath.Ext(path), "."))
+	var data bytes.Buffer
+	if err := changed.WriteConfigTo(&data); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(dir, "config.*"+filepath.Ext(path))
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := changed.WriteConfigAs(f.Name()); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), path)
-}
-
-func read(v *viper.Viper) error {
-	if v.ConfigFileUsed() == "" {
-		return nil
-	}
-	err := v.ReadInConfig()
-	var notFound viper.ConfigFileNotFoundError
-	if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.As(err, &notFound) {
-		return err
-	}
-	return nil
+	return fsx.Write(path, data.Bytes(), 0o600)
 }
 
 // Keys under one prefix, read and written by the names below it, such as the settings of one provider
 type View struct {
 	config *Config
 	prefix string
+	// Holds nothing, the profile's environment the one thing read through it
+	bare bool
+}
+
+// View of the same profile that holds nothing and reads only its environment: what an account with no fields of its own is
+func (v View) Bare() View {
+	return View{config: v.config, bare: true}
+}
+
+// Variable of the environment of the view's profile, of this process for a view of no profile
+func (v View) LookupEnv(name string) (string, bool) {
+	if v.config == nil {
+		return os.LookupEnv(name)
+	}
+	return v.config.LookupEnv(name)
+}
+
+// Every variable of the environment of the view's profile, of this process for a view of no profile
+func (v View) Environ() map[string]string {
+	if v.config == nil {
+		return Process()
+	}
+	return v.config.Environ()
+}
+
+// Profile the view reads, empty for a view of no profile
+func (v View) Profile() string {
+	if v.config == nil {
+		return ""
+	}
+	return v.config.Profile()
+}
+
+// Store the variable of the view's profile came from, empty for its .env, this process or a view of no profile
+func (v View) EnvOrigin(name string) string {
+	if v.config == nil {
+		return ""
+	}
+	return v.config.EnvOrigin(name)
 }
 
 func (c *Config) View(prefix string) View {
@@ -671,7 +1038,7 @@ func (v View) Exists() bool {
 // Value kept in the file under the name, the prefix itself for no name, without environment variables or defaults: what sections that
 // come and go read. A view of nothing holds nothing
 func (v View) Stored(name string) any {
-	if v.config == nil {
+	if v.config == nil || v.bare {
 		return nil
 	}
 	if name == "" {
@@ -681,7 +1048,7 @@ func (v View) Stored(name string) any {
 }
 
 func (v View) Get(name string) any {
-	if v.config == nil {
+	if v.config == nil || v.bare {
 		return nil
 	}
 	return v.config.Get(v.Key(name))
@@ -693,7 +1060,7 @@ func (v View) GetBool(name string) bool            { return cast.ToBool(v.Get(na
 func (v View) GetStringSlice(name string) []string { return cast.ToStringSlice(v.Get(name)) }
 
 func (v View) Set(name string, value any) error {
-	if v.config == nil {
+	if v.config == nil || v.bare {
 		return errors.New("config: nothing to keep " + name + " under")
 	}
 	return v.config.Set(v.Key(name), value)
@@ -701,8 +1068,27 @@ func (v View) Set(name string, value any) error {
 
 // Removes everything under the prefix
 func (v View) Remove() error {
-	if v.config == nil {
+	if v.config == nil || v.bare {
 		return nil
 	}
 	return v.config.Set(v.prefix, nil)
+}
+
+// Whole number a value decoded from JSON or YAML holds: an integer, a number with nothing after its point, or text of one
+func Whole(value any) (int, bool) {
+	switch v := value.(type) {
+	case float64:
+		return int(v), v == float64(int(v))
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case json.Number:
+		n, err := v.Int64()
+		return int(n), err == nil
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		return n, err == nil
+	}
+	return 0, false
 }

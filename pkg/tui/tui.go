@@ -167,6 +167,35 @@ func (k *Kit) Focused() wm.Card {
 	return focused
 }
 
+// Card that shows one session of the agent, such as a chat
+type Sessioned interface {
+	// Id of the session shown, empty before it has one
+	Session() string
+}
+
+// Sessions the windows of every space show, the focused one first
+func (k *Kit) Sessions() []string {
+	var out []string
+	add := func(card wm.Card) {
+		if shown, ok := card.(Sessioned); ok && shown.Session() != "" && !slices.Contains(out, shown.Session()) {
+			out = append(out, shown.Session())
+		}
+	}
+	add(k.Focused())
+	for _, space := range k.WM.Workspaces() {
+		for _, card := range space.Cards() {
+			if tabs, ok := card.(*wm.Tabs); ok {
+				for _, tab := range tabs.Cards() {
+					add(tab)
+				}
+				continue
+			}
+			add(card)
+		}
+	}
+	return out
+}
+
 type history struct {
 	mu      sync.Mutex
 	entries []cards.Entry

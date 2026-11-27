@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"slices"
 
 	"connectrpc.com/connect/v2"
 	"go.yaml.in/yaml/v3"
@@ -34,6 +37,17 @@ func (r *Registry) Screens(conn *connect.Client) []tui.Screen {
 	return screens
 }
 
+// Lets every registrant that holds something past the screens, such as a microphone, let go of it as the app exits, the last registered first
+func (r *Registry) Close() error {
+	var errs []error
+	for _, registrant := range slices.Backward(r.registrants) {
+		if closer, ok := registrant.(io.Closer); ok {
+			errs = append(errs, closer.Close())
+		}
+	}
+	return errors.Join(errs...)
+}
+
 type App struct {
 	Registry
 }
@@ -43,7 +57,8 @@ func New(cfg *config.Config) *App {
 	return &App{}
 }
 
-func (a *App) Run(ctx context.Context, conn *connect.Client) error {
+// Runs the screens until the person quits, then lets the registrants let go of what they hold
+func (a *App) Run(ctx context.Context, conn *connect.Client) (err error) {
 	settings := configv1connect.NewConfigServiceClient(conn)
 	get := func(key string) (string, error) {
 		response, err := settings.Get(ctx, &configv1.GetRequest{Key: key})
@@ -53,6 +68,7 @@ func (a *App) Run(ctx context.Context, conn *connect.Client) error {
 		return response.GetSetting().GetValue(), nil
 	}
 	screens := a.Screens(conn)
+	defer func() { err = errors.Join(err, a.Close()) }()
 	options := tui.Options{Settings: map[string]string{}}
 	for key, into := range map[string]any{appconfig.Skin: &options.Skin, appconfig.Keys: &options.Keys} {
 		value, err := get(key)

@@ -5,38 +5,59 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
+	"log/slog"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/nickheyer/icebath/internal/approvals"
+	approvalsconfig "github.com/nickheyer/icebath/internal/approvals/config"
+	"github.com/nickheyer/icebath/internal/checkpoints"
+	"github.com/nickheyer/icebath/internal/contexts"
+	"github.com/nickheyer/icebath/internal/models"
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
-	"github.com/nickheyer/icebath/internal/tools"
-	toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
+	"github.com/nickheyer/icebath/internal/profile"
+	"github.com/nickheyer/icebath/internal/provider"
+	"github.com/nickheyer/icebath/internal/sessions"
+	"github.com/nickheyer/icebath/internal/skills"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 )
 
+// Shows the session's title, or sets one the user chose
 func (a *Agent) Title(id, title string) (string, error) {
 	store, err := a.store()
 	if err != nil {
 		return "", err
 	}
-	if title != "" {
-		if err := store.Rename(id, title); err != nil {
+	if title = strings.TrimSpace(title); title != "" {
+		cleaned, err := sessions.SanitizeTitle(title)
+		if err != nil {
 			return "", err
 		}
-		return "Title: " + title, nil
+		if cleaned == "" {
+			return "", errors.New("Title is empty after cleanup. Please use printable characters.")
+		}
+		stored, err := store.SetTitle(a.ctx, id, cleaned, sessions.TitleUser)
+		if err != nil {
+			return "", err
+		}
+		if r, err := a.run(id); err == nil {
+			a.titled(r, stored)
+		}
+		return "session title set: " + stored, nil
 	}
-	session, err := store.Get(id)
+	session, err := store.Get(a.ctx, id)
 	if err != nil {
 		return "", err
 	}
 	if session.GetTitle() == "" {
-		return "No title yet.", nil
+		return "no title set", nil
 	}
-	return "Title: " + session.GetTitle(), nil
+	return "title: " + session.GetTitle(), nil
 }
 
+// Sends the last message the user sent again, the replies to it taken back
 func (a *Agent) Retry(id string) error {
 	r, err := a.run(id)
 	if err != nil {
@@ -47,139 +68,244 @@ func (a *Agent) Retry(id string) error {
 	if r.busy {
 		return errors.New("A reply is running. Stop it first.")
 	}
-	store, err := a.store()
+	sent, err := a.sent(r)
 	if err != nil {
 		return err
 	}
-	messages, err := store.Messages(r.id)
-	if err != nil {
-		return err
-	}
-	keep := len(messages)
-	for keep > 0 && messages[keep-1].GetRole() != sessionsv1.Role_ROLE_USER {
-		keep--
-	}
-	if keep == 0 {
+	if len(sent) == 0 {
 		return errors.New("Nothing to retry.")
 	}
-	if keep < len(messages) {
-		if err := store.Truncate(r.id, keep); err != nil {
-			return err
-		}
-		r.forget(keep)
-		r.publish(&agentv1.WatchResponse{Event: &agentv1.WatchResponse_Rewind{Rewind: &agentv1.Rewind{Messages: uint32(keep)}}})
+	last := sent[len(sent)-1]
+	if err := a.takeBack(r, last); err != nil {
+		return err
 	}
-	r.again = true
+	a.admit(r, last.GetText())
+	r.queue = append(r.queue, resent(last))
 	return a.start(r)
 }
 
+// A message the user sent as it is sent again: the text the model was sent, without the note of skill changes the turn adds again if it is
+// still news, shown as the user typed it
+func resent(message *sessionsv1.Message) queued {
+	text := skills.Unnoted(cmp.Or(message.GetSent(), message.GetText()))
+	if text == message.GetText() {
+		return queued{text: text}
+	}
+	return queued{text: text, display: message.GetText()}
+}
+
+// Files an undo hint names before it counts the rest
+const undoHintFiles = 8
+
+// Takes back the last messages the user sent and the replies to them: the line naming the files the undone turns changed, which /rollback
+// restores, empty when they changed none or snapshots don't serve the session
 func (a *Agent) Undo(id string, count int) (string, error) {
 	r, err := a.run(id)
 	if err != nil {
 		return "", err
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	return a.rewind(r, count)
+	since, err := a.rewind(r, count)
+	r.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
+	return a.undoHint(r, since), nil
 }
 
-func (a *Agent) rewind(r *run, count int) (string, error) {
+// Takes back the count's last messages the user sent and everything after the earliest of them, r.mu held: when the undone span began,
+// the time of that message or of the newest message kept when that is later
+func (a *Agent) rewind(r *run, count int) (time.Time, error) {
 	if r.busy {
-		return "", errors.New("A reply is running. Stop it first.")
+		return time.Time{}, errors.New("A reply is running. Stop it first.")
+	}
+	sent, err := a.sent(r)
+	if err != nil {
+		return time.Time{}, err
+	}
+	switch {
+	case len(sent) == 0:
+		return time.Time{}, errors.New("Nothing to undo.")
+	case len(sent) == 1 && count > 1:
+		return time.Time{}, errors.New("Only 1 message to undo.")
+	case count > len(sent):
+		return time.Time{}, fmt.Errorf("Only %d messages to undo.", len(sent))
+	}
+	target := sent[len(sent)-count]
+	since := a.spanStart(r, target)
+	if err := a.takeBack(r, target); err != nil {
+		return time.Time{}, err
+	}
+	return since, nil
+}
+
+// When a span of the session undone from the message began: the message's time, or the newest time of the messages before it when that
+// is later, summaries left out; zero when none is known
+func (a *Agent) spanStart(r *run, target *sessionsv1.Message) time.Time {
+	var since time.Time
+	if target.GetTime() != nil {
+		since = target.GetTime().AsTime()
 	}
 	store, err := a.store()
 	if err != nil {
-		return "", err
+		return since
 	}
-	messages, err := store.Messages(r.id)
+	messages, err := store.Messages(a.ctx, r.sessionID(), sessions.Model)
 	if err != nil {
-		return "", err
+		return since
 	}
-	sent := 0
+	for _, m := range messages {
+		if m.GetId() >= target.GetId() || m.GetSummary() || m.GetTime() == nil {
+			continue
+		}
+		since = laterOf(since, m.GetTime().AsTime())
+	}
+	return since
+}
+
+// Line naming the files of the session's project that changed since the span began, from the snapshot it began from, pointing at
+// /rollback; empty when none did or snapshots don't serve the session
+func (a *Agent) undoHint(r *run, since time.Time) string {
+	if since.IsZero() {
+		return ""
+	}
+	store, err := a.store()
+	if err != nil {
+		return ""
+	}
+	session, err := store.Get(a.ctx, r.sessionID())
+	if err != nil {
+		return ""
+	}
+	scope := checkpoints.For(a.settings(r), session.GetDirectory(), a.terminal)
+	if scope.Refusal != "" {
+		return ""
+	}
+	files := scope.Changed(scope.Directory, since)
+	if len(files) == 0 {
+		return ""
+	}
+	named := strings.Join(files[:min(len(files), undoHintFiles)], ", ")
+	if len(files) > undoHintFiles {
+		named += fmt.Sprintf(" +%d more", len(files)-undoHintFiles)
+	}
+	return "↶ files changed in the undone turns: " + named + ". run /rollback to see checkpoints and restore them"
+}
+
+// Messages the user sent in the session that the model sees, oldest first, r.mu held
+func (a *Agent) sent(r *run) ([]*sessionsv1.Message, error) {
+	store, err := a.store()
+	if err != nil {
+		return nil, err
+	}
+	messages, err := store.Messages(a.ctx, r.sessionID(), sessions.Model)
+	if err != nil {
+		return nil, err
+	}
+	var sent []*sessionsv1.Message
 	for _, message := range messages {
-		if message.GetRole() == sessionsv1.Role_ROLE_USER {
-			sent++
+		if message.GetRole() == sessionsv1.Role_ROLE_USER && message.GetDisplay() != "auto_continue" && message.GetDisplay() != "hidden" {
+			sent = append(sent, message)
 		}
 	}
-	switch {
-	case sent == 0:
-		return "", errors.New("Nothing to undo.")
-	case sent == 1 && count > 1:
-		return "", errors.New("Only 1 message to undo.")
-	case count > sent:
-		return "", fmt.Errorf("Only %d messages to undo.", sent)
-	}
-	for keep := len(messages) - 1; keep >= 0; keep-- {
-		if messages[keep].GetRole() != sessionsv1.Role_ROLE_USER {
-			continue
-		}
-		if count--; count > 0 {
-			continue
-		}
-		if err := store.Truncate(r.id, keep); err != nil {
-			return "", err
-		}
-		r.forget(keep)
-		r.publish(&agentv1.WatchResponse{Event: &agentv1.WatchResponse_Rewind{Rewind: &agentv1.Rewind{Messages: uint32(keep)}}})
-		return messages[keep].GetText(), nil
-	}
-	return "", nil
+	return sent, nil
 }
 
-func (a *Agent) Approve(id, scope string) error {
-	r, err := a.run(id)
+// Takes back the user's message and everything after it, telling the watchers how many of the shown messages are kept, r.mu held. A
+// message a compaction merged its summary into leaves the summary behind for the model
+func (a *Agent) takeBack(r *run, target *sessionsv1.Message) error {
+	store, err := a.store()
 	if err != nil {
 		return err
 	}
-	settings := a.settings(r)
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.approval == nil {
-		return errors.New("Nothing is waiting for approval.")
+	if _, err := store.Rewind(a.ctx, r.sessionID(), target.GetId()); err != nil {
+		return err
 	}
-	switch scope {
-	case "session":
-		r.allowed[r.approval.GetReason()] = true
-	case "always":
-		allowed := append(settings.GetStringSlice(agentconfig.ApprovalsAllowlist), r.approval.GetReason())
-		if err := settings.Set(agentconfig.ApprovalsAllowlist, allowed); err != nil {
-			return err
+	if target.GetSummary() && target.GetRole() == sessionsv1.Role_ROLE_USER {
+		if handoff := contexts.HandoffOnly(contexts.Text(target)); handoff != "" {
+			kept := &sessionsv1.Message{Role: sessionsv1.Role_ROLE_USER, Text: handoff, Summary: true, ModelOnly: true, Display: "hidden"}
+			if err := store.Append(a.ctx, r.sessionID(), sessions.Guard{}, kept); err != nil {
+				return err
+			}
 		}
 	}
-	r.answer <- nil
-	r.approval = nil
-	return nil
-}
-
-func (a *Agent) Deny(id, reason string) error {
-	r, err := a.run(id)
+	shown, err := store.Messages(a.ctx, r.sessionID(), sessions.Display)
 	if err != nil {
 		return err
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.approval == nil {
-		return errors.New("Nothing is waiting for approval.")
-	}
-	if reason = strings.TrimSpace(reason); reason != "" {
-		reason = " Their reason: " + reason
-	}
-	r.answer <- errors.New("The user denied this command." + reason)
-	r.approval = nil
+	keep := len(shown)
+	r.forget(keep)
+	r.publish(&agentv1.WatchResponse{Event: &agentv1.WatchResponse_Rewind{Rewind: &agentv1.Rewind{Messages: uint32(keep)}}})
 	return nil
 }
 
-func (a *Agent) Yolo(id string) (bool, error) {
+// Answers the session's approval prompts yes, the oldest, the one named or all of them, giving how many were answered
+func (a *Agent) Approve(id string, answer approvals.Answer) (int, error) {
+	if _, err := a.run(id); err != nil {
+		return 0, err
+	}
+	count := a.approvals.Resolve(id, answer)
+	if count == 0 {
+		return 0, errors.New("No pending command to approve.")
+	}
+	return count, nil
+}
+
+// Answers the session's approval prompts no, with the reason the user gave cut to a line the agent reads
+func (a *Agent) Deny(id string, answer approvals.Answer) (int, error) {
+	if _, err := a.run(id); err != nil {
+		return 0, err
+	}
+	answer.Choice = approvals.Deny
+	if reason := []rune(strings.TrimSpace(answer.Reason)); len(reason) > 280 {
+		answer.Reason = strings.TrimSpace(string(reason[:280]))
+	} else {
+		answer.Reason = string(reason)
+	}
+	count := a.approvals.Resolve(id, answer)
+	if count == 0 {
+		return 0, errors.New("No pending command to deny.")
+	}
+	return count, nil
+}
+
+// Turns asking before risky commands off for the session, or on again, keeping it on the session's record; says which it did
+func (a *Agent) Yolo(id string) (string, error) {
 	r, err := a.run(id)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	r.mu.Lock()
-	r.yolo = !r.yolo
-	yolo := r.yolo
-	r.mu.Unlock()
+	on := !a.approvals.Yolo(id)
+	a.setYolo(r, on)
+	return yoloText(on), nil
+}
+
+func (a *Agent) setYolo(r *run, on bool) {
+	a.approvals.SetYolo(r.sessionID(), on)
+	if store, err := a.store(); err == nil {
+		if err := store.Update(a.ctx, r.sessionID(), sessions.Change{Yolo: &on}); err != nil {
+			slog.Warn("failed to persist session yolo", "enabled", on, "session", r.sessionID(), "error", err)
+		}
+	}
 	a.changed(r)
-	return yolo, nil
+}
+
+// Asks before a slash command that deletes or resets something: whether to go ahead, and what to add to its reply
+func (a *Agent) Confirm(ctx context.Context, id, command, detail string) (bool, string, error) {
+	r, err := a.run(id)
+	if err != nil {
+		return false, "", err
+	}
+	store, err := a.store()
+	if err != nil {
+		return false, "", err
+	}
+	session, err := store.Get(ctx, id)
+	if err != nil {
+		return false, "", err
+	}
+	ok, note := a.approvals.Confirm(ctx, approvals.Context{Session: id, Config: a.settings(r), Source: session.GetSource()}, command, detail)
+	return ok, note, nil
 }
 
 func (a *Agent) Reasoning(id, level string, global bool) (string, error) {
@@ -187,9 +313,9 @@ func (a *Agent) Reasoning(id, level string, global bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	choices := strings.Join(agentconfig.Efforts[:len(agentconfig.Efforts)-1], ", ") + " or " + agentconfig.Efforts[len(agentconfig.Efforts)-1]
+	choices := strings.Join(provider.Efforts[:len(provider.Efforts)-1], ", ") + " or " + provider.Efforts[len(provider.Efforts)-1]
 	level = strings.ToLower(level)
-	if level != "" && level != "reset" && !slices.Contains(agentconfig.Efforts, level) {
+	if level != "" && level != "reset" && !slices.Contains(provider.Efforts, level) {
 		return "", fmt.Errorf("Reasoning effort must be %s.", choices)
 	}
 	if level != "" {
@@ -209,7 +335,7 @@ func (a *Agent) Reasoning(id, level string, global bool) (string, error) {
 		r.mu.Unlock()
 		a.changed(r)
 	}
-	current := a.effort(r)
+	current := a.ownEffort(r)
 	switch {
 	case level == "" && current == "":
 		return "Reasoning effort: model default. Options: " + choices + ".", nil
@@ -232,14 +358,34 @@ func (a *Agent) Model(ctx context.Context, id, model, name, effort string, reset
 	}
 	if name != "" {
 		settings := a.settings(r)
-		instance, ok := a.providers.Instance(settings, name)
+		instance, ok := a.provider(settings, name)
 		if !ok {
 			return "", fmt.Errorf("Profile %s has no provider named %s.", settings.Profile(), name)
 		}
 		name = instance.ID
 	}
-	if effort = strings.ToLower(effort); effort != "" && !slices.Contains(agentconfig.Efforts, effort) {
-		return "", fmt.Errorf("Reasoning effort must be one of: %s.", strings.Join(agentconfig.Efforts, ", "))
+	if effort = strings.ToLower(effort); effort != "" && !slices.Contains(provider.Efforts, effort) {
+		return "", fmt.Errorf("Reasoning effort must be one of: %s.", strings.Join(provider.Efforts, ", "))
+	}
+	note := ""
+	// A shortcut's name, or with no provider named one of their models, switches to the shortcut, which runs where it says
+	shortcut := false
+	if model != "" {
+		if found, ok := lookupAlias(a.settings(r), model); ok {
+			model, shortcut = found.name, true
+		} else if name == "" {
+			current, _, _ := a.route(r)
+			if found, ok := a.switchAlias(a.settings(r), current, model); ok {
+				model, shortcut = found.name, true
+			}
+		}
+	}
+	if model != "" && !shortcut {
+		verdict := a.checkModel(ctx, r, name, model)
+		if !verdict.Accepted {
+			return "", errors.New(verdict.Message)
+		}
+		note = verdict.Message
 	}
 	changed := reset || model != "" || name != "" || effort != ""
 	if global {
@@ -277,6 +423,9 @@ func (a *Agent) Model(ctx context.Context, id, model, name, effort string, reset
 	if model != "" {
 		r.model = model
 	}
+	if shortcut && name == "" {
+		r.provider = ""
+	}
 	if effort != "" {
 		r.effort = effort
 	}
@@ -292,19 +441,43 @@ func (a *Agent) Model(ctx context.Context, id, model, name, effort string, reset
 	} else {
 		fmt.Fprintf(&out, "Using `%s` on %s", route.Model, route.Provider)
 	}
-	if level := a.effort(r); level != "" {
+	if level := a.ownEffort(r); level != "" {
 		fmt.Fprintf(&out, " with %s reasoning", level)
 	}
 	if changed {
+		out.WriteString(a.modelInfo(a.settings(r), route))
+		if note != "" {
+			out.WriteString("\n\n" + note)
+		}
 		return out.String(), nil
 	}
-	if ids, ok := a.models.Models(ctx, route); ok && len(ids) > 0 {
+	if ids := a.models.Host().Catalog(ctx, a.settings(r), route, false).IDs; len(ids) > 0 {
 		out.WriteString("\n\nModels:\n\n")
 		for _, id := range ids {
 			fmt.Fprintf(&out, "- `%s`\n", id)
 		}
 	}
 	return out.String(), nil
+}
+
+// What the provider the switch lands on, the one named or the session's own, makes of the model it names; taken when the switch can't be
+// routed yet, which the switch itself then says
+func (a *Agent) checkModel(ctx context.Context, r *run, name, model string) models.Verdict {
+	settings := a.settings(r)
+	instance, ok := a.provider(settings, name)
+	if name == "" {
+		var err error
+		instance, _, err = a.route(r)
+		ok = err == nil
+	}
+	if !ok {
+		return models.Verdict{Accepted: true}
+	}
+	route, err := a.credentials.Route(instance, model)
+	if err != nil {
+		return models.Verdict{Accepted: true}
+	}
+	return a.models.Host().Validate(ctx, settings, route)
 }
 
 func (a *Agent) Status(id string) (string, error) {
@@ -316,17 +489,17 @@ func (a *Agent) Status(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	session, err := store.Get(id)
+	session, err := store.Get(a.ctx, id)
 	if err != nil {
 		return "", err
 	}
-	messages, err := store.Messages(id)
+	messages, err := store.Messages(a.ctx, id, sessions.Model)
 	if err != nil {
 		return "", err
 	}
 	_, route, routeErr := a.route(r)
 	r.mu.Lock()
-	yolo, busy, queued := r.yolo, r.busy, len(r.queue)
+	busy, waiting := r.busy, len(r.queue)
 	r.mu.Unlock()
 	var out strings.Builder
 	fmt.Fprintf(&out, "- **Session** `%s`\n- **Title** %s\n- **Directory** `%s`\n", session.GetId(), cmp.Or(session.GetTitle(), "none"), session.GetDirectory())
@@ -338,118 +511,79 @@ func (a *Agent) Status(id string) (string, error) {
 	default:
 		fmt.Fprintf(&out, "- **Model** `%s` on %s\n", route.Model, route.Provider)
 	}
-	if effort := a.effort(r); effort != "" {
+	if effort := a.ownEffort(r); effort != "" {
 		fmt.Fprintf(&out, "- **Reasoning effort** %s\n", effort)
 	}
+	r.mu.Lock()
+	if f := r.failover; f != nil && f.active.Model != "" {
+		fmt.Fprintf(&out, "- **Fallback** `%s` on %s, while %s via %s is unavailable\n", f.active.Model, f.active.Provider, f.primary.Model, f.primary.Provider)
+	}
+	r.mu.Unlock()
 	fmt.Fprintf(&out, "- **Messages** %d\n", len(messages))
+	out.WriteString(a.usageLines(r, session))
+	if a.contexts != nil {
+		out.WriteString(a.contextLines(r))
+	}
 	switch {
-	case yolo:
-		out.WriteString("- **Approvals** off for this session\n")
-	case a.settings(r).GetString(agentconfig.ApprovalsMode) == agentconfig.ApprovalsOff:
-		out.WriteString("- **Approvals** off\n")
+	case a.approvals.Launched() || a.approvals.Yolo(id):
+		out.WriteString("- **Approvals** off for this session (yolo)\n")
 	default:
-		out.WriteString("- **Approvals** on\n")
+		fmt.Fprintf(&out, "- **Approvals** %s\n", approvals.Mode(a.settings(r)))
+	}
+	if waiting := len(a.approvals.Pending(id)); waiting > 0 {
+		fmt.Fprintf(&out, "- **Waiting for approval** %d\n", waiting)
 	}
 	if busy {
-		fmt.Fprintf(&out, "- **Replying**, %d queued\n", queued)
+		fmt.Fprintf(&out, "- **Replying**, %d queued\n", waiting)
 	}
 	return out.String(), nil
 }
 
-// Shows or sets the approval mode of the profile the session runs on
-func (a *Agent) Approvals(id, mode string) (string, error) {
+// Shows the approval mode of the profile the session runs on and whether the session skips it, sets the mode for good, or with --session
+// asks or skips for this session alone, the switch /yolo flips
+func (a *Agent) Approvals(id, argument string) (string, error) {
 	r, err := a.run(id)
 	if err != nil {
 		return "", err
+	}
+	mode, session := "", false
+	for _, word := range strings.Fields(strings.ToLower(argument)) {
+		switch word {
+		case "--session":
+			session = true
+		case approvalsconfig.Manual, approvalsconfig.Smart, approvalsconfig.Off:
+			mode = word
+		default:
+			return "", errors.New("Usage: /approvals [manual|smart|off] [--session]")
+		}
 	}
 	settings := a.settings(r)
-	switch mode {
-	case "":
-	case agentconfig.ApprovalsManual, agentconfig.ApprovalsOff:
-		if err := settings.Set(agentconfig.ApprovalsMode, mode); err != nil {
-			return "", err
-		}
-	default:
-		return "", errors.New("Usage: /approvals [manual|off]")
+	current := approvals.Mode(settings)
+	switch {
+	case mode == "" && (a.approvals.Launched() || a.approvals.Yolo(id)):
+		return fmt.Sprintf("Approvals: %s, but this session runs everything without asking (/yolo).", current), nil
+	case mode == "":
+		return fmt.Sprintf("Approval mode: %s (persistent profile setting).", current), nil
+	case session:
+		on := mode == approvalsconfig.Off
+		a.setYolo(r, on)
+		return yoloText(on), nil
 	}
-	if settings.GetString(agentconfig.ApprovalsMode) == agentconfig.ApprovalsOff {
-		return "Approvals off: risky commands run without asking.", nil
+	if err := settings.Set(approvalsconfig.Mode, mode); err != nil {
+		return "", fmt.Errorf("Failed to save approval mode: %w", err)
 	}
-	return "Approvals on: risky commands ask first.", nil
+	if effective := approvals.Mode(settings); effective != mode {
+		return fmt.Sprintf("Approval mode remains %s; the requested value did not become effective.", effective), nil
+	}
+	return fmt.Sprintf("Approval mode: %s (persistent profile setting).", mode), nil
 }
 
-func (a *Agent) Diff(ctx context.Context, id, argument string) (string, error) {
-	r, err := a.run(id)
-	if err != nil {
-		return "", err
+// What /yolo says it did
+func yoloText(on bool) string {
+	if on {
+		return "⚡ YOLO mode **ON** for this session — all commands auto-approved. Use with caution."
 	}
-	store, err := a.store()
-	if err != nil {
-		return "", err
-	}
-	session, err := store.Get(id)
-	if err != nil {
-		return "", err
-	}
-	var against, paths []string
-	summary, untracked := false, true
-	for words := strings.Fields(argument); len(words) > 0; {
-		word := words[0]
-		switch words = words[1:]; {
-		case word == "--":
-			paths, words = append(paths, words...), nil
-		case word == "--stat":
-			summary = true
-		case word == "staged" && len(paths) == 0:
-			against, untracked = []string{"--cached"}, false
-		case word == "all" && len(paths) == 0:
-			against = []string{"HEAD"}
-		default:
-			paths = append(paths, word)
-		}
-	}
-	git := func(arguments ...string) (string, error) {
-		command := exec.CommandContext(ctx, "git", append(append([]string{"--no-pager", "-c", "core.quotepath=off"}, arguments...), append([]string{"--"}, paths...)...)...)
-		command.Dir = session.GetDirectory()
-		output, err := command.CombinedOutput()
-		if err != nil {
-			return "", errors.New(cmp.Or(strings.TrimSpace(string(output)), err.Error()))
-		}
-		return strings.TrimRight(string(output), "\n"), nil
-	}
-	inside := exec.CommandContext(ctx, "git", "rev-parse", "--is-inside-work-tree")
-	inside.Dir = session.GetDirectory()
-	if inside.Run() != nil {
-		return "", errors.New("Not a git repository.")
-	}
-	var parts []string
-	stat, err := git(append([]string{"diff", "--no-color", "--no-ext-diff", "--stat"}, against...)...)
-	if err != nil {
-		return "", err
-	}
-	if stat != "" {
-		parts = append(parts, "```\n"+stat+"\n```")
-	}
-	if untracked {
-		added, err := git("ls-files", "--others", "--exclude-standard")
-		if err != nil {
-			return "", err
-		}
-		if added != "" {
-			parts = append(parts, "Untracked files:\n\n```\n"+added+"\n```")
-		}
-	}
-	if !summary && stat != "" {
-		diff, err := git(append([]string{"diff", "--no-color", "--no-ext-diff"}, against...)...)
-		if err != nil {
-			return "", err
-		}
-		parts = append(parts, "```diff\n"+tools.Bound(diff, a.settings(r).GetInt(toolsconfig.OutputMaxBytes))+"\n```")
-	}
-	if len(parts) == 0 {
-		return "No changes.", nil
-	}
-	return strings.Join(parts, "\n\n"), nil
+	return "⚠️ YOLO mode **OFF** for this session — dangerous commands will require approval."
 }
 
 // Shows the profile the session runs on, or runs it on another from now on. The provider, model and effort it picked are forgotten, since
@@ -463,7 +597,9 @@ func (a *Agent) Profile(id, name string) (string, error) {
 	current, busy := r.profile, r.busy
 	r.mu.Unlock()
 	if name = strings.ToLower(strings.TrimSpace(name)); name == "" {
-		return "This session runs on profile " + current + ". Switch it with /profile <name>.", nil
+		dir := a.config.ProfileDir(current)
+		return fmt.Sprintf("Profile: %s\nHome: %s\nSwitch this session with /profile <name>.", profile.Label(current, profile.ReadMeta(dir).DisplayName),
+			profile.Tilde(dir)), nil
 	}
 	switch {
 	case name == current:
@@ -477,7 +613,7 @@ func (a *Agent) Profile(id, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := store.Move(id, name); err != nil {
+	if err := store.Move(a.ctx, id, name); err != nil {
 		return "", err
 	}
 	r.mu.Lock()

@@ -15,6 +15,7 @@ func (specs) Specs() []provider.Spec {
 	base := metaaiconfig.BaseURL
 	return []provider.Spec{{
 		Name:             metaaiconfig.Name,
+		Shape:            shape,
 		DisplayName:      metaaiconfig.Title,
 		Description:      "Muse Spark models",
 		SignupURL:        "https://developer.meta.com/ai/",
@@ -33,6 +34,7 @@ func (specs) Specs() []provider.Spec {
 		Vision:           true,
 		DefaultMaxTokens: 16384,
 		ModelsDevID:      "meta",
+		LiveFirst:        true,
 		DefaultAuxModel:  "muse-spark-1.2-contributor",
 	}}
 }

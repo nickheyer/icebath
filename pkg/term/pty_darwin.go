@@ -7,8 +7,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Opens a pseudo terminal pair through the multiplexer
-func openPty() (*os.File, *os.File, error) {
+// Opens a pseudo terminal pair through the multiplexer: its master and slave ends
+func OpenPty() (*os.File, *os.File, error) {
 	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, nil, err

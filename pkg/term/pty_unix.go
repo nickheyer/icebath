@@ -23,7 +23,7 @@ type Process struct {
 
 // Starts the command on a fresh pseudo terminal of the given size
 func startProcess(c Command, cols, rows int) (*Process, error) {
-	master, slave, err := openPty()
+	master, slave, err := OpenPty()
 	if err != nil {
 		return nil, err
 	}

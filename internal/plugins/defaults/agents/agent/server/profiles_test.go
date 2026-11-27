@@ -7,20 +7,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/internal/approvals"
+	"github.com/nickheyer/icebath/internal/auxiliary"
+	"github.com/nickheyer/icebath/internal/botdesktop"
 	"github.com/nickheyer/icebath/internal/config"
+	"github.com/nickheyer/icebath/internal/contexts"
 	"github.com/nickheyer/icebath/internal/credentials"
+	"github.com/nickheyer/icebath/internal/delegation"
+	"github.com/nickheyer/icebath/internal/hooks"
 	"github.com/nickheyer/icebath/internal/models"
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
 	agentserver "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/server"
 	sqliteconfig "github.com/nickheyer/icebath/internal/plugins/defaults/sessions/sqlite/config"
 	sqlitesessions "github.com/nickheyer/icebath/internal/plugins/defaults/sessions/sqlite/sessions"
+	"github.com/nickheyer/icebath/internal/prompt"
 	"github.com/nickheyer/icebath/internal/provider"
 	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/internal/server"
 	"github.com/nickheyer/icebath/internal/sessions"
+	"github.com/nickheyer/icebath/internal/skills"
 	"github.com/nickheyer/icebath/internal/slash"
+	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/internal/tools"
 	"github.com/nickheyer/icebath/internal/transport"
+	"github.com/nickheyer/icebath/internal/web"
+	"github.com/nickheyer/icebath/internal/worktrees"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 )
 
@@ -53,6 +64,10 @@ type client struct {
 func (c client) Route() provider.Route { return c.route }
 
 func (c client) Stream(ctx context.Context, request *provider.Request, _ provider.StreamFunc) (*provider.Response, error) {
+	// Helper model calls, such as the one that titles a session, carry no session and are answered at once
+	if request.SessionID == "" {
+		return &provider.Response{Message: &sessionsv1.Message{Role: sessionsv1.Role_ROLE_ASSISTANT, Text: `{"title": "Greeting"}`}, FinishReason: "stop"}, nil
+	}
 	w := c.wire
 	w.mu.Lock()
 	w.seen[request.SessionID] = c.route
@@ -74,7 +89,7 @@ func (c client) Stream(ctx context.Context, request *provider.Request, _ provide
 func TestSessionsOnProfilesAtOnce(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.New(dir)
-	host := sessions.New(cfg)
+	host := sessions.New(cfg, nil)
 	sqliteconfig.Register(cfg)
 	sqlitesessions.Register(&host.Registry, cfg)
 	providers := provider.New(cfg)
@@ -82,10 +97,16 @@ func TestSessionsOnProfilesAtOnce(t *testing.T) {
 	creds := credentials.New()
 	creds.Register(credentials.Keyed{Provider: "acme"})
 	wires := transport.New(cfg)
-	toolset := tools.New(cfg)
-	agentconfig.Register(cfg, providers.Options(cfg), toolset.Risks)
-	agent := agentserver.Register(&server.New(cfg).Registry, cfg, &providers.Registry, &wires.Registry, &creds.Registry, &models.New().Registry, &toolset.Registry,
-		&host.Registry, &slash.New().Registry)
+	toolset := tools.New(cfg, nil)
+	agentconfig.Register(cfg, providers.Options(cfg), func() []config.Option { return nil })
+	catalog := models.New(cfg, &providers.Registry)
+	helpers := auxiliary.New(cfg, &providers.Registry, catalog, nil)
+	checks := new(approvals.Registry)
+	approvals.New(cfg, helpers, nil).Register(checks)
+	agent := agentserver.Register(&server.New(cfg).Registry, cfg, &providers.Registry, &wires.Registry, &creds.Registry, &catalog.Registry, &toolset.Registry,
+		&host.Registry, &slash.New().Registry, &helpers.Registry, &prompt.New().Registry, checks, new(web.Registry), new(skills.Registry),
+		&contexts.New(cfg, &toolset.Registry).Registry, new(terminal.Registry), new(worktrees.Registry), new(delegation.Registry),
+		new(botdesktop.Registry), new(hooks.Registry))
 	if err := cfg.Use("default"); err != nil {
 		t.Fatal(err)
 	}
@@ -107,6 +128,10 @@ func TestSessionsOnProfilesAtOnce(t *testing.T) {
 		if err := settings.Set("providers.acme.accounts."+account+"."+providerconfig.APIKeyField, key); err != nil {
 			t.Fatal(err)
 		}
+		// A known window, else each turn probes acme.test over the network for it and the sessions reach the wire apart
+		if err := settings.Set(agentconfig.ContextLength, 128000); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := cfg.In("work").Set(agentconfig.Model, "w1"); err != nil {
 		t.Fatal(err)
@@ -117,7 +142,7 @@ func TestSessionsOnProfilesAtOnce(t *testing.T) {
 	}
 	profileOf := map[string]string{}
 	for _, profile := range []string{"default", "work", "work"} {
-		session, err := store.Create(dir, profile)
+		session, err := store.Create(context.Background(), &sessionsv1.Session{Directory: dir, Profile: profile})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -153,10 +178,17 @@ func TestSessionsOnProfilesAtOnce(t *testing.T) {
 			moved = id
 		}
 	}
-	if _, err := agent.Profile(moved, "work"); err != nil {
-		t.Fatal(err)
+	// The reply is stored and the turn settled after the provider answers, so the session may still be finishing it
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		_, err := agent.Profile(moved, "work")
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal(err)
+		}
 	}
-	if session, _ := store.Get(moved); session.GetProfile() != "work" || cfg.Profile() != "default" {
+	if session, _ := store.Get(context.Background(), moved); session.GetProfile() != "work" || cfg.Profile() != "default" {
 		t.Fatalf("moved session is on %q, profile in use %q", session.GetProfile(), cfg.Profile())
 	}
 	if _, err := agent.Profile(moved, "nowhere"); err == nil {

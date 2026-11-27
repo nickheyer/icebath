@@ -5,11 +5,13 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
 
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
+	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -32,9 +34,15 @@ type transcript struct {
 	asides    []aside
 	text      strings.Builder
 	reasoning strings.Builder
-	approval  *agentv1.Approval
+	// Approval prompts waiting, oldest first
+	approvals []*agentv1.Approval
+	questions *agentv1.Questions
 	state     *agentv1.State
 	busy      bool
+	// How far each running tool call got, by call id, until its result comes
+	progress map[string]*agentv1.Progress
+	// What the session does besides the reply, such as compacting its context; empty when nothing
+	activity string
 }
 
 type row struct {
@@ -47,13 +55,25 @@ func (t *transcript) apply(response *agentv1.WatchResponse) (taken string) {
 	case *agentv1.WatchResponse_Message:
 		t.settle()
 		t.entries = append(t.entries, entry{message: event.Message})
+		delete(t.progress, event.Message.GetToolCallId())
+	case *agentv1.WatchResponse_Progress:
+		if t.progress == nil {
+			t.progress = map[string]*agentv1.Progress{}
+		}
+		t.progress[event.Progress.GetToolCallId()] = event.Progress
 	case *agentv1.WatchResponse_Delta:
+		if event.Delta.GetRestart() {
+			t.text.Reset()
+			t.reasoning.Reset()
+		}
 		t.text.WriteString(event.Delta.GetText())
 		t.reasoning.WriteString(event.Delta.GetReasoning())
-	case *agentv1.WatchResponse_Approval:
-		if t.approval = event.Approval; event.Approval.GetCommand() == "" {
-			t.approval = nil
+	case *agentv1.WatchResponse_Questions:
+		if t.questions = event.Questions; event.Questions.GetId() == "" {
+			t.questions = nil
 		}
+	case *agentv1.WatchResponse_Approvals:
+		t.approvals = event.Approvals.GetPending()
 	case *agentv1.WatchResponse_State:
 		t.state = event.State
 	case *agentv1.WatchResponse_Notice:
@@ -61,7 +81,10 @@ func (t *transcript) apply(response *agentv1.WatchResponse) (taken string) {
 	case *agentv1.WatchResponse_Busy:
 		if t.busy = event.Busy; !t.busy {
 			t.settle()
+			t.progress, t.activity = nil, ""
 		}
+	case *agentv1.WatchResponse_Activity:
+		t.activity = event.Activity
 	case *agentv1.WatchResponse_Rewind:
 		kept := int(event.Rewind.GetMessages())
 		moved := make([]int, len(t.entries)+1)
@@ -87,7 +110,7 @@ func (t *transcript) apply(response *agentv1.WatchResponse) (taken string) {
 }
 
 func (t *transcript) replay() {
-	t.entries, t.approval, t.busy = nil, nil, false
+	t.entries, t.approvals, t.questions, t.busy, t.progress, t.activity = nil, nil, nil, false, nil, ""
 	t.text.Reset()
 	t.reasoning.Reset()
 }
@@ -99,7 +122,6 @@ func (t *transcript) note(text string) {
 func (t *transcript) settle() {
 	t.text.Reset()
 	t.reasoning.Reset()
-	t.approval = nil
 }
 
 func (t *transcript) replies() []string {
@@ -167,6 +189,40 @@ func (c *chat) paint(w int) []row {
 		}
 		return nil
 	}
+	// Reply of each entry, counted by the user messages up to it, and the newest call in each reply of a tool whose view shows that one
+	// alone, among the calls that succeeded
+	replies := make([]int, len(t.entries))
+	latest := map[string]string{}
+	for i, e := range t.entries {
+		if i > 0 {
+			replies[i] = replies[i-1]
+		}
+		if e.message.GetRole() == sessionsv1.Role_ROLE_USER {
+			replies[i]++
+		}
+		for k, tool := range e.message.GetToolCalls() {
+			if view, ok := c.view(tool.GetName()); ok && view.Latest && succeeded(t.entries[i+1:], tool) {
+				latest[fmt.Sprint(replies[i], ":", tool.GetName())] = fmt.Sprintf("%d:%d", i, k)
+			}
+		}
+	}
+	presented := func(id string, shown *toolsapp.Shown) {
+		if len(shown.Rows) == 0 {
+			rows = append(rows, row{text: ansi.Truncate(shown.Head, w, look.Glyphs.Ellipsis)})
+			return
+		}
+		open := c.open(id, shown.Open)
+		head := shown.Head
+		if !open && shown.Folded != "" {
+			head = shown.Folded
+		}
+		rows = append(rows, row{text: ansi.Truncate(render.Dim(mark(open), look)+" "+head, w, look.Glyphs.Ellipsis), fold: id})
+		if open {
+			for _, line := range shown.Rows {
+				rows = append(rows, row{text: ansi.Truncate("  "+line, w, look.Glyphs.Ellipsis)})
+			}
+		}
+	}
 	result := func(id string, message *sessionsv1.Message) {
 		lines := strings.Split(strings.TrimRight(outcome(message), "\n"), "\n")
 		if len(lines) <= preview {
@@ -181,9 +237,15 @@ func (c *chat) paint(w int) []row {
 		block(lines[:preview], message.GetFailed())
 		rows = append(rows, row{text: render.Dim(fmt.Sprintf("%s %d more lines", mark(false), len(lines)-preview), look), fold: id})
 	}
-	call := func(id string, call *sessionsv1.ToolCall, answer *sessionsv1.Message) {
+	call := func(i int, id string, call *sessionsv1.ToolCall, answer *sessionsv1.Message) {
 		tool := c.tools[call.GetName()]
 		summary, whole := arguments(call.GetArguments(), tool.GetSubject())
+		view, viewed := c.view(call.GetName())
+		made := toolsapp.Call{Arguments: call.GetArguments(), Result: answer.GetText(), Failed: answer.GetFailed(), Ended: !t.busy || replies[i] < replies[len(replies)-1],
+			Display: answer.GetShown(), Settings: c.desk.shown}
+		if viewed && view.Line != nil {
+			summary = cmp.Or(view.Line(made), summary)
+		}
 		name := render.Heading(cmp.Or(tool.GetTitle(), call.GetName()), look)
 		head := render.ToolGlyph(tool.GetIcon(), look) + " " + name
 		if answer.GetFailed() {
@@ -200,10 +262,16 @@ func (c *chat) paint(w int) []row {
 			}
 		}
 		switch {
+		case answer != nil && viewed && view.Result != nil && !answer.GetFailed():
+			if !view.Latest || latest[fmt.Sprint(replies[i], ":", call.GetName())] == id {
+				if shown := view.Result(made, max(w-2, 1), look); shown != nil {
+					presented(id+":result", shown)
+				}
+			}
 		case answer != nil:
 			result(id+":result", answer)
-		case t.busy && t.approval == nil:
-			rows = append(rows, row{text: render.Dim("Running…", look)})
+		case t.busy && len(t.approvals) == 0 && t.questions == nil:
+			rows = append(rows, row{text: ansi.Truncate(render.Dim(running(t.progress[call.GetId()]), look), w, look.Glyphs.Ellipsis)})
 		}
 	}
 	notes := t.asides
@@ -219,7 +287,10 @@ func (c *chat) paint(w int) []row {
 		id := fmt.Sprint(i)
 		switch e.message.GetRole() {
 		case sessionsv1.Role_ROLE_USER:
-			prose("> " + strings.ReplaceAll(e.message.GetText(), "\n", "\n> "))
+			// A message the agent sent itself for the model alone, such as the request to sum up at the step limit, is not shown
+			if e.message.GetDisplay() != "hidden" {
+				prose("> " + strings.ReplaceAll(e.message.GetText(), "\n", "\n> "))
+			}
 		case sessionsv1.Role_ROLE_TOOL:
 			if !answered[i] {
 				gap()
@@ -229,11 +300,12 @@ func (c *chat) paint(w int) []row {
 			if e.message.GetReasoning() != "" {
 				thinking(id+":thinking", e.message.GetReasoning())
 			}
-			if e.message.GetText() != "" {
+			// What a turn held for the hooks that rewrite replies said before its tool calls is never shown
+			if e.message.GetText() != "" && e.message.GetDisplay() != "withheld" {
 				prose(e.message.GetText())
 			}
 			for k, tool := range e.message.GetToolCalls() {
-				call(fmt.Sprintf("%s:%d", id, k), tool, answer(i, tool))
+				call(i, fmt.Sprintf("%s:%d", id, k), tool, answer(i, tool))
 			}
 		}
 	}
@@ -246,7 +318,8 @@ func (c *chat) paint(w int) []row {
 	if t.text.Len() > 0 {
 		prose(t.text.String())
 	}
-	if t.busy && t.text.Len() == 0 && t.reasoning.Len() == 0 && t.approval == nil {
+	rows = append(rows, c.spawnRows(w)...)
+	if t.busy && t.text.Len() == 0 && t.reasoning.Len() == 0 && len(t.approvals) == 0 && t.questions == nil {
 		gap()
 		rows = append(rows, row{text: render.Dim("Working…", look)})
 	}
@@ -261,6 +334,42 @@ func (c *chat) markup(text string, w int) []string {
 	lines := strings.Split(strings.Trim(c.markdown.Render(text, w, c.kit.Env.Theme), "\n"), "\n")
 	c.kept[text] = lines
 	return lines
+}
+
+// How the chat shows the calls of the tool, false when they are shown as their text
+// Line of a call still running: how far it got and what it does now, as far as its tool tells
+func running(p *agentv1.Progress) string {
+	if p == nil {
+		return "Running…"
+	}
+	line := "Running…"
+	switch {
+	case p.Total != nil && p.GetTotal() > 0:
+		line += fmt.Sprintf(" %d%%", int(math.Round(min(max(p.GetProgress()/p.GetTotal(), 0), 1)*100)))
+	case p.GetProgress() > 0:
+		line += fmt.Sprintf(" %g", p.GetProgress())
+	}
+	if message := strings.TrimSpace(p.GetMessage()); message != "" {
+		line += " · " + message
+	}
+	return line
+}
+
+func (c *chat) view(tool string) (toolsapp.View, bool) {
+	if c.desk.views == nil {
+		return toolsapp.View{}, false
+	}
+	return c.desk.views.View(tool)
+}
+
+// Whether the call has an answer among the messages after it, and the answer is not a failure
+func succeeded(after []entry, call *sessionsv1.ToolCall) bool {
+	for _, e := range after {
+		if e.message.GetRole() == sessionsv1.Role_ROLE_TOOL && e.message.GetToolCallId() == call.GetId() {
+			return !e.message.GetFailed()
+		}
+	}
+	return false
 }
 
 func (c *chat) open(id string, otherwise bool) bool {
@@ -320,4 +429,15 @@ func arguments(raw, subject string) (string, []string) {
 		whole = append(whole, strings.Split(strings.NewReplacer(`\n`, "\n", `\t`, "\t").Replace(line), "\n")...)
 	}
 	return first, whole
+}
+
+// Whether the session holds any of the conversation: a message the user sent, a reply or a tool's result
+func (t *transcript) conversed() bool {
+	for _, e := range t.entries {
+		switch e.message.GetRole() {
+		case sessionsv1.Role_ROLE_USER, sessionsv1.Role_ROLE_ASSISTANT, sessionsv1.Role_ROLE_TOOL:
+			return true
+		}
+	}
+	return false
 }

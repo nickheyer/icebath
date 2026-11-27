@@ -25,7 +25,7 @@ func (c catalog) Models(ctx context.Context, route provider.Route) ([]string, bo
 	if route.Spec != c.name {
 		return nil, false
 	}
-	data, err := models.GetJSON(ctx, target(route.BaseURL), 8*time.Second, map[string]string{"Accept": "application/json", "User-Agent": "icebath-cli/dev"})
+	data, err := models.GetJSON(ctx, target(route.BaseURL), 8*time.Second, map[string]string{"Accept": "application/json", "User-Agent": provider.UserAgent("icebath-cli")})
 	if err != nil {
 		return nil, false
 	}

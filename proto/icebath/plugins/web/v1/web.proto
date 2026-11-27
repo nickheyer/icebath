@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package icebath.plugins.web.v1;
+
+service WebService {
+  // Web backends of a profile and how each of them stands
+  rpc List(ListRequest) returns (ListResponse);
+}
+
+// One way of using a backend
+message Plan {
+  string title = 1;
+  // Price and needs in a few words, such as "free · no key"
+  string badge = 2;
+  string description = 3;
+  // Plan it pins in web.provider_tier, free or paid, empty for none
+  string tier = 4;
+  // Setting of the key it asks for, empty when it asks for none
+  string key = 5;
+  // What to ask for the key, and where to get one
+  string prompt = 6;
+  string link = 7;
+}
+
+message Backend {
+  // As web.backend names it
+  string name = 1;
+  string title = 2;
+  string description = 3;
+  // Answers searches, reads pages
+  bool search = 4;
+  bool extract = 5;
+  // Set up: its key or address set, or chosen where choosing is enough
+  bool ready = 6;
+  // Can answer on a free plan now
+  bool free = 7;
+  // Plan pinned in web.provider_tier: free, paid or auto
+  string tier = 8;
+  // Answers web_search, reads the pages of web_extract
+  bool searching = 9;
+  bool reading = 10;
+  // Takes turns with the other free backends answering, nothing being set up
+  bool rotating = 11;
+  // Used only once chosen by name
+  bool explicit = 12;
+  // Settings a person sets to use it
+  repeated string settings = 13;
+  repeated Plan plans = 14;
+}
+
+message ListRequest {
+  // Profile to read, the one in use when empty
+  string profile = 1;
+}
+
+message ListResponse {
+  repeated Backend backends = 1;
+  // Backend chosen in web.backend, web.search_backend and web.extract_backend, empty for none
+  string backend = 2;
+  string search_backend = 3;
+  string extract_backend = 4;
+  // Whether web_search and web_extract are offered
+  bool available = 5;
+  // Whether free plans may answer
+  bool free = 6;
+  // Plans pinned per backend in web.provider_tier
+  map<string, string> tiers = 7;
+}

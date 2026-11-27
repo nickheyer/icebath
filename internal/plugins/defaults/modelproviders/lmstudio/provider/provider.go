@@ -14,6 +14,8 @@ func Register(registry *provider.Registry) {
 func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               lmstudioconfig.Name,
+		Shape:              shape,
+		Carriers:           []string{"reasoning_content", "reasoning"},
 		DisplayName:        lmstudioconfig.Title,
 		BaseURL:            lmstudioconfig.BaseURL,
 		BaseURLEnv:         lmstudioconfig.BaseURLEnv,
@@ -25,6 +27,6 @@ func (specs) Specs() []provider.Spec {
 		DefaultModel:       lmstudioconfig.DefaultModel,
 		Local:              true,
 		VisionToolMessages: true,
-		ModelsDevID:        lmstudioconfig.Name,
+		ProbeAlways:        true,
 	}}
 }

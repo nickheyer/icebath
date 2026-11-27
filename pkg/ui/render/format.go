@@ -197,6 +197,8 @@ func ToolGlyph(icon string, t theme.Theme) string {
 		return g.Plan
 	case "server":
 		return g.Server
+	case "ask":
+		return g.Ask
 	}
 	return g.Tool
 }

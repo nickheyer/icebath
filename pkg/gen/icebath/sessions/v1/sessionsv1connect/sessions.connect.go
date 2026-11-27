@@ -30,10 +30,53 @@ const (
 	SessionServiceListProcedure = "/icebath.sessions.v1.SessionService/List"
 	// SessionServiceGetProcedure is the procedure name of the SessionService's Get RPC.
 	SessionServiceGetProcedure = "/icebath.sessions.v1.SessionService/Get"
+	// SessionServiceResolveProcedure is the procedure name of the SessionService's Resolve RPC.
+	SessionServiceResolveProcedure = "/icebath.sessions.v1.SessionService/Resolve"
 	// SessionServiceRenameProcedure is the procedure name of the SessionService's Rename RPC.
 	SessionServiceRenameProcedure = "/icebath.sessions.v1.SessionService/Rename"
 	// SessionServiceDeleteProcedure is the procedure name of the SessionService's Delete RPC.
 	SessionServiceDeleteProcedure = "/icebath.sessions.v1.SessionService/Delete"
+	// SessionServiceMarkProcedure is the procedure name of the SessionService's Mark RPC.
+	SessionServiceMarkProcedure = "/icebath.sessions.v1.SessionService/Mark"
+	// SessionServiceBranchProcedure is the procedure name of the SessionService's Branch RPC.
+	SessionServiceBranchProcedure = "/icebath.sessions.v1.SessionService/Branch"
+	// SessionServiceSearchProcedure is the procedure name of the SessionService's Search RPC.
+	SessionServiceSearchProcedure = "/icebath.sessions.v1.SessionService/Search"
+	// SessionServicePromptsProcedure is the procedure name of the SessionService's Prompts RPC.
+	SessionServicePromptsProcedure = "/icebath.sessions.v1.SessionService/Prompts"
+	// SessionServiceExportProcedure is the procedure name of the SessionService's Export RPC.
+	SessionServiceExportProcedure = "/icebath.sessions.v1.SessionService/Export"
+	// SessionServiceImportProcedure is the procedure name of the SessionService's Import RPC.
+	SessionServiceImportProcedure = "/icebath.sessions.v1.SessionService/Import"
+	// SessionServicePruneProcedure is the procedure name of the SessionService's Prune RPC.
+	SessionServicePruneProcedure = "/icebath.sessions.v1.SessionService/Prune"
+	// SessionServiceArchiveProcedure is the procedure name of the SessionService's Archive RPC.
+	SessionServiceArchiveProcedure = "/icebath.sessions.v1.SessionService/Archive"
+	// SessionServiceStatsProcedure is the procedure name of the SessionService's Stats RPC.
+	SessionServiceStatsProcedure = "/icebath.sessions.v1.SessionService/Stats"
+	// SessionServiceMaintainProcedure is the procedure name of the SessionService's Maintain RPC.
+	SessionServiceMaintainProcedure = "/icebath.sessions.v1.SessionService/Maintain"
+	// SessionServiceRefreshPromptsProcedure is the procedure name of the SessionService's
+	// RefreshPrompts RPC.
+	SessionServiceRefreshPromptsProcedure = "/icebath.sessions.v1.SessionService/RefreshPrompts"
+	// SessionServiceRepairPromptsProcedure is the procedure name of the SessionService's RepairPrompts
+	// RPC.
+	SessionServiceRepairPromptsProcedure = "/icebath.sessions.v1.SessionService/RepairPrompts"
+	// SessionServiceRepairRoutingProcedure is the procedure name of the SessionService's RepairRouting
+	// RPC.
+	SessionServiceRepairRoutingProcedure = "/icebath.sessions.v1.SessionService/RepairRouting"
+	// SessionServiceRepairProfilesProcedure is the procedure name of the SessionService's
+	// RepairProfiles RPC.
+	SessionServiceRepairProfilesProcedure = "/icebath.sessions.v1.SessionService/RepairProfiles"
+	// SessionServiceLostProcedure is the procedure name of the SessionService's Lost RPC.
+	SessionServiceLostProcedure = "/icebath.sessions.v1.SessionService/Lost"
+	// SessionServiceDiscardProcedure is the procedure name of the SessionService's Discard RPC.
+	SessionServiceDiscardProcedure = "/icebath.sessions.v1.SessionService/Discard"
+	// SessionServiceRetitleSkillsProcedure is the procedure name of the SessionService's RetitleSkills
+	// RPC.
+	SessionServiceRetitleSkillsProcedure = "/icebath.sessions.v1.SessionService/RetitleSkills"
+	// SessionServiceWatchProcedure is the procedure name of the SessionService's Watch RPC.
+	SessionServiceWatchProcedure = "/icebath.sessions.v1.SessionService/Watch"
 )
 
 var (
@@ -58,6 +101,13 @@ var (
 			Procedure:  SessionServiceGetProcedure,
 		}
 	})
+	sessionServiceResolveSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Resolve"),
+			Procedure:  SessionServiceResolveProcedure,
+		}
+	})
 	sessionServiceRenameSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
 			StreamType: connect.StreamTypeUnary,
@@ -72,6 +122,132 @@ var (
 			Procedure:  SessionServiceDeleteProcedure,
 		}
 	})
+	sessionServiceMarkSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Mark"),
+			Procedure:  SessionServiceMarkProcedure,
+		}
+	})
+	sessionServiceBranchSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Branch"),
+			Procedure:  SessionServiceBranchProcedure,
+		}
+	})
+	sessionServiceSearchSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Search"),
+			Procedure:  SessionServiceSearchProcedure,
+		}
+	})
+	sessionServicePromptsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Prompts"),
+			Procedure:  SessionServicePromptsProcedure,
+		}
+	})
+	sessionServiceExportSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Export"),
+			Procedure:  SessionServiceExportProcedure,
+		}
+	})
+	sessionServiceImportSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Import"),
+			Procedure:  SessionServiceImportProcedure,
+		}
+	})
+	sessionServicePruneSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Prune"),
+			Procedure:  SessionServicePruneProcedure,
+		}
+	})
+	sessionServiceArchiveSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Archive"),
+			Procedure:  SessionServiceArchiveProcedure,
+		}
+	})
+	sessionServiceStatsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Stats"),
+			Procedure:  SessionServiceStatsProcedure,
+		}
+	})
+	sessionServiceMaintainSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeServer,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Maintain"),
+			Procedure:  SessionServiceMaintainProcedure,
+		}
+	})
+	sessionServiceRefreshPromptsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("RefreshPrompts"),
+			Procedure:  SessionServiceRefreshPromptsProcedure,
+		}
+	})
+	sessionServiceRepairPromptsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("RepairPrompts"),
+			Procedure:  SessionServiceRepairPromptsProcedure,
+		}
+	})
+	sessionServiceRepairRoutingSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("RepairRouting"),
+			Procedure:  SessionServiceRepairRoutingProcedure,
+		}
+	})
+	sessionServiceRepairProfilesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("RepairProfiles"),
+			Procedure:  SessionServiceRepairProfilesProcedure,
+		}
+	})
+	sessionServiceLostSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Lost"),
+			Procedure:  SessionServiceLostProcedure,
+		}
+	})
+	sessionServiceDiscardSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Discard"),
+			Procedure:  SessionServiceDiscardProcedure,
+		}
+	})
+	sessionServiceRetitleSkillsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("RetitleSkills"),
+			Procedure:  SessionServiceRetitleSkillsProcedure,
+		}
+	})
+	sessionServiceWatchSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeServer,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Watch"),
+			Procedure:  SessionServiceWatchProcedure,
+		}
+	})
 )
 
 // SessionServiceClient is a client for the icebath.sessions.v1.SessionService service.
@@ -79,8 +255,44 @@ type SessionServiceClient interface {
 	Create(context.Context, *v1.CreateRequest) (*v1.CreateResponse, error)
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	Get(context.Context, *v1.GetRequest) (*v1.GetResponse, error)
+	// Session an id, the start of one or a title names
+	Resolve(context.Context, *v1.ResolveRequest) (*v1.ResolveResponse, error)
 	Rename(context.Context, *v1.RenameRequest) (*v1.RenameResponse, error)
 	Delete(context.Context, *v1.DeleteRequest) (*v1.DeleteResponse, error)
+	// Pins, archives or hides a session, or takes that back
+	Mark(context.Context, *v1.MarkRequest) (*v1.MarkResponse, error)
+	// Copies a session into a new one that goes its own way from there
+	Branch(context.Context, *v1.BranchRequest) (*v1.BranchResponse, error)
+	// Messages of past sessions that match words
+	Search(context.Context, *v1.SearchRequest) (*v1.SearchResponse, error)
+	// Messages the user sent in a session, newest first, for picking one to rewind to
+	Prompts(context.Context, *v1.PromptsRequest) (*v1.PromptsResponse, error)
+	// Sessions with their messages, for writing them out
+	Export(context.Context, *v1.ExportRequest) (*v1.ExportResponse, error)
+	Import(context.Context, *v1.ImportRequest) (*v1.ImportResponse, error)
+	// Deletes the sessions a filter matches, or lists them on a dry run
+	Prune(context.Context, *v1.PruneRequest) (*v1.PruneResponse, error)
+	// Archives the sessions a filter matches, or lists them on a dry run
+	Archive(context.Context, *v1.ArchiveRequest) (*v1.ArchiveResponse, error)
+	Stats(context.Context, *v1.StatsRequest) (*v1.StatsResponse, error)
+	// Work on the store itself: tidying, rebuilding the search index, repairs, recovery, its journal mode
+	Maintain(context.Context, *v1.MaintainRequest) (SessionServiceMaintainClientStream, error)
+	// Makes sessions build their system prompt again on their next turn
+	RefreshPrompts(context.Context, *v1.RefreshPromptsRequest) (*v1.RefreshPromptsResponse, error)
+	// Finds, and clears with apply, stored system prompts built with fewer tools than the session has
+	RepairPrompts(context.Context, *v1.RepairPromptsRequest) (*v1.RepairPromptsResponse, error)
+	// Finds, and settles with apply, gateway sessions that lost their routing identity
+	RepairRouting(context.Context, *v1.RepairRoutingRequest) (*v1.RepairRoutingResponse, error)
+	// Finds, and settles with apply, sessions and routing rows held under the wrong profile
+	RepairProfiles(context.Context, *v1.RepairProfilesRequest) (*v1.RepairProfilesResponse, error)
+	// Turns of a session lost when the server stopped mid-turn
+	Lost(context.Context, *v1.LostRequest) (*v1.LostResponse, error)
+	// Acknowledges lost turns so the session runs again
+	Discard(context.Context, *v1.DiscardRequest) (*v1.DiscardResponse, error)
+	// Titles again, from what the user typed, sessions whose automatic title came from the text of a skill they invoked
+	RetitleSkills(context.Context, *v1.RetitleSkillsRequest) (*v1.RetitleSkillsResponse, error)
+	// Tells the watcher each time sessions are made, changed or deleted
+	Watch(context.Context, *v1.WatchRequest) (SessionServiceWatchClientStream, error)
 }
 
 // NewSessionServiceClient constructs a client for the icebath.sessions.v1.SessionService service.
@@ -89,13 +301,89 @@ func NewSessionServiceClient(client *connect.Client) SessionServiceClient {
 	return &sessionServiceClient{client: client}
 }
 
+// SessionServiceMaintainClientStream is the client stream for the SessionService's Maintain RPC.
+type SessionServiceMaintainClientStream struct {
+	stream connect.ClientStream
+}
+
+// Receive returns the next response message from the server.
+func (s SessionServiceMaintainClientStream) Receive() (*v1.MaintainResponse, error) {
+	var res v1.MaintainResponse
+	if err := s.stream.Receive(&res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// Close releases the stream's resources. It is idempotent and is typically deferred to clean up a
+// stream abandoned before io.EOF.
+func (s SessionServiceMaintainClientStream) Close() error {
+	return s.stream.Close()
+}
+
+// SessionServiceWatchClientStream is the client stream for the SessionService's Watch RPC.
+type SessionServiceWatchClientStream struct {
+	stream connect.ClientStream
+}
+
+// Receive returns the next response message from the server.
+func (s SessionServiceWatchClientStream) Receive() (*v1.WatchResponse, error) {
+	var res v1.WatchResponse
+	if err := s.stream.Receive(&res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// Close releases the stream's resources. It is idempotent and is typically deferred to clean up a
+// stream abandoned before io.EOF.
+func (s SessionServiceWatchClientStream) Close() error {
+	return s.stream.Close()
+}
+
 // SessionServiceHandler is an implementation of the icebath.sessions.v1.SessionService service.
 type SessionServiceHandler interface {
 	Create(context.Context, *v1.CreateRequest) (*v1.CreateResponse, error)
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	Get(context.Context, *v1.GetRequest) (*v1.GetResponse, error)
+	// Session an id, the start of one or a title names
+	Resolve(context.Context, *v1.ResolveRequest) (*v1.ResolveResponse, error)
 	Rename(context.Context, *v1.RenameRequest) (*v1.RenameResponse, error)
 	Delete(context.Context, *v1.DeleteRequest) (*v1.DeleteResponse, error)
+	// Pins, archives or hides a session, or takes that back
+	Mark(context.Context, *v1.MarkRequest) (*v1.MarkResponse, error)
+	// Copies a session into a new one that goes its own way from there
+	Branch(context.Context, *v1.BranchRequest) (*v1.BranchResponse, error)
+	// Messages of past sessions that match words
+	Search(context.Context, *v1.SearchRequest) (*v1.SearchResponse, error)
+	// Messages the user sent in a session, newest first, for picking one to rewind to
+	Prompts(context.Context, *v1.PromptsRequest) (*v1.PromptsResponse, error)
+	// Sessions with their messages, for writing them out
+	Export(context.Context, *v1.ExportRequest) (*v1.ExportResponse, error)
+	Import(context.Context, *v1.ImportRequest) (*v1.ImportResponse, error)
+	// Deletes the sessions a filter matches, or lists them on a dry run
+	Prune(context.Context, *v1.PruneRequest) (*v1.PruneResponse, error)
+	// Archives the sessions a filter matches, or lists them on a dry run
+	Archive(context.Context, *v1.ArchiveRequest) (*v1.ArchiveResponse, error)
+	Stats(context.Context, *v1.StatsRequest) (*v1.StatsResponse, error)
+	// Work on the store itself: tidying, rebuilding the search index, repairs, recovery, its journal mode
+	Maintain(context.Context, *v1.MaintainRequest, SessionServiceMaintainServerStream) error
+	// Makes sessions build their system prompt again on their next turn
+	RefreshPrompts(context.Context, *v1.RefreshPromptsRequest) (*v1.RefreshPromptsResponse, error)
+	// Finds, and clears with apply, stored system prompts built with fewer tools than the session has
+	RepairPrompts(context.Context, *v1.RepairPromptsRequest) (*v1.RepairPromptsResponse, error)
+	// Finds, and settles with apply, gateway sessions that lost their routing identity
+	RepairRouting(context.Context, *v1.RepairRoutingRequest) (*v1.RepairRoutingResponse, error)
+	// Finds, and settles with apply, sessions and routing rows held under the wrong profile
+	RepairProfiles(context.Context, *v1.RepairProfilesRequest) (*v1.RepairProfilesResponse, error)
+	// Turns of a session lost when the server stopped mid-turn
+	Lost(context.Context, *v1.LostRequest) (*v1.LostResponse, error)
+	// Acknowledges lost turns so the session runs again
+	Discard(context.Context, *v1.DiscardRequest) (*v1.DiscardResponse, error)
+	// Titles again, from what the user typed, sessions whose automatic title came from the text of a skill they invoked
+	RetitleSkills(context.Context, *v1.RetitleSkillsRequest) (*v1.RetitleSkillsResponse, error)
+	// Tells the watcher each time sessions are made, changed or deleted
+	Watch(context.Context, *v1.WatchRequest, SessionServiceWatchServerStream) error
 }
 
 // RegisterSessionServiceHandler registers svc as the icebath.sessions.v1.SessionService
@@ -106,9 +394,58 @@ func RegisterSessionServiceHandler(server *connect.Server, svc SessionServiceHan
 		connect.Method{Spec: sessionServiceCreateSpec(), Handler: adapter.create},
 		connect.Method{Spec: sessionServiceListSpec(), Handler: adapter.list},
 		connect.Method{Spec: sessionServiceGetSpec(), Handler: adapter.get},
+		connect.Method{Spec: sessionServiceResolveSpec(), Handler: adapter.resolve},
 		connect.Method{Spec: sessionServiceRenameSpec(), Handler: adapter.rename},
 		connect.Method{Spec: sessionServiceDeleteSpec(), Handler: adapter.delete},
+		connect.Method{Spec: sessionServiceMarkSpec(), Handler: adapter.mark},
+		connect.Method{Spec: sessionServiceBranchSpec(), Handler: adapter.branch},
+		connect.Method{Spec: sessionServiceSearchSpec(), Handler: adapter.search},
+		connect.Method{Spec: sessionServicePromptsSpec(), Handler: adapter.prompts},
+		connect.Method{Spec: sessionServiceExportSpec(), Handler: adapter.export},
+		connect.Method{Spec: sessionServiceImportSpec(), Handler: adapter._import},
+		connect.Method{Spec: sessionServicePruneSpec(), Handler: adapter.prune},
+		connect.Method{Spec: sessionServiceArchiveSpec(), Handler: adapter.archive},
+		connect.Method{Spec: sessionServiceStatsSpec(), Handler: adapter.stats},
+		connect.Method{Spec: sessionServiceMaintainSpec(), Handler: adapter.maintain},
+		connect.Method{Spec: sessionServiceRefreshPromptsSpec(), Handler: adapter.refreshPrompts},
+		connect.Method{Spec: sessionServiceRepairPromptsSpec(), Handler: adapter.repairPrompts},
+		connect.Method{Spec: sessionServiceRepairRoutingSpec(), Handler: adapter.repairRouting},
+		connect.Method{Spec: sessionServiceRepairProfilesSpec(), Handler: adapter.repairProfiles},
+		connect.Method{Spec: sessionServiceLostSpec(), Handler: adapter.lost},
+		connect.Method{Spec: sessionServiceDiscardSpec(), Handler: adapter.discard},
+		connect.Method{Spec: sessionServiceRetitleSkillsSpec(), Handler: adapter.retitleSkills},
+		connect.Method{Spec: sessionServiceWatchSpec(), Handler: adapter.watch},
 	)
+}
+
+// SessionServiceMaintainServerStream is the server stream for the SessionService's Maintain RPC.
+type SessionServiceMaintainServerStream struct {
+	stream connect.ServerStream
+}
+
+// SendHeaders flushes the response headers without a message. The first Send does this implicitly.
+func (s SessionServiceMaintainServerStream) SendHeaders() error {
+	return s.stream.SendHeaders()
+}
+
+// Send sends a response message to the client.
+func (s SessionServiceMaintainServerStream) Send(res *v1.MaintainResponse) error {
+	return s.stream.Send(res)
+}
+
+// SessionServiceWatchServerStream is the server stream for the SessionService's Watch RPC.
+type SessionServiceWatchServerStream struct {
+	stream connect.ServerStream
+}
+
+// SendHeaders flushes the response headers without a message. The first Send does this implicitly.
+func (s SessionServiceWatchServerStream) SendHeaders() error {
+	return s.stream.SendHeaders()
+}
+
+// Send sends a response message to the client.
+func (s SessionServiceWatchServerStream) Send(res *v1.WatchResponse) error {
+	return s.stream.Send(res)
 }
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
@@ -126,12 +463,88 @@ func (UnimplementedSessionServiceHandler) Get(context.Context, *v1.GetRequest) (
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Get is not implemented")
 }
 
+func (UnimplementedSessionServiceHandler) Resolve(context.Context, *v1.ResolveRequest) (*v1.ResolveResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Resolve is not implemented")
+}
+
 func (UnimplementedSessionServiceHandler) Rename(context.Context, *v1.RenameRequest) (*v1.RenameResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Rename is not implemented")
 }
 
 func (UnimplementedSessionServiceHandler) Delete(context.Context, *v1.DeleteRequest) (*v1.DeleteResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Delete is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Mark(context.Context, *v1.MarkRequest) (*v1.MarkResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Mark is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Branch(context.Context, *v1.BranchRequest) (*v1.BranchResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Branch is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Search(context.Context, *v1.SearchRequest) (*v1.SearchResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Search is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Prompts(context.Context, *v1.PromptsRequest) (*v1.PromptsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Prompts is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Export(context.Context, *v1.ExportRequest) (*v1.ExportResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Export is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Import(context.Context, *v1.ImportRequest) (*v1.ImportResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Import is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Prune(context.Context, *v1.PruneRequest) (*v1.PruneResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Prune is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Archive(context.Context, *v1.ArchiveRequest) (*v1.ArchiveResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Archive is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Stats(context.Context, *v1.StatsRequest) (*v1.StatsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Stats is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Maintain(context.Context, *v1.MaintainRequest, SessionServiceMaintainServerStream) error {
+	return connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Maintain is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) RefreshPrompts(context.Context, *v1.RefreshPromptsRequest) (*v1.RefreshPromptsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.RefreshPrompts is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) RepairPrompts(context.Context, *v1.RepairPromptsRequest) (*v1.RepairPromptsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.RepairPrompts is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) RepairRouting(context.Context, *v1.RepairRoutingRequest) (*v1.RepairRoutingResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.RepairRouting is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) RepairProfiles(context.Context, *v1.RepairProfilesRequest) (*v1.RepairProfilesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.RepairProfiles is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Lost(context.Context, *v1.LostRequest) (*v1.LostResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Lost is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Discard(context.Context, *v1.DiscardRequest) (*v1.DiscardResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Discard is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) RetitleSkills(context.Context, *v1.RetitleSkillsRequest) (*v1.RetitleSkillsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.RetitleSkills is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Watch(context.Context, *v1.WatchRequest, SessionServiceWatchServerStream) error {
+	return connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Watch is not implemented")
 }
 
 type sessionServiceClient struct {
@@ -162,6 +575,14 @@ func (c *sessionServiceClient) Get(ctx context.Context, req *v1.GetRequest) (*v1
 	return &res, nil
 }
 
+func (c *sessionServiceClient) Resolve(ctx context.Context, req *v1.ResolveRequest) (*v1.ResolveResponse, error) {
+	var res v1.ResolveResponse
+	if err := c.client.CallUnary(ctx, sessionServiceResolveSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 func (c *sessionServiceClient) Rename(ctx context.Context, req *v1.RenameRequest) (*v1.RenameResponse, error) {
 	var res v1.RenameResponse
 	if err := c.client.CallUnary(ctx, sessionServiceRenameSpec(), req, &res); err != nil {
@@ -176,6 +597,150 @@ func (c *sessionServiceClient) Delete(ctx context.Context, req *v1.DeleteRequest
 		return nil, err
 	}
 	return &res, nil
+}
+
+func (c *sessionServiceClient) Mark(ctx context.Context, req *v1.MarkRequest) (*v1.MarkResponse, error) {
+	var res v1.MarkResponse
+	if err := c.client.CallUnary(ctx, sessionServiceMarkSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Branch(ctx context.Context, req *v1.BranchRequest) (*v1.BranchResponse, error) {
+	var res v1.BranchResponse
+	if err := c.client.CallUnary(ctx, sessionServiceBranchSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Search(ctx context.Context, req *v1.SearchRequest) (*v1.SearchResponse, error) {
+	var res v1.SearchResponse
+	if err := c.client.CallUnary(ctx, sessionServiceSearchSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Prompts(ctx context.Context, req *v1.PromptsRequest) (*v1.PromptsResponse, error) {
+	var res v1.PromptsResponse
+	if err := c.client.CallUnary(ctx, sessionServicePromptsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Export(ctx context.Context, req *v1.ExportRequest) (*v1.ExportResponse, error) {
+	var res v1.ExportResponse
+	if err := c.client.CallUnary(ctx, sessionServiceExportSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Import(ctx context.Context, req *v1.ImportRequest) (*v1.ImportResponse, error) {
+	var res v1.ImportResponse
+	if err := c.client.CallUnary(ctx, sessionServiceImportSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Prune(ctx context.Context, req *v1.PruneRequest) (*v1.PruneResponse, error) {
+	var res v1.PruneResponse
+	if err := c.client.CallUnary(ctx, sessionServicePruneSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Archive(ctx context.Context, req *v1.ArchiveRequest) (*v1.ArchiveResponse, error) {
+	var res v1.ArchiveResponse
+	if err := c.client.CallUnary(ctx, sessionServiceArchiveSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Stats(ctx context.Context, req *v1.StatsRequest) (*v1.StatsResponse, error) {
+	var res v1.StatsResponse
+	if err := c.client.CallUnary(ctx, sessionServiceStatsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Maintain(ctx context.Context, req *v1.MaintainRequest) (SessionServiceMaintainClientStream, error) {
+	stream, err := c.client.CallServerStream(ctx, sessionServiceMaintainSpec(), req)
+	if err != nil {
+		return SessionServiceMaintainClientStream{}, err
+	}
+	return SessionServiceMaintainClientStream{stream: stream}, nil
+}
+
+func (c *sessionServiceClient) RefreshPrompts(ctx context.Context, req *v1.RefreshPromptsRequest) (*v1.RefreshPromptsResponse, error) {
+	var res v1.RefreshPromptsResponse
+	if err := c.client.CallUnary(ctx, sessionServiceRefreshPromptsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) RepairPrompts(ctx context.Context, req *v1.RepairPromptsRequest) (*v1.RepairPromptsResponse, error) {
+	var res v1.RepairPromptsResponse
+	if err := c.client.CallUnary(ctx, sessionServiceRepairPromptsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) RepairRouting(ctx context.Context, req *v1.RepairRoutingRequest) (*v1.RepairRoutingResponse, error) {
+	var res v1.RepairRoutingResponse
+	if err := c.client.CallUnary(ctx, sessionServiceRepairRoutingSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) RepairProfiles(ctx context.Context, req *v1.RepairProfilesRequest) (*v1.RepairProfilesResponse, error) {
+	var res v1.RepairProfilesResponse
+	if err := c.client.CallUnary(ctx, sessionServiceRepairProfilesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Lost(ctx context.Context, req *v1.LostRequest) (*v1.LostResponse, error) {
+	var res v1.LostResponse
+	if err := c.client.CallUnary(ctx, sessionServiceLostSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Discard(ctx context.Context, req *v1.DiscardRequest) (*v1.DiscardResponse, error) {
+	var res v1.DiscardResponse
+	if err := c.client.CallUnary(ctx, sessionServiceDiscardSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) RetitleSkills(ctx context.Context, req *v1.RetitleSkillsRequest) (*v1.RetitleSkillsResponse, error) {
+	var res v1.RetitleSkillsResponse
+	if err := c.client.CallUnary(ctx, sessionServiceRetitleSkillsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *sessionServiceClient) Watch(ctx context.Context, req *v1.WatchRequest) (SessionServiceWatchClientStream, error) {
+	stream, err := c.client.CallServerStream(ctx, sessionServiceWatchSpec(), req)
+	if err != nil {
+		return SessionServiceWatchClientStream{}, err
+	}
+	return SessionServiceWatchClientStream{stream: stream}, nil
 }
 
 type sessionServiceHandler struct{ svc SessionServiceHandler }
@@ -216,6 +781,18 @@ func (h sessionServiceHandler) get(ctx context.Context, _ connect.Spec, stream c
 	return stream.Send(res)
 }
 
+func (h sessionServiceHandler) resolve(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ResolveRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Resolve(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
 func (h sessionServiceHandler) rename(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
 	var req v1.RenameRequest
 	if err := stream.Receive(&req); err != nil {
@@ -238,4 +815,212 @@ func (h sessionServiceHandler) delete(ctx context.Context, _ connect.Spec, strea
 		return err
 	}
 	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) mark(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.MarkRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Mark(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) branch(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.BranchRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Branch(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) search(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SearchRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Search(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) prompts(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PromptsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Prompts(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) export(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ExportRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Export(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) _import(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ImportRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Import(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) prune(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PruneRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Prune(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) archive(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ArchiveRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Archive(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) stats(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.StatsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Stats(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) maintain(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.MaintainRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	return h.svc.Maintain(ctx, &req, SessionServiceMaintainServerStream{stream: stream})
+}
+
+func (h sessionServiceHandler) refreshPrompts(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RefreshPromptsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RefreshPrompts(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) repairPrompts(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RepairPromptsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RepairPrompts(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) repairRouting(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RepairRoutingRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RepairRouting(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) repairProfiles(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RepairProfilesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RepairProfiles(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) lost(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.LostRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Lost(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) discard(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DiscardRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Discard(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) retitleSkills(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RetitleSkillsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RetitleSkills(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h sessionServiceHandler) watch(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.WatchRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	return h.svc.Watch(ctx, &req, SessionServiceWatchServerStream{stream: stream})
 }

@@ -14,6 +14,8 @@ func Register(registry *provider.Registry) {
 func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:            nebiustokenfactoryconfig.Name,
+		Shape:           shape,
+		Native:          provider.Unprefixed,
 		DisplayName:     nebiustokenfactoryconfig.Title,
 		Description:     "OpenAI-compatible inference",
 		SignupURL:       "https://tokenfactory.nebius.com/",
@@ -32,6 +34,5 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        nebiustokenfactoryconfig.Name,
 	}}
 }

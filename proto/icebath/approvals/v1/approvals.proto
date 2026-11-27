@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package icebath.approvals.v1;
+
+service ApprovalsService {
+  // What the approval rules would do with a command, which is never run
+  rpc Test(TestRequest) returns (TestResponse);
+  // Allowlist entries proposed from the flagged commands the user kept approving
+  rpc Suggest(SuggestRequest) returns (SuggestResponse);
+  // The allowlist and the kinds of risky action it can hold
+  rpc List(ListRequest) returns (ListResponse);
+  // Adds entries to the allowlist
+  rpc Allow(AllowRequest) returns (AllowResponse);
+  // Takes entries out of the allowlist
+  rpc Disallow(DisallowRequest) returns (DisallowResponse);
+}
+
+message TestRequest {
+  // Profile whose rules decide, the one in use when empty
+  string profile = 1;
+  string command = 2;
+  // Terminal backend the command would run on, the profile's own when empty
+  string backend = 3;
+}
+
+message TestResponse {
+  string command = 1;
+  string backend = 2;
+  // allow, ask-approval, hardline-deny or user-deny
+  string verdict = 3;
+  // 0 allow, 2 ask, 3 deny
+  int32 exit_code = 4;
+  // Rule that decided
+  string rule = 5;
+  string detail = 6;
+  // Spellings of the command the rules read
+  repeated string variants = 7;
+}
+
+message SuggestRequest {
+  string profile = 1;
+  // Days of history read, 90 when unset, every day when 0
+  optional int32 days = 2;
+  // Approvals a pattern needs to be proposed, 2 when 0
+  int32 min_count = 3;
+  // Most proposals, 20 when 0
+  int32 limit = 4;
+  // Session store read, the profile's own when empty
+  string store = 5;
+}
+
+// Entry the allowlist could hold
+message Proposal {
+  string pattern = 1;
+  // glob for a command pattern, class for a kind of risky action
+  string kind = 2;
+  int32 count = 3;
+  // Kinds of risky action the commands were flagged as
+  repeated string classes = 4;
+  // Some of the commands approved
+  repeated string examples = 5;
+}
+
+message SuggestResponse {
+  repeated Proposal proposals = 1;
+  // Days of history read, 0 for all of it
+  int32 days = 2;
+  // Entries the allowlist holds
+  int32 allowed = 3;
+}
+
+message ListRequest {
+  string profile = 1;
+}
+
+// Kind of risky action the allowlist can hold, and the tool or rule that asks about it
+message Kind {
+  string value = 1;
+  string about = 2;
+}
+
+message ListResponse {
+  repeated string allowed = 1;
+  repeated Kind kinds = 2;
+}
+
+message AllowRequest {
+  string profile = 1;
+  repeated string patterns = 2;
+}
+
+message AllowResponse {
+  // Patterns that were new
+  repeated string added = 1;
+  // Entries the allowlist holds now
+  int32 size = 2;
+}
+
+message DisallowRequest {
+  string profile = 1;
+  repeated string patterns = 2;
+}
+
+message DisallowResponse {}

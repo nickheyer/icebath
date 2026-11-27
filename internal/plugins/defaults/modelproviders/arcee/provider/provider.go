@@ -14,6 +14,7 @@ func Register(registry *provider.Registry) {
 func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               arceeconfig.Name,
+		Native:             provider.Unprefixed,
 		DisplayName:        arceeconfig.Title,
 		BaseURL:            arceeconfig.BaseURL,
 		BaseURLEnv:         arceeconfig.BaseURLEnv,
@@ -27,6 +28,6 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        arceeconfig.Name,
+		StaticModels:       []string{"trinity-large-thinking", "trinity-large-preview", "trinity-mini"},
 	}}
 }

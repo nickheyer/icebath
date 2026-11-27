@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package icebath.plugins.browser.v1;
+
+// The browser the agent's browser tools drive: a live Chromium attached over DevTools, and the user's own browser that holds their profile
+service BrowserService {
+  // The endpoint the profile's browser tools attach to, none when they launch their own browser
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // Reaches, finds or launches a debuggable browser at the address and attaches the profile's browser tools to it, each step told as it
+  // goes and the outcome last
+  rpc Connect(ConnectRequest) returns (stream ConnectEvent);
+  // Detaches the profile's browser tools from the endpoint they were attached to
+  rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
+  // Ends the browser that holds the user's own profile, so its logins can be copied for the agent
+  rpc CloseProfile(CloseProfileRequest) returns (CloseProfileResponse);
+}
+
+message StatusRequest {
+  // Profile asked about, the one in use when empty
+  string profile = 1;
+}
+
+message StatusResponse {
+  bool connected = 1;
+  // Endpoint attached, its credentials masked
+  string url = 2;
+}
+
+message ConnectRequest {
+  string profile = 1;
+  // Address of the browser, the default local debugging port when empty
+  string url = 2;
+}
+
+// One step of a connect, or its outcome
+message ConnectEvent {
+  oneof event {
+    Progress progress = 1;
+    Connected connected = 2;
+  }
+}
+
+message Progress {
+  string message = 1;
+  // info or error
+  string level = 2;
+}
+
+message Connected {
+  // Whether the browser tools are attached now
+  bool connected = 1;
+  // Endpoint attached, or the one that was tried
+  string url = 2;
+}
+
+message DisconnectRequest {
+  string profile = 1;
+}
+
+message DisconnectResponse {}
+
+message CloseProfileRequest {
+  string profile = 1;
+  // Browser whose profile is closed: chrome, chromium, brave, brave-origin or edge; the default one when empty
+  string browser = 2;
+}
+
+message CloseProfileResponse {
+  bool closed = 1;
+  string message = 2;
+}

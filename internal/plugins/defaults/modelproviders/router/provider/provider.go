@@ -27,12 +27,11 @@ func (specs) Specs() []provider.Spec {
 		KeyEnv:             []string{routerconfig.APIKeyEnv, routerconfig.RouterAPIKeyEnv},
 		Aliases:            []string{"ramp-router", "ramp", "router.com"},
 		DefaultModel:       routerconfig.DefaultModel,
-		Headers:            map[string]string{"User-Agent": "Icebath-Agent/dev"},
+		Headers:            map[string]string{"User-Agent": provider.UserAgent("Icebath-Agent")},
 		ModelListing:       true,
 		HealthCheck:        true,
 		Vision:             true,
 		VisionToolMessages: true,
-		ModelsDevID:        routerconfig.Name,
 		DefaultAuxModel:    "gpt-5.4-mini",
 	}}
 }

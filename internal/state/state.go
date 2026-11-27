@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 // File of the state of a profile, after its name
@@ -60,6 +63,19 @@ func (s *State) Delete(profile string) error {
 	return nil
 }
 
+// Keeps the state of a renamed profile under its new name
+func (s *State) Rename(old, renamed string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.Rename(s.path(old), s.path(renamed)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if s.profile == old {
+		s.profile = renamed
+	}
+	return nil
+}
+
 func (s *State) SetBackend(backend string) error {
 	if backend != "" {
 		u, err := url.Parse(backend)
@@ -86,20 +102,9 @@ func (s *State) save() error {
 	if s.profile == "" {
 		return errors.New("state: no profile is in use")
 	}
-	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+	var data bytes.Buffer
+	if err := gob.NewEncoder(&data).Encode(struct{ Backend string }{s.Backend}); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(s.dir, s.profile+suffix+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if err := gob.NewEncoder(f).Encode(struct{ Backend string }{s.Backend}); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), s.path(s.profile))
+	return fsx.Write(s.path(s.profile), data.Bytes(), 0o600)
 }

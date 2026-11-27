@@ -1,10 +1,18 @@
 package models
 
 import (
+	"context"
+	"log/slog"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dlclark/regexp2/v2"
+
+	"github.com/nickheyer/icebath/internal/config"
+	"github.com/nickheyer/icebath/internal/provider"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 // Structured catalog types that mean the row is not a chat completion
@@ -174,4 +182,190 @@ func ChatCatalogIDs(items any) []string {
 func stringOf(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+// Models a provider offers: their ids, whether they stand in for a list it could not give, and words shown beside some
+type Catalog struct {
+	IDs      []string
+	Fallback bool
+	// Such as recommended, free or default, by model id
+	Notes map[string]string
+}
+
+const (
+	catalogCache = "provider_models_cache.json"
+	// Age past which a kept catalog is fetched again, still offered meanwhile up to a week; a stand in kept only a minute
+	catalogTTL      = time.Hour
+	catalogStaleMax = 7 * 24 * time.Hour
+	catalogStandIn  = time.Minute
+)
+
+// Models the route's provider offers, kept on disk for the credential it was read with: a fresh copy as it is, a stale one while a refresh
+// runs in the background, else read now. Refresh reads it now whatever is kept
+func (m *Models) Catalog(ctx context.Context, cfg *config.Config, route provider.Route, refresh bool) Catalog {
+	s := m.of(cfg)
+	key, fp := route.Provider, fingerprint(route.APIKey+"\x00"+strings.TrimRight(route.BaseURL, "/"))
+	kept, keptOK := s.keptCatalog(key, fp)
+	if !refresh && keptOK {
+		limit := catalogTTL
+		if kept.Fallback {
+			limit = catalogStandIn
+		}
+		age := time.Since(kept.at)
+		if age < limit {
+			return kept.Catalog
+		}
+		if !kept.Fallback && age < catalogStaleMax {
+			s.background("catalog:"+key, func() {
+				if live := m.live(context.WithoutCancel(ctx), cfg, route, true); len(live.IDs) > 0 {
+					s.keepCatalog(key, fp, live)
+				}
+			})
+			return kept.Catalog
+		}
+	}
+	live := m.live(ctx, cfg, route, refresh)
+	if len(live.IDs) == 0 {
+		if keptOK {
+			return kept.Catalog
+		}
+		return live
+	}
+	if live.Fallback && keptOK && !kept.Fallback {
+		return kept.Catalog
+	}
+	s.keepCatalog(key, fp, live)
+	return live
+}
+
+type keptCatalog struct {
+	Catalog
+	at time.Time
+}
+
+func (s *state) keptCatalog(key, fp string) (keptCatalog, bool) {
+	entry, ok := readJSON(s.file(catalogCache))[key].(map[string]any)
+	if !ok || entry["fp"] != fp {
+		return keptCatalog{}, false
+	}
+	at, ok := entry["at"].(float64)
+	ids := texts(entry["models"])
+	if !ok || len(ids) == 0 {
+		return keptCatalog{}, false
+	}
+	notes := map[string]string{}
+	if raw, ok := entry["notes"].(map[string]any); ok {
+		for id, note := range raw {
+			notes[id] = text(note)
+		}
+	}
+	return keptCatalog{Catalog{IDs: WithoutGenerationModels(ids), Fallback: config.Truthy(entry["fallback"]), Notes: notes},
+		time.Unix(0, int64(at*1e9))}, true
+}
+
+func (s *state) keepCatalog(key, fp string, catalog Catalog) {
+	s.catalogs.Lock()
+	defer s.catalogs.Unlock()
+	path := s.file(catalogCache)
+	release, err := fsx.Lock(context.Background(), path+".lock", 5*time.Second)
+	if err != nil {
+		slog.Debug("Skipping model list cache update", "error", err)
+		return
+	}
+	defer release()
+	data := readJSON(path)
+	if data == nil {
+		data = map[string]any{}
+	}
+	entry := map[string]any{"fp": fp, "at": float64(time.Now().UnixNano()) / 1e9, "models": catalog.IDs}
+	if catalog.Fallback {
+		entry["fallback"] = true
+	}
+	if len(catalog.Notes) > 0 {
+		entry["notes"] = catalog.Notes
+	}
+	data[key] = entry
+	if err := writeJSON(path, data); err != nil {
+		slog.Debug("Failed to save model list cache", "error", err)
+	}
+}
+
+// Models the route's provider offers now: what its plugin makes of them, else what it lists merged with its curated models, else the
+// curated ones with what models.dev knows of the kind; generation models left out
+func (m *Models) live(ctx context.Context, cfg *config.Config, route provider.Route, refresh bool) Catalog {
+	spec := m.Spec(route)
+	if catalog, ok := m.Registry.curated(ctx, m.env(cfg, route, refresh)); ok {
+		catalog.IDs = WithoutGenerationModels(catalog.IDs)
+		return catalog
+	}
+	listed, ok := m.Registry.Models(ctx, route)
+	if !ok || len(listed) == 0 {
+		return m.Curated(cfg, route)
+	}
+	curated := spec.StaticModels
+	if len(curated) == 0 {
+		curated = spec.FallbackModels
+	}
+	ids := listed
+	switch {
+	case len(curated) == 0:
+	case spec.LiveFirst:
+		ids = Merge(listed, curated)
+	default:
+		ids = Merge(curated, listed)
+	}
+	return Catalog{IDs: WithoutGenerationModels(delisted(spec, ids))}
+}
+
+// Models the route's kind offers without asking its provider: its curated ones, after those models.dev knows when the registry describes
+// the kind better, a stand in for a list it could not give
+func (m *Models) Curated(cfg *config.Config, route provider.Route) Catalog {
+	spec := m.Spec(route)
+	ids := slices.Clone(spec.StaticModels)
+	if len(ids) == 0 {
+		ids = slices.Clone(spec.FallbackModels)
+	}
+	if spec.ModelsDevPreferred {
+		ids = Merge(m.Agentic(cfg, route, true), ids)
+	}
+	return Catalog{IDs: WithoutGenerationModels(delisted(spec, ids)), Fallback: true}
+}
+
+// Ids of the first list as they are, then those of the second not already there, case aside
+func Merge(first, second []string) []string {
+	out := slices.Clone(first)
+	seen := map[string]bool{}
+	for _, id := range first {
+		seen[strings.ToLower(id)] = true
+	}
+	for _, id := range second {
+		if !seen[strings.ToLower(id)] {
+			seen[strings.ToLower(id)] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// Ids without those the kind still lists but no longer serves
+func delisted(spec provider.Spec, ids []string) []string {
+	if len(spec.Delisted) == 0 {
+		return ids
+	}
+	return slices.DeleteFunc(slices.Clone(ids), func(id string) bool { return slices.Contains(spec.Delisted, strings.ToLower(id)) })
+}
+
+// Model a route of the kind lands on when none is picked: the catalog's default for a kind that names one, else the first it curates
+func (m *Models) DefaultModel(cfg *config.Config, route provider.Route) string {
+	if labeled := m.ManifestDefault(cfg, route.Spec); labeled != "" {
+		return labeled
+	}
+	spec := m.Spec(route)
+	if spec.CatalogDefault != "" {
+		return spec.CatalogDefault
+	}
+	if len(spec.StaticModels) > 0 {
+		return spec.StaticModels[0]
+	}
+	return ""
 }

@@ -12,6 +12,8 @@ type Command struct {
 	Usage   string
 	Help    string
 	Run     func(ctx context.Context, call *Call) (string, error)
+	// Loads a skill or a bundle of skills, listed apart from the other commands
+	Skill bool
 }
 
 type Call struct {

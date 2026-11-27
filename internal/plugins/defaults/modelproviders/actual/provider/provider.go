@@ -15,12 +15,14 @@ func (specs) Specs() []provider.Spec {
 	base := actualconfig.BaseURL
 	return []provider.Spec{{
 		Name:               actualconfig.Name,
+		Shape:              shape,
+		Efforts:            efforts,
 		DisplayName:        actualconfig.Title,
 		Description:        "Hosted inference, or a local server set as its base URL",
 		SignupURL:          "https://actual.inc",
 		BaseURL:            base,
 		BaseURLEnv:         actualconfig.BaseURLEnv,
-		ModelsURL:          provider.ModelsURL(actualconfig.NormalizeBaseURL(base)),
+		ModelsURL:          provider.ModelsURL(NormalizeBaseURL(base)),
 		Mode:               provider.ModeChatCompletions,
 		Auth:               provider.AuthAPIKey,
 		AuthType:           provider.AuthTypeAPIKey,
@@ -30,6 +32,5 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        actualconfig.Name,
 	}}
 }

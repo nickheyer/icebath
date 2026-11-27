@@ -15,6 +15,7 @@ func (specs) Specs() []provider.Spec {
 	base := openaiapiconfig.BaseURL
 	return []provider.Spec{{
 		Name:               openaiapiconfig.Name,
+		ReservedTools:      []string{"tool_search"},
 		DisplayName:        openaiapiconfig.Title,
 		BaseURL:            base,
 		BaseURLEnv:         openaiapiconfig.BaseURLEnv,
@@ -28,6 +29,11 @@ func (specs) Specs() []provider.Spec {
 		HealthCheck:        true,
 		VisionToolMessages: true,
 		ModelsDevID:        "openai",
+		ModelMetadata:      map[string]map[string]any{"gpt-6-astra": {"limit": map[string]any{"context": float64(1_050_000), "output": float64(128_000)}, "modalities": map[string]any{"input": []any{"text", "image"}, "output": []any{"text"}}, "tool_call": true, "reasoning": true, "family": "gpt-6"}},
+		Prices:             prices,
+		TierPrices:         map[string]map[string]provider.Price{"ultrafast": ultrafast},
+		ListPrices:         "openai.com",
+		Billing:            []provider.Billing{{Label: "OpenAI", URL: "https://platform.openai.com/settings/organization/billing"}},
 		StaticModels: []string{
 			"gpt-6.1-sol", "gpt-6.1-sol-pro", "gpt-6-sol", "gpt-6-sol-pro", "gpt-6-luna", "gpt-6-luna-pro",
 			"gpt-5.6-sol", "gpt-5.6-sol-pro", "gpt-5.6-terra", "gpt-5.6-terra-pro", "gpt-5.6-luna",

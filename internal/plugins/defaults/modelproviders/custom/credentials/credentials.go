@@ -17,5 +17,5 @@ func (source) Credential(account credentials.Account) (credentials.Credential, b
 	if account.Spec() != customconfig.Name {
 		return credentials.Credential{}, false
 	}
-	return credentials.Lookup(account.Fields, providerconfig.APIKeyField, account.Provider.Spec.KeyEnv...)
+	return account.Lookup(providerconfig.APIKeyField, account.Provider.Spec.KeyEnv...)
 }

@@ -41,6 +41,22 @@ const (
 	ProviderServiceRemoveAccountProcedure = "/icebath.provider.v1.ProviderService/RemoveAccount"
 	// ProviderServiceUseAccountProcedure is the procedure name of the ProviderService's UseAccount RPC.
 	ProviderServiceUseAccountProcedure = "/icebath.provider.v1.ProviderService/UseAccount"
+	// ProviderServiceUsageProcedure is the procedure name of the ProviderService's Usage RPC.
+	ProviderServiceUsageProcedure = "/icebath.provider.v1.ProviderService/Usage"
+	// ProviderServiceRenewProcedure is the procedure name of the ProviderService's Renew RPC.
+	ProviderServiceRenewProcedure = "/icebath.provider.v1.ProviderService/Renew"
+	// ProviderServiceResetProcedure is the procedure name of the ProviderService's Reset RPC.
+	ProviderServiceResetProcedure = "/icebath.provider.v1.ProviderService/Reset"
+	// ProviderServiceMoveAccountProcedure is the procedure name of the ProviderService's MoveAccount
+	// RPC.
+	ProviderServiceMoveAccountProcedure = "/icebath.provider.v1.ProviderService/MoveAccount"
+	// ProviderServiceRenameAccountProcedure is the procedure name of the ProviderService's
+	// RenameAccount RPC.
+	ProviderServiceRenameAccountProcedure = "/icebath.provider.v1.ProviderService/RenameAccount"
+	// ProviderServiceStatusProcedure is the procedure name of the ProviderService's Status RPC.
+	ProviderServiceStatusProcedure = "/icebath.provider.v1.ProviderService/Status"
+	// ProviderServiceKeepKeyProcedure is the procedure name of the ProviderService's KeepKey RPC.
+	ProviderServiceKeepKeyProcedure = "/icebath.provider.v1.ProviderService/KeepKey"
 )
 
 var (
@@ -100,6 +116,55 @@ var (
 			Procedure:  ProviderServiceUseAccountProcedure,
 		}
 	})
+	providerServiceUsageSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("Usage"),
+			Procedure:  ProviderServiceUsageProcedure,
+		}
+	})
+	providerServiceRenewSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("Renew"),
+			Procedure:  ProviderServiceRenewProcedure,
+		}
+	})
+	providerServiceResetSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("Reset"),
+			Procedure:  ProviderServiceResetProcedure,
+		}
+	})
+	providerServiceMoveAccountSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("MoveAccount"),
+			Procedure:  ProviderServiceMoveAccountProcedure,
+		}
+	})
+	providerServiceRenameAccountSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("RenameAccount"),
+			Procedure:  ProviderServiceRenameAccountProcedure,
+		}
+	})
+	providerServiceStatusSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("Status"),
+			Procedure:  ProviderServiceStatusProcedure,
+		}
+	})
+	providerServiceKeepKeySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("KeepKey"),
+			Procedure:  ProviderServiceKeepKeyProcedure,
+		}
+	})
 )
 
 // ProviderServiceClient is a client for the icebath.provider.v1.ProviderService service.
@@ -114,6 +179,19 @@ type ProviderServiceClient interface {
 	AddAccount(context.Context, *v1.AddAccountRequest) (*v1.AddAccountResponse, error)
 	RemoveAccount(context.Context, *v1.RemoveAccountRequest) (*v1.RemoveAccountResponse, error)
 	UseAccount(context.Context, *v1.UseAccountRequest) (*v1.UseAccountResponse, error)
+	// What the provider says the account in use may still spend
+	Usage(context.Context, *v1.UsageRequest) (*v1.UsageResponse, error)
+	// Renews the sign-in of an account now, clearing a limit its old token ran into
+	Renew(context.Context, *v1.RenewRequest) (*v1.RenewResponse, error)
+	// Forgets the limits accounts of a provider ran into, of one account or of all of them
+	Reset(context.Context, *v1.ResetRequest) (*v1.ResetResponse, error)
+	// Moves an account to a place in the order the provider's accounts are tried
+	MoveAccount(context.Context, *v1.MoveAccountRequest) (*v1.MoveAccountResponse, error)
+	RenameAccount(context.Context, *v1.RenameAccountRequest) (*v1.RenameAccountResponse, error)
+	// Whether a provider is signed in, with what and as whom
+	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
+	// Moves the key an account reads from an environment variable into the account itself
+	KeepKey(context.Context, *v1.KeepKeyRequest) (*v1.KeepKeyResponse, error)
 }
 
 // NewProviderServiceClient constructs a client for the icebath.provider.v1.ProviderService service.
@@ -134,6 +212,19 @@ type ProviderServiceHandler interface {
 	AddAccount(context.Context, *v1.AddAccountRequest) (*v1.AddAccountResponse, error)
 	RemoveAccount(context.Context, *v1.RemoveAccountRequest) (*v1.RemoveAccountResponse, error)
 	UseAccount(context.Context, *v1.UseAccountRequest) (*v1.UseAccountResponse, error)
+	// What the provider says the account in use may still spend
+	Usage(context.Context, *v1.UsageRequest) (*v1.UsageResponse, error)
+	// Renews the sign-in of an account now, clearing a limit its old token ran into
+	Renew(context.Context, *v1.RenewRequest) (*v1.RenewResponse, error)
+	// Forgets the limits accounts of a provider ran into, of one account or of all of them
+	Reset(context.Context, *v1.ResetRequest) (*v1.ResetResponse, error)
+	// Moves an account to a place in the order the provider's accounts are tried
+	MoveAccount(context.Context, *v1.MoveAccountRequest) (*v1.MoveAccountResponse, error)
+	RenameAccount(context.Context, *v1.RenameAccountRequest) (*v1.RenameAccountResponse, error)
+	// Whether a provider is signed in, with what and as whom
+	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
+	// Moves the key an account reads from an environment variable into the account itself
+	KeepKey(context.Context, *v1.KeepKeyRequest) (*v1.KeepKeyResponse, error)
 }
 
 // RegisterProviderServiceHandler registers svc as the icebath.provider.v1.ProviderService
@@ -149,6 +240,13 @@ func RegisterProviderServiceHandler(server *connect.Server, svc ProviderServiceH
 		connect.Method{Spec: providerServiceAddAccountSpec(), Handler: adapter.addAccount},
 		connect.Method{Spec: providerServiceRemoveAccountSpec(), Handler: adapter.removeAccount},
 		connect.Method{Spec: providerServiceUseAccountSpec(), Handler: adapter.useAccount},
+		connect.Method{Spec: providerServiceUsageSpec(), Handler: adapter.usage},
+		connect.Method{Spec: providerServiceRenewSpec(), Handler: adapter.renew},
+		connect.Method{Spec: providerServiceResetSpec(), Handler: adapter.reset},
+		connect.Method{Spec: providerServiceMoveAccountSpec(), Handler: adapter.moveAccount},
+		connect.Method{Spec: providerServiceRenameAccountSpec(), Handler: adapter.renameAccount},
+		connect.Method{Spec: providerServiceStatusSpec(), Handler: adapter.status},
+		connect.Method{Spec: providerServiceKeepKeySpec(), Handler: adapter.keepKey},
 	)
 }
 
@@ -185,6 +283,34 @@ func (UnimplementedProviderServiceHandler) RemoveAccount(context.Context, *v1.Re
 
 func (UnimplementedProviderServiceHandler) UseAccount(context.Context, *v1.UseAccountRequest) (*v1.UseAccountResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.UseAccount is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) Usage(context.Context, *v1.UsageRequest) (*v1.UsageResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Usage is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) Renew(context.Context, *v1.RenewRequest) (*v1.RenewResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Renew is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) Reset(context.Context, *v1.ResetRequest) (*v1.ResetResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Reset is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) MoveAccount(context.Context, *v1.MoveAccountRequest) (*v1.MoveAccountResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.MoveAccount is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) RenameAccount(context.Context, *v1.RenameAccountRequest) (*v1.RenameAccountResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.RenameAccount is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Status is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) KeepKey(context.Context, *v1.KeepKeyRequest) (*v1.KeepKeyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.KeepKey is not implemented")
 }
 
 type providerServiceClient struct {
@@ -250,6 +376,62 @@ func (c *providerServiceClient) RemoveAccount(ctx context.Context, req *v1.Remov
 func (c *providerServiceClient) UseAccount(ctx context.Context, req *v1.UseAccountRequest) (*v1.UseAccountResponse, error) {
 	var res v1.UseAccountResponse
 	if err := c.client.CallUnary(ctx, providerServiceUseAccountSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) Usage(ctx context.Context, req *v1.UsageRequest) (*v1.UsageResponse, error) {
+	var res v1.UsageResponse
+	if err := c.client.CallUnary(ctx, providerServiceUsageSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) Renew(ctx context.Context, req *v1.RenewRequest) (*v1.RenewResponse, error) {
+	var res v1.RenewResponse
+	if err := c.client.CallUnary(ctx, providerServiceRenewSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) Reset(ctx context.Context, req *v1.ResetRequest) (*v1.ResetResponse, error) {
+	var res v1.ResetResponse
+	if err := c.client.CallUnary(ctx, providerServiceResetSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) MoveAccount(ctx context.Context, req *v1.MoveAccountRequest) (*v1.MoveAccountResponse, error) {
+	var res v1.MoveAccountResponse
+	if err := c.client.CallUnary(ctx, providerServiceMoveAccountSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) RenameAccount(ctx context.Context, req *v1.RenameAccountRequest) (*v1.RenameAccountResponse, error) {
+	var res v1.RenameAccountResponse
+	if err := c.client.CallUnary(ctx, providerServiceRenameAccountSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) Status(ctx context.Context, req *v1.StatusRequest) (*v1.StatusResponse, error) {
+	var res v1.StatusResponse
+	if err := c.client.CallUnary(ctx, providerServiceStatusSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) KeepKey(ctx context.Context, req *v1.KeepKeyRequest) (*v1.KeepKeyResponse, error) {
+	var res v1.KeepKeyResponse
+	if err := c.client.CallUnary(ctx, providerServiceKeepKeySpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -347,6 +529,90 @@ func (h providerServiceHandler) useAccount(ctx context.Context, _ connect.Spec, 
 		return err
 	}
 	res, err := h.svc.UseAccount(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) usage(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.UsageRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Usage(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) renew(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RenewRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Renew(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) reset(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ResetRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Reset(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) moveAccount(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.MoveAccountRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.MoveAccount(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) renameAccount(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RenameAccountRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RenameAccount(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) status(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.StatusRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Status(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) keepKey(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.KeepKeyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.KeepKey(ctx, &req)
 	if err != nil {
 		return err
 	}

@@ -8,8 +8,44 @@ service SessionService {
   rpc Create(CreateRequest) returns (CreateResponse);
   rpc List(ListRequest) returns (ListResponse);
   rpc Get(GetRequest) returns (GetResponse);
+  // Session an id, the start of one or a title names
+  rpc Resolve(ResolveRequest) returns (ResolveResponse);
   rpc Rename(RenameRequest) returns (RenameResponse);
   rpc Delete(DeleteRequest) returns (DeleteResponse);
+  // Pins, archives or hides a session, or takes that back
+  rpc Mark(MarkRequest) returns (MarkResponse);
+  // Copies a session into a new one that goes its own way from there
+  rpc Branch(BranchRequest) returns (BranchResponse);
+  // Messages of past sessions that match words
+  rpc Search(SearchRequest) returns (SearchResponse);
+  // Messages the user sent in a session, newest first, for picking one to rewind to
+  rpc Prompts(PromptsRequest) returns (PromptsResponse);
+  // Sessions with their messages, for writing them out
+  rpc Export(ExportRequest) returns (ExportResponse);
+  rpc Import(ImportRequest) returns (ImportResponse);
+  // Deletes the sessions a filter matches, or lists them on a dry run
+  rpc Prune(PruneRequest) returns (PruneResponse);
+  // Archives the sessions a filter matches, or lists them on a dry run
+  rpc Archive(ArchiveRequest) returns (ArchiveResponse);
+  rpc Stats(StatsRequest) returns (StatsResponse);
+  // Work on the store itself: tidying, rebuilding the search index, repairs, recovery, its journal mode
+  rpc Maintain(MaintainRequest) returns (stream MaintainResponse);
+  // Makes sessions build their system prompt again on their next turn
+  rpc RefreshPrompts(RefreshPromptsRequest) returns (RefreshPromptsResponse);
+  // Finds, and clears with apply, stored system prompts built with fewer tools than the session has
+  rpc RepairPrompts(RepairPromptsRequest) returns (RepairPromptsResponse);
+  // Finds, and settles with apply, gateway sessions that lost their routing identity
+  rpc RepairRouting(RepairRoutingRequest) returns (RepairRoutingResponse);
+  // Finds, and settles with apply, sessions and routing rows held under the wrong profile
+  rpc RepairProfiles(RepairProfilesRequest) returns (RepairProfilesResponse);
+  // Turns of a session lost when the server stopped mid-turn
+  rpc Lost(LostRequest) returns (LostResponse);
+  // Acknowledges lost turns so the session runs again
+  rpc Discard(DiscardRequest) returns (DiscardResponse);
+  // Titles again, from what the user typed, sessions whose automatic title came from the text of a skill they invoked
+  rpc RetitleSkills(RetitleSkillsRequest) returns (RetitleSkillsResponse);
+  // Tells the watcher each time sessions are made, changed or deleted
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
 }
 
 enum Role {
@@ -20,14 +56,85 @@ enum Role {
   ROLE_SYSTEM = 4;
 }
 
+// Tokens and money a session spent
+message Usage {
+  int64 input = 1;
+  int64 output = 2;
+  int64 cache_read = 3;
+  int64 cache_write = 4;
+  int64 reasoning = 5;
+  int64 api_calls = 6;
+  double estimated_cost = 7;
+  double actual_cost = 8;
+  string cost_status = 9;
+  string cost_source = 10;
+  string pricing_version = 11;
+}
+
+// Where a session of a messaging gateway talks: the chat and the person
+message Peer {
+  string user_id = 1;
+  // Key the gateway routes the chat's messages by
+  string session_key = 2;
+  string chat_id = 3;
+  string chat_type = 4;
+  string thread_id = 5;
+  string display_name = 6;
+  // JSON of where the session came from
+  string origin = 7;
+}
+
 message Session {
   string id = 1;
   string title = 2;
+  // Working directory
   string directory = 3;
   google.protobuf.Timestamp created = 4;
+  // Last activity
   google.protobuf.Timestamp updated = 5;
   // Profile the session runs on: its providers, accounts and settings
   string profile = 6;
+  // Surface that started it, such as "tui", "cli", "cron", "subagent" or a messaging platform
+  string source = 7;
+  // Session this one continues or was branched from
+  string parent_id = 8;
+  // Who set the title: "derived", "llm" or "user"
+  string title_source = 9;
+  google.protobuf.Timestamp ended = 10;
+  // Why it ended, such as "new_session", "compression" or "startup_orphan_reap"
+  string end_reason = 11;
+  int64 messages = 12;
+  int64 tool_calls = 13;
+  string model = 14;
+  string provider = 15;
+  string base_url = 16;
+  Usage usage = 17;
+  string git_branch = 18;
+  string git_root = 19;
+  bool pinned = 20;
+  bool archived = 21;
+  bool hidden = 22;
+  // Archived by the idle sweep rather than by hand
+  bool auto_archived = 23;
+  // Start of the first message the user sent, filled by listings
+  string preview = 24;
+  google.protobuf.Timestamp read = 25;
+  int64 rewinds = 26;
+  Peer peer = 27;
+  // What the session is doing right now, such as a tool running
+  string activity = 28;
+  // How its last turn went: "complete", "interrupted", "error" or "empty", filled by listings that ask
+  string status = 29;
+  // Session it was branched from, empty for one not branched
+  string branched_from = 30;
+  // Session that delegated it, empty for one no agent started
+  string delegated_from = 31;
+  // Approvals are off for the session
+  bool yolo = 32;
+  // Settings of the model the session picked, as JSON
+  string model_config = 33;
+  // Surface that made it when it is shown under another source
+  string created_source = 34;
 }
 
 message ToolCall {
@@ -44,22 +151,120 @@ message Message {
   string tool_call_id = 5;
   bool failed = 6;
   map<string, bytes> carriers = 7;
+  // Images or videos the message carries, such as a picture a tool loaded for the model to see
+  repeated Media media = 8;
+  // Row of the message in the store, 0 before it is stored
+  int64 id = 9;
+  google.protobuf.Timestamp time = 10;
+  // Tool a result is of
+  string tool_name = 11;
+  string finish_reason = 12;
+  int64 tokens = 13;
+  // Durable id kept across copies, branches and compaction
+  string uid = 14;
+  // Summarized away: still shown, no longer sent to the model
+  bool compacted = 15;
+  // Summary of the messages compaction folded away
+  bool summary = 16;
+  // How the transcript shows it, such as "hidden" or "steer"; empty for the usual way
+  string display = 17;
+  // Exact text sent to the model when it differed from text
+  string sent = 18;
+  // Uids of the messages a summary took the place of
+  repeated string absorbed = 19;
+  // Id of the message on the messaging platform it came from or went to
+  string platform_id = 20;
+  // Of a tool call the model sees, never shown to the person
+  bool model_only = 21;
+  // Taken back by an undo or a rewind: kept in the store, sent to no model and shown to no one
+  bool removed = 22;
+  // What the person is shown of a tool result in place of its text, such as the change a write made; never sent to a model
+  string shown = 23;
+}
+
+// Image or video sent to a model with a message
+message Media {
+  string mime_type = 1;
+  bytes data = 2;
+}
+
+// Which sessions a listing, prune, archive or export takes. Unset fields match every session
+message Filter {
+  int32 limit = 1;
+  int32 offset = 2;
+  string source = 3;
+  // Sources left out
+  repeated string exclude_sources = 4;
+  // Working directory at or under this one
+  string directory = 5;
+  // Git repo root or directory containing these words, or whose last part is them
+  string workspace = 6;
+  // Words the id, title or first message holds
+  string search = 7;
+  string profile = 8;
+  bool include_archived = 9;
+  bool include_hidden = 10;
+  // Sessions delegated by another session's agent
+  bool include_children = 11;
+  // Sessions with no messages
+  bool include_empty = 12;
+  bool only_pinned = 13;
+  bool only_archived = 14;
+  // Sessions not ended yet, for archive; prune never deletes one
+  bool include_open = 15;
+  bool include_pinned = 16;
+  // Last active before or at and after these
+  google.protobuf.Timestamp active_before = 17;
+  google.protobuf.Timestamp active_after = 18;
+  google.protobuf.Timestamp started_before = 19;
+  google.protobuf.Timestamp started_after = 20;
+  string title = 21;
+  string end_reason = 22;
+  optional int64 min_messages = 23;
+  optional int64 max_messages = 24;
+  string model = 25;
+  string provider = 26;
+  string user_id = 27;
+  string chat_id = 28;
+  string chat_type = 29;
+  string branch = 30;
+  optional int64 min_tokens = 31;
+  optional int64 max_tokens = 32;
+  optional double min_cost = 33;
+  optional double max_cost = 34;
+  optional int64 min_tool_calls = 35;
+  optional int64 max_tool_calls = 36;
+  repeated string ids = 37;
+  // Fill each session's status from its last message
+  bool status = 38;
+  // Keyed gateway sessions opened and never used, for prune
+  bool never_active = 39;
+  // Newest first by start rather than by last activity
+  bool by_start = 40;
 }
 
 message CreateRequest {
   string directory = 1;
   // Profile the session runs on, the one in use when empty
   string profile = 2;
+  // Surface that starts it, "tui" when empty
+  string source = 3;
+  string title = 4;
+  string parent_id = 5;
 }
 
 message CreateResponse {
   Session session = 1;
 }
 
-message ListRequest {}
+message ListRequest {
+  Filter filter = 1;
+}
 
 message ListResponse {
   repeated Session sessions = 1;
+  // More match than the limit let through
+  bool more = 2;
 }
 
 message GetRequest {
@@ -71,15 +276,384 @@ message GetResponse {
   repeated Message messages = 2;
 }
 
+message ResolveRequest {
+  string ref = 1;
+  // Profile whose titles the ref may name, the active one when empty
+  string profile = 2;
+  // Follow compression to the newest session continuing the one named, which a resume picks up
+  bool tip = 3;
+}
+
+message ResolveResponse {
+  Session session = 1;
+}
+
 message RenameRequest {
   string id = 1;
   string title = 2;
 }
 
-message RenameResponse {}
+message RenameResponse {
+  string title = 1;
+}
 
 message DeleteRequest {
   string id = 1;
 }
 
-message DeleteResponse {}
+message DeleteResponse {
+  // Every session deleted: the one asked for, those it continued and those it delegated to
+  repeated string ids = 1;
+}
+
+message MarkRequest {
+  string id = 1;
+  optional bool pinned = 2;
+  optional bool archived = 3;
+  optional bool hidden = 4;
+  // Marks it read now
+  bool read = 5;
+}
+
+message MarkResponse {
+  Session session = 1;
+}
+
+message BranchRequest {
+  string id = 1;
+  // Title of the branch; the next numbered one of the session's when empty
+  string title = 2;
+  // Copies the messages before this one, every message for 0
+  int64 before = 3;
+}
+
+message BranchResponse {
+  Session session = 1;
+}
+
+message SearchRequest {
+  string query = 1;
+  repeated string roles = 2;
+  repeated string sources = 3;
+  repeated string exclude_sources = 4;
+  int32 limit = 5;
+  int32 offset = 6;
+  // "newest", "oldest", or empty for relevance
+  string sort = 7;
+  google.protobuf.Timestamp after = 8;
+  google.protobuf.Timestamp before = 9;
+  string profile = 10;
+}
+
+// Message matching a search
+message Hit {
+  int64 id = 1;
+  string session_id = 2;
+  Role role = 3;
+  // Words around the match, the match between >>> and <<<
+  string snippet = 4;
+  google.protobuf.Timestamp time = 5;
+  string tool_name = 6;
+  string source = 7;
+  string model = 8;
+  google.protobuf.Timestamp session_started = 9;
+}
+
+message SearchResponse {
+  repeated Hit hits = 1;
+}
+
+message PromptsRequest {
+  string id = 1;
+  int32 limit = 2;
+}
+
+message Prompt {
+  int64 id = 1;
+  google.protobuf.Timestamp time = 2;
+  string preview = 3;
+  // Whole text the user sent
+  string text = 4;
+  // Carries images or other media besides its text, so it can't be sent again as text
+  bool media = 5;
+  // Id of the last message before it the model saw, which a branch from before it copies through; 0 when it is the first
+  int64 through = 6;
+}
+
+message PromptsResponse {
+  repeated Prompt prompts = 1;
+}
+
+message ExportRequest {
+  Filter filter = 1;
+  // Whole compression lineages of the sessions rather than one row each
+  bool lineage = 2;
+  // Refuses a session longer than the export size limit, for formats built whole in memory
+  bool capped = 3;
+}
+
+// Session and every message it holds
+message Transcript {
+  Session session = 1;
+  repeated Message messages = 2;
+  // System prompt it last sent
+  string system_prompt = 3;
+}
+
+message ExportResponse {
+  repeated Transcript transcripts = 1;
+}
+
+message ImportRequest {
+  repeated Transcript transcripts = 1;
+}
+
+message ImportResponse {
+  repeated string ids = 1;
+  // Sessions left out because one with the same id is already stored
+  repeated string skipped = 2;
+}
+
+message PruneRequest {
+  Filter filter = 1;
+  bool dry_run = 2;
+  // Go ahead while other processes hold the store
+  bool force = 3;
+}
+
+message PruneResponse {
+  // Sessions deleted, or on a dry run those that would be
+  repeated Session sessions = 1;
+  int32 deleted = 2;
+  // Matching sessions left alone because they are open
+  int32 open = 3;
+  // Matching sessions left alone because a turn or compaction holds them
+  int32 busy = 4;
+  bool vacuumed = 5;
+  // Matching sessions left alone because they are pinned
+  int32 pinned = 6;
+  // Routing entries of deleted never-active sessions removed with them
+  int32 routes = 7;
+}
+
+message ArchiveRequest {
+  Filter filter = 1;
+  bool dry_run = 2;
+}
+
+message ArchiveResponse {
+  repeated Session sessions = 1;
+  int32 archived = 2;
+  int32 open = 3;
+  int32 pinned = 4;
+}
+
+message StatsRequest {}
+
+message SourceCount {
+  string source = 1;
+  int64 sessions = 2;
+}
+
+message StatsResponse {
+  int64 sessions = 1;
+  int64 messages = 2;
+  repeated SourceCount sources = 3;
+  int64 bytes = 4;
+  string path = 5;
+  string journal_mode = 6;
+  // Rebuild of the search index under way, none when it is complete
+  Indexing indexing = 7;
+}
+
+// Progress of a rebuild of the search index, which fills it while searches scan the messages it has yet to reach
+message Indexing {
+  // Message id indexed up to, and the highest the rebuild indexes
+  int64 indexed = 1;
+  int64 total = 2;
+  int32 percent = 3;
+}
+
+enum Task {
+  TASK_UNSPECIFIED = 0;
+  // Merge the search index and compact the file
+  TASK_OPTIMIZE = 1;
+  // Rebuild the search index in its compact layout
+  TASK_OPTIMIZE_STORAGE = 2;
+  // Clear tool call markers left as reply text
+  TASK_CLEAN_MARKERS = 3;
+  // Check and repair the store's schema and search index
+  TASK_REPAIR = 4;
+  // Rebuild a damaged store into a new file
+  TASK_RECOVER = 5;
+  // Switch the store between WAL and DELETE journal modes
+  TASK_JOURNAL_MODE = 6;
+}
+
+message MaintainRequest {
+  Task task = 1;
+  // Go ahead while other processes hold the store
+  bool force = 2;
+  bool dry_run = 3;
+  bool backup = 4;
+  // Leave out the final VACUUM of optimize-storage
+  bool no_vacuum = 5;
+  // Only report, for repair and recover
+  bool check_only = 6;
+  // Journal mode to switch to: "wal" or "delete"
+  string mode = 7;
+  // Store file to work on, the store in use when empty
+  string path = 8;
+  // Recover: new store to write, folder of the working copy, rows a batch commits, salvage past damaged rows, report file
+  string output = 9;
+  string work_dir = 10;
+  int32 chunk_size = 11;
+  bool allow_partial = 12;
+  string report = 13;
+}
+
+// One line of progress, then the outcome
+message MaintainResponse {
+  string line = 1;
+  // Last message: the task finished, and failed when failed is set
+  bool done = 2;
+  bool failed = 3;
+}
+
+message RefreshPromptsRequest {
+  // One session by its id or the start of it, every session when empty
+  string session_id = 1;
+}
+
+message RefreshPromptsResponse {
+  string session_id = 1;
+  int64 sessions = 2;
+}
+
+message PromptFinding {
+  string id = 1;
+  int64 prompt_chars = 2;
+  string reason = 3;
+}
+
+message RepairPromptsRequest {
+  string session_id = 1;
+  bool apply = 2;
+}
+
+message RepairPromptsResponse {
+  repeated PromptFinding findings = 1;
+  repeated PromptFinding unverifiable = 2;
+  repeated string cleared = 3;
+  // The session asked for has no stored prompt
+  bool empty = 4;
+  string session_id = 5;
+}
+
+message Orphan {
+  string id = 1;
+  string source = 2;
+  int64 messages = 3;
+  // Key it takes, empty when it can't be repaired
+  string session_key = 4;
+  string donor_id = 5;
+  // "lineage" or "contiguity"
+  string evidence = 6;
+  string reason = 7;
+  bool repaired = 8;
+}
+
+message RepairRoutingRequest {
+  bool apply = 1;
+  // Seconds between a keyed session falling quiet and an orphan starting for them to be one conversation, 900 when 0
+  double max_gap_seconds = 2;
+}
+
+message RepairRoutingResponse {
+  repeated Orphan orphans = 1;
+}
+
+message ProfileFinding {
+  string kind = 1;
+  string subject = 2;
+  string detail = 3;
+  string action = 4;
+  string reason = 5;
+}
+
+message RepairProfilesRequest {
+  bool apply = 1;
+  // What to do with rows of a named profile keyed to the default namespace: "rekey" them to the profile, "move" them to the default profile,
+  // or "report" them
+  string legacy_main = 2;
+}
+
+message RepairProfilesResponse {
+  repeated ProfileFinding findings = 1;
+  map<string, int64> applied = 2;
+  repeated string failures = 3;
+  // Backup made before applying
+  string backup = 4;
+}
+
+// Message sent to a session and what became of it
+message Admission {
+  string id = 1;
+  string session_id = 2;
+  string text = 3;
+  // "queued", "started", "unknown" or "terminal"
+  string status = 4;
+  google.protobuf.Timestamp created = 5;
+  google.protobuf.Timestamp started = 6;
+  int32 attempts = 7;
+}
+
+message LostRequest {
+  string session = 1;
+}
+
+message LostResponse {
+  string session_id = 1;
+  repeated Admission admissions = 2;
+}
+
+message DiscardRequest {
+  string session = 1;
+  // Admissions to discard, every lost one when empty
+  repeated string admissions = 2;
+}
+
+message DiscardResponse {
+  string session_id = 1;
+  repeated string discarded = 2;
+}
+
+message WatchRequest {}
+
+message WatchResponse {
+  // Sessions made, changed or deleted, every session when empty
+  repeated string ids = 1;
+}
+
+message RetitleSkillsRequest {
+  bool apply = 1;
+  int32 limit = 2;
+}
+
+message Retitle {
+  string id = 1;
+  string old_title = 2;
+  string new_title = 3;
+  // The new title starts with neither a letter nor a digit, so the old one is kept
+  bool kept = 4;
+  // Title it took instead, when the new one was held by another session
+  string renamed = 5;
+  // Why it could not be written
+  string error = 6;
+}
+
+message RetitleSkillsResponse {
+  // Sessions opened with a skill
+  int32 candidates = 1;
+  repeated Retitle retitles = 2;
+}

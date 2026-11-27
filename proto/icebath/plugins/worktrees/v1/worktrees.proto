@@ -1,0 +1,229 @@
+syntax = "proto3";
+
+package icebath.plugins.worktrees.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service WorktreeService {
+  // Repository a folder is in
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // Worktrees of a folder's repository as git lists them
+  rpc List(ListRequest) returns (ListResponse);
+  // Every tree under .worktrees with its verdict, the trees registered elsewhere, the local branches and the archives
+  rpc Audit(AuditRequest) returns (AuditResponse);
+  // Reclaims the trees and branches holding no work, or says what it would
+  rpc Prune(PruneRequest) returns (PruneResponse);
+  // Makes an archived tree again
+  rpc Restore(RestoreRequest) returns (RestoreResponse);
+  // Makes an isolated tree on a branch of its own
+  rpc Create(CreateRequest) returns (CreateResponse);
+  // Moves a session into a tree, its commands and files from then on there
+  rpc Enter(EnterRequest) returns (EnterResponse);
+  // How a tree stands as its session is done: dirty, unpushed or neither, and whether another process works in it
+  rpc State(StateRequest) returns (StateResponse);
+  // Carries out what the user chose for a tree they are done with, or removes it when nothing of it would be lost
+  rpc Settle(SettleRequest) returns (SettleResponse);
+  // Makes again the removed tree a session worked in
+  rpc Recreate(RecreateRequest) returns (RecreateResponse);
+}
+
+message Tree {
+  string path = 1;
+  string branch = 2;
+  string repo = 3;
+}
+
+message StatusRequest {
+  string directory = 1;
+}
+
+message StatusResponse {
+  // Repository the folder is in, empty outside one
+  string repo = 1;
+}
+
+message ListRequest {
+  string directory = 1;
+}
+
+message ListResponse {
+  string repo = 1;
+  repeated string lines = 2;
+}
+
+message TreeRecord {
+  string name = 1;
+  string path = 2;
+  string branch = 3;
+  double age_days = 4;
+  optional int32 size_mb = 5;
+  string verdict = 6;
+  string reason = 7;
+  repeated string untracked = 8;
+}
+
+message ExternalTree {
+  string path = 1;
+  string branch = 2;
+  bool locked = 3;
+  bool missing = 4;
+}
+
+message Branch {
+  string name = 1;
+  string verdict = 2;
+  string reason = 3;
+}
+
+message Skipped {
+  string path = 1;
+  int64 bytes = 2;
+}
+
+message Archive {
+  string ref = 1;
+  string name = 2;
+  string sha = 3;
+  google.protobuf.Timestamp created = 4;
+  string branch = 5;
+  string reason = 6;
+  repeated Skipped skipped = 7;
+  string path = 8;
+}
+
+message AuditRequest {
+  // Repository, or a folder in one
+  string directory = 1;
+  // Reapable trees younger than this many days are kept
+  optional double older_than = 2;
+}
+
+message AuditResponse {
+  string repo = 1;
+  repeated TreeRecord trees = 2;
+  repeated ExternalTree external = 3;
+  repeated Branch branches = 4;
+  repeated Archive archives = 5;
+}
+
+message Decision {
+  string name = 1;
+  string path = 2;
+  string action = 3;
+  string reason = 4;
+  double age_hours = 5;
+  double mtime = 6;
+  bool force = 7;
+  string verdict = 8;
+  string lock_state = 9;
+  optional int32 size_mb = 10;
+  double tier_hours = 11;
+  double planned_at = 12;
+}
+
+message PruneRequest {
+  string directory = 1;
+  bool dry_run = 2;
+  // Only trees idle for at least this many days are reaped
+  optional double older_than = 3;
+  bool trees_only = 4;
+  bool branches_only = 5;
+  // The automatic sweep and the registrations of missing trees first, as the command line runs it; the attended reclaim alone when false
+  bool sweep = 6;
+  // Tree never reclaimed, the one the session works in
+  string keep = 7;
+}
+
+message PruneResponse {
+  string repo = 1;
+  // What the sweep planned for every tree, and what it did
+  repeated Decision sweep = 2;
+  repeated string actions = 3;
+  // Trees kept for the work they hold
+  repeated TreeRecord preserved = 4;
+}
+
+message RestoreRequest {
+  string directory = 1;
+  // Archive, or tree, by name
+  string name = 2;
+  // Folder to restore into in place of the tree's own
+  string path = 3;
+}
+
+message RestoreResponse {
+  string path = 1;
+  string branch = 2;
+  bool detached = 3;
+  string head = 4;
+  string ref = 5;
+  repeated Skipped skipped = 6;
+  // Why the archive could not be restored, the tree kept as it is
+  string error = 7;
+}
+
+message CreateRequest {
+  string directory = 1;
+  // Name of the tree, a generated one when empty
+  string name = 2;
+  // Process the tree is locked for
+  int64 pid = 3;
+  // The tree is a launch's own: stale trees are pruned first, and it is recorded so a resume makes it again
+  bool launch = 4;
+}
+
+message CreateResponse {
+  // Repository of the folder, empty outside one
+  string repo = 1;
+  // Tree made, none when that failed
+  Tree tree = 2;
+  // What happened, line by line
+  repeated string lines = 3;
+}
+
+message EnterRequest {
+  string session_id = 1;
+  Tree tree = 2;
+}
+
+message EnterResponse {
+  repeated string lines = 1;
+}
+
+message StateRequest {
+  Tree tree = 1;
+  // Process that doesn't count as working in the tree
+  int64 pid = 2;
+}
+
+message StateResponse {
+  // dirty, unpushed, or empty for a tree clean and pushed or gone
+  string state = 1;
+  // Another process still works in the tree
+  bool in_use = 2;
+}
+
+message SettleRequest {
+  Tree tree = 1;
+  // keep, archive or discard, empty for none asked
+  string choice = 2;
+  // The tree is a launch's own: kept for the session that worked in it when anything still needs it
+  bool launch = 3;
+  // Process that doesn't count as working in the tree
+  int64 pid = 4;
+}
+
+message SettleResponse {
+  repeated string lines = 1;
+  // The tree is gone
+  bool gone = 2;
+}
+
+message RecreateRequest {
+  string session_id = 1;
+}
+
+message RecreateResponse {
+  // Tree made again, empty when there was none to make
+  string path = 1;
+}

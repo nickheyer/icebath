@@ -3,10 +3,14 @@ package app
 import (
 	"cmp"
 	"context"
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -15,6 +19,9 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
+	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
+	"github.com/nickheyer/icebath/internal/tools"
+	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
 	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
@@ -31,7 +38,6 @@ import (
 const (
 	reconnect   = 3 * time.Second
 	completions = 50
-	titled      = 60
 )
 
 type chat struct {
@@ -41,23 +47,37 @@ type chat struct {
 	markdown *render.Markdown
 	shell    *cards.Terminal
 	sheet    *approval
+	inquiry  *inquiry
+	// Answer to one of the agent's questions being typed in the prompt
+	typing   *answering
 	commands []*slashv1.Command
 	// Tools of the server by name, for the title, glyph and subject of each call
 	tools map[string]*toolsv1.Tool
 	key   string
 	id    string
 	// Profile the session runs on, the one in use when the chat was opened until the session is made
-	profile  string
-	title    string
-	named    string
+	profile string
+	title   string
+	named   string
+	// Session the window left with /new, named with the first message of the next so the session hooks hear of it
+	left     string
 	starting bool
 	entering bool
 	replying bool
+	// Approval prompt the words typed in the prompt deny, and what became of the last one answered while the reply runs
+	replyTo  string
+	outcome  string
 	unseen   bool
 	stranded bool
-	waiting  []string
-	epoch    int
-	stop     context.CancelFunc
+	// Messages sent while the session is being made, each with its voice flags, sent in order once it is
+	waiting []*agentv1.SendRequest
+	epoch   int
+	stop    context.CancelFunc
+	// Prompt picked to rewind to, which the next line sent replaces, and when esc was last pressed on the empty idle prompt
+	editing *rewinding
+	primed  time.Time
+	// Set while an edit rewinds the session, whose taken back text is not put back in the prompt
+	quiet bool
 
 	log      transcript
 	folds    map[string]bool
@@ -72,6 +92,22 @@ type chat struct {
 	top      int
 	follow   bool
 	prompt   int
+	// What the docks show of the session and whether they are folded to a line, whether a reply runs as the docks are read, and the
+	// nudge that reads them at once
+	docked  []toolsapp.Docked
+	folded  bool
+	working atomic.Bool
+	poke    chan struct{}
+	// Subagents the session's turn runs and the spawn trees that finished, which /agents and /replay show
+	spawn spawnState
+	// Spawn tree screen while it is open, repainted as events come
+	tree *spawnScreen
+	// How delegation stands for the session, its caps and its pause, which the status line measures the fan-out against; read as a fan-out
+	// starts
+	limits   *agentv1.SubagentsResponse
+	limiting bool
+	// The person spoke the text being submitted, which goes on the voice chat route when it is sent as a message
+	voiced bool
 }
 
 var _ interface {
@@ -102,6 +138,7 @@ func newChat(desk *desk, key string, session *sessionsv1.Session, profile string
 		title:    session.GetTitle(),
 		folds:    map[string]bool{},
 		follow:   true,
+		poke:     make(chan struct{}, 1),
 	}
 	c.composer.SessionID = key
 	c.composer.Literal = true
@@ -123,9 +160,15 @@ func (c *chat) Title() string { return cmp.Or(c.title, "New chat") }
 func (c *chat) on() string          { return cmp.Or(c.log.state.GetProfile(), c.profile) }
 func (c *chat) Key() string         { return c.key }
 func (c *chat) Kind() string        { return "Chat" }
+func (c *chat) Session() string     { return c.id }
 func (c *chat) Glyph() string       { return c.kit.Env.Theme.Glyphs.Session }
 func (c *chat) Selectable() bool    { return true }
 func (c *chat) MinSize() (int, int) { return 40, 10 }
+
+// Action that compresses the session's conversation now, the /compress of the key map
+var compactKeys = []keys.Action{
+	{ID: "session.compact", Context: keys.Session, Label: "compact", Doc: "summarise older turns to free context (/compress)"},
+}
 
 func (c *chat) Answers(action string) bool {
 	return action != "composer.attachments.clear"
@@ -163,6 +206,9 @@ func (c *chat) Init() tea.Cmd {
 	if c.id == "" {
 		return tea.Batch(load, c.check())
 	}
+	if c.title == "" {
+		return tea.Batch(load, c.watch(), c.retitle())
+	}
 	return tea.Batch(load, c.watch())
 }
 
@@ -174,11 +220,25 @@ func (c *chat) check() tea.Cmd {
 			return provider.GetUsable() && provider.GetCredentialOrigin() != providerv1.Origin_ORIGIN_UNSPECIFIED
 		})
 		if stranded {
-			var chosen string
-			if setting, err := c.desk.settings.Get(ctx, &configv1.GetRequest{Key: agentconfig.Provider, Profile: c.on()}); err == nil {
-				yaml.Unmarshal([]byte(setting.GetSetting().GetValue()), &chosen)
+			var chosen, model string
+			var shortcuts map[string]struct {
+				BaseURL string `yaml:"base_url"`
 			}
+			get := func(key string, into any) {
+				if setting, err := c.desk.settings.Get(ctx, &configv1.GetRequest{Key: key, Profile: c.on()}); err == nil {
+					yaml.Unmarshal([]byte(setting.GetSetting().GetValue()), into)
+				}
+			}
+			get(agentconfig.Provider, &chosen)
+			get(agentconfig.Model, &model)
+			get(agentconfig.Aliases, &shortcuts)
 			stranded = chosen == ""
+			// A model shortcut naming an endpoint of its own runs with no provider connected
+			for name, shortcut := range shortcuts {
+				if strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(model)) && strings.TrimSpace(shortcut.BaseURL) != "" {
+					stranded = false
+				}
+			}
 		}
 		return func() tea.Cmd {
 			c.stranded = stranded
@@ -188,9 +248,29 @@ func (c *chat) check() tea.Cmd {
 }
 
 func (c *chat) Status() string {
+	status := c.status()
+	if hud := spawnHUD(c.spawn.live(), c.limits); hud != "" {
+		status = strings.TrimSpace(status + " " + hud)
+	}
+	if voiced := c.desk.voice.status(c); voiced != "" {
+		status = strings.TrimSpace(status + " " + voiced)
+	}
+	return status
+}
+
+func (c *chat) status() string {
 	switch {
-	case c.log.approval != nil:
+	case len(c.log.approvals) > 0:
 		return "waiting for approval"
+	case c.log.questions != nil:
+		return "waiting for your answers"
+	case c.log.activity != "":
+		return c.log.activity
+	case c.log.busy && c.outcome != "":
+		return "working · " + c.outcome
+	case c.log.busy && !c.composer.Empty() && c.log.state.GetBusyInputMode() != "":
+		// What enter does with the message typed while the agent works
+		return "working · enter: " + c.log.state.GetBusyInputMode()
 	case c.log.busy:
 		return "working"
 	}
@@ -211,7 +291,52 @@ func (c *chat) Status() string {
 	if state.GetYolo() {
 		status += " yolo"
 	}
+	if dial := contextDial(state); dial != "" {
+		status += " " + dial
+	}
+	if cost := state.GetCost(); cost > 0 {
+		status += " " + money(cost)
+	}
+	if n := state.GetCompressions(); n > 0 {
+		status += fmt.Sprintf(" cmp %d", n)
+	}
 	return status
+}
+
+// Dollars with cents, or with four decimals below a cent
+func money(dollars float64) string {
+	if dollars < 0.01 {
+		return fmt.Sprintf("$%.4f", dollars)
+	}
+	return fmt.Sprintf("$%.2f", dollars)
+}
+
+// How full the session's context is: ctx, the size led by ~ when part of it is estimated, the window and the share; empty while either
+// is not known
+func contextDial(state *agentv1.State) string {
+	used, limit := state.GetContextUsed(), state.GetContextMax()
+	if used <= 0 || limit <= 0 {
+		return ""
+	}
+	mark := ""
+	if state.GetContextEstimated() {
+		mark = "~"
+	}
+	return fmt.Sprintf("ctx %s%s/%s %d%%", mark, compactNumber(float64(used)), compactNumber(float64(limit)), int(float64(used)/float64(limit)*100+0.5))
+}
+
+// Number in a few characters: thousands as k and millions as M with a decimal when it says something
+func compactNumber(value float64) string {
+	scaled := func(v float64, suffix string) string {
+		return strings.TrimSuffix(strconv.FormatFloat(math.Round(v*10)/10, 'f', 1, 64), ".0") + suffix
+	}
+	switch {
+	case value >= 999_950:
+		return scaled(value/1_000_000, "M")
+	case value >= 999.5:
+		return scaled(value/1_000, "k")
+	}
+	return strconv.FormatFloat(math.Floor(value+0.5), 'f', -1, 64)
 }
 
 func (c *chat) Contexts() []string {
@@ -236,15 +361,18 @@ func (c *chat) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		if c.stop != nil {
 			c.stop()
 		}
-		c.desk.closed(c)
+		return c, c.desk.closed(c)
 	case wm.FocusMsg:
 		if msg.Focused {
 			c.unseen = false
 		}
 		if msg.Focused && c.stranded {
-			return c, tea.Batch(c.composer.SetFocus(true), c.check())
+			return c, tea.Batch(c.composer.SetFocus(true), c.check(), c.desk.voice.focused(c))
 		}
-		return c, c.composer.SetFocus(msg.Focused)
+		if msg.Focused {
+			return c, tea.Batch(c.composer.SetFocus(true), c.desk.voice.focused(c))
+		}
+		return c, c.composer.SetFocus(false)
 	case wm.ActionMsg:
 		return c, c.action(msg.ID)
 	case tea.KeyPressMsg, tea.PasteMsg:
@@ -292,6 +420,10 @@ func (c *chat) unfolded(id string) bool {
 	if strings.HasSuffix(id, ":thinking") {
 		return c.thinking == agentconfig.ThinkingOpen
 	}
+	if id == "spawn" {
+		// The live spawn tree shows its subagents until it is folded
+		return true
+	}
 	return c.expanded
 }
 
@@ -333,10 +465,24 @@ func (c *chat) action(id string) tea.Cmd {
 		case c.replying && c.composer.Empty():
 			c.replying, c.composer.Hint = false, c.hint()
 			return c.ask()
+		case c.typing != nil && c.composer.Empty():
+			return c.untype()
 		case c.log.busy && !c.replying:
 			return c.interrupt()
+		case !c.log.busy && c.composer.Empty() && c.id != "":
+			return c.escape()
 		}
 		c.follow = true
+	case "agent.yolo":
+		return c.yolo()
+	case voiceAction:
+		return c.desk.voice.toggle(c)
+	case "agent.dock":
+		c.folded = !c.folded
+	case "session.compact":
+		if !c.log.busy && c.id != "" {
+			return c.send("/compress")
+		}
 	case "complete.start":
 		c.paths()
 	case "composer.send":
@@ -441,11 +587,16 @@ func (c *chat) View(w, h int) string {
 	c.composer.Fit(w)
 	c.composer.SetBusy(c.log.busy)
 	prompt := min(c.composer.Height(), max(h-3, 1))
-	c.rows = max(h-prompt-1, 1)
+	dock := c.dock(w, h)
+	c.rows = max(h-prompt-1-len(dock), 1)
 	c.prompt = c.rows + 1
 	c.shown = c.rows
 	if c.sheet != nil {
 		c.shown = max(c.rows-len(c.sheet.lines(max(w-4, 1)))-2, 1)
+	}
+	if c.inquiry != nil {
+		_, rows := c.inquiry.FitIn(max(w-4, 1), c.rows)
+		c.shown = max(c.rows-rows-2, 1)
 	}
 	if w != c.width {
 		c.width, c.rendered = w, nil
@@ -466,24 +617,41 @@ func (c *chat) View(w, h int) string {
 			body[i] = c.lines[c.top+i].text
 		}
 	}
-	above := cards.OverlayPopup(append(body, ""), c.composer.Popup(w))
+	above := cards.OverlayPopup(append(append(body, dock...), ""), c.composer.Popup(w))
 	return strings.Join(append(above, c.composer.View(w, prompt)), "\n")
 }
 
 func (c *chat) submit(text string) tea.Cmd {
 	c.follow = true
+	if c.typing != nil {
+		typed := c.typing
+		c.typing, c.composer.Hint = nil, c.hint()
+		return tea.Batch(c.respond(typed.set, typed.question, append(typed.picked, strings.TrimSpace(text))), c.inquire())
+	}
 	if c.replying {
-		c.replying, c.composer.Hint = false, c.hint()
-		return c.decide(agentv1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED, strings.TrimSpace(text))
+		request := c.replyTo
+		c.replying, c.replyTo, c.composer.Hint = false, "", c.hint()
+		return c.decide(request, agentv1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED, strings.TrimSpace(text))
 	}
 	if line, shell := strings.CutPrefix(text, "!"); shell && strings.TrimSpace(line) != "" {
 		return c.run(strings.TrimSpace(line))
 	}
+	// A command the app runs itself is told to the session's pre_command hooks, as one the server runs is
+	id := c.id
 	if cmd, ok := c.local(text); ok {
+		c.observe(id, text)
 		return cmd
 	}
 	if cmd, ok := c.kit.Slash(text); ok {
+		c.observe(id, text)
 		return cmd
+	}
+	// A stop phrase typed alone while voice mode is on ends voice chat instead of going to the model
+	if c.desk.voice.typedStop(c, text) {
+		return c.desk.voice.stopped()
+	}
+	if c.editing != nil && !strings.HasPrefix(text, "/") {
+		return c.resend(text)
 	}
 	return c.send(text)
 }
@@ -496,21 +664,29 @@ func (c *chat) run(line string) tea.Cmd {
 	return tea.Batch(c.kit.WM.OpenHere(c.shell), c.shell.Run(line), c.kit.WM.Focus(c))
 }
 
+// Sends a line to the session: a command, or a message on the voice chat route when the person spoke it; every message tells the model
+// when the person cut a spoken reply off before it
 func (c *chat) send(text string) tea.Cmd {
+	request := &agentv1.SendRequest{Text: text, Voice: c.voiced}
+	if _, command := c.command(text); !command {
+		request.Interrupted = c.desk.voice.cut()
+	}
+	return c.post(request)
+}
+
+func (c *chat) post(request *agentv1.SendRequest) tea.Cmd {
 	if c.starting {
-		c.waiting = append(c.waiting, text)
+		c.waiting = append(c.waiting, request)
 		return nil
 	}
-	id, epoch, named, profile := c.id, c.epoch, c.named, c.profile
+	text := request.GetText()
+	id, epoch, named, profile, left := c.id, c.epoch, c.named, c.profile, c.left
 	c.starting = id == ""
-	if c.title == "" && !strings.HasPrefix(text, "/") {
-		line, _, _ := strings.Cut(text, "\n")
-		c.title = string([]rune(line)[:min(utf8.RuneCountInString(line), titled)])
-	}
 	return tui.Async(func() func() tea.Cmd {
 		ctx := c.kit.Env.Ctx
 		var err error
 		if id == "" {
+			request.Left = left
 			var response *sessionsv1.CreateResponse
 			if response, err = c.desk.sessions.Create(ctx, &sessionsv1.CreateRequest{Directory: c.kit.Env.WorkDir(), Profile: profile}); err == nil {
 				id, profile = response.GetSession().GetId(), response.GetSession().GetProfile()
@@ -518,9 +694,20 @@ func (c *chat) send(text string) tea.Cmd {
 			if err == nil && named != "" {
 				_, err = c.desk.sessions.Rename(ctx, &sessionsv1.RenameRequest{Id: id, Title: named})
 			}
+			if err == nil {
+				request.ClientEnv, request.ClientHost = c.desk.shell(ctx, profile)
+			}
 		}
 		if err == nil {
-			_, err = c.desk.agents.Send(ctx, &agentv1.SendRequest{SessionId: id, Text: text})
+			request.SessionId = id
+			if !c.desk.told(id) {
+				request.Launch = c.desk.asked.Launch()
+			}
+			_, err = c.desk.agents.Send(ctx, request)
+		}
+		if err == nil {
+			// The session ends as its hooks know it once the app exits
+			c.desk.asked.Hold(id)
 		}
 		return func() tea.Cmd {
 			if epoch != c.epoch {
@@ -530,6 +717,9 @@ func (c *chat) send(text string) tea.Cmd {
 			if c.starting && id != "" {
 				c.id, c.named, c.profile = id, "", profile
 				cmds = append(cmds, c.watch())
+			}
+			if err == nil && request.Left != "" {
+				c.left = ""
 			}
 			c.starting = false
 			if err != nil {
@@ -541,7 +731,7 @@ func (c *chat) send(text string) tea.Cmd {
 			waiting := c.waiting
 			c.waiting = nil
 			for _, next := range waiting {
-				cmds = append(cmds, c.send(next))
+				cmds = append(cmds, c.post(next))
 			}
 			if strings.HasPrefix(text, "/") && err == nil {
 				cmds = append(cmds, c.retitle())
@@ -584,13 +774,18 @@ func (c *chat) interrupt() tea.Cmd {
 }
 
 func (c *chat) reset() {
+	c.desk.leave(c)
+	c.unedit()
 	if c.stop != nil {
 		c.stop()
 	}
 	c.epoch++
-	c.id, c.title, c.named, c.stop, c.starting, c.waiting = "", "", "", nil, false, nil
+	c.id, c.title, c.named, c.left, c.stop, c.starting, c.waiting = "", "", "", "", nil, false, nil
 	c.log, c.folds, c.rendered = transcript{}, map[string]bool{}, nil
 	c.top, c.follow = 0, true
+	c.docked = nil
+	c.spawn = spawnState{}
+	c.working.Store(false)
 }
 
 func (c *chat) watch() tea.Cmd {
@@ -600,8 +795,10 @@ func (c *chat) watch() tea.Cmd {
 	ctx, stop := context.WithCancel(c.kit.Env.Ctx)
 	c.stop = stop
 	id, epoch := c.id, c.epoch
-	return func() tea.Msg {
-		stream, err := c.desk.agents.Watch(ctx, &agentv1.WatchRequest{SessionId: id})
+	shown := c.desk.showing(c)
+	go c.docking(ctx, id, epoch)
+	return tea.Batch(shown, func() tea.Msg {
+		stream, err := c.desk.agents.Watch(ctx, &agentv1.WatchRequest{SessionId: id, Client: c.desk.client})
 		if err == nil {
 			defer stream.Close()
 		}
@@ -618,7 +815,7 @@ func (c *chat) watch() tea.Cmd {
 			c.kit.Apply(func() tea.Cmd { return c.dropped(epoch, err) })
 		}
 		return nil
-	}
+	})
 }
 
 func (c *chat) received(epoch int, response *agentv1.WatchResponse, replay bool) tea.Cmd {
@@ -630,18 +827,57 @@ func (c *chat) received(epoch int, response *agentv1.WatchResponse, replay bool)
 	}
 	busy := c.log.busy
 	taken := c.log.apply(response)
+	if !replay {
+		// The reply of a session voice mode belongs to is read aloud as it is written
+		c.desk.voice.reply(c, response, busy, c.log.busy)
+	}
+	if title := response.GetTitle(); title != "" {
+		c.title = title
+	}
+	// The conversation went on in a new session after its context was compressed, which the chat follows
+	continued := false
+	if next := response.GetContinued(); next != "" && next != c.id {
+		c.id, continued = next, true
+	}
+	if c.quiet && response.GetRewind() != nil {
+		c.quiet, taken = false, ""
+	}
 	var cmds []tea.Cmd
 	if response.GetRewind() != nil {
 		c.folds = map[string]bool{}
 	}
+	if event := response.GetSubagent(); event != nil {
+		if len(c.spawn.agents) == 0 && !replay {
+			cmds = append(cmds, c.delegationLimits())
+		}
+		if tree := c.spawn.apply(event); tree != nil {
+			cmds = append(cmds, c.saveTree(tree))
+		}
+		c.tree.refresh()
+	}
+	if event := response.GetExhausted(); event != nil && !replay {
+		cmds = append(cmds, c.exhausted(event))
+	}
 	if taken != "" && c.composer.Empty() {
 		cmds = append(cmds, c.composer.SetValue(taken))
 	}
+	if continued {
+		cmds = append(cmds, c.desk.remember(c))
+	}
+	if busy != c.log.busy {
+		c.working.Store(c.log.busy)
+		c.nudge()
+	}
 	if busy && !c.log.busy {
 		c.unseen = c.kit.Focused() != wm.Card(c)
-		cmds = append(cmds, c.retitle())
+		cmds = append(cmds, c.retitle(), c.desk.remember(c))
+		// The fan-out of the turn that ended is kept for /replay, on disk as well
+		if tree := c.spawn.finish(c.id); tree != nil {
+			cmds = append(cmds, c.saveTree(tree))
+			c.tree.refresh()
+		}
 	}
-	return tea.Batch(append(cmds, c.ask())...)
+	return tea.Batch(append(cmds, c.ask(), c.inquire())...)
 }
 
 func (c *chat) dropped(epoch int, err error) tea.Cmd {
@@ -652,7 +888,7 @@ func (c *chat) dropped(epoch int, err error) tea.Cmd {
 	if connect.CodeOf(err) == connect.CodeNotFound {
 		c.log.note("**This session was deleted.** Send a message to start a new one.")
 		c.id, c.title, c.stop = "", "", nil
-		return c.ask()
+		return tea.Batch(c.ask(), c.inquire())
 	}
 	return tui.Async(func() func() tea.Cmd {
 		select {
@@ -666,4 +902,15 @@ func (c *chat) dropped(epoch int, err error) tea.Cmd {
 			return c.watch()
 		}
 	})
+}
+
+// Variables of this shell a new session of the profile takes as its client's, with the name of this machine: the behaviour variables,
+// the toolchain and the names the profile's client variables setting lists
+func (d *desk) shell(ctx context.Context, profile string) (map[string]string, string) {
+	var extra []string
+	if setting, err := d.settings.Get(ctx, &configv1.GetRequest{Key: terminalconfig.ClientEnvPassthrough, Profile: profile}); err == nil {
+		yaml.Unmarshal([]byte(setting.GetSetting().GetValue()), &extra)
+	}
+	host, _ := os.Hostname()
+	return tools.ClientVariables(extra), host
 }

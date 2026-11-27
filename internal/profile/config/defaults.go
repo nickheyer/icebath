@@ -9,7 +9,8 @@ func Register(cfg *config.Config, profiles func() []config.Option) {
 		Title:  "Profiles",
 		About:  "Sets of providers, accounts and settings to switch between",
 		Settings: []config.Setting{
-			{Key: Active, Title: "Profile", About: "Profile in use", Default: "default", Env: []string{ActiveEnv}, Options: profiles, Internal: true},
+			{Key: Active, Title: "Profile", About: "Profile in use, and the one icebath starts with", Default: "default", Env: []string{PinnedEnv, ActiveEnv},
+				Options: profiles, Internal: true},
 		},
 	}})
 }

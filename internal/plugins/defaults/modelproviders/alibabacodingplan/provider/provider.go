@@ -14,6 +14,7 @@ func Register(registry *provider.Registry) {
 func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               alibabacodingplanconfig.IntlName,
+		Shape:              shape,
 		DisplayName:        alibabacodingplanconfig.IntlTitle,
 		Description:        "Dedicated coding tier",
 		SignupURL:          "https://help.aliyun.com/zh/model-studio/",
@@ -29,9 +30,10 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        alibabacodingplanconfig.IntlName,
+		StaticModels:       []string{"qwen3.7-plus", "qwen3.6-plus", "qwen3.5-plus", "qwen3-max-2026-01-23", "qwen3-coder-plus", "qwen3-coder-next", "kimi-k2.5", "glm-5", "glm-4.7", "MiniMax-M2.5"},
 	}, {
 		Name:               alibabacodingplanconfig.CNName,
+		Shape:              shape,
 		DisplayName:        alibabacodingplanconfig.CNTitle,
 		Description:        "Dedicated coding tier, mainland China endpoint",
 		SignupURL:          "https://help.aliyun.com/zh/model-studio/",
@@ -47,6 +49,6 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        alibabacodingplanconfig.CNName,
+		StaticModels:       []string{"qwen3.7-plus", "qwen3.6-plus", "qwen3.5-plus", "qwen3-max-2026-01-23", "qwen3-coder-plus", "qwen3-coder-next", "kimi-k2.5", "glm-5", "glm-4.7", "MiniMax-M2.5"},
 	}}
 }

@@ -102,7 +102,7 @@ func TestAccounts(t *testing.T) {
 	if route, _ := creds.Route(instance, ""); route.APIKey != "home-key" {
 		t.Fatalf("switched account gives %q", route.APIKey)
 	}
-	if err := p.RemoveAccount(cfg, "acme", "default"); err != nil {
+	if _, err := p.RemoveAccount(cfg, "acme", "default"); err != nil {
 		t.Fatal(err)
 	}
 	instance, _ = p.Instance(cfg, "acme")

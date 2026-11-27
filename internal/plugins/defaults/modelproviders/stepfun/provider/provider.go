@@ -29,5 +29,8 @@ func (specs) Specs() []provider.Spec {
 		HealthCheck:        true,
 		VisionToolMessages: true,
 		ModelsDevID:        stepfunconfig.Name,
+		StaticModels:       []string{"step-3.7-flash", "step-3.5-flash", "step-3.5-flash-2603"},
+		LiveFirst:          true,
+		MetadataHostnames:  []string{"api.stepfun.com"},
 	}}
 }

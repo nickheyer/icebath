@@ -23,7 +23,7 @@ func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool
 	if route.Spec != aigatewayconfig.Name || key == "" {
 		return nil, false
 	}
-	headers := map[string]string{"Authorization": "Bearer " + key, "User-Agent": models.UserAgent}
+	headers := map[string]string{"Authorization": "Bearer " + key, "User-Agent": provider.UserAgent("icebath-cli")}
 	data, err := models.GetJSON(ctx, strings.TrimRight(strings.TrimSpace(route.BaseURL), "/")+"/models", 5*time.Second, headers)
 	if err != nil {
 		return nil, false
@@ -43,4 +43,31 @@ func (catalog) Models(ctx context.Context, route provider.Route) ([]string, bool
 		}
 	}
 	return ids, len(ids) > 0
+}
+
+// Prices the AI Gateway lists for its models, its input and output a token
+func (catalog) Prices(ctx context.Context, env *models.Env) (map[string]provider.Price, bool) {
+	if env.Route.Spec != aigatewayconfig.Name {
+		return nil, false
+	}
+	data, err := models.Request(ctx, "GET", strings.TrimRight(env.Route.BaseURL, "/")+"/models", map[string]string{"Accept": "application/json"}, nil, 8*time.Second)
+	if err != nil {
+		return nil, true
+	}
+	prices := map[string]provider.Price{}
+	items, _ := data["data"].([]any)
+	for _, item := range items {
+		row, _ := item.(map[string]any)
+		id, _ := row["id"].(string)
+		listed, ok := row["pricing"].(map[string]any)
+		if id == "" || !ok {
+			continue
+		}
+		r := models.Row{Pricing: map[string]string{"prompt": models.Scalar(listed["input"]), "completion": models.Scalar(listed["output"]),
+			"cache_read": models.Scalar(listed["input_cache_read"]), "cache_write": models.Scalar(listed["input_cache_write"])}}
+		if price, ok := r.Price(); ok {
+			prices[id] = price
+		}
+	}
+	return prices, true
 }

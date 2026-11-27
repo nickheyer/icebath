@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"github.com/nickheyer/icebath/internal/config"
 	minimaxconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/minimax/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
@@ -14,6 +15,11 @@ func Register(registry *provider.Registry) {
 func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               minimaxconfig.GlobalName,
+		Caching:            caching,
+		DottedModels:       true,
+		Shape:              shape,
+		Carriers:           []string{"reasoning_content", "reasoning_details"},
+		Native:             provider.Unprefixed,
 		DisplayName:        minimaxconfig.GlobalTitle,
 		BaseURL:            minimaxconfig.GlobalBaseURL,
 		BaseURLEnv:         minimaxconfig.GlobalBaseURLEnv,
@@ -29,8 +35,16 @@ func (specs) Specs() []provider.Spec {
 		HealthCheck:        true,
 		VisionToolMessages: true,
 		ModelsDevID:        "minimax",
+		StaticModels:       []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"},
+		MetadataHostnames:  []string{"api.minimax"},
+		Prices:             prices,
 	}, {
 		Name:               minimaxconfig.CNName,
+		Caching:            caching,
+		DottedModels:       true,
+		Shape:              shape,
+		Carriers:           []string{"reasoning_content", "reasoning_details"},
+		Native:             provider.Unprefixed,
 		DisplayName:        minimaxconfig.CNTitle,
 		BaseURL:            minimaxconfig.CNBaseURL,
 		BaseURLEnv:         minimaxconfig.CNBaseURLEnv,
@@ -46,8 +60,14 @@ func (specs) Specs() []provider.Spec {
 		HealthCheck:        true,
 		VisionToolMessages: true,
 		ModelsDevID:        "minimax-cn",
+		StaticModels:       []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"},
+		Prices:             prices,
 	}, {
 		Name:               minimaxconfig.OAuthName,
+		Caching:            caching,
+		Shape:              shape,
+		Carriers:           []string{"reasoning_content", "reasoning_details"},
+		Native:             provider.Unprefixed,
 		DisplayName:        minimaxconfig.OAuthTitle,
 		Description:        "Browser sign-in, no API key",
 		SignupURL:          "https://api.minimax.io/",
@@ -63,9 +83,19 @@ func (specs) Specs() []provider.Spec {
 		HealthCheck:        true,
 		VisionToolMessages: true,
 		ModelsDevID:        "minimax",
-		PortalBaseURL:      "https://api.minimax.io",
-		ClientID:           "78257093-7e40-4613-99e0-527b14b39113",
-		Scope:              "group_id profile model.completion",
-		Extra:              map[string]any{"region": "global", "cn_portal_base_url": "https://api.minimaxi.com", "cn_inference_base_url": "https://api.minimaxi.com/anthropic"},
+		StaticModels:       []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"},
+		PortalBaseURL:      minimaxconfig.OAuthPortal,
+		ClientID:           minimaxconfig.OAuthClientID,
+		Scope:              minimaxconfig.OAuthScope,
+		Extra:              map[string]any{"region": "global", "cn_portal_base_url": minimaxconfig.OAuthCNPortal, "cn_inference_base_url": minimaxconfig.OAuthCNBaseURL},
+		Account: []config.Setting{
+			{Key: minimaxconfig.AccessToken, Title: "Access token", About: "Token of the MiniMax sign-in", Default: "", Secret: true, Internal: true},
+			{Key: minimaxconfig.RefreshToken, Title: "Refresh token", About: "Renews the access token before it expires", Default: "", Secret: true, Internal: true},
+			{Key: minimaxconfig.Expiry, Title: "Sign-in expiry", About: "When the access token expires, in Unix milliseconds", Default: 0, Internal: true},
+			{Key: minimaxconfig.Portal, Title: "Portal", About: "Where the sign-in was made and is renewed", Default: "", Internal: true},
+			{Key: minimaxconfig.Client, Title: "Client", About: "Client the sign-in was made with", Default: "", Internal: true},
+			{Key: minimaxconfig.Region, Title: "Region", About: "global or cn", Default: "", Internal: true},
+			{Key: minimaxconfig.Endpoint, Title: "Inference address", About: "Address of the region's API the sign-in is for", Default: "", Internal: true},
+		},
 	}}
 }

@@ -1,0 +1,290 @@
+syntax = "proto3";
+
+package icebath.speech.v1;
+
+// Speech of each profile on the machine the server runs on: replies read aloud, recordings turned into text and live transcription, with
+// what the voice mode of a client needs to know of them
+service SpeechService {
+  // Voice mode settings of the profile and how its voice, its recognizer and its wake word stand
+  rpc Voice(VoiceRequest) returns (VoiceReply);
+  // One piece of text read aloud in the profile's voice: as PCM while it is made when live and the voice streams, else as whole audio files
+  rpc Speak(SpeakRequest) returns (stream Audio);
+  // A recording turned into text by the profile's recognizer, a known hallucination on silence read as nothing said
+  rpc Transcribe(TranscribeRequest) returns (Transcript);
+  // A live transcription by the profile's recognizer: first the session audio is fed to, none when it transcribes whole files only, then
+  // the partial text as it changes, then the final transcript
+  rpc Listen(ListenRequest) returns (stream Heard);
+  // Audio for a live transcription, or its end, after which its final transcript follows on Listen, or its cancellation
+  rpc Feed(FeedRequest) returns (FeedReply);
+  // Readies the profile's voice under a lease ahead of spoken replies, or drops the lease
+  rpc Lease(LeaseRequest) returns (LeaseReply);
+  // Voices and recognizers of the profile with how each stands, for the voice setup screen
+  rpc Services(ServicesRequest) returns (ServicesReply);
+}
+
+message VoiceRequest {
+  // Profile of the settings, the one in use when empty
+  string profile = 1;
+}
+
+message VoiceReply {
+  string profile = 1;
+  Mode mode = 2;
+  Recognition recognition = 3;
+  Speaking speaking = 4;
+  Wake wake = 5;
+}
+
+// Settings of voice mode
+message Mode {
+  // Voice input is on
+  bool input = 1;
+  // Replies are read aloud
+  bool speak = 2;
+  // Chord that starts and stops a recording, empty for the leader key alone
+  string record_key = 3;
+  // direct sends a transcript, draft puts it in the prompt to edit
+  string submit_mode = 4;
+  // Speaking over a reply cuts it off
+  bool barge_in = 5;
+  // Seconds after speech starts playing in which a barge in is not heard
+  double barge_in_grace = 6;
+  // How far over the quiet floor of the room a voice must rise to barge in
+  double barge_in_multiplier = 7;
+  // Beeps mark the start and end of a recording
+  bool beep = 8;
+  // Loudness of the beeps, 0 to 1
+  double beep_volume = 9;
+  // Voice mode traces itself on standard error
+  bool debug = 10;
+  // Longest recording in seconds, 0 for no cap
+  double max_recording = 11;
+  // Seconds of silence after speech that end a recording
+  double silence_duration = 12;
+  // Level under which audio counts as silence
+  int32 silence_threshold = 13;
+  // Phrases that end a voice chat when said alone, lower case
+  repeated string stop_phrases = 14;
+  // Soft blips play while the agent works
+  bool thinking_sound = 15;
+  // Transcripts show in the chat before they are sent
+  bool echo_transcripts = 16;
+}
+
+// How the profile's speech recognition stands
+message Recognition {
+  // stt.enabled
+  bool enabled = 1;
+  // Recognizer in use, none when nothing can transcribe
+  string provider = 2;
+  // Its title, empty when nothing can transcribe
+  string label = 3;
+  // Recordings stream to it as they are made
+  bool live = 4;
+}
+
+// How the profile's voice stands
+message Speaking {
+  // Voice tts.provider names
+  string voice = 1;
+  string title = 2;
+  // It can speak now
+  bool ready = 3;
+  // It streams PCM while it speaks
+  bool streams = 4;
+  // Smallest piece of a reply in characters spoken at once, tts.streaming.min_len
+  int32 least = 5;
+}
+
+// Wake word settings of the profile, which the client that owns the microphone listens with
+message Wake {
+  bool enabled = 1;
+  // Screen allowed to host the listener: auto, cli, tui or gui
+  string surface = 2;
+  // Microphone by number or name, empty for the default
+  string input_device = 3;
+  // Engine as wake_word.provider names it, auto for the automatic choice
+  string provider = 4;
+  string phrase = 5;
+  // 0 to 1, higher catching more
+  double sensitivity = 6;
+  // Over threshold frames in a row that fire, 1 to 10
+  int32 frames = 7;
+  // A detection starts a new session
+  bool new_session = 8;
+  // The phrases other wake enabled profiles chose are heard too
+  bool routing = 9;
+  // Every wake_word setting by key, the engines' own among them
+  map<string, string> settings = 10;
+  // PORCUPINE_ACCESS_KEY of the profile's environment
+  string access_key = 11;
+  // Phrase of every wake enabled profile when routing is on
+  repeated Phrase profiles = 12;
+}
+
+message Phrase {
+  string profile = 1;
+  string phrase = 2;
+}
+
+message SpeakRequest {
+  string profile = 1;
+  string text = 2;
+  // PCM while it is made when the voice streams
+  bool live = 3;
+}
+
+// One part of the speech: the start of a clip, then its bytes
+message Audio {
+  oneof part {
+    Clip clip = 1;
+    bytes data = 2;
+  }
+}
+
+message Clip {
+  // pcm for 16 bit little endian mono PCM, else the extension of an audio file
+  string format = 1;
+  // Sample rate of PCM
+  int32 rate = 2;
+}
+
+message TranscribeRequest {
+  string profile = 1;
+  // The recording's bytes
+  bytes audio = 2;
+  // Its file extension, such as wav or aac
+  string format = 3;
+}
+
+message Transcript {
+  bool success = 1;
+  string text = 2;
+  string error = 3;
+  // Recognizer that answered
+  string provider = 4;
+  // Nothing was said
+  bool no_speech = 5;
+  // What was heard was a known hallucination on silence, so it reads as nothing
+  bool filtered = 6;
+  // Pieces an upload too large for one request was cut into
+  int32 segments = 7;
+  // Why nothing claimed the configured recognizer
+  string kind = 8;
+}
+
+message ListenRequest {
+  string profile = 1;
+  // Sample rate of the PCM the client feeds, 16 bit little endian mono
+  int32 rate = 2;
+}
+
+message Heard {
+  oneof event {
+    Opened opened = 1;
+    // Partial text as it changes
+    string partial = 2;
+    Transcript final = 3;
+  }
+}
+
+message Opened {
+  // Session audio is fed to, empty when the recognizer has no live transcription or it could not open
+  string id = 1;
+  // Recognizer of the session
+  string provider = 2;
+}
+
+message FeedRequest {
+  string id = 1;
+  bytes pcm = 2;
+  // The audio ended: the final transcript follows on Listen
+  bool end = 3;
+  // The session is dropped
+  bool cancel = 4;
+  // Seconds the final transcript is waited for after the end, 20 when 0
+  double timeout = 5;
+}
+
+message FeedReply {}
+
+message LeaseRequest {
+  string profile = 1;
+  // Name of the lease, such as the window that holds it
+  string lease = 2;
+  // Takes the lease, else drops it
+  bool active = 3;
+}
+
+message LeaseReply {}
+
+message ServicesRequest {
+  string profile = 1;
+}
+
+message ServicesReply {
+  repeated Service voices = 1;
+  repeated Service recognizers = 2;
+  // Voice tts.provider names and recognizer stt.provider names
+  string voice = 3;
+  string recognizer = 4;
+}
+
+// A voice or recognizer and how it stands
+message Service {
+  string name = 1;
+  string title = 2;
+  string about = 3;
+  // Runs on this machine
+  bool local = 4;
+  // Can run now
+  bool ready = 5;
+  // Why it can't, for a recognizer
+  string missing = 6;
+  Setup setup = 7;
+  // Settings of it picked from a list, such as its voice or model
+  repeated Choice choices = 8;
+}
+
+// Values one setting of a service may be picked from
+message Choice {
+  string setting = 1;
+  repeated string values = 2;
+  // Value it holds now
+  string value = 3;
+  // Title and description of the setting
+  string title = 4;
+  string about = 5;
+}
+
+// What a person sets up to use a service
+message Setup {
+  // Variables of the profile's environment that hold its key
+  repeated string keys = 1;
+  // Provider kind whose sign in serves it
+  string sign_in = 2;
+  // Python set it runs in
+  string extra = 3;
+  // Programs of this machine it needs besides
+  repeated string programs = 4;
+  // Where to get a key
+  string link = 5;
+  // Install command of the Python set
+  string install = 6;
+  // Variables of its key that are set
+  repeated string set = 7;
+  // The Python set is installed
+  bool installed = 8;
+  // Why the Python set can't run on this machine, empty when it can
+  string unsupported = 9;
+  // Programs it needs that this machine lacks
+  repeated Program absent = 10;
+  // What it costs and whether it is the one to start with, such as ★ recommended · free
+  string badge = 11;
+}
+
+// A program of the machine and the command that installs it
+message Program {
+  string name = 1;
+  string install = 2;
+}

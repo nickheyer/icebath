@@ -9,6 +9,6 @@ import (
 
 func Register(registries *plugins.Registries) {
 	provider.Register(registries.Provider)
-	credentials.Register(registries.Credentials)
+	credentials.Register(registries.Credentials, registries.Config)
 	models.Register(registries.Models)
 }

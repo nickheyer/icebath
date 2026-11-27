@@ -1,0 +1,159 @@
+syntax = "proto3";
+
+package icebath.plugins.bitwarden.v1;
+
+// Bitwarden Secrets Manager as a store of a profile's secrets, read through the bws program
+service BitwardenService {
+  // How the store is set up, with the bws program and its version
+  rpc State(StateRequest) returns (StateResponse);
+  // Asks Bitwarden for the projects the stored token sees, which says whether it accepts the token
+  rpc Validate(ValidateRequest) returns (ValidateResponse);
+  // Installs the pinned bws program, or checks and repairs the managed copy
+  rpc Install(InstallRequest) returns (InstallResponse);
+  // Keeps an access token in the profile's .env
+  rpc SaveToken(SaveTokenRequest) returns (SaveTokenResponse);
+  // Projects an access token sees on a server, the stored token when none is given
+  rpc Projects(ProjectsRequest) returns (ProjectsResponse);
+  // Pulls a project's secrets once with a token, the stored one when none is given, then keeps a new token, turns the store on for the
+  // project and says what the next start would do with each secret
+  rpc Setup(SetupRequest) returns (Preview);
+  // Keeps a new access token once Bitwarden accepts it, or without asking when told not to verify
+  rpc Token(TokenRequest) returns (TokenResponse);
+  // Pulls the project's secrets now and says what the next start would do with each, setting them for the profile when asked
+  rpc Sync(SyncRequest) returns (Preview);
+  // Turns the store off, its token staying in the .env
+  rpc Disable(DisableRequest) returns (DisableResponse);
+}
+
+message StateRequest {
+  // Profile whose store is read, the one in use when empty
+  string profile = 1;
+}
+
+message StateResponse {
+  bool enabled = 1;
+  // Variable holding the access token, and whether it holds one
+  string token_env = 2;
+  bool token_set = 3;
+  string project_id = 4;
+  // Address of another region or of a server of the user's own, empty for the US cloud
+  string server_url = 5;
+  bool override = 6;
+  // Seconds fetched secrets are reused for
+  int64 cache_ttl = 7;
+  bool auto_install = 8;
+  // bws program and its version, empty when it is not installed
+  string binary = 9;
+  string version = 10;
+  // The profile's .env, where the token is kept
+  string env_path = 11;
+}
+
+// Why Bitwarden refused, and what that usually means: region for a token of another Bitwarden region, token for a wrong or revoked one
+message Failure {
+  string text = 1;
+  string cause = 2;
+}
+
+message ValidateRequest {
+  string profile = 1;
+}
+
+message ValidateResponse {
+  // Why the token was not checked, empty when it was
+  string skipped = 1;
+  bool passed = 2;
+  Failure failure = 3;
+  // The token does not look like a Secrets Manager access token, one starting 0.
+  bool odd_token = 4;
+}
+
+message InstallRequest {
+  string profile = 1;
+  bool force = 2;
+}
+
+message InstallResponse {
+  string binary = 1;
+  string version = 2;
+}
+
+message SaveTokenRequest {
+  string profile = 1;
+  string token = 2;
+}
+
+message SaveTokenResponse {
+  string env_path = 1;
+  string token_env = 2;
+}
+
+message ProjectsRequest {
+  string profile = 1;
+  string token = 2;
+  string server_url = 3;
+}
+
+message Project {
+  string id = 1;
+  string name = 2;
+}
+
+message ProjectsResponse {
+  repeated Project projects = 1;
+  // Why the projects could not be listed, unset when they were
+  Failure failure = 2;
+}
+
+message SetupRequest {
+  string profile = 1;
+  string token = 2;
+  string server_url = 3;
+  string project_id = 4;
+}
+
+// What the next fetch does with one secret: export, override, skip_set or skip_token; exported or overrode once a sync set it
+message Row {
+  string name = 1;
+  string action = 2;
+}
+
+message Preview {
+  repeated Row rows = 1;
+  repeated string warnings = 2;
+  // Variables a sync set for the profile
+  int32 exported = 3;
+}
+
+message TokenRequest {
+  string profile = 1;
+  string token = 2;
+  bool verify = 3;
+}
+
+message TokenResponse {
+  // Projects the token sees, when it was checked
+  int32 projects = 1;
+  // Configured project the token does not see, empty when it sees it or there is none
+  string hidden_project = 2;
+  string env_path = 3;
+  string token_env = 4;
+  // The store is off, so the token is kept for when it is turned on
+  bool disabled = 5;
+  // Why Bitwarden refused the token, nothing being kept, unset when it was accepted
+  Failure failure = 6;
+  bool odd_token = 7;
+  // The bws program is missing, so the token could not be checked and nothing was kept
+  bool binary_missing = 8;
+}
+
+message SyncRequest {
+  string profile = 1;
+  bool apply = 2;
+}
+
+message DisableRequest {
+  string profile = 1;
+}
+
+message DisableResponse {}

@@ -30,6 +30,24 @@ const (
 	ConfigServiceGetProcedure = "/icebath.config.v1.ConfigService/Get"
 	// ConfigServiceSetProcedure is the procedure name of the ConfigService's Set RPC.
 	ConfigServiceSetProcedure = "/icebath.config.v1.ConfigService/Set"
+	// ConfigServiceValueProcedure is the procedure name of the ConfigService's Value RPC.
+	ConfigServiceValueProcedure = "/icebath.config.v1.ConfigService/Value"
+	// ConfigServicePutProcedure is the procedure name of the ConfigService's Put RPC.
+	ConfigServicePutProcedure = "/icebath.config.v1.ConfigService/Put"
+	// ConfigServiceUnsetProcedure is the procedure name of the ConfigService's Unset RPC.
+	ConfigServiceUnsetProcedure = "/icebath.config.v1.ConfigService/Unset"
+	// ConfigServiceFilesProcedure is the procedure name of the ConfigService's Files RPC.
+	ConfigServiceFilesProcedure = "/icebath.config.v1.ConfigService/Files"
+	// ConfigServiceCheckProcedure is the procedure name of the ConfigService's Check RPC.
+	ConfigServiceCheckProcedure = "/icebath.config.v1.ConfigService/Check"
+	// ConfigServiceShowProcedure is the procedure name of the ConfigService's Show RPC.
+	ConfigServiceShowProcedure = "/icebath.config.v1.ConfigService/Show"
+	// ConfigServiceReadProcedure is the procedure name of the ConfigService's Read RPC.
+	ConfigServiceReadProcedure = "/icebath.config.v1.ConfigService/Read"
+	// ConfigServiceWriteProcedure is the procedure name of the ConfigService's Write RPC.
+	ConfigServiceWriteProcedure = "/icebath.config.v1.ConfigService/Write"
+	// ConfigServiceSeedProcedure is the procedure name of the ConfigService's Seed RPC.
+	ConfigServiceSeedProcedure = "/icebath.config.v1.ConfigService/Seed"
 )
 
 var (
@@ -54,6 +72,69 @@ var (
 			Procedure:  ConfigServiceSetProcedure,
 		}
 	})
+	configServiceValueSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_config_v1_config_proto.Services().ByName("ConfigService").Methods().ByName("Value"),
+			Procedure:  ConfigServiceValueProcedure,
+		}
+	})
+	configServicePutSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_config_v1_config_proto.Services().ByName("ConfigService").Methods().ByName("Put"),
+			Procedure:  ConfigServicePutProcedure,
+		}
+	})
+	configServiceUnsetSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_config_v1_config_proto.Services().ByName("ConfigService").Methods().ByName("Unset"),
+			Procedure:  ConfigServiceUnsetProcedure,
+		}
+	})
+	configServiceFilesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_config_v1_config_proto.Services().ByName("ConfigService").Methods().ByName("Files"),
+			Procedure:  ConfigServiceFilesProcedure,
+		}
+	})
+	configServiceCheckSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_config_v1_config_proto.Services().ByName("ConfigService").Methods().ByName("Check"),
+			Procedure:  ConfigServiceCheckProcedure,
+		}
+	})
+	configServiceShowSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_config_v1_config_proto.Services().ByName("ConfigService").Methods().ByName("Show"),
+			Procedure:  ConfigServiceShowProcedure,
+		}
+	})
+	configServiceReadSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_config_v1_config_proto.Services().ByName("ConfigService").Methods().ByName("Read"),
+			Procedure:  ConfigServiceReadProcedure,
+		}
+	})
+	configServiceWriteSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_config_v1_config_proto.Services().ByName("ConfigService").Methods().ByName("Write"),
+			Procedure:  ConfigServiceWriteProcedure,
+		}
+	})
+	configServiceSeedSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_config_v1_config_proto.Services().ByName("ConfigService").Methods().ByName("Seed"),
+			Procedure:  ConfigServiceSeedProcedure,
+		}
+	})
 )
 
 // ConfigServiceClient is a client for the icebath.config.v1.ConfigService service.
@@ -61,6 +142,23 @@ type ConfigServiceClient interface {
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	Get(context.Context, *v1.GetRequest) (*v1.GetResponse, error)
 	Set(context.Context, *v1.SetRequest) (*v1.SetResponse, error)
+	// Value of any key as it is resolved: a setting, a key no setting names, or a variable of the profile's environment
+	Value(context.Context, *v1.ValueRequest) (*v1.ValueResponse, error)
+	// Saves a value typed on the command line: a setting, or a variable of the profile's .env for a key shaped like one
+	Put(context.Context, *v1.PutRequest) (*v1.PutResponse, error)
+	// Removes the value a key holds, or a variable from the profile's .env
+	Unset(context.Context, *v1.UnsetRequest) (*v1.UnsetResponse, error)
+	// Where the settings are kept, what the administrator manages and who else decides them
+	Files(context.Context, *v1.FilesRequest) (*v1.FilesResponse, error)
+	// Which variables are set and what the saved settings leave inactive
+	Check(context.Context, *v1.CheckRequest) (*v1.CheckResponse, error)
+	// What config show prints beside the settings: the API keys, masked, the messaging platforms, the values skills declare
+	Show(context.Context, *v1.ShowRequest) (*v1.ShowResponse, error)
+	// Text of a config file, and that text saved back after an edit
+	Read(context.Context, *v1.ReadRequest) (*v1.ReadResponse, error)
+	Write(context.Context, *v1.WriteRequest) (*v1.WriteResponse, error)
+	// Makes a config file of the profile that is not there yet: every setting of its scope commented out at its default, with what it does
+	Seed(context.Context, *v1.SeedRequest) (*v1.SeedResponse, error)
 }
 
 // NewConfigServiceClient constructs a client for the icebath.config.v1.ConfigService service.
@@ -74,6 +172,23 @@ type ConfigServiceHandler interface {
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	Get(context.Context, *v1.GetRequest) (*v1.GetResponse, error)
 	Set(context.Context, *v1.SetRequest) (*v1.SetResponse, error)
+	// Value of any key as it is resolved: a setting, a key no setting names, or a variable of the profile's environment
+	Value(context.Context, *v1.ValueRequest) (*v1.ValueResponse, error)
+	// Saves a value typed on the command line: a setting, or a variable of the profile's .env for a key shaped like one
+	Put(context.Context, *v1.PutRequest) (*v1.PutResponse, error)
+	// Removes the value a key holds, or a variable from the profile's .env
+	Unset(context.Context, *v1.UnsetRequest) (*v1.UnsetResponse, error)
+	// Where the settings are kept, what the administrator manages and who else decides them
+	Files(context.Context, *v1.FilesRequest) (*v1.FilesResponse, error)
+	// Which variables are set and what the saved settings leave inactive
+	Check(context.Context, *v1.CheckRequest) (*v1.CheckResponse, error)
+	// What config show prints beside the settings: the API keys, masked, the messaging platforms, the values skills declare
+	Show(context.Context, *v1.ShowRequest) (*v1.ShowResponse, error)
+	// Text of a config file, and that text saved back after an edit
+	Read(context.Context, *v1.ReadRequest) (*v1.ReadResponse, error)
+	Write(context.Context, *v1.WriteRequest) (*v1.WriteResponse, error)
+	// Makes a config file of the profile that is not there yet: every setting of its scope commented out at its default, with what it does
+	Seed(context.Context, *v1.SeedRequest) (*v1.SeedResponse, error)
 }
 
 // RegisterConfigServiceHandler registers svc as the icebath.config.v1.ConfigService implementation
@@ -84,6 +199,15 @@ func RegisterConfigServiceHandler(server *connect.Server, svc ConfigServiceHandl
 		connect.Method{Spec: configServiceListSpec(), Handler: adapter.list},
 		connect.Method{Spec: configServiceGetSpec(), Handler: adapter.get},
 		connect.Method{Spec: configServiceSetSpec(), Handler: adapter.set},
+		connect.Method{Spec: configServiceValueSpec(), Handler: adapter.value},
+		connect.Method{Spec: configServicePutSpec(), Handler: adapter.put},
+		connect.Method{Spec: configServiceUnsetSpec(), Handler: adapter.unset},
+		connect.Method{Spec: configServiceFilesSpec(), Handler: adapter.files},
+		connect.Method{Spec: configServiceCheckSpec(), Handler: adapter.check},
+		connect.Method{Spec: configServiceShowSpec(), Handler: adapter.show},
+		connect.Method{Spec: configServiceReadSpec(), Handler: adapter.read},
+		connect.Method{Spec: configServiceWriteSpec(), Handler: adapter.write},
+		connect.Method{Spec: configServiceSeedSpec(), Handler: adapter.seed},
 	)
 }
 
@@ -100,6 +224,42 @@ func (UnimplementedConfigServiceHandler) Get(context.Context, *v1.GetRequest) (*
 
 func (UnimplementedConfigServiceHandler) Set(context.Context, *v1.SetRequest) (*v1.SetResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.config.v1.ConfigService.Set is not implemented")
+}
+
+func (UnimplementedConfigServiceHandler) Value(context.Context, *v1.ValueRequest) (*v1.ValueResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.config.v1.ConfigService.Value is not implemented")
+}
+
+func (UnimplementedConfigServiceHandler) Put(context.Context, *v1.PutRequest) (*v1.PutResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.config.v1.ConfigService.Put is not implemented")
+}
+
+func (UnimplementedConfigServiceHandler) Unset(context.Context, *v1.UnsetRequest) (*v1.UnsetResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.config.v1.ConfigService.Unset is not implemented")
+}
+
+func (UnimplementedConfigServiceHandler) Files(context.Context, *v1.FilesRequest) (*v1.FilesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.config.v1.ConfigService.Files is not implemented")
+}
+
+func (UnimplementedConfigServiceHandler) Check(context.Context, *v1.CheckRequest) (*v1.CheckResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.config.v1.ConfigService.Check is not implemented")
+}
+
+func (UnimplementedConfigServiceHandler) Show(context.Context, *v1.ShowRequest) (*v1.ShowResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.config.v1.ConfigService.Show is not implemented")
+}
+
+func (UnimplementedConfigServiceHandler) Read(context.Context, *v1.ReadRequest) (*v1.ReadResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.config.v1.ConfigService.Read is not implemented")
+}
+
+func (UnimplementedConfigServiceHandler) Write(context.Context, *v1.WriteRequest) (*v1.WriteResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.config.v1.ConfigService.Write is not implemented")
+}
+
+func (UnimplementedConfigServiceHandler) Seed(context.Context, *v1.SeedRequest) (*v1.SeedResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.config.v1.ConfigService.Seed is not implemented")
 }
 
 type configServiceClient struct {
@@ -125,6 +285,78 @@ func (c *configServiceClient) Get(ctx context.Context, req *v1.GetRequest) (*v1.
 func (c *configServiceClient) Set(ctx context.Context, req *v1.SetRequest) (*v1.SetResponse, error) {
 	var res v1.SetResponse
 	if err := c.client.CallUnary(ctx, configServiceSetSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *configServiceClient) Value(ctx context.Context, req *v1.ValueRequest) (*v1.ValueResponse, error) {
+	var res v1.ValueResponse
+	if err := c.client.CallUnary(ctx, configServiceValueSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *configServiceClient) Put(ctx context.Context, req *v1.PutRequest) (*v1.PutResponse, error) {
+	var res v1.PutResponse
+	if err := c.client.CallUnary(ctx, configServicePutSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *configServiceClient) Unset(ctx context.Context, req *v1.UnsetRequest) (*v1.UnsetResponse, error) {
+	var res v1.UnsetResponse
+	if err := c.client.CallUnary(ctx, configServiceUnsetSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *configServiceClient) Files(ctx context.Context, req *v1.FilesRequest) (*v1.FilesResponse, error) {
+	var res v1.FilesResponse
+	if err := c.client.CallUnary(ctx, configServiceFilesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *configServiceClient) Check(ctx context.Context, req *v1.CheckRequest) (*v1.CheckResponse, error) {
+	var res v1.CheckResponse
+	if err := c.client.CallUnary(ctx, configServiceCheckSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *configServiceClient) Show(ctx context.Context, req *v1.ShowRequest) (*v1.ShowResponse, error) {
+	var res v1.ShowResponse
+	if err := c.client.CallUnary(ctx, configServiceShowSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *configServiceClient) Read(ctx context.Context, req *v1.ReadRequest) (*v1.ReadResponse, error) {
+	var res v1.ReadResponse
+	if err := c.client.CallUnary(ctx, configServiceReadSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *configServiceClient) Write(ctx context.Context, req *v1.WriteRequest) (*v1.WriteResponse, error) {
+	var res v1.WriteResponse
+	if err := c.client.CallUnary(ctx, configServiceWriteSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *configServiceClient) Seed(ctx context.Context, req *v1.SeedRequest) (*v1.SeedResponse, error) {
+	var res v1.SeedResponse
+	if err := c.client.CallUnary(ctx, configServiceSeedSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -162,6 +394,114 @@ func (h configServiceHandler) set(ctx context.Context, _ connect.Spec, stream co
 		return err
 	}
 	res, err := h.svc.Set(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h configServiceHandler) value(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ValueRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Value(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h configServiceHandler) put(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PutRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Put(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h configServiceHandler) unset(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.UnsetRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Unset(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h configServiceHandler) files(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.FilesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Files(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h configServiceHandler) check(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.CheckRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Check(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h configServiceHandler) show(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ShowRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Show(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h configServiceHandler) read(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ReadRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Read(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h configServiceHandler) write(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.WriteRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Write(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h configServiceHandler) seed(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SeedRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Seed(ctx, &req)
 	if err != nil {
 		return err
 	}

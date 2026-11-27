@@ -14,6 +14,8 @@ func Register(registry *provider.Registry) {
 func (specs) Specs() []provider.Spec {
 	return []provider.Spec{{
 		Name:               upstageconfig.Name,
+		Shape:              shape,
+		Carriers:           []string{"reasoning_content", "reasoning"},
 		DisplayName:        upstageconfig.Title,
 		Description:        "Solar models",
 		SignupURL:          "https://console.upstage.ai/api-keys",
@@ -30,6 +32,5 @@ func (specs) Specs() []provider.Spec {
 		ModelListing:       true,
 		HealthCheck:        true,
 		VisionToolMessages: true,
-		ModelsDevID:        upstageconfig.Name,
 	}}
 }

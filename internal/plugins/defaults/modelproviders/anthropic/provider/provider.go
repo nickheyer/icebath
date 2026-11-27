@@ -17,6 +17,7 @@ func (specs) Specs() []provider.Spec {
 	base := anthropicconfig.BaseURL
 	return []provider.Spec{{
 		Name:               anthropicconfig.Name,
+		Native:             native,
 		DisplayName:        anthropicconfig.Title,
 		BaseURL:            base,
 		BaseURLEnv:         anthropicconfig.BaseURLEnv,
@@ -32,6 +33,12 @@ func (specs) Specs() []provider.Spec {
 		HealthCheck:        true,
 		VisionToolMessages: true,
 		ModelsDevID:        anthropicconfig.Name,
+		StaticModels:       []string{"claude-fable-5.1", "claude-fable-5", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-5-20251101", "claude-sonnet-4-5-20250929", "claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-haiku-4-5-20251001"},
+		Prices:             prices,
+		TierPrices:         map[string]map[string]provider.Price{"fast": fast},
+		ListPrices:         "anthropic.com",
+		Billing:            []provider.Billing{{Label: "Anthropic", URL: "https://console.anthropic.com/settings/billing", Plan: "https://claude.ai/settings/usage"}},
+		AccountUsage:       accountUsage,
 		Settings: []config.Setting{
 			{Key: anthropicconfig.AdoptExternalLogins, Title: "Use Claude Code login", About: "Use Claude Code's login if one is on this machine", Default: true},
 		},

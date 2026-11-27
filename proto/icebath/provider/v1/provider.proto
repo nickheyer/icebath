@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package icebath.provider.v1;
 
+import "google/protobuf/timestamp.proto";
+
 // Providers of the profile in use, each a kind of provider with settings, models and accounts of its own
 service ProviderService {
   // Providers the profile has
@@ -14,6 +16,19 @@ service ProviderService {
   rpc AddAccount(AddAccountRequest) returns (AddAccountResponse);
   rpc RemoveAccount(RemoveAccountRequest) returns (RemoveAccountResponse);
   rpc UseAccount(UseAccountRequest) returns (UseAccountResponse);
+  // What the provider says the account in use may still spend
+  rpc Usage(UsageRequest) returns (UsageResponse);
+  // Renews the sign-in of an account now, clearing a limit its old token ran into
+  rpc Renew(RenewRequest) returns (RenewResponse);
+  // Forgets the limits accounts of a provider ran into, of one account or of all of them
+  rpc Reset(ResetRequest) returns (ResetResponse);
+  // Moves an account to a place in the order the provider's accounts are tried
+  rpc MoveAccount(MoveAccountRequest) returns (MoveAccountResponse);
+  rpc RenameAccount(RenameAccountRequest) returns (RenameAccountResponse);
+  // Whether a provider is signed in, with what and as whom
+  rpc Status(StatusRequest) returns (StatusResponse);
+  // Moves the key an account reads from an environment variable into the account itself
+  rpc KeepKey(KeepKeyRequest) returns (KeepKeyResponse);
 }
 
 enum Origin {
@@ -33,6 +48,30 @@ message Account {
   bool active = 4;
   Origin credential_origin = 5;
   string credential_source = 6;
+  // How it signs in: api_key, oauth, aws_sigv4 or gcp_oauth
+  string auth = 7;
+  // ready, limited, needs_sign_in, dead, or unavailable while it has no credential
+  string status = 8;
+  // When a limit it ran into lifts
+  google.protobuf.Timestamp resets = 9;
+  // What the provider said when it last refused the account
+  string reason = 10;
+  // Who it signs in as, such as an email
+  string identity = 11;
+  // Last characters of a hash of its secret, telling two apart without showing either
+  string fingerprint = 12;
+  // Takes part in the provider's rotation
+  bool rotate = 13;
+  // Place in the order the provider's accounts are tried
+  int32 priority = 14;
+  // Environment variable it reads its key from, for a key kept outside icebath
+  string key_env = 15;
+  // When its sign-in expires, unset when it doesn't or that isn't known
+  google.protobuf.Timestamp expires = 16;
+  // Requests made with it, counted for the least used rotation
+  int64 requests = 17;
+  // Whether its sign-in can be renewed
+  bool renewable = 18;
 }
 
 message Provider {
@@ -66,6 +105,23 @@ message Provider {
   repeated Account accounts = 20;
   // Whether a plugin registers its kind
   bool known = 21;
+  // Left out of the model pickers by models.catalog.excluded_providers
+  bool hidden = 22;
+  // Whether its kind can say what its accounts may still spend
+  bool usage = 23;
+  // What it last said the account in use may still spend, while that is fresh; unset until it has been asked, which a listing does in the
+  // background
+  AccountUsage account_usage = 24;
+  // Order the accounts of its rotation are used in: fill_first, round_robin, least_used or random
+  string strategy = 25;
+  // What it does held to one account that reached its limit: fail or rotate
+  string on_exhausted = 26;
+  // Held to the account named in account
+  bool pinned = 27;
+  // Takes turns between its accounts marked for rotation; neither this nor pinned takes every account in order
+  bool rotate = 28;
+  // Variables and programs its credential is not taken from
+  repeated string ignored = 29;
 }
 
 message Spec {
@@ -83,6 +139,9 @@ message Spec {
   repeated string key_env = 11;
   // Providers of the profile of this kind
   repeated string providers = 12;
+  repeated string aliases = 13;
+  // Whether its accounts keep an API key
+  bool keyed = 14;
 }
 
 message ListRequest {
@@ -107,10 +166,77 @@ message ModelsRequest {
   string provider = 1;
   // Profile to act on, the one in use when empty
   string profile = 2;
+  // Read the catalogs again rather than what is kept
+  bool refresh = 3;
 }
 
 message ModelsResponse {
   repeated string models = 1;
+  // What is known of each model, in the order of models
+  repeated Model details = 2;
+  // The models stand in for a list the provider could not give
+  bool fallback = 3;
+}
+
+// What is known of one model a provider offers
+message Model {
+  string id = 1;
+  // Such as recommended, free or default
+  string note = 2;
+  // Tokens it takes in at once and gives out at most, 0 when not known
+  int64 context = 3;
+  int64 max_output = 4;
+  // USD for a million tokens, as decimal text; empty when not known
+  string input_price = 5;
+  string output_price = 6;
+  string cache_read_price = 7;
+  // What it can do, such as reasoning, tools, vision
+  string abilities = 8;
+  // Whether it takes a reasoning effort, when that is known
+  optional bool reasoning = 9;
+  // Efforts it takes, least first, as its kind or the provider's listing names them; empty when neither does
+  repeated string efforts = 10;
+  // Its reasoning can't be turned off
+  bool mandatory_reasoning = 11;
+}
+
+message UsageRequest {
+  // Provider of the profile; when empty, the first connected one whose kind can say
+  string provider = 1;
+  // Profile to act on, the one in use when empty
+  string profile = 2;
+}
+
+message UsageResponse {
+  // Nothing when the kind can't say, no account is connected, or the provider couldn't be asked
+  AccountUsage usage = 1;
+}
+
+message AccountUsage {
+  // Provider asked, by its name in the profile
+  string provider = 1;
+  // Where the reading came from
+  string source = 2;
+  string title = 3;
+  string plan = 4;
+  google.protobuf.Timestamp fetched = 5;
+  repeated UsageWindow windows = 6;
+  repeated string details = 7;
+  // Why the account's limits can't be read
+  string unavailable = 8;
+  // Windows shown as bars under the plan's name
+  bool bars = 9;
+}
+
+message UsageWindow {
+  string label = 1;
+  // Share used in percent, unset when the provider didn't say
+  optional double used = 2;
+  // When the window starts over, unset when not known
+  google.protobuf.Timestamp resets = 3;
+  string detail = 4;
+  // Whether it caps one family of models rather than the whole account
+  bool model = 5;
 }
 
 message AddRequest {
@@ -152,9 +278,14 @@ message RemoveAccountRequest {
   string account = 2;
   // Profile to act on, the one in use when empty
   string profile = 3;
+  // In place of an account: a variable or program the provider takes its credential from outside its accounts, left out from now on
+  string source = 4;
 }
 
-message RemoveAccountResponse {}
+message RemoveAccountResponse {
+  // Variables cleared from the profile's .env: the one the account read its key from, or the source left out
+  repeated string cleared = 1;
+}
 
 message UseAccountRequest {
   string provider = 1;
@@ -164,3 +295,84 @@ message UseAccountRequest {
 }
 
 message UseAccountResponse {}
+
+message RenewRequest {
+  string provider = 1;
+  // Account to renew, the one in use when empty
+  string account = 2;
+  // Profile to act on, the one in use when empty
+  string profile = 3;
+}
+
+message RenewResponse {
+  Account account = 1;
+}
+
+message ResetRequest {
+  string provider = 1;
+  // Account whose limits to forget, every account of the provider when empty
+  string account = 2;
+  // Profile to act on, the one in use when empty
+  string profile = 3;
+}
+
+message ResetResponse {
+  // Accounts that had limits to forget
+  int32 cleared = 1;
+}
+
+message MoveAccountRequest {
+  string provider = 1;
+  string account = 2;
+  // Place from 0, the first tried; clamped to the places there are
+  int32 priority = 3;
+  // Profile to act on, the one in use when empty
+  string profile = 4;
+}
+
+message MoveAccountResponse {
+  // Place it took
+  int32 priority = 1;
+}
+
+message RenameAccountRequest {
+  string provider = 1;
+  string account = 2;
+  string name = 3;
+  // Profile to act on, the one in use when empty
+  string profile = 4;
+}
+
+message RenameAccountResponse {
+  Account account = 1;
+}
+
+message StatusRequest {
+  string provider = 1;
+  // Profile to act on, the one in use when empty
+  string profile = 2;
+}
+
+message StatusResponse {
+  bool logged_in = 1;
+  // Why it isn't, when it isn't
+  string error = 2;
+  // What it signs in with, as name and value pairs in the order shown
+  repeated Detail details = 3;
+}
+
+message Detail {
+  string name = 1;
+  string value = 2;
+}
+
+message KeepKeyRequest {
+  string provider = 1;
+  string account = 2;
+  // Profile to act on, the one in use when empty
+  string profile = 3;
+}
+
+message KeepKeyResponse {
+  Account account = 1;
+}

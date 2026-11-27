@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package icebath.plugins.generate.v1;
+
+// The services that draw pictures and make videos for image_generate and video_generate, and how each of them stands for a profile
+service GenerateService {
+  // Services of a kind and the one in use
+  rpc List(ListRequest) returns (ListResponse);
+  // Models of one service, read live where the service lists its own
+  rpc Models(ModelsRequest) returns (ModelsResponse);
+}
+
+// What a service makes
+enum Kind {
+  KIND_UNSPECIFIED = 0;
+  KIND_IMAGE = 1;
+  KIND_VIDEO = 2;
+}
+
+message Service {
+  // As image_gen.provider and video_gen.provider name it
+  string name = 1;
+  string title = 2;
+  // What it makes and how
+  string description = 3;
+  // Price and needs in a few words, such as paid
+  string badge = 4;
+  // Its key or sign-in is there
+  bool ready = 5;
+  // Chosen in the settings, and the one the tool uses now
+  bool chosen = 6;
+  bool active = 7;
+  // Settings a person sets to use it
+  repeated string settings = 8;
+  // Setting of the key it asks for, what to ask and where to get one; empty when it asks for none
+  string key = 9;
+  string prompt = 10;
+  string link = 11;
+  // Kind of model provider whose key or sign-in it uses, connected in /providers; empty for none
+  string provider = 12;
+  // What it says of itself as the settings have it, such as what its storage keeps
+  repeated string notes = 13;
+  // Setting a model picked for it is kept in, and the model the settings name for it now, empty for its default
+  string model_setting = 14;
+  string model = 15;
+}
+
+message ListRequest {
+  // Profile to read, the one in use when empty
+  string profile = 1;
+  Kind kind = 2;
+}
+
+message ListResponse {
+  repeated Service services = 1;
+  // Service chosen in the settings and the model they name, empty for none
+  string chosen = 2;
+  string model = 3;
+  // Whether the tool is offered, and why not when it isn't
+  bool offered = 4;
+  string reason = 5;
+  // Whether video_gen.enabled is on, for videos
+  bool enabled = 6;
+}
+
+message Model {
+  string id = 1;
+  string title = 2;
+  string speed = 3;
+  string strengths = 4;
+  string price = 5;
+  // What a video model makes videos from, and its lengths in seconds
+  repeated string modalities = 6;
+  int32 min_duration = 7;
+  int32 max_duration = 8;
+}
+
+message ModelsRequest {
+  string profile = 1;
+  Kind kind = 2;
+  string service = 3;
+}
+
+message ModelsResponse {
+  repeated Model models = 1;
+  // Model the service uses when no setting names one
+  string default = 2;
+}

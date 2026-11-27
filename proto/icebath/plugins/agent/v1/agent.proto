@@ -2,15 +2,76 @@ syntax = "proto3";
 
 package icebath.plugins.agent.v1;
 
+import "google/protobuf/timestamp.proto";
 import "icebath/sessions/v1/sessions.proto";
 
 service AgentService {
   rpc Send(SendRequest) returns (SendResponse);
   rpc Stop(StopRequest) returns (StopResponse);
   rpc Watch(WatchRequest) returns (stream WatchResponse);
+  // Sessions the server holds open, and what each is doing
+  rpc Live(LiveRequest) returns (LiveResponse);
+  // Closes a session the server holds open, stopping its turn; it stays stored
+  rpc Shut(ShutRequest) returns (ShutResponse);
+  // Takes back a message the user sent and everything after it, then sends the text in its place
+  rpc Edit(EditRequest) returns (EditResponse);
+  // Answers an approval prompt of the session yes, once, for the session or always
   rpc Approve(ApproveRequest) returns (ApproveResponse);
+  // Answers an approval prompt of the session no, with what the user said
   rpc Deny(DenyRequest) returns (DenyResponse);
+  // Asks the user in the session's chat before a command that deletes or resets something, unless confirmations are off
+  rpc Confirm(ConfirmRequest) returns (ConfirmResponse);
+  // Locks the answer of one question the agent asked, the last one settling the set
+  rpc Answer(AnswerRequest) returns (AnswerResponse);
+  // Dismisses the questions the agent asked, the answers locked so far kept
+  rpc Dismiss(DismissRequest) returns (DismissResponse);
+  // Live subagents of the session's spawn tree, the spawn pause, the limits of delegation and the session's failed background delegations
+  rpc Subagents(SubagentsRequest) returns (SubagentsResponse);
+  // Stops one subagent of the session's spawn tree at its next step, its tools asked to cancel
+  rpc Interrupt(InterruptRequest) returns (InterruptResponse);
+  // Queues guidance for the session's agent, or for one subagent of its spawn tree, delivered right after its next tool results
+  rpc Steer(SteerRequest) returns (SteerResponse);
+  // Blocks or lets through new subagents everywhere, those running going on; answers the state set
+  rpc Pause(PauseRequest) returns (PauseResponse);
+  // Newest part of the live transcript of a subagent the session's spawn tree ran, running or finished
+  rpc Tail(TailRequest) returns (TailResponse);
+  // Keeps a finished spawn tree of the session as the app showed it, for /replay
+  rpc SaveTree(SaveTreeRequest) returns (SaveTreeResponse);
+  // Spawn trees kept for the session, or for every session, newest first
+  rpc Trees(TreesRequest) returns (TreesResponse);
+  // One kept spawn tree, by its path
+  rpc LoadTree(LoadTreeRequest) returns (LoadTreeResponse);
+  // Holds the session to one login of a provider, or to the provider's rotation, and says what it does once that login runs out
+  rpc SetLogin(SetLoginRequest) returns (SetLoginResponse);
+  // Sends the session's last turn again when its login's limit resets, or at once, or drops a retry armed
+  rpc WaitLogin(WaitLoginRequest) returns (WaitLoginResponse);
+  // Ends the sessions as their hooks know it, such as those of an app that exits, and gives what the hooks have to tell the person
+  rpc Finalize(FinalizeRequest) returns (FinalizeResponse);
+  // Tells the session's pre_command hooks of a slash command the app runs itself
+  rpc Observe(ObserveRequest) returns (ObserveResponse);
 }
+
+message FinalizeRequest {
+  repeated string session_ids = 1;
+  // Why they end, such as shutdown
+  string reason = 2;
+}
+
+message FinalizeResponse {
+  // What the hooks have to tell the person, in the order of the sessions
+  repeated string messages = 1;
+}
+
+message ObserveRequest {
+  string session_id = 1;
+  // Command as the app knows it, and the name it was typed as
+  string command = 2;
+  string alias = 3;
+  // What followed the command on its line
+  string args = 4;
+}
+
+message ObserveResponse {}
 
 enum ApprovalScope {
   APPROVAL_SCOPE_UNSPECIFIED = 0;
@@ -22,15 +83,80 @@ enum ApprovalScope {
 message Delta {
   string text = 1;
   string reasoning = 2;
+  // The reply streamed so far was dropped, such as one asked for again; what streams next starts it over
+  bool restart = 3;
 }
 
+// Answer an approval prompt takes, with the words it shows for it
+message Choice {
+  // once, session, always or deny
+  string value = 1;
+  string label = 2;
+}
+
+// Prompt waiting for the user's answer
 message Approval {
+  // What would run or change, its secrets masked and anything hidden in it made visible
   string command = 1;
+  // What it was flagged as
   string reason = 2;
+  string id = 3;
+  // Keys an answer that lasts allows
+  repeated string keys = 4;
+  // Answers it takes, deny last
+  repeated Choice choices = 5;
+  // The smart reviewer judged it dangerous, so allowing it overrides that verdict
+  bool smart_denied = 6;
+  // When it stops waiting and counts as denied
+  google.protobuf.Timestamp deadline = 7;
+  // Heading of a prompt that is no approval of a command, such as the confirmation of a slash command; empty for the usual one
+  string title = 8;
+}
+
+// Approval prompts of the session waiting for an answer, oldest first; none when nothing waits
+message Approvals {
+  repeated Approval pending = 1;
+}
+
+// Question of a set the agent asks the user at once
+message Question {
+  // Stable within the set, the key of its answer
+  string id = 1;
+  string text = 2;
+  // Choices to pick from as shown, the recommended one first; none for an open question, which takes typed text
+  repeated string choices = 3;
+  // Whether any number of the choices may be picked
+  bool multi_select = 4;
+  // The answer is a secret, such as a password: masked as it is typed and never shown again
+  bool secret = 5;
+}
+
+// Answer locked for one question: the picked choices or the typed text, none for a question skipped
+message Answer {
+  repeated string values = 1;
+}
+
+// Questions the agent waits on the user for, with the answers locked so far by question id. No id clears them
+message Questions {
+  string id = 1;
+  repeated Question questions = 2;
+  map<string, Answer> answers = 3;
 }
 
 message Rewind {
   uint32 messages = 1;
+}
+
+// How far a running tool call got, as the tool tells it
+message Progress {
+  string tool_call_id = 1;
+  // Tool running, by name
+  string name = 2;
+  double progress = 3;
+  // Of how much, unset when the tool does not know
+  optional double total = 4;
+  // What it is doing now
+  string message = 5;
 }
 
 message State {
@@ -40,11 +166,61 @@ message State {
   bool yolo = 4;
   // Profile the session runs on
   string profile = 5;
+  // Tokens of the session's context as the provider last counted them with what came since estimated, and its model's window; 0 when
+  // not known
+  int64 context_used = 6;
+  int64 context_max = 7;
+  // Part of the context used is estimated rather than counted by the provider
+  bool context_estimated = 8;
+  // Compressions of the session's context so far
+  int32 compressions = 9;
+  // Dollars the session's model calls cost so far, the provider's figure where it gave one; 0 when not known
+  double cost = 10;
+  // What a message sent while the session's agent works does: queue, steer or interrupt
+  string busy_input_mode = 11;
 }
 
 message SendRequest {
   string session_id = 1;
   string text = 2;
+  // Variables of the shell the client runs in that its sessions take, frozen with the session by the first message it is sent: the
+  // behaviour variables, the toolchain and the names terminal.client_env_passthrough lists
+  map<string, string> client_env = 3;
+  // Name of the machine the client runs on, which with a connection from this machine proves the client's toolchain holds here
+  string client_host = 4;
+  // The session runs every command without asking from this message on, as a one-shot run of the command line does, kept with the session
+  bool yolo = 5;
+  // What the launch of the command line asks of the session from this message on, kept with it; each field set replaces what it held
+  Launch launch = 6;
+  // The person spoke the message in voice mode: its turn runs on the voice chat helper's model when one is set
+  bool voice = 7;
+  // The person cut a spoken reply off before sending the message, typed or spoken, which the model is told
+  bool interrupted = 8;
+  // Session the window left with /new for the one this message starts, whose end and reset the session hooks hear of
+  string left = 9;
+  // The client waits for this message's turn alone and leaves once it ends, as a query run of the command line does: nobody answers its
+  // prompts, and work the session would hear of later stays inside the turn. Each message sets it again
+  bool finite = 10;
+}
+
+// What a launch of the command line asks of the sessions it runs, over the settings of their profile
+message Launch {
+  // Skills loaded into the session's prompt
+  repeated string skills = 1;
+  // Most model calls of a reply
+  optional int32 max_turns = 2;
+  // Seconds a reply may take before the agent is told to wrap up, 0 for no limit
+  optional double run_budget = 3;
+  // The session's id goes into its prompt
+  optional bool pass_session_id = 4;
+  // No project instructions, SOUL.md, memory or preloaded skills go into its prompt
+  optional bool ignore_rules = 5;
+  // The profile's config files are left out, the defaults standing in for them; credentials in its .env still count
+  optional bool ignore_user_config = 6;
+  // Every customization is left out: the config files, project instructions and memory, and MCP servers
+  optional bool safe_mode = 7;
+  // Files are snapshotted before the agent changes them, for /rollback
+  optional bool checkpoints = 8;
 }
 
 message SendResponse {}
@@ -58,29 +234,380 @@ message StopResponse {}
 message ApproveRequest {
   string session_id = 1;
   ApprovalScope scope = 2;
+  // Prompt answered, the oldest when empty
+  string id = 3;
+  // Answers every prompt waiting
+  bool all = 4;
 }
 
-message ApproveResponse {}
+message ApproveResponse {
+  // Prompts answered
+  int32 count = 1;
+}
 
 message DenyRequest {
   string session_id = 1;
+  // What the user said, which the agent reads
   string reason = 2;
+  // Prompt answered, the oldest when empty
+  string id = 3;
+  // Answers every prompt waiting
+  bool all = 4;
 }
 
-message DenyResponse {}
+message ConfirmRequest {
+  string session_id = 1;
+  // Command asked about as typed, without its slash, such as "quit --delete"
+  string command = 2;
+  // What it deletes or resets
+  string detail = 3;
+}
+
+message ConfirmResponse {
+  // Whether to go ahead
+  bool ok = 1;
+  // What to tell the user: why it was cancelled, or that it won't ask again
+  string note = 2;
+}
+
+message DenyResponse {
+  // Prompts answered
+  int32 count = 1;
+}
+
+message AnswerRequest {
+  string session_id = 1;
+  // Set of questions, the id of its Questions event
+  string id = 2;
+  string question_id = 3;
+  Answer answer = 4;
+}
+
+message AnswerResponse {
+  // Questions of the set still waiting for an answer
+  repeated string remaining = 1;
+}
+
+message DismissRequest {
+  string session_id = 1;
+  // Set of questions, the id of its Questions event
+  string id = 2;
+}
+
+message DismissResponse {}
 
 message WatchRequest {
   string session_id = 1;
+  // Window watching, the same for every session one app run shows, for the limit of sessions a window keeps open
+  string client = 2;
 }
 
 message WatchResponse {
   oneof event {
     icebath.sessions.v1.Message message = 1;
     Delta delta = 2;
-    Approval approval = 3;
+    Approvals approvals = 3;
     string notice = 4;
     bool busy = 5;
     Rewind rewind = 6;
     State state = 7;
+    Questions questions = 8;
+    // Title the session was given
+    string title = 9;
+    Progress progress = 10;
+    // Session the conversation goes on in from now on, the watched one closed by a compression that continued it there
+    string continued = 11;
+    // What the session does besides the reply, such as compacting its context, shown while it lasts; empty once it is done
+    string activity = 12;
+    // How a subagent of the session's spawn tree goes
+    Subagent subagent = 13;
+    // The login the session is held to ran out, and icebath will not move to another on its own
+    LoginExhausted exhausted = 14;
   }
+}
+
+// One tool result among the last a subagent got
+message SubagentOutput {
+  string tool = 1;
+  string preview = 2;
+  bool error = 3;
+}
+
+// One step of a subagent of the session's spawn tree
+message Subagent {
+  // spawn_requested, start, thinking, progress, tool or complete
+  string kind = 1;
+  // Its id in the spawn tree, and that of the subagent that started it, empty under the session's own agent
+  string id = 2;
+  string parent_id = 3;
+  // Session it runs in
+  string session_id = 4;
+  // Call of delegate_task that started it
+  string delegation_id = 5;
+  // Levels below the session's own agent, 0 for a child of it
+  int32 depth = 6;
+  // Place of its task in the call, and the tasks of the call
+  int32 task_index = 7;
+  int32 task_count = 8;
+  string goal = 9;
+  string model = 10;
+  // leaf, or orchestrator for one that may start subagents of its own
+  string role = 11;
+  // Tools it called so far, and the tool and what it was given for a tool step
+  int32 tool_count = 12;
+  string tool = 13;
+  string preview = 14;
+  // What a thinking, progress or complete step says
+  string text = 15;
+  // queued, running, completed, failed, error, timeout or interrupted
+  string status = 16;
+  string summary = 17;
+  double duration_seconds = 18;
+  int64 input_tokens = 19;
+  int64 output_tokens = 20;
+  int64 reasoning_tokens = 21;
+  int32 api_calls = 22;
+  // Dollars its model calls cost, 0 when not known
+  double cost = 23;
+  repeated string files_read = 24;
+  repeated string files_written = 25;
+  repeated SubagentOutput output_tail = 26;
+  google.protobuf.Timestamp started = 27;
+  // Live transcript it streams to
+  string transcript = 28;
+  // Kind of failure that ended it, such as rate_limit or auth; empty when it did not fail on its model
+  string failure_reason = 29;
+}
+
+// One login of a provider
+message Login {
+  string id = 1;
+  string name = 2;
+}
+
+// The login a session is held to ran out: when its limit lifts, why, the provider's other logins ready now, and whether it has a rotation
+message LoginExhausted {
+  string session_id = 1;
+  // Provider of the profile, by its name there, and its kind
+  string provider = 2;
+  string kind = 3;
+  Login login = 4;
+  google.protobuf.Timestamp resets = 5;
+  string reason = 6;
+  repeated Login ready = 7;
+  bool rotation = 8;
+  // What the session does once the login runs out: fail or rotate
+  string on_exhausted = 9;
+}
+
+message LiveRequest {}
+
+// Session the server holds open
+message LiveSession {
+  string session_id = 1;
+  // Running a turn
+  bool busy = 2;
+  // Waiting on the user: a command to allow, or questions to answer
+  bool waiting = 3;
+  // Windows watching it
+  int32 watchers = 4;
+}
+
+message LiveResponse {
+  repeated LiveSession sessions = 1;
+}
+
+message ShutRequest {
+  string session_id = 1;
+}
+
+message ShutResponse {}
+
+message EditRequest {
+  string session_id = 1;
+  // Message the user sent that is taken back with all after it
+  int64 message_id = 2;
+  // Text sent in its place, none to only take it back
+  string text = 3;
+  // The person cut a spoken reply off before sending the text, which the model is told
+  bool interrupted = 4;
+}
+
+message EditResponse {
+  // Messages taken back
+  uint32 removed = 1;
+}
+
+message SubagentsRequest {
+  string session_id = 1;
+}
+
+// One subagent running in the session's spawn tree
+message LiveSubagent {
+  string id = 1;
+  string parent_id = 2;
+  int32 depth = 3;
+  string goal = 4;
+  string delegation_id = 5;
+  string model = 6;
+  google.protobuf.Timestamp started = 7;
+  // queued or running
+  string status = 8;
+  int32 tool_count = 9;
+  string last_tool = 10;
+  // It takes guidance until it starts finishing
+  bool steering = 11;
+  string transcript = 12;
+  string session_id = 13;
+  int32 task_index = 14;
+  int32 task_count = 15;
+}
+
+// One task of a background delegation of the session that failed
+message FailedDelegation {
+  string delegation_id = 1;
+  int32 task_index = 2;
+  string status = 3;
+  string goal = 4;
+  string error = 5;
+  google.protobuf.Timestamp dispatched = 6;
+  google.protobuf.Timestamp completed = 7;
+}
+
+message SubagentsResponse {
+  repeated LiveSubagent subagents = 1;
+  // Newest first
+  repeated FailedDelegation failed = 2;
+  bool paused = 3;
+  int32 max_spawn_depth = 4;
+  int32 max_concurrent_children = 5;
+}
+
+message InterruptRequest {
+  string session_id = 1;
+  string subagent_id = 2;
+}
+
+message InterruptResponse {
+  // It was still running
+  bool found = 1;
+}
+
+message SteerRequest {
+  string session_id = 1;
+  // Subagent steered, the session's own agent when empty
+  string subagent_id = 2;
+  string text = 3;
+}
+
+message SteerResponse {
+  // The guidance reached its queue; it is delivered after the next tool results
+  bool queued = 1;
+  // Why it did not
+  string reason = 2;
+}
+
+message PauseRequest {
+  bool paused = 1;
+}
+
+message PauseResponse {
+  bool paused = 1;
+}
+
+message TailRequest {
+  string session_id = 1;
+  string subagent_id = 2;
+}
+
+message TailResponse {
+  // The subagent left a transcript
+  bool available = 1;
+  string text = 2;
+  // Only the newest part of it is given
+  bool truncated = 3;
+}
+
+// A spawn tree as the app keeps it: every subagent it showed and how each went
+message SpawnTree {
+  string session_id = 1;
+  google.protobuf.Timestamp started = 2;
+  google.protobuf.Timestamp finished = 3;
+  string label = 4;
+  repeated Subagent subagents = 5;
+  // File it is kept in
+  string path = 6;
+}
+
+message SaveTreeRequest {
+  SpawnTree tree = 1;
+}
+
+message SaveTreeResponse {
+  string path = 1;
+}
+
+message TreesRequest {
+  string session_id = 1;
+  // Trees of every session
+  bool every = 2;
+  // Most trees listed, 50 when 0
+  int32 limit = 3;
+}
+
+message TreesResponse {
+  // Without their subagents, newest first
+  repeated SpawnTree trees = 1;
+  // Subagents of each tree, in the order of the trees
+  repeated int32 counts = 2;
+}
+
+message LoadTreeRequest {
+  string path = 1;
+}
+
+message LoadTreeResponse {
+  SpawnTree tree = 1;
+}
+
+message SetLoginRequest {
+  string session_id = 1;
+  // Provider of the profile the choice is for, the session's current one when empty
+  string provider = 2;
+  // Login held to: its id or name, @rotate for the provider's rotation; empty keeps the one held
+  string login = 3;
+  // What the session does once that login runs out: fail or rotate; empty keeps what it does
+  string on_exhausted = 4;
+  // Sends the last turn again on the new choice
+  bool retry = 5;
+  // Lets go of the session's own choice, the profile's standing again
+  bool clear = 6;
+}
+
+message SetLoginResponse {
+  // The login the session is held to now, empty for the profile's choice
+  string login = 1;
+  string on_exhausted = 2;
+  // The choice is for the session's current provider and holds from its next turn
+  bool current = 3;
+  bool retried = 4;
+  // Why the choice could not take effect at once, the choice kept
+  string warning = 5;
+}
+
+message WaitLoginRequest {
+  string session_id = 1;
+  // Provider of the profile, the session's current one when empty
+  string provider = 2;
+  // Sends the last turn again now rather than at the reset
+  bool now = 3;
+  // Drops a retry armed
+  bool cancel = 4;
+}
+
+message WaitLoginResponse {
+  // armed, retried, cancelled, or idle when nothing was waited for
+  string state = 1;
+  google.protobuf.Timestamp retry_at = 2;
+  Login login = 3;
 }

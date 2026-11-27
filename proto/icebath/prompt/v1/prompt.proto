@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package icebath.prompt.v1;
+
+service PromptService {
+  // Size of the system prompt and the tool schemas a new session would be sent, part by part
+  rpc Size(SizeRequest) returns (SizeResponse);
+  // Makes sessions build their system prompt again on their next turn, from what it is made of now
+  rpc Refresh(RefreshRequest) returns (RefreshResponse);
+}
+
+message SizeRequest {
+  // Folder the session would work in
+  string directory = 1;
+  // Where the session would be shown, such as "tui" or "cli"
+  string platform = 2;
+}
+
+// Part of the prompt and its size
+message Part {
+  string name = 1;
+  // Tier the part is in, such as "stable"
+  string tier = 2;
+  int64 chars = 3;
+  int64 bytes = 4;
+}
+
+// Tools of one toolset and the size of their schemas
+message Toolset {
+  string name = 1;
+  int64 tools = 2;
+  int64 bytes = 3;
+}
+
+message SizeResponse {
+  string platform = 1;
+  string model = 2;
+  int64 chars = 3;
+  int64 bytes = 4;
+  // Sections that say what they are, in the order they are sent
+  repeated Part sections = 5;
+  // Every tier, stable first
+  repeated Part tiers = 6;
+  int64 tools = 7;
+  int64 tool_bytes = 8;
+  // Largest first
+  repeated Toolset toolsets = 9;
+}
+
+message RefreshRequest {
+  // Session, or a unique start of its id; every session when empty
+  string session_id = 1;
+}
+
+message RefreshResponse {
+  // Session refreshed, empty for every session
+  string session_id = 1;
+  // Sessions that held a prompt
+  int64 sessions = 2;
+}

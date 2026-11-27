@@ -9,18 +9,21 @@ import (
 
 	"github.com/nickheyer/icebath/internal/app"
 	terminalconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/terminal/config"
+	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 )
 
 type screens struct{}
 
-func Register(registry *app.Registry) {
+func Register(registry *app.Registry, views *toolsapp.Registry) {
 	registry.Register(screens{})
+	views.Register(docks{})
 }
 
-func (screens) Screens(*connect.Client) []tui.Screen {
+func (screens) Screens(conn *connect.Client) []tui.Screen {
 	return []tui.Screen{
+		processScreen(conn),
 		{
 			ID:    "terminal",
 			Title: "Terminal",

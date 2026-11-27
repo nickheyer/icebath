@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-{{.Nonce}}'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'">
+<title>{{.Title}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sidebar-width: 320px;
+  --bg: #F8FAFC; --surface: #FFFFFF; --text: #0F172A; --muted: #64748B; --border: #E2E8F0;
+  --accent: #c8102e; --accent-soft: rgba(200, 16, 46, 0.08);
+  --code-bg: #1E293B; --code-text: #E2E8F0; --reasoning: #FFFBEB; --tool: #F0F9FF;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #05070a; --surface: #0d1117; --text: #E6EDF3; --muted: #8B949E; --border: #21262D;
+    --accent: #e3122b; --accent-soft: rgba(227, 18, 43, 0.12);
+    --code-bg: #010409; --code-text: #E6EDF3; --reasoning: #1f1a0b; --tool: #0b1a2a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+code, pre { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.layout { display: flex; min-height: 100vh; }
+.sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidebar-width); background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: transform 0.2s ease; z-index: 10; }
+.sidebar-header { padding: 20px; border-bottom: 1px solid var(--border); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; margin-bottom: 14px; }
+.search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.search input { border: none; outline: none; background: transparent; color: var(--text); width: 100%; font: inherit; }
+.session-list { overflow-y: auto; flex: 1; padding: 8px; }
+.session-item { display: block; padding: 10px 12px; border-radius: 8px; color: var(--text); text-decoration: none; margin-bottom: 4px; }
+.session-item:hover { background: var(--accent-soft); }
+.session-item.active { background: var(--accent-soft); border-left: 3px solid var(--accent); }
+.session-item .item-title { font-weight: 600; font-size: 0.92rem; }
+.session-item .item-meta { color: var(--muted); font-size: 0.78rem; display: flex; justify-content: space-between; }
+.main-content { flex: 1; margin-left: var(--sidebar-width); padding: 32px; min-width: 0; }
+.layout-single .main-content { margin-left: 0; }
+.layout-single .session-view { max-width: 90%; margin: 0 auto; }
+.session-view { display: none; }
+.session-view.active { display: block; }
+header h1 { margin: 0 0 8px; font-size: 1.8rem; }
+.meta { display: flex; flex-wrap: wrap; gap: 18px; color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
+.meta strong { color: var(--text); font-weight: 600; }
+.message { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px; overflow: hidden; }
+.message-assistant { border-left: 4px solid var(--accent); }
+.message-tool, .message-shell { border-style: dotted; background: var(--tool); }
+.message-header, .tool-call-header, .reasoning-header, .system-prompt-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; user-select: none; }
+.role-badge { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; text-transform: capitalize; }
+.timestamp { margin-left: auto; color: var(--muted); font-size: 0.78rem; }
+.message-body { display: none; padding: 0 16px 14px; }
+.message.active > .message-body { display: block; }
+.content { white-space: pre-wrap; word-wrap: break-word; }
+pre { background: var(--code-bg); color: var(--code-text); padding: 12px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; margin: 8px 0; }
+.tool-call, .reasoning, .system-prompt-section { border: 1px solid var(--border); border-radius: 8px; margin: 8px 0; }
+.reasoning { background: var(--reasoning); }
+.tool-call-content, .reasoning-content, .system-prompt-content { display: none; padding: 0 14px 10px; }
+.tool-call.active > .tool-call-content, .reasoning.active > .reasoning-content, .system-prompt-section.active > .system-prompt-content { display: block; }
+.chevron { transition: transform 0.15s ease; flex: none; }
+.active > div > .chevron { transform: rotate(90deg); }
+.system-prompt-section { background: var(--surface); margin-bottom: 24px; }
+footer { color: var(--muted); font-size: 0.8rem; text-align: center; padding: 32px 0 8px; }
+.hidden { display: none !important; }
+.fade-in { animation: fadeIn 0.35s ease both; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: none; }
+  .main-content { margin-left: 0; padding: 16px; }
+}
+</style>
+</head>
+<body>
+{{define "chevron"}}<svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>{{end}}
+{{define "icon"}}{{if eq . "user"}}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>{{else if eq . "bot"}}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>{{else if eq . "shield"}}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>{{else}}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>{{end}}{{end}}
+<div class="layout {{.Layout}}">
+{{if .Multi}}<aside class="sidebar">
+<div class="sidebar-header">
+<div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e3122b" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Icebath History</div>
+<div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input id="session-search" placeholder="Search sessions..."></div>
+</div>
+<div class="session-list">{{range .Sessions}}<a class="session-item" data-id="{{.ID}}" href="#{{.Anchor}}"><div class="item-title">{{.Link}}</div><div class="item-meta"><span>{{.Short}}</span><span>{{.Date}}</span></div></a>{{end}}</div>
+</aside>{{end}}
+<div class="main-content">
+{{range .Sessions}}<div class="session-view{{if not $.Multi}} active{{end}}" id="view-{{.ID}}">
+<header class="fade-in"><h1>{{.Title}}</h1>
+<div class="meta"><span><strong>ID:</strong> {{.ID}}</span><span><strong>Model:</strong> {{.Model}}</span><span><strong>Started:</strong> {{.Started}}</span></div></header>
+{{if .Prompt}}<div class="system-prompt-section active"><div class="system-prompt-header">{{template "chevron"}}{{template "icon" "shield"}} System Prompt (Persona)</div><div class="system-prompt-content"><div class="content">{{.Prompt}}</div></div></div>{{end}}
+<main>
+{{range .Messages}}<div class="message {{.Class}} active"{{if .Delay}} style="animation-delay: {{.Delay}}"{{end}}>
+<div class="message-header"><span class="role-badge">{{template "chevron"}}{{template "icon" .Icon}} {{.Role}}</span><span class="timestamp">{{.Time}}</span></div>
+<div class="message-body">
+{{range .Calls}}<div class="tool-call"><div class="tool-call-header">{{template "chevron"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Tool Call: {{.Name}}</div><div class="tool-call-content"><pre><code>{{.Arguments}}</code></pre></div></div>{{end}}
+{{if .Text}}<div class="content">{{if .Pre}}<pre><code>{{.Text}}</code></pre>{{else}}{{.Text}}{{end}}</div>{{end}}
+{{if .Reasoning}}<div class="reasoning"><div class="reasoning-header">{{template "chevron"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.13-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.13a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.13 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.13a.5.5 0 0 1-.96 0z"/></svg> Reasoning</div><div class="reasoning-content"><div class="content">{{.Reasoning}}</div></div></div>{{end}}
+</div>
+</div>
+{{end}}</main>
+</div>
+{{end}}<footer>Built with ❆ Icebath Agent • Generated on {{.Generated}}</footer>
+</div>
+</div>
+<script nonce="{{.Nonce}}">
+(function () {
+  var multi = {{.Multi}};
+  function showSession(id) {
+    document.querySelectorAll('.session-item').forEach(function (item) { item.classList.toggle('active', item.dataset.id === id); });
+    document.querySelectorAll('.session-view').forEach(function (view) { view.classList.toggle('active', view.id === 'view-' + id); });
+    if (location.hash !== '#' + encodeURIComponent(id)) { history.replaceState(null, '', '#' + encodeURIComponent(id)); }
+  }
+  document.querySelectorAll('.session-item').forEach(function (item) {
+    item.addEventListener('click', function (event) { event.preventDefault(); showSession(item.dataset.id); });
+  });
+  var search = document.getElementById('session-search');
+  if (search) {
+    search.addEventListener('input', function () {
+      var needle = search.value.toLowerCase();
+      document.querySelectorAll('.session-item').forEach(function (item) { item.classList.toggle('hidden', item.innerText.toLowerCase().indexOf(needle) < 0); });
+    });
+  }
+  document.addEventListener('click', function (event) {
+    var header = event.target.closest('.message-header, .tool-call-header, .reasoning-header, .system-prompt-header');
+    if (header) { header.parentElement.classList.toggle('active'); }
+  });
+  if (multi) {
+    var first = document.querySelector('.session-item');
+    if (location.hash) { showSession(decodeURIComponent(location.hash.slice(1))); } else if (first) { showSession(first.dataset.id); }
+  }
+  if ('IntersectionObserver' in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) { if (entry.isIntersecting) { entry.target.classList.add('fade-in'); observer.unobserve(entry.target); } });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.message').forEach(function (message) { observer.observe(message); });
+  }
+})();
+</script>
+</body>
+</html>

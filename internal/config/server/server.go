@@ -3,6 +3,7 @@ package server
 import (
 	"cmp"
 	"context"
+	"errors"
 	"slices"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/internal/config"
+	"github.com/nickheyer/icebath/internal/provider"
 	"github.com/nickheyer/icebath/internal/server"
 	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
@@ -25,37 +27,46 @@ var kinds = map[config.Kind]configv1.Kind{
 	config.Choice: configv1.Kind_KIND_CHOICE,
 	config.List:   configv1.Kind_KIND_LIST,
 	config.Table:  configv1.Kind_KIND_TABLE,
+	// A length of time, its value the number of its unit
+	config.Duration: configv1.Kind_KIND_DURATION,
 }
 
 var sources = map[config.Source]configv1.Source{
 	config.FromDefault:     configv1.Source_SOURCE_DEFAULT,
 	config.FromFile:        configv1.Source_SOURCE_FILE,
 	config.FromEnvironment: configv1.Source_SOURCE_ENVIRONMENT,
+	config.FromManaged:     configv1.Source_SOURCE_MANAGED,
 }
 
 type service struct {
 	config *config.Config
+	// Kinds of provider, whose key variables config check and config show list
+	providers *provider.Registry
+	// What else changes when config set or unset writes a credential variable of the profile's .env
+	credentials Credentials
 }
 
-func Register(host *server.Server, cfg *config.Config) {
-	host.Register(&service{config: cfg})
+// What else changes when config set or unset writes a credential variable of the profile's .env: the credentials host
+type Credentials interface {
+	// After the variable was saved over the value it held: copies of the old value in api key settings take the new one, the providers that
+	// read it take it again, and what held back the accounts it is the key of on the old value is cleared
+	Saved(cfg *config.Config, name, old, value string) error
+	// After the variable was removed: the providers that read it leave it out until it is set again, and copies of its old value in api key
+	// settings are removed. Whether a setting held a copy
+	Removed(cfg *config.Config, name, old string) (bool, error)
+}
+
+func Register(host *server.Server, cfg *config.Config, providers *provider.Registry, credentials Credentials) {
+	host.Register(&service{config: cfg, providers: providers, credentials: credentials})
 }
 
 func (s *service) Mount(services *connect.Server) {
 	configv1connect.RegisterConfigServiceHandler(services, s)
 }
 
-// Settings of the profile a request names, the one in use when it names none
-func (s *service) in(profile string) (*config.Config, error) {
-	if profile != "" && !s.config.Exists(profile) {
-		return nil, connect.NewError(connect.CodeNotFound, "No profile named "+profile)
-	}
-	return s.config.In(profile), nil
-}
-
 // Every section, those of a parent by title, and the settings of each in the order they were registered
 func (s *service) List(_ context.Context, request *configv1.ListRequest) (*configv1.ListResponse, error) {
-	cfg, err := s.in(request.GetProfile())
+	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +78,7 @@ func (s *service) List(_ context.Context, request *configv1.ListRequest) (*confi
 	for _, section := range sections {
 		response.Sections = append(response.Sections, &configv1.Section{Key: section.Key, Parent: section.Parent, Title: section.Title, Description: section.About, Global: cfg.Global(section.Key)})
 		for _, setting := range section.Settings {
-			message, err := describe(cfg, section, setting)
+			message, err := describe(cfg, section, setting, !request.GetBare())
 			if err != nil {
 				return nil, err
 			}
@@ -78,7 +89,7 @@ func (s *service) List(_ context.Context, request *configv1.ListRequest) (*confi
 }
 
 func (s *service) Get(_ context.Context, request *configv1.GetRequest) (*configv1.GetResponse, error) {
-	cfg, err := s.in(request.GetProfile())
+	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
@@ -86,39 +97,55 @@ func (s *service) Get(_ context.Context, request *configv1.GetRequest) (*configv
 	if !ok {
 		return nil, connect.NewError(connect.CodeNotFound, "No setting named "+request.GetKey())
 	}
-	message, err := describe(cfg, section, setting)
+	message, err := describe(cfg, section, setting, true)
 	if err != nil {
 		return nil, err
 	}
 	return &configv1.GetResponse{Setting: message}, nil
 }
 
-// Saves a value written in YAML, null putting the default back, once the setting it is for takes it
+// Saves a value written in YAML, null putting the default back, once the setting it is for takes it; a part of a table setting, such as one
+// entry, takes any value
 func (s *service) Set(_ context.Context, request *configv1.SetRequest) (*configv1.SetResponse, error) {
-	cfg, err := s.in(request.GetProfile())
+	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
-	_, setting, ok := cfg.Setting(request.GetKey())
-	if !ok {
-		return nil, connect.NewError(connect.CodeNotFound, "No setting named "+request.GetKey())
+	_, setting, known := cfg.Setting(request.GetKey())
+	if !known {
+		if _, _, under := cfg.Under(request.GetKey()); !under {
+			return nil, connect.NewError(connect.CodeNotFound, "No setting named "+request.GetKey())
+		}
+		setting.Key = strings.ToLower(request.GetKey())
 	}
 	var value any
 	if err := yaml.Unmarshal([]byte(request.GetValue()), &value); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 	}
-	value, err = setting.Check(value)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
+	if known {
+		if value, err = setting.Check(value); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
+		}
 	}
 	if err := cfg.Set(setting.Key, value); err != nil {
-		return nil, err
+		return nil, refusal(err)
 	}
 	return &configv1.SetResponse{}, nil
 }
 
-// Setting as the profile of the values has it
-func describe(values *config.Config, section config.Section, setting config.Setting) (*configv1.Setting, error) {
+// Error of a write as the caller reads it: a locked key or a config.yaml that can't be replaced refused as a failed precondition
+func refusal(err error) error {
+	if locked, ok := errors.AsType[*config.LockedError](err); ok {
+		return connect.NewError(connect.CodePermissionDenied, locked.Error())
+	}
+	if refused, ok := errors.AsType[*config.RefusedError](err); ok {
+		return connect.NewError(connect.CodeFailedPrecondition, refused.Error())
+	}
+	return err
+}
+
+// Setting as the profile of the values has it, with the values it may take when options says so
+func describe(values *config.Config, section config.Section, setting config.Setting, options bool) (*configv1.Setting, error) {
 	source, variable := values.Source(setting)
 	message := &configv1.Setting{
 		Key:         setting.Key,
@@ -132,13 +159,19 @@ func describe(values *config.Config, section config.Section, setting config.Sett
 		Variable:    variable,
 		Env:         setting.Env,
 	}
-	if setting.Options != nil {
+	if locked := values.Lock(setting.Key); locked != nil {
+		message.Locked = locked.Reason()
+	}
+	if options && setting.Options != nil {
 		for _, option := range setting.Options() {
 			message.Options = append(message.Options, &configv1.Option{Value: option.Value, Title: option.Title, Description: option.About})
 		}
 	}
+	if setting.Kind() == config.Duration {
+		message.Unit, message.Unset = setting.UnitName(), setting.Null
+	}
 	var err error
-	if message.DefaultValue, err = encode(setting.Default); err != nil {
+	if message.DefaultValue, err = encode(setting.DefaultValue()); err != nil {
 		return nil, err
 	}
 	value := values.Get(setting.Key)
