@@ -2,7 +2,8 @@ syntax = "proto3";
 
 package icebath.plugins.bitwarden.v1;
 
-// Bitwarden Secrets Manager as a store of a profile's secrets, read through the bws program
+// Bitwarden Secrets Manager as a store of a profile's secrets, read through the bws program. Turning it on or off and a fetch of it now are
+// those of every store, in the secret service
 service BitwardenService {
   // How the store is set up, with the bws program and its version
   rpc State(StateRequest) returns (StateResponse);
@@ -19,10 +20,6 @@ service BitwardenService {
   rpc Setup(SetupRequest) returns (Preview);
   // Keeps a new access token once Bitwarden accepts it, or without asking when told not to verify
   rpc Token(TokenRequest) returns (TokenResponse);
-  // Pulls the project's secrets now and says what the next start would do with each, setting them for the profile when asked
-  rpc Sync(SyncRequest) returns (Preview);
-  // Turns the store off, its token staying in the .env
-  rpc Disable(DisableRequest) returns (DisableResponse);
 }
 
 message StateRequest {
@@ -112,7 +109,7 @@ message SetupRequest {
   string project_id = 4;
 }
 
-// What the next fetch does with one secret: export, override, skip_set or skip_token; exported or overrode once a sync set it
+// What the next fetch does with one secret: export, override, skip_set or skip_token
 message Row {
   string name = 1;
   string action = 2;
@@ -121,8 +118,6 @@ message Row {
 message Preview {
   repeated Row rows = 1;
   repeated string warnings = 2;
-  // Variables a sync set for the profile
-  int32 exported = 3;
 }
 
 message TokenRequest {
@@ -147,13 +142,3 @@ message TokenResponse {
   bool binary_missing = 8;
 }
 
-message SyncRequest {
-  string profile = 1;
-  bool apply = 2;
-}
-
-message DisableRequest {
-  string profile = 1;
-}
-
-message DisableResponse {}

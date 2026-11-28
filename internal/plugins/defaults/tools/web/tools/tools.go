@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/internal/tools"
 	"github.com/nickheyer/icebath/internal/tools/document"
 	"github.com/nickheyer/icebath/internal/web"
+	webareaconfig "github.com/nickheyer/icebath/internal/web/config"
 )
 
 const toolset = "web"
@@ -60,6 +61,7 @@ func (r *registrant) Tools() []tools.Def {
 			),
 			Handler:        r.search,
 			Check:          r.available,
+			Lacks:          lacksService,
 			MaxResultChars: 100_000,
 			// Reads pages of the web, which hold what anyone wrote, and keeps no state of the session
 			Effect:    tools.ReadOnly,
@@ -83,6 +85,7 @@ func (r *registrant) Tools() []tools.Def {
 			),
 			Handler:        r.extract,
 			Check:          r.available,
+			Lacks:          lacksService,
 			MaxResultChars: 100_000,
 			// A page that won't load is ordinary output
 			Effect:    tools.ReadOnly,
@@ -355,4 +358,12 @@ func unhex(c byte) byte {
 		return c - 'A' + 10
 	}
 	return c - 'a' + 10
+}
+
+// What the web tools lack to run
+func lacksService(*tools.Env) string { return "It needs a web search service that is ready." }
+
+// The group of the web tools, whose options are the area of web search
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: "Web", Area: webareaconfig.Key, Order: 30}}
 }

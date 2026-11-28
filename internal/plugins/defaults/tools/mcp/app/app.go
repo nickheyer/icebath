@@ -5,8 +5,10 @@ import (
 	"connectrpc.com/connect/v2"
 
 	"github.com/nickheyer/icebath/internal/app"
+	mcpconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/mcp/config"
 	"github.com/nickheyer/icebath/internal/profile"
 	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
+	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/mcp/v1/mcpv1connect"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -48,6 +50,7 @@ func Register(registry *app.Registry, views *toolsapp.Registry) {
 
 func (screens) Screens(conn *connect.Client) []tui.Screen {
 	service := mcpv1connect.NewMcpServiceClient(conn)
+	settings := configv1connect.NewConfigServiceClient(conn)
 	watcher := &connections{service: service, cards: map[string]*connection{}}
 	return []tui.Screen{
 		{
@@ -58,11 +61,13 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 			Short:   "Add MCP servers and choose their tools",
 			Slash:   []string{"mcp"},
 			Usage:   "[@profile] [add|<server>]",
+			Area:    mcpconfig.Key,
+			Pages:   func(kit *tui.Kit, name string) []tui.Page { return serverPages(kit, service, name) },
 			Actions: actions,
-			Where:   map[string]string{serversContext: "MCP servers screen", signinContext: "MCP sign in", connectionContext: "MCP connection card"},
+			Where:   map[string]string{serversContext: "MCP servers page", signinContext: "MCP sign in", connectionContext: "MCP connection card"},
 			Open: func(kit *tui.Kit, argument string) tea.Cmd {
 				name, rest := profile.Split(argument)
-				return (&servers{kit: kit, service: service, profile: name}).open(rest)
+				return (&servers{kit: kit, service: service, settings: settings, profile: name}).open(rest)
 			},
 		},
 		{

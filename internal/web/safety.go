@@ -126,8 +126,11 @@ func reserved(ip netip.Addr) bool {
 // Whether the address is in the shared space 100.64.0.0/10 of carrier grade NAT
 func shared(ip netip.Addr) bool {
 	ip = reached(ip)
+	if !ip.Is4() {
+		return false
+	}
 	a := ip.As4()
-	return ip.Is4() && a[0] == 100 && a[1]&0xc0 == 64
+	return a[0] == 100 && a[1]&0xc0 == 64
 }
 
 // Whether the address is a cloud metadata address or link local, refused whatever the settings say
@@ -418,9 +421,14 @@ func literal(hostname string) (netip.Addr, bool) {
 }
 
 // Whether the URL is http or https on a public host: not ambiguous, not cloud metadata, and resolving to no private or internal address
-// unless the settings allow those. Anything that cannot be checked is refused, but a name that does not resolve passes through a proxy,
-// which resolves it itself
+// unless Read private addresses allows those. Anything that cannot be checked is refused, but a name that does not resolve passes through a
+// proxy, which resolves it itself
 func SafeURL(cfg *config.Config, raw string) bool {
+	return SafeFor(cfg, raw, cfg.GetBool(webconfig.PrivateURLs))
+}
+
+// SafeURL with private and internal addresses allowed by the caller's own switch, such as the one of the browser
+func SafeFor(cfg *config.Config, raw string, private bool) bool {
 	p, err := split(raw)
 	if err != nil || !httpScheme(p.scheme) {
 		return false
@@ -432,7 +440,7 @@ func SafeURL(cfg *config.Config, raw string) bool {
 	if err != nil || hostname == "" || slices.Contains(metadataHosts, hostname) {
 		return false
 	}
-	allow := cfg.GetBool(webconfig.PrivateURLs) || trusted(hostname, p.scheme)
+	allow := private || trusted(hostname, p.scheme)
 	addresses := []netip.Addr{}
 	if ip, ok := literal(hostname); ok {
 		addresses = append(addresses, ip)

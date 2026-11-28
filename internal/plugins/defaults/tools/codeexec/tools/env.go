@@ -147,7 +147,7 @@ func (r *registrant) folder(call *tools.Call, staging string) string {
 	}
 	candidates := []string{r.host.Folder(cfg, call.SessionID), call.Env.Cwd}
 	if configured := strings.TrimSpace(cfg.GetString(terminalconfig.Cwd)); !terminal.Placeholder(configured) {
-		candidates = append(candidates, terminal.ExpandUser(configured))
+		candidates = append(candidates, fsx.ExpandHome(configured))
 	}
 	if wd, err := os.Getwd(); err == nil {
 		candidates = append(candidates, wd)

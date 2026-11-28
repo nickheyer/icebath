@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/internal/config"
 	webconfig "github.com/nickheyer/icebath/internal/web/config"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 // Why the website blocklist refuses a URL
@@ -60,13 +60,7 @@ func rules(cfg *config.Config) []rule {
 		if file = strings.TrimSpace(file); file == "" {
 			continue
 		}
-		file = expand(file)
-		if !filepath.IsAbs(file) {
-			file = filepath.Join(cfg.ProfileDir(cfg.Profile()), file)
-			if resolved, err := filepath.EvalSymlinks(file); err == nil {
-				file = resolved
-			}
-		}
+		file = fsx.ExpandHome(file)
 		data, err := os.ReadFile(file)
 		if err != nil {
 			continue
@@ -108,14 +102,4 @@ func urlHost(raw string) string {
 		host, _ = hostOf("//" + raw)
 	}
 	return bare(host)
-}
-
-// Path with a leading ~ for the home folder
-func expand(file string) string {
-	if file == "~" || strings.HasPrefix(file, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, file[1:])
-		}
-	}
-	return file
 }

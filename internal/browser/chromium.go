@@ -29,20 +29,12 @@ var BypassArgs = []string{"--no-sandbox", "--disable-dev-shm-usage"}
 
 // Program browser.executable_path pins, ~ expanded, empty for none
 func Pinned(cfg *config.Config) string {
-	return terminal.ExpandUser(strings.TrimSpace(cfg.GetString(browserconfig.ExecutablePath)))
+	return fsx.ExpandHome(strings.TrimSpace(cfg.GetString(browserconfig.ExecutablePath)))
 }
 
-// Profile folder browser.user_data_dir keeps for every session, ~ expanded and a relative one under the profile folder; empty for none
+// Profile folder browser.user_data_dir keeps for every session, ~ expanded; empty for none
 func ProfileDir(cfg *config.Config) string {
-	raw := strings.TrimSpace(cfg.GetString(browserconfig.UserDataDir))
-	if raw == "" {
-		return ""
-	}
-	raw = terminal.ExpandUser(raw)
-	if filepath.IsAbs(raw) {
-		return raw
-	}
-	return filepath.Join(cfg.ProfileDir(cfg.Profile()), raw)
+	return fsx.ExpandHome(strings.TrimSpace(cfg.GetString(browserconfig.UserDataDir)))
 }
 
 // Chromium the package manager installed, empty when it has not
@@ -77,7 +69,7 @@ func baked() string {
 func Locate(name string) string {
 	name = strings.TrimSpace(name)
 	if strings.ContainsRune(name, os.PathSeparator) || runtime.GOOS == "windows" && strings.Contains(name, "/") {
-		expanded := os.ExpandEnv(terminal.ExpandUser(name))
+		expanded := os.ExpandEnv(fsx.ExpandHome(name))
 		if filepath.IsAbs(expanded) && fsx.Executable(expanded) {
 			return expanded
 		}
@@ -183,7 +175,7 @@ func Headless(exe string) bool {
 
 // Path a profile folder resolves to, as spelled when it can't be resolved
 func resolve(path string) string {
-	abs, err := filepath.Abs(terminal.ExpandUser(path))
+	abs, err := filepath.Abs(fsx.ExpandHome(path))
 	if err != nil {
 		return path
 	}

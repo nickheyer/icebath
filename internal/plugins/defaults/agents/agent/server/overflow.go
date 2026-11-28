@@ -225,8 +225,8 @@ func (a *Agent) recoverLength(ctx context.Context, r *run, settings *config.Conf
 	}
 	if models.OutputCapError(message) {
 		a.tell(r, "⚠ The provider refused the reply length asked for as more than it allows for this model, and did not say how much it allows. "+
-			"Summarizing can't fix this, because the limit is on the reply.\nFor Claude models, lower Max output in /settings under Connections › "+
-			"Anthropic messages API. For other models, check the most output tokens set for the model on the server or proxy.")
+			"Summarizing can't fix this, because the limit is on the reply.\nFor Claude models, lower Max output with /settings max output. "+
+			"For other models, check the most output tokens set for the model on the server or proxy.")
 		slog.Error("Output-cap error not routed into compression (max_tokens over provider cap): " + strs.Head(message, 200))
 		return ended, "The provider refused the reply length asked for as more than it allows for this model, and did not say how much it allows.", nil
 	}

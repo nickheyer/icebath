@@ -50,8 +50,9 @@ func (j *Job) Streams() bool {
 	return ok
 }
 
-// Speaks one sentence for the app to play: as PCM while it is made when asked and a voice streams, else as the files text_to_speech
-// writes, each sent as a clip and removed
+// Speaks one sentence of speech text for the app to play: as PCM while it is made when asked and a voice streams, else as the files
+// text_to_speech writes, each sent as a clip and removed. The app cleaned the sentence with the whole of its reply, as Spoken does, so it is
+// read as it is: cleaning a sentence alone again would read it unlike the reply it was cut from
 func (j *Job) Speak(ctx context.Context, text string, live bool, sink Sink) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -65,7 +66,7 @@ func (j *Job) Speak(ctx context.Context, text string, live bool, sink Sink) erro
 		return err
 	}
 	defer os.RemoveAll(dir)
-	outcome := j.TextToSpeech(ctx, Call{Text: text, OutputPath: filepath.Join(dir, "speech.mp3")})
+	outcome := j.TextToSpeech(ctx, Call{Text: text, OutputPath: filepath.Join(dir, "speech.mp3"), Speech: true})
 	if !outcome.Success {
 		return errors.New(outcome.Error)
 	}

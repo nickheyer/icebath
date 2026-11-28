@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/internal/mcp"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	"github.com/nickheyer/icebath/internal/provider"
 	mcpv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/mcp/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/mcp/v1/mcpv1connect"
@@ -36,7 +37,7 @@ func serve(service mcpv1connect.McpServiceClient) *cobra.Command {
 			}
 			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 			ctx := cmd.Context()
-			listed, err := service.ServeTools(ctx, &mcpv1.ServeToolsRequest{Tools: tools, AcceptHooks: acceptHooks})
+			listed, err := service.ServeTools(ctx, &mcpv1.ServeToolsRequest{Profile: picked.Picked(ctx), Tools: tools, AcceptHooks: acceptHooks})
 			if err != nil {
 				return err
 			}
@@ -62,10 +63,10 @@ func serve(service mcpv1connect.McpServiceClient) *cobra.Command {
 							return "", err
 						}
 						if !agent {
-							response, err := service.Bridge(ctx, &mcpv1.BridgeRequest{Name: name, Arguments: string(data)})
+							response, err := service.Bridge(ctx, &mcpv1.BridgeRequest{Profile: picked.Picked(ctx), Name: name, Arguments: string(data)})
 							return response.GetResult(), err
 						}
-						response, err := service.CallTool(ctx, &mcpv1.CallToolRequest{Name: name, Arguments: string(data), Directory: directory})
+						response, err := service.CallTool(ctx, &mcpv1.CallToolRequest{Profile: picked.Picked(ctx), Name: name, Arguments: string(data), Directory: directory})
 						if err != nil {
 							return "", err
 						}

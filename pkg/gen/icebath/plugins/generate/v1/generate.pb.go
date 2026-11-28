@@ -71,6 +71,67 @@ func (Kind) EnumDescriptor() ([]byte, []int) {
 	return file_icebath_plugins_generate_v1_generate_proto_rawDescGZIP(), []int{0}
 }
 
+// How a service stands for the profile
+type State int32
+
+const (
+	State_STATE_UNSPECIFIED State = 0
+	// Makes things of the kind for the agent now
+	State_STATE_IN_USE State = 1
+	State_STATE_READY  State = 2
+	// Ready, and costs nothing
+	State_STATE_FREE          State = 3
+	State_STATE_NEEDS_KEY     State = 4
+	State_STATE_NOT_CONNECTED State = 5
+)
+
+// Enum value maps for State.
+var (
+	State_name = map[int32]string{
+		0: "STATE_UNSPECIFIED",
+		1: "STATE_IN_USE",
+		2: "STATE_READY",
+		3: "STATE_FREE",
+		4: "STATE_NEEDS_KEY",
+		5: "STATE_NOT_CONNECTED",
+	}
+	State_value = map[string]int32{
+		"STATE_UNSPECIFIED":   0,
+		"STATE_IN_USE":        1,
+		"STATE_READY":         2,
+		"STATE_FREE":          3,
+		"STATE_NEEDS_KEY":     4,
+		"STATE_NOT_CONNECTED": 5,
+	}
+)
+
+func (x State) Enum() *State {
+	p := new(State)
+	*p = x
+	return p
+}
+
+func (x State) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (State) Descriptor() protoreflect.EnumDescriptor {
+	return file_icebath_plugins_generate_v1_generate_proto_enumTypes[1].Descriptor()
+}
+
+func (State) Type() protoreflect.EnumType {
+	return &file_icebath_plugins_generate_v1_generate_proto_enumTypes[1]
+}
+
+func (x State) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use State.Descriptor instead.
+func (State) EnumDescriptor() ([]byte, []int) {
+	return file_icebath_plugins_generate_v1_generate_proto_rawDescGZIP(), []int{1}
+}
+
 type Service struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// As image_gen.provider and video_gen.provider name it
@@ -78,26 +139,25 @@ type Service struct {
 	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	// What it makes and how
 	Description string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	// Price and needs in a few words, such as paid
-	Badge string `protobuf:"bytes,4,opt,name=badge,proto3" json:"badge,omitempty"`
-	// Its key or sign-in is there
-	Ready bool `protobuf:"varint,5,opt,name=ready,proto3" json:"ready,omitempty"`
-	// Chosen in the settings, and the one the tool uses now
+	State       State  `protobuf:"varint,4,opt,name=state,proto3,enum=icebath.plugins.generate.v1.State" json:"state,omitempty"`
+	// The state in the words every page says it in
+	Words string `protobuf:"bytes,5,opt,name=words,proto3" json:"words,omitempty"`
+	// Chosen in the settings
 	Chosen bool `protobuf:"varint,6,opt,name=chosen,proto3" json:"chosen,omitempty"`
-	Active bool `protobuf:"varint,7,opt,name=active,proto3" json:"active,omitempty"`
-	// Settings a person sets to use it
-	Settings []string `protobuf:"bytes,8,rep,name=settings,proto3" json:"settings,omitempty"`
-	// Setting of the key it asks for, what to ask and where to get one; empty when it asks for none
-	Key    string `protobuf:"bytes,9,opt,name=key,proto3" json:"key,omitempty"`
-	Prompt string `protobuf:"bytes,10,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	Link   string `protobuf:"bytes,11,opt,name=link,proto3" json:"link,omitempty"`
-	// Kind of model provider whose key or sign-in it uses, connected in /providers; empty for none
-	Provider string `protobuf:"bytes,12,opt,name=provider,proto3" json:"provider,omitempty"`
+	// Section of its settings for the kind, whose page is its page
+	Section string `protobuf:"bytes,7,opt,name=section,proto3" json:"section,omitempty"`
+	// Setting of its own model for the kind
+	ModelSetting string `protobuf:"bytes,8,opt,name=model_setting,json=modelSetting,proto3" json:"model_setting,omitempty"`
+	// Setting of the API key of its own and where to get one; empty for a service that uses an account at a provider
+	Key  string `protobuf:"bytes,9,opt,name=key,proto3" json:"key,omitempty"`
+	Link string `protobuf:"bytes,10,opt,name=link,proto3" json:"link,omitempty"`
+	// Provider of the profile whose account it uses and its name, empty while the profile has none; the kind of provider a person adds
+	// otherwise
+	Provider      string `protobuf:"bytes,11,opt,name=provider,proto3" json:"provider,omitempty"`
+	ProviderTitle string `protobuf:"bytes,12,opt,name=provider_title,json=providerTitle,proto3" json:"provider_title,omitempty"`
+	ProviderKind  string `protobuf:"bytes,13,opt,name=provider_kind,json=providerKind,proto3" json:"provider_kind,omitempty"`
 	// What it says of itself as the settings have it, such as what its storage keeps
-	Notes []string `protobuf:"bytes,13,rep,name=notes,proto3" json:"notes,omitempty"`
-	// Setting a model picked for it is kept in, and the model the settings name for it now, empty for its default
-	ModelSetting  string `protobuf:"bytes,14,opt,name=model_setting,json=modelSetting,proto3" json:"model_setting,omitempty"`
-	Model         string `protobuf:"bytes,15,opt,name=model,proto3" json:"model,omitempty"`
+	Notes         []string `protobuf:"bytes,14,rep,name=notes,proto3" json:"notes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -153,18 +213,18 @@ func (x *Service) GetDescription() string {
 	return ""
 }
 
-func (x *Service) GetBadge() string {
+func (x *Service) GetState() State {
 	if x != nil {
-		return x.Badge
+		return x.State
 	}
-	return ""
+	return State_STATE_UNSPECIFIED
 }
 
-func (x *Service) GetReady() bool {
+func (x *Service) GetWords() string {
 	if x != nil {
-		return x.Ready
+		return x.Words
 	}
-	return false
+	return ""
 }
 
 func (x *Service) GetChosen() bool {
@@ -174,30 +234,23 @@ func (x *Service) GetChosen() bool {
 	return false
 }
 
-func (x *Service) GetActive() bool {
+func (x *Service) GetSection() string {
 	if x != nil {
-		return x.Active
+		return x.Section
 	}
-	return false
+	return ""
 }
 
-func (x *Service) GetSettings() []string {
+func (x *Service) GetModelSetting() string {
 	if x != nil {
-		return x.Settings
+		return x.ModelSetting
 	}
-	return nil
+	return ""
 }
 
 func (x *Service) GetKey() string {
 	if x != nil {
 		return x.Key
-	}
-	return ""
-}
-
-func (x *Service) GetPrompt() string {
-	if x != nil {
-		return x.Prompt
 	}
 	return ""
 }
@@ -216,6 +269,20 @@ func (x *Service) GetProvider() string {
 	return ""
 }
 
+func (x *Service) GetProviderTitle() string {
+	if x != nil {
+		return x.ProviderTitle
+	}
+	return ""
+}
+
+func (x *Service) GetProviderKind() string {
+	if x != nil {
+		return x.ProviderKind
+	}
+	return ""
+}
+
 func (x *Service) GetNotes() []string {
 	if x != nil {
 		return x.Notes
@@ -223,25 +290,13 @@ func (x *Service) GetNotes() []string {
 	return nil
 }
 
-func (x *Service) GetModelSetting() string {
-	if x != nil {
-		return x.ModelSetting
-	}
-	return ""
-}
-
-func (x *Service) GetModel() string {
-	if x != nil {
-		return x.Model
-	}
-	return ""
-}
-
 type ListRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Profile to read, the one in use when empty
-	Profile       string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	Kind          Kind   `protobuf:"varint,2,opt,name=kind,proto3,enum=icebath.plugins.generate.v1.Kind" json:"kind,omitempty"`
+	Profile string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Kind    Kind   `protobuf:"varint,2,opt,name=kind,proto3,enum=icebath.plugins.generate.v1.Kind" json:"kind,omitempty"`
+	// Only what each service is, its name, title, description, section and key setting, with nothing that takes time to find
+	Bare          bool `protobuf:"varint,3,opt,name=bare,proto3" json:"bare,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -290,17 +345,24 @@ func (x *ListRequest) GetKind() Kind {
 	return Kind_KIND_UNSPECIFIED
 }
 
+func (x *ListRequest) GetBare() bool {
+	if x != nil {
+		return x.Bare
+	}
+	return false
+}
+
 type ListResponse struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Services []*Service             `protobuf:"bytes,1,rep,name=services,proto3" json:"services,omitempty"`
-	// Service chosen in the settings and the model they name, empty for none
+	// Service chosen in the settings, empty for the first that is ready
 	Chosen string `protobuf:"bytes,2,opt,name=chosen,proto3" json:"chosen,omitempty"`
-	Model  string `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
-	// Whether the tool is offered, and why not when it isn't
-	Offered bool   `protobuf:"varint,4,opt,name=offered,proto3" json:"offered,omitempty"`
-	Reason  string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
-	// Whether video_gen.enabled is on, for videos
-	Enabled       bool `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	// Whether the agent makes things of the kind: images always, videos while Make videos is on
+	On bool `protobuf:"varint,3,opt,name=on,proto3" json:"on,omitempty"`
+	// What keeps the agent from making them, a sentence; empty when nothing does
+	Hindrance string `protobuf:"bytes,4,opt,name=hindrance,proto3" json:"hindrance,omitempty"`
+	// Title of the service that makes them now, empty while none does
+	Serving       string `protobuf:"bytes,5,opt,name=serving,proto3" json:"serving,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -349,32 +411,25 @@ func (x *ListResponse) GetChosen() string {
 	return ""
 }
 
-func (x *ListResponse) GetModel() string {
+func (x *ListResponse) GetOn() bool {
 	if x != nil {
-		return x.Model
-	}
-	return ""
-}
-
-func (x *ListResponse) GetOffered() bool {
-	if x != nil {
-		return x.Offered
+		return x.On
 	}
 	return false
 }
 
-func (x *ListResponse) GetReason() string {
+func (x *ListResponse) GetHindrance() string {
 	if x != nil {
-		return x.Reason
+		return x.Hindrance
 	}
 	return ""
 }
 
-func (x *ListResponse) GetEnabled() bool {
+func (x *ListResponse) GetServing() string {
 	if x != nil {
-		return x.Enabled
+		return x.Serving
 	}
-	return false
+	return ""
 }
 
 type Model struct {
@@ -541,7 +596,7 @@ func (x *ModelsRequest) GetService() string {
 type ModelsResponse struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Models []*Model               `protobuf:"bytes,1,rep,name=models,proto3" json:"models,omitempty"`
-	// Model the service uses when no setting names one
+	// Model the service uses when its setting names none
 	Default       string `protobuf:"bytes,2,opt,name=default,proto3" json:"default,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -591,38 +646,195 @@ func (x *ModelsResponse) GetDefault() string {
 	return ""
 }
 
+type ChooseRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Kind    Kind                   `protobuf:"varint,2,opt,name=kind,proto3,enum=icebath.plugins.generate.v1.Kind" json:"kind,omitempty"`
+	// Name of the service, empty for the first that is ready
+	Service       string `protobuf:"bytes,3,opt,name=service,proto3" json:"service,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChooseRequest) Reset() {
+	*x = ChooseRequest{}
+	mi := &file_icebath_plugins_generate_v1_generate_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChooseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChooseRequest) ProtoMessage() {}
+
+func (x *ChooseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_generate_v1_generate_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChooseRequest.ProtoReflect.Descriptor instead.
+func (*ChooseRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_generate_v1_generate_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ChooseRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ChooseRequest) GetKind() Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return Kind_KIND_UNSPECIFIED
+}
+
+func (x *ChooseRequest) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+// What the change says once it is kept
+type ChooseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Note          string                 `protobuf:"bytes,1,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChooseResponse) Reset() {
+	*x = ChooseResponse{}
+	mi := &file_icebath_plugins_generate_v1_generate_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChooseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChooseResponse) ProtoMessage() {}
+
+func (x *ChooseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_generate_v1_generate_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChooseResponse.ProtoReflect.Descriptor instead.
+func (*ChooseResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_generate_v1_generate_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ChooseResponse) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type VideosRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	On            bool                   `protobuf:"varint,2,opt,name=on,proto3" json:"on,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VideosRequest) Reset() {
+	*x = VideosRequest{}
+	mi := &file_icebath_plugins_generate_v1_generate_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VideosRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VideosRequest) ProtoMessage() {}
+
+func (x *VideosRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_generate_v1_generate_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VideosRequest.ProtoReflect.Descriptor instead.
+func (*VideosRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_generate_v1_generate_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *VideosRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *VideosRequest) GetOn() bool {
+	if x != nil {
+		return x.On
+	}
+	return false
+}
+
 var File_icebath_plugins_generate_v1_generate_proto protoreflect.FileDescriptor
 
 const file_icebath_plugins_generate_v1_generate_proto_rawDesc = "" +
 	"\n" +
-	"*icebath/plugins/generate/v1/generate.proto\x12\x1bicebath.plugins.generate.v1\"\xf8\x02\n" +
+	"*icebath/plugins/generate/v1/generate.proto\x12\x1bicebath.plugins.generate.v1\"\xa0\x03\n" +
 	"\aService\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x14\n" +
-	"\x05badge\x18\x04 \x01(\tR\x05badge\x12\x14\n" +
-	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x16\n" +
-	"\x06chosen\x18\x06 \x01(\bR\x06chosen\x12\x16\n" +
-	"\x06active\x18\a \x01(\bR\x06active\x12\x1a\n" +
-	"\bsettings\x18\b \x03(\tR\bsettings\x12\x10\n" +
-	"\x03key\x18\t \x01(\tR\x03key\x12\x16\n" +
-	"\x06prompt\x18\n" +
-	" \x01(\tR\x06prompt\x12\x12\n" +
-	"\x04link\x18\v \x01(\tR\x04link\x12\x1a\n" +
-	"\bprovider\x18\f \x01(\tR\bprovider\x12\x14\n" +
-	"\x05notes\x18\r \x03(\tR\x05notes\x12#\n" +
-	"\rmodel_setting\x18\x0e \x01(\tR\fmodelSetting\x12\x14\n" +
-	"\x05model\x18\x0f \x01(\tR\x05model\"^\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x128\n" +
+	"\x05state\x18\x04 \x01(\x0e2\".icebath.plugins.generate.v1.StateR\x05state\x12\x14\n" +
+	"\x05words\x18\x05 \x01(\tR\x05words\x12\x16\n" +
+	"\x06chosen\x18\x06 \x01(\bR\x06chosen\x12\x18\n" +
+	"\asection\x18\a \x01(\tR\asection\x12#\n" +
+	"\rmodel_setting\x18\b \x01(\tR\fmodelSetting\x12\x10\n" +
+	"\x03key\x18\t \x01(\tR\x03key\x12\x12\n" +
+	"\x04link\x18\n" +
+	" \x01(\tR\x04link\x12\x1a\n" +
+	"\bprovider\x18\v \x01(\tR\bprovider\x12%\n" +
+	"\x0eprovider_title\x18\f \x01(\tR\rproviderTitle\x12#\n" +
+	"\rprovider_kind\x18\r \x01(\tR\fproviderKind\x12\x14\n" +
+	"\x05notes\x18\x0e \x03(\tR\x05notes\"r\n" +
 	"\vListRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x125\n" +
-	"\x04kind\x18\x02 \x01(\x0e2!.icebath.plugins.generate.v1.KindR\x04kind\"\xca\x01\n" +
+	"\x04kind\x18\x02 \x01(\x0e2!.icebath.plugins.generate.v1.KindR\x04kind\x12\x12\n" +
+	"\x04bare\x18\x03 \x01(\bR\x04bare\"\xb0\x01\n" +
 	"\fListResponse\x12@\n" +
 	"\bservices\x18\x01 \x03(\v2$.icebath.plugins.generate.v1.ServiceR\bservices\x12\x16\n" +
-	"\x06chosen\x18\x02 \x01(\tR\x06chosen\x12\x14\n" +
-	"\x05model\x18\x03 \x01(\tR\x05model\x12\x18\n" +
-	"\aoffered\x18\x04 \x01(\bR\aoffered\x12\x16\n" +
-	"\x06reason\x18\x05 \x01(\tR\x06reason\x12\x18\n" +
-	"\aenabled\x18\x06 \x01(\bR\aenabled\"\xdd\x01\n" +
+	"\x06chosen\x18\x02 \x01(\tR\x06chosen\x12\x0e\n" +
+	"\x02on\x18\x03 \x01(\bR\x02on\x12\x1c\n" +
+	"\thindrance\x18\x04 \x01(\tR\thindrance\x12\x18\n" +
+	"\aserving\x18\x05 \x01(\tR\aserving\"\xdd\x01\n" +
 	"\x05Model\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
@@ -640,16 +852,35 @@ const file_icebath_plugins_generate_v1_generate_proto_rawDesc = "" +
 	"\aservice\x18\x03 \x01(\tR\aservice\"f\n" +
 	"\x0eModelsResponse\x12:\n" +
 	"\x06models\x18\x01 \x03(\v2\".icebath.plugins.generate.v1.ModelR\x06models\x12\x18\n" +
-	"\adefault\x18\x02 \x01(\tR\adefault*<\n" +
+	"\adefault\x18\x02 \x01(\tR\adefault\"z\n" +
+	"\rChooseRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x125\n" +
+	"\x04kind\x18\x02 \x01(\x0e2!.icebath.plugins.generate.v1.KindR\x04kind\x12\x18\n" +
+	"\aservice\x18\x03 \x01(\tR\aservice\"$\n" +
+	"\x0eChooseResponse\x12\x12\n" +
+	"\x04note\x18\x01 \x01(\tR\x04note\"9\n" +
+	"\rVideosRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x0e\n" +
+	"\x02on\x18\x02 \x01(\bR\x02on*<\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x10KIND_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
 	"KIND_IMAGE\x10\x01\x12\x0e\n" +
 	"\n" +
-	"KIND_VIDEO\x10\x022\xd1\x01\n" +
+	"KIND_VIDEO\x10\x02*\x7f\n" +
+	"\x05State\x12\x15\n" +
+	"\x11STATE_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fSTATE_IN_USE\x10\x01\x12\x0f\n" +
+	"\vSTATE_READY\x10\x02\x12\x0e\n" +
+	"\n" +
+	"STATE_FREE\x10\x03\x12\x13\n" +
+	"\x0fSTATE_NEEDS_KEY\x10\x04\x12\x17\n" +
+	"\x13STATE_NOT_CONNECTED\x10\x052\x97\x03\n" +
 	"\x0fGenerateService\x12[\n" +
 	"\x04List\x12(.icebath.plugins.generate.v1.ListRequest\x1a).icebath.plugins.generate.v1.ListResponse\x12a\n" +
-	"\x06Models\x12*.icebath.plugins.generate.v1.ModelsRequest\x1a+.icebath.plugins.generate.v1.ModelsResponseB\x8c\x02\n" +
+	"\x06Models\x12*.icebath.plugins.generate.v1.ModelsRequest\x1a+.icebath.plugins.generate.v1.ModelsResponse\x12a\n" +
+	"\x06Choose\x12*.icebath.plugins.generate.v1.ChooseRequest\x1a+.icebath.plugins.generate.v1.ChooseResponse\x12a\n" +
+	"\x06Videos\x12*.icebath.plugins.generate.v1.VideosRequest\x1a+.icebath.plugins.generate.v1.ChooseResponseB\x8c\x02\n" +
 	"\x1fcom.icebath.plugins.generate.v1B\rGenerateProtoP\x01ZKgithub.com/nickheyer/icebath/pkg/gen/icebath/plugins/generate/v1;generatev1\xa2\x02\x03IPG\xaa\x02\x1bIcebath.Plugins.Generate.V1\xca\x02\x1bIcebath\\Plugins\\Generate\\V1\xe2\x02'Icebath\\Plugins\\Generate\\V1\\GPBMetadata\xea\x02\x1eIcebath::Plugins::Generate::V1b\x06proto3"
 
 var (
@@ -664,31 +895,41 @@ func file_icebath_plugins_generate_v1_generate_proto_rawDescGZIP() []byte {
 	return file_icebath_plugins_generate_v1_generate_proto_rawDescData
 }
 
-var file_icebath_plugins_generate_v1_generate_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_icebath_plugins_generate_v1_generate_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_icebath_plugins_generate_v1_generate_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_icebath_plugins_generate_v1_generate_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_icebath_plugins_generate_v1_generate_proto_goTypes = []any{
 	(Kind)(0),              // 0: icebath.plugins.generate.v1.Kind
-	(*Service)(nil),        // 1: icebath.plugins.generate.v1.Service
-	(*ListRequest)(nil),    // 2: icebath.plugins.generate.v1.ListRequest
-	(*ListResponse)(nil),   // 3: icebath.plugins.generate.v1.ListResponse
-	(*Model)(nil),          // 4: icebath.plugins.generate.v1.Model
-	(*ModelsRequest)(nil),  // 5: icebath.plugins.generate.v1.ModelsRequest
-	(*ModelsResponse)(nil), // 6: icebath.plugins.generate.v1.ModelsResponse
+	(State)(0),             // 1: icebath.plugins.generate.v1.State
+	(*Service)(nil),        // 2: icebath.plugins.generate.v1.Service
+	(*ListRequest)(nil),    // 3: icebath.plugins.generate.v1.ListRequest
+	(*ListResponse)(nil),   // 4: icebath.plugins.generate.v1.ListResponse
+	(*Model)(nil),          // 5: icebath.plugins.generate.v1.Model
+	(*ModelsRequest)(nil),  // 6: icebath.plugins.generate.v1.ModelsRequest
+	(*ModelsResponse)(nil), // 7: icebath.plugins.generate.v1.ModelsResponse
+	(*ChooseRequest)(nil),  // 8: icebath.plugins.generate.v1.ChooseRequest
+	(*ChooseResponse)(nil), // 9: icebath.plugins.generate.v1.ChooseResponse
+	(*VideosRequest)(nil),  // 10: icebath.plugins.generate.v1.VideosRequest
 }
 var file_icebath_plugins_generate_v1_generate_proto_depIdxs = []int32{
-	0, // 0: icebath.plugins.generate.v1.ListRequest.kind:type_name -> icebath.plugins.generate.v1.Kind
-	1, // 1: icebath.plugins.generate.v1.ListResponse.services:type_name -> icebath.plugins.generate.v1.Service
-	0, // 2: icebath.plugins.generate.v1.ModelsRequest.kind:type_name -> icebath.plugins.generate.v1.Kind
-	4, // 3: icebath.plugins.generate.v1.ModelsResponse.models:type_name -> icebath.plugins.generate.v1.Model
-	2, // 4: icebath.plugins.generate.v1.GenerateService.List:input_type -> icebath.plugins.generate.v1.ListRequest
-	5, // 5: icebath.plugins.generate.v1.GenerateService.Models:input_type -> icebath.plugins.generate.v1.ModelsRequest
-	3, // 6: icebath.plugins.generate.v1.GenerateService.List:output_type -> icebath.plugins.generate.v1.ListResponse
-	6, // 7: icebath.plugins.generate.v1.GenerateService.Models:output_type -> icebath.plugins.generate.v1.ModelsResponse
-	6, // [6:8] is the sub-list for method output_type
-	4, // [4:6] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	1,  // 0: icebath.plugins.generate.v1.Service.state:type_name -> icebath.plugins.generate.v1.State
+	0,  // 1: icebath.plugins.generate.v1.ListRequest.kind:type_name -> icebath.plugins.generate.v1.Kind
+	2,  // 2: icebath.plugins.generate.v1.ListResponse.services:type_name -> icebath.plugins.generate.v1.Service
+	0,  // 3: icebath.plugins.generate.v1.ModelsRequest.kind:type_name -> icebath.plugins.generate.v1.Kind
+	5,  // 4: icebath.plugins.generate.v1.ModelsResponse.models:type_name -> icebath.plugins.generate.v1.Model
+	0,  // 5: icebath.plugins.generate.v1.ChooseRequest.kind:type_name -> icebath.plugins.generate.v1.Kind
+	3,  // 6: icebath.plugins.generate.v1.GenerateService.List:input_type -> icebath.plugins.generate.v1.ListRequest
+	6,  // 7: icebath.plugins.generate.v1.GenerateService.Models:input_type -> icebath.plugins.generate.v1.ModelsRequest
+	8,  // 8: icebath.plugins.generate.v1.GenerateService.Choose:input_type -> icebath.plugins.generate.v1.ChooseRequest
+	10, // 9: icebath.plugins.generate.v1.GenerateService.Videos:input_type -> icebath.plugins.generate.v1.VideosRequest
+	4,  // 10: icebath.plugins.generate.v1.GenerateService.List:output_type -> icebath.plugins.generate.v1.ListResponse
+	7,  // 11: icebath.plugins.generate.v1.GenerateService.Models:output_type -> icebath.plugins.generate.v1.ModelsResponse
+	9,  // 12: icebath.plugins.generate.v1.GenerateService.Choose:output_type -> icebath.plugins.generate.v1.ChooseResponse
+	9,  // 13: icebath.plugins.generate.v1.GenerateService.Videos:output_type -> icebath.plugins.generate.v1.ChooseResponse
+	10, // [10:14] is the sub-list for method output_type
+	6,  // [6:10] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_icebath_plugins_generate_v1_generate_proto_init() }
@@ -701,8 +942,8 @@ func file_icebath_plugins_generate_v1_generate_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_plugins_generate_v1_generate_proto_rawDesc), len(file_icebath_plugins_generate_v1_generate_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   6,
+			NumEnums:      2,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

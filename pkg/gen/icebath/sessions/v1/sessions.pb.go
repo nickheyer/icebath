@@ -4743,6 +4743,87 @@ func (x *WatchResponse) GetIds() []string {
 	return nil
 }
 
+type NoticesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NoticesRequest) Reset() {
+	*x = NoticesRequest{}
+	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NoticesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NoticesRequest) ProtoMessage() {}
+
+func (x *NoticesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NoticesRequest.ProtoReflect.Descriptor instead.
+func (*NoticesRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_sessions_v1_sessions_proto_rawDescGZIP(), []int{62}
+}
+
+type NoticesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Full sentences, oldest first
+	Notices       []string `protobuf:"bytes,1,rep,name=notices,proto3" json:"notices,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NoticesResponse) Reset() {
+	*x = NoticesResponse{}
+	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NoticesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NoticesResponse) ProtoMessage() {}
+
+func (x *NoticesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NoticesResponse.ProtoReflect.Descriptor instead.
+func (*NoticesResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_sessions_v1_sessions_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *NoticesResponse) GetNotices() []string {
+	if x != nil {
+		return x.Notices
+	}
+	return nil
+}
+
 type RetitleSkillsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Apply         bool                   `protobuf:"varint,1,opt,name=apply,proto3" json:"apply,omitempty"`
@@ -4753,7 +4834,7 @@ type RetitleSkillsRequest struct {
 
 func (x *RetitleSkillsRequest) Reset() {
 	*x = RetitleSkillsRequest{}
-	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[62]
+	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4765,7 +4846,7 @@ func (x *RetitleSkillsRequest) String() string {
 func (*RetitleSkillsRequest) ProtoMessage() {}
 
 func (x *RetitleSkillsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[62]
+	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4778,7 +4859,7 @@ func (x *RetitleSkillsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetitleSkillsRequest.ProtoReflect.Descriptor instead.
 func (*RetitleSkillsRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_sessions_v1_sessions_proto_rawDescGZIP(), []int{62}
+	return file_icebath_sessions_v1_sessions_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *RetitleSkillsRequest) GetApply() bool {
@@ -4812,7 +4893,7 @@ type Retitle struct {
 
 func (x *Retitle) Reset() {
 	*x = Retitle{}
-	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[63]
+	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4824,7 +4905,7 @@ func (x *Retitle) String() string {
 func (*Retitle) ProtoMessage() {}
 
 func (x *Retitle) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[63]
+	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4837,7 +4918,7 @@ func (x *Retitle) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Retitle.ProtoReflect.Descriptor instead.
 func (*Retitle) Descriptor() ([]byte, []int) {
-	return file_icebath_sessions_v1_sessions_proto_rawDescGZIP(), []int{63}
+	return file_icebath_sessions_v1_sessions_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *Retitle) GetId() string {
@@ -4893,7 +4974,7 @@ type RetitleSkillsResponse struct {
 
 func (x *RetitleSkillsResponse) Reset() {
 	*x = RetitleSkillsResponse{}
-	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[64]
+	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4905,7 +4986,7 @@ func (x *RetitleSkillsResponse) String() string {
 func (*RetitleSkillsResponse) ProtoMessage() {}
 
 func (x *RetitleSkillsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[64]
+	mi := &file_icebath_sessions_v1_sessions_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4918,7 +4999,7 @@ func (x *RetitleSkillsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetitleSkillsResponse.ProtoReflect.Descriptor instead.
 func (*RetitleSkillsResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_sessions_v1_sessions_proto_rawDescGZIP(), []int{64}
+	return file_icebath_sessions_v1_sessions_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *RetitleSkillsResponse) GetCandidates() int32 {
@@ -5343,7 +5424,10 @@ const file_icebath_sessions_v1_sessions_proto_rawDesc = "" +
 	"\tdiscarded\x18\x02 \x03(\tR\tdiscarded\"\x0e\n" +
 	"\fWatchRequest\"!\n" +
 	"\rWatchResponse\x12\x10\n" +
-	"\x03ids\x18\x01 \x03(\tR\x03ids\"B\n" +
+	"\x03ids\x18\x01 \x03(\tR\x03ids\"\x10\n" +
+	"\x0eNoticesRequest\"+\n" +
+	"\x0fNoticesResponse\x12\x18\n" +
+	"\anotices\x18\x01 \x03(\tR\anotices\"B\n" +
 	"\x14RetitleSkillsRequest\x12\x14\n" +
 	"\x05apply\x18\x01 \x01(\bR\x05apply\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"\x97\x01\n" +
@@ -5372,7 +5456,7 @@ const file_icebath_sessions_v1_sessions_proto_rawDesc = "" +
 	"\x12TASK_CLEAN_MARKERS\x10\x03\x12\x0f\n" +
 	"\vTASK_REPAIR\x10\x04\x12\x10\n" +
 	"\fTASK_RECOVER\x10\x05\x12\x15\n" +
-	"\x11TASK_JOURNAL_MODE\x10\x062\xb9\x10\n" +
+	"\x11TASK_JOURNAL_MODE\x10\x062\x8f\x11\n" +
 	"\x0eSessionService\x12Q\n" +
 	"\x06Create\x12\".icebath.sessions.v1.CreateRequest\x1a#.icebath.sessions.v1.CreateResponse\x12K\n" +
 	"\x04List\x12 .icebath.sessions.v1.ListRequest\x1a!.icebath.sessions.v1.ListResponse\x12H\n" +
@@ -5397,7 +5481,8 @@ const file_icebath_sessions_v1_sessions_proto_rawDesc = "" +
 	"\x04Lost\x12 .icebath.sessions.v1.LostRequest\x1a!.icebath.sessions.v1.LostResponse\x12T\n" +
 	"\aDiscard\x12#.icebath.sessions.v1.DiscardRequest\x1a$.icebath.sessions.v1.DiscardResponse\x12f\n" +
 	"\rRetitleSkills\x12).icebath.sessions.v1.RetitleSkillsRequest\x1a*.icebath.sessions.v1.RetitleSkillsResponse\x12P\n" +
-	"\x05Watch\x12!.icebath.sessions.v1.WatchRequest\x1a\".icebath.sessions.v1.WatchResponse0\x01B\xdb\x01\n" +
+	"\x05Watch\x12!.icebath.sessions.v1.WatchRequest\x1a\".icebath.sessions.v1.WatchResponse0\x01\x12T\n" +
+	"\aNotices\x12#.icebath.sessions.v1.NoticesRequest\x1a$.icebath.sessions.v1.NoticesResponseB\xdb\x01\n" +
 	"\x17com.icebath.sessions.v1B\rSessionsProtoP\x01ZCgithub.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1;sessionsv1\xa2\x02\x03ISX\xaa\x02\x13Icebath.Sessions.V1\xca\x02\x13Icebath\\Sessions\\V1\xe2\x02\x1fIcebath\\Sessions\\V1\\GPBMetadata\xea\x02\x15Icebath::Sessions::V1b\x06proto3"
 
 var (
@@ -5413,7 +5498,7 @@ func file_icebath_sessions_v1_sessions_proto_rawDescGZIP() []byte {
 }
 
 var file_icebath_sessions_v1_sessions_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_icebath_sessions_v1_sessions_proto_msgTypes = make([]protoimpl.MessageInfo, 67)
+var file_icebath_sessions_v1_sessions_proto_msgTypes = make([]protoimpl.MessageInfo, 69)
 var file_icebath_sessions_v1_sessions_proto_goTypes = []any{
 	(Role)(0),                      // 0: icebath.sessions.v1.Role
 	(Task)(0),                      // 1: icebath.sessions.v1.Task
@@ -5479,29 +5564,31 @@ var file_icebath_sessions_v1_sessions_proto_goTypes = []any{
 	(*DiscardResponse)(nil),        // 61: icebath.sessions.v1.DiscardResponse
 	(*WatchRequest)(nil),           // 62: icebath.sessions.v1.WatchRequest
 	(*WatchResponse)(nil),          // 63: icebath.sessions.v1.WatchResponse
-	(*RetitleSkillsRequest)(nil),   // 64: icebath.sessions.v1.RetitleSkillsRequest
-	(*Retitle)(nil),                // 65: icebath.sessions.v1.Retitle
-	(*RetitleSkillsResponse)(nil),  // 66: icebath.sessions.v1.RetitleSkillsResponse
-	nil,                            // 67: icebath.sessions.v1.Message.CarriersEntry
-	nil,                            // 68: icebath.sessions.v1.RepairProfilesResponse.AppliedEntry
-	(*timestamppb.Timestamp)(nil),  // 69: google.protobuf.Timestamp
+	(*NoticesRequest)(nil),         // 64: icebath.sessions.v1.NoticesRequest
+	(*NoticesResponse)(nil),        // 65: icebath.sessions.v1.NoticesResponse
+	(*RetitleSkillsRequest)(nil),   // 66: icebath.sessions.v1.RetitleSkillsRequest
+	(*Retitle)(nil),                // 67: icebath.sessions.v1.Retitle
+	(*RetitleSkillsResponse)(nil),  // 68: icebath.sessions.v1.RetitleSkillsResponse
+	nil,                            // 69: icebath.sessions.v1.Message.CarriersEntry
+	nil,                            // 70: icebath.sessions.v1.RepairProfilesResponse.AppliedEntry
+	(*timestamppb.Timestamp)(nil),  // 71: google.protobuf.Timestamp
 }
 var file_icebath_sessions_v1_sessions_proto_depIdxs = []int32{
-	69, // 0: icebath.sessions.v1.Session.created:type_name -> google.protobuf.Timestamp
-	69, // 1: icebath.sessions.v1.Session.updated:type_name -> google.protobuf.Timestamp
-	69, // 2: icebath.sessions.v1.Session.ended:type_name -> google.protobuf.Timestamp
+	71, // 0: icebath.sessions.v1.Session.created:type_name -> google.protobuf.Timestamp
+	71, // 1: icebath.sessions.v1.Session.updated:type_name -> google.protobuf.Timestamp
+	71, // 2: icebath.sessions.v1.Session.ended:type_name -> google.protobuf.Timestamp
 	2,  // 3: icebath.sessions.v1.Session.usage:type_name -> icebath.sessions.v1.Usage
-	69, // 4: icebath.sessions.v1.Session.read:type_name -> google.protobuf.Timestamp
+	71, // 4: icebath.sessions.v1.Session.read:type_name -> google.protobuf.Timestamp
 	3,  // 5: icebath.sessions.v1.Session.peer:type_name -> icebath.sessions.v1.Peer
 	0,  // 6: icebath.sessions.v1.Message.role:type_name -> icebath.sessions.v1.Role
 	5,  // 7: icebath.sessions.v1.Message.tool_calls:type_name -> icebath.sessions.v1.ToolCall
-	67, // 8: icebath.sessions.v1.Message.carriers:type_name -> icebath.sessions.v1.Message.CarriersEntry
+	69, // 8: icebath.sessions.v1.Message.carriers:type_name -> icebath.sessions.v1.Message.CarriersEntry
 	7,  // 9: icebath.sessions.v1.Message.media:type_name -> icebath.sessions.v1.Media
-	69, // 10: icebath.sessions.v1.Message.time:type_name -> google.protobuf.Timestamp
-	69, // 11: icebath.sessions.v1.Filter.active_before:type_name -> google.protobuf.Timestamp
-	69, // 12: icebath.sessions.v1.Filter.active_after:type_name -> google.protobuf.Timestamp
-	69, // 13: icebath.sessions.v1.Filter.started_before:type_name -> google.protobuf.Timestamp
-	69, // 14: icebath.sessions.v1.Filter.started_after:type_name -> google.protobuf.Timestamp
+	71, // 10: icebath.sessions.v1.Message.time:type_name -> google.protobuf.Timestamp
+	71, // 11: icebath.sessions.v1.Filter.active_before:type_name -> google.protobuf.Timestamp
+	71, // 12: icebath.sessions.v1.Filter.active_after:type_name -> google.protobuf.Timestamp
+	71, // 13: icebath.sessions.v1.Filter.started_before:type_name -> google.protobuf.Timestamp
+	71, // 14: icebath.sessions.v1.Filter.started_after:type_name -> google.protobuf.Timestamp
 	4,  // 15: icebath.sessions.v1.CreateResponse.session:type_name -> icebath.sessions.v1.Session
 	8,  // 16: icebath.sessions.v1.ListRequest.filter:type_name -> icebath.sessions.v1.Filter
 	4,  // 17: icebath.sessions.v1.ListResponse.sessions:type_name -> icebath.sessions.v1.Session
@@ -5510,13 +5597,13 @@ var file_icebath_sessions_v1_sessions_proto_depIdxs = []int32{
 	4,  // 20: icebath.sessions.v1.ResolveResponse.session:type_name -> icebath.sessions.v1.Session
 	4,  // 21: icebath.sessions.v1.MarkResponse.session:type_name -> icebath.sessions.v1.Session
 	4,  // 22: icebath.sessions.v1.BranchResponse.session:type_name -> icebath.sessions.v1.Session
-	69, // 23: icebath.sessions.v1.SearchRequest.after:type_name -> google.protobuf.Timestamp
-	69, // 24: icebath.sessions.v1.SearchRequest.before:type_name -> google.protobuf.Timestamp
+	71, // 23: icebath.sessions.v1.SearchRequest.after:type_name -> google.protobuf.Timestamp
+	71, // 24: icebath.sessions.v1.SearchRequest.before:type_name -> google.protobuf.Timestamp
 	0,  // 25: icebath.sessions.v1.Hit.role:type_name -> icebath.sessions.v1.Role
-	69, // 26: icebath.sessions.v1.Hit.time:type_name -> google.protobuf.Timestamp
-	69, // 27: icebath.sessions.v1.Hit.session_started:type_name -> google.protobuf.Timestamp
+	71, // 26: icebath.sessions.v1.Hit.time:type_name -> google.protobuf.Timestamp
+	71, // 27: icebath.sessions.v1.Hit.session_started:type_name -> google.protobuf.Timestamp
 	26, // 28: icebath.sessions.v1.SearchResponse.hits:type_name -> icebath.sessions.v1.Hit
-	69, // 29: icebath.sessions.v1.Prompt.time:type_name -> google.protobuf.Timestamp
+	71, // 29: icebath.sessions.v1.Prompt.time:type_name -> google.protobuf.Timestamp
 	29, // 30: icebath.sessions.v1.PromptsResponse.prompts:type_name -> icebath.sessions.v1.Prompt
 	8,  // 31: icebath.sessions.v1.ExportRequest.filter:type_name -> icebath.sessions.v1.Filter
 	4,  // 32: icebath.sessions.v1.Transcript.session:type_name -> icebath.sessions.v1.Session
@@ -5534,11 +5621,11 @@ var file_icebath_sessions_v1_sessions_proto_depIdxs = []int32{
 	48, // 44: icebath.sessions.v1.RepairPromptsResponse.unverifiable:type_name -> icebath.sessions.v1.PromptFinding
 	51, // 45: icebath.sessions.v1.RepairRoutingResponse.orphans:type_name -> icebath.sessions.v1.Orphan
 	54, // 46: icebath.sessions.v1.RepairProfilesResponse.findings:type_name -> icebath.sessions.v1.ProfileFinding
-	68, // 47: icebath.sessions.v1.RepairProfilesResponse.applied:type_name -> icebath.sessions.v1.RepairProfilesResponse.AppliedEntry
-	69, // 48: icebath.sessions.v1.Admission.created:type_name -> google.protobuf.Timestamp
-	69, // 49: icebath.sessions.v1.Admission.started:type_name -> google.protobuf.Timestamp
+	70, // 47: icebath.sessions.v1.RepairProfilesResponse.applied:type_name -> icebath.sessions.v1.RepairProfilesResponse.AppliedEntry
+	71, // 48: icebath.sessions.v1.Admission.created:type_name -> google.protobuf.Timestamp
+	71, // 49: icebath.sessions.v1.Admission.started:type_name -> google.protobuf.Timestamp
 	57, // 50: icebath.sessions.v1.LostResponse.admissions:type_name -> icebath.sessions.v1.Admission
-	65, // 51: icebath.sessions.v1.RetitleSkillsResponse.retitles:type_name -> icebath.sessions.v1.Retitle
+	67, // 51: icebath.sessions.v1.RetitleSkillsResponse.retitles:type_name -> icebath.sessions.v1.Retitle
 	9,  // 52: icebath.sessions.v1.SessionService.Create:input_type -> icebath.sessions.v1.CreateRequest
 	11, // 53: icebath.sessions.v1.SessionService.List:input_type -> icebath.sessions.v1.ListRequest
 	13, // 54: icebath.sessions.v1.SessionService.Get:input_type -> icebath.sessions.v1.GetRequest
@@ -5561,34 +5648,36 @@ var file_icebath_sessions_v1_sessions_proto_depIdxs = []int32{
 	55, // 71: icebath.sessions.v1.SessionService.RepairProfiles:input_type -> icebath.sessions.v1.RepairProfilesRequest
 	58, // 72: icebath.sessions.v1.SessionService.Lost:input_type -> icebath.sessions.v1.LostRequest
 	60, // 73: icebath.sessions.v1.SessionService.Discard:input_type -> icebath.sessions.v1.DiscardRequest
-	64, // 74: icebath.sessions.v1.SessionService.RetitleSkills:input_type -> icebath.sessions.v1.RetitleSkillsRequest
+	66, // 74: icebath.sessions.v1.SessionService.RetitleSkills:input_type -> icebath.sessions.v1.RetitleSkillsRequest
 	62, // 75: icebath.sessions.v1.SessionService.Watch:input_type -> icebath.sessions.v1.WatchRequest
-	10, // 76: icebath.sessions.v1.SessionService.Create:output_type -> icebath.sessions.v1.CreateResponse
-	12, // 77: icebath.sessions.v1.SessionService.List:output_type -> icebath.sessions.v1.ListResponse
-	14, // 78: icebath.sessions.v1.SessionService.Get:output_type -> icebath.sessions.v1.GetResponse
-	16, // 79: icebath.sessions.v1.SessionService.Resolve:output_type -> icebath.sessions.v1.ResolveResponse
-	18, // 80: icebath.sessions.v1.SessionService.Rename:output_type -> icebath.sessions.v1.RenameResponse
-	20, // 81: icebath.sessions.v1.SessionService.Delete:output_type -> icebath.sessions.v1.DeleteResponse
-	22, // 82: icebath.sessions.v1.SessionService.Mark:output_type -> icebath.sessions.v1.MarkResponse
-	24, // 83: icebath.sessions.v1.SessionService.Branch:output_type -> icebath.sessions.v1.BranchResponse
-	27, // 84: icebath.sessions.v1.SessionService.Search:output_type -> icebath.sessions.v1.SearchResponse
-	30, // 85: icebath.sessions.v1.SessionService.Prompts:output_type -> icebath.sessions.v1.PromptsResponse
-	33, // 86: icebath.sessions.v1.SessionService.Export:output_type -> icebath.sessions.v1.ExportResponse
-	35, // 87: icebath.sessions.v1.SessionService.Import:output_type -> icebath.sessions.v1.ImportResponse
-	37, // 88: icebath.sessions.v1.SessionService.Prune:output_type -> icebath.sessions.v1.PruneResponse
-	39, // 89: icebath.sessions.v1.SessionService.Archive:output_type -> icebath.sessions.v1.ArchiveResponse
-	42, // 90: icebath.sessions.v1.SessionService.Stats:output_type -> icebath.sessions.v1.StatsResponse
-	45, // 91: icebath.sessions.v1.SessionService.Maintain:output_type -> icebath.sessions.v1.MaintainResponse
-	47, // 92: icebath.sessions.v1.SessionService.RefreshPrompts:output_type -> icebath.sessions.v1.RefreshPromptsResponse
-	50, // 93: icebath.sessions.v1.SessionService.RepairPrompts:output_type -> icebath.sessions.v1.RepairPromptsResponse
-	53, // 94: icebath.sessions.v1.SessionService.RepairRouting:output_type -> icebath.sessions.v1.RepairRoutingResponse
-	56, // 95: icebath.sessions.v1.SessionService.RepairProfiles:output_type -> icebath.sessions.v1.RepairProfilesResponse
-	59, // 96: icebath.sessions.v1.SessionService.Lost:output_type -> icebath.sessions.v1.LostResponse
-	61, // 97: icebath.sessions.v1.SessionService.Discard:output_type -> icebath.sessions.v1.DiscardResponse
-	66, // 98: icebath.sessions.v1.SessionService.RetitleSkills:output_type -> icebath.sessions.v1.RetitleSkillsResponse
-	63, // 99: icebath.sessions.v1.SessionService.Watch:output_type -> icebath.sessions.v1.WatchResponse
-	76, // [76:100] is the sub-list for method output_type
-	52, // [52:76] is the sub-list for method input_type
+	64, // 76: icebath.sessions.v1.SessionService.Notices:input_type -> icebath.sessions.v1.NoticesRequest
+	10, // 77: icebath.sessions.v1.SessionService.Create:output_type -> icebath.sessions.v1.CreateResponse
+	12, // 78: icebath.sessions.v1.SessionService.List:output_type -> icebath.sessions.v1.ListResponse
+	14, // 79: icebath.sessions.v1.SessionService.Get:output_type -> icebath.sessions.v1.GetResponse
+	16, // 80: icebath.sessions.v1.SessionService.Resolve:output_type -> icebath.sessions.v1.ResolveResponse
+	18, // 81: icebath.sessions.v1.SessionService.Rename:output_type -> icebath.sessions.v1.RenameResponse
+	20, // 82: icebath.sessions.v1.SessionService.Delete:output_type -> icebath.sessions.v1.DeleteResponse
+	22, // 83: icebath.sessions.v1.SessionService.Mark:output_type -> icebath.sessions.v1.MarkResponse
+	24, // 84: icebath.sessions.v1.SessionService.Branch:output_type -> icebath.sessions.v1.BranchResponse
+	27, // 85: icebath.sessions.v1.SessionService.Search:output_type -> icebath.sessions.v1.SearchResponse
+	30, // 86: icebath.sessions.v1.SessionService.Prompts:output_type -> icebath.sessions.v1.PromptsResponse
+	33, // 87: icebath.sessions.v1.SessionService.Export:output_type -> icebath.sessions.v1.ExportResponse
+	35, // 88: icebath.sessions.v1.SessionService.Import:output_type -> icebath.sessions.v1.ImportResponse
+	37, // 89: icebath.sessions.v1.SessionService.Prune:output_type -> icebath.sessions.v1.PruneResponse
+	39, // 90: icebath.sessions.v1.SessionService.Archive:output_type -> icebath.sessions.v1.ArchiveResponse
+	42, // 91: icebath.sessions.v1.SessionService.Stats:output_type -> icebath.sessions.v1.StatsResponse
+	45, // 92: icebath.sessions.v1.SessionService.Maintain:output_type -> icebath.sessions.v1.MaintainResponse
+	47, // 93: icebath.sessions.v1.SessionService.RefreshPrompts:output_type -> icebath.sessions.v1.RefreshPromptsResponse
+	50, // 94: icebath.sessions.v1.SessionService.RepairPrompts:output_type -> icebath.sessions.v1.RepairPromptsResponse
+	53, // 95: icebath.sessions.v1.SessionService.RepairRouting:output_type -> icebath.sessions.v1.RepairRoutingResponse
+	56, // 96: icebath.sessions.v1.SessionService.RepairProfiles:output_type -> icebath.sessions.v1.RepairProfilesResponse
+	59, // 97: icebath.sessions.v1.SessionService.Lost:output_type -> icebath.sessions.v1.LostResponse
+	61, // 98: icebath.sessions.v1.SessionService.Discard:output_type -> icebath.sessions.v1.DiscardResponse
+	68, // 99: icebath.sessions.v1.SessionService.RetitleSkills:output_type -> icebath.sessions.v1.RetitleSkillsResponse
+	63, // 100: icebath.sessions.v1.SessionService.Watch:output_type -> icebath.sessions.v1.WatchResponse
+	65, // 101: icebath.sessions.v1.SessionService.Notices:output_type -> icebath.sessions.v1.NoticesResponse
+	77, // [77:102] is the sub-list for method output_type
+	52, // [52:77] is the sub-list for method input_type
 	52, // [52:52] is the sub-list for extension type_name
 	52, // [52:52] is the sub-list for extension extendee
 	0,  // [0:52] is the sub-list for field type_name
@@ -5607,7 +5696,7 @@ func file_icebath_sessions_v1_sessions_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_sessions_v1_sessions_proto_rawDesc), len(file_icebath_sessions_v1_sessions_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   67,
+			NumMessages:   69,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

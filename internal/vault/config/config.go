@@ -2,7 +2,7 @@ package config
 
 const (
 	Key = "vault"
-	// Where the key of a new vault is kept: file or keychain
+	// Where the key of the vault is kept, file or keychain, which moving the key changes; where the first key is made before there is one
 	KeyStorage = Key + ".key_storage"
 )
 

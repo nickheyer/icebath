@@ -16,7 +16,7 @@ func Register(cfg *config.Config) {
 		}},
 		{Key: STT, Parent: speechconfig.STT, Title: "Mistral", About: "Speech to text from Mistral, with a Mistral API key", Order: 40, Settings: []config.Setting{
 			{Key: STTModel, Title: "Model", About: "The Mistral model that turns speech into text.", Default: DefaultSTTModel},
-			{Key: STTLanguage, Title: "Language", About: "The language of what you say.", Help: "A code such as en or de.", Default: "", Zero: "Your language"},
+			{Key: STTLanguage, Title: "Language", About: "The language of what you say.", Help: "A code such as en or de.", Default: "", Zero: speechconfig.SameAsVoice},
 		}},
 	})
 }

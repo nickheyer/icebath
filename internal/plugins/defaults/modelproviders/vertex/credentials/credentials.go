@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -243,14 +242,12 @@ func serviceAccountKey(p *credentials.Prompter) (credentials.Signed, error) {
 	if keyPath == "" {
 		return credentials.Signed{}, errors.New("No key file was given, so nothing was added.")
 	}
-	if strings.HasPrefix(keyPath, "~") {
-		if home, err := os.UserHomeDir(); err == nil {
-			keyPath = filepath.Join(home, strings.TrimPrefix(keyPath, "~"))
-		}
+	// The one rule of a path: the whole path, ~ the home folder, the file there
+	located, err := vertexconfig.KeyFile.Located(keyPath)
+	if err != nil {
+		return credentials.Signed{}, err
 	}
-	if absolute, err := filepath.Abs(keyPath); err == nil {
-		keyPath = absolute
-	}
+	keyPath = located.(string)
 	raw, err := os.ReadFile(keyPath)
 	if err != nil {
 		return credentials.Signed{}, fmt.Errorf("The key file %s can't be read: %v.", keyPath, err)
@@ -278,8 +275,8 @@ func (s *source) Why(account credentials.Account) (string, bool) {
 			"or add a service account key with `icebath auth add %s`.", strings.TrimSuffix(err.Error(), "."), account.Provider.ID), true
 	}
 	if project, _ = target(account, project); project == "" {
-		return fmt.Sprintf("No Google Cloud project is known for Vertex AI. Set the project in /providers or set %s, or use credentials "+
-			"that name one.", vertexconfig.ProjectEnv), true
+		return fmt.Sprintf("No Google Cloud project is known for Vertex AI. Set its Google Cloud project, or %s, or use credentials that name "+
+			"one.", vertexconfig.ProjectEnv), true
 	}
 	s.mu.Lock()
 	last, failed := s.failed[key]

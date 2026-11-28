@@ -311,7 +311,7 @@ func (a *Agent) modelInfo(settings *config.Config, route provider.Route) string 
 	if window := a.window(a.ctx, settings, route); window > 0 {
 		fmt.Fprintf(&out, "\nContext window: %s tokens", strs.Thousands(int64(window)))
 		if pinned := settings.GetInt(agentconfig.ContextLength); pinned > 0 {
-			out.WriteString(", as you set it in /settings under Agent › Context window")
+			out.WriteString(", as you set it with /settings context window")
 		}
 	}
 	if known && info.MaxOutput > 0 {

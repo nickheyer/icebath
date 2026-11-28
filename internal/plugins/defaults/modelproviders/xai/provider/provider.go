@@ -46,6 +46,7 @@ func (specs) Specs() []provider.Spec {
 		Billing:            []provider.Billing{{Label: "xAI", URL: "https://console.x.ai/team/default/billing"}},
 	}, {
 		Name:               xaiconfig.OAuthName,
+		SignIn:             true,
 		ReservedTools:      []string{"tool_search"},
 		RejectionHint:      rejectionHint,
 		ResponsesIssuer:    "xai_responses",

@@ -755,15 +755,6 @@ func asking(name string) string {
 	return "Enter value for " + name
 }
 
-// Text a skill's author wrote, as a sentence of the settings screen: the full stop it lacks added
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "?") || strings.HasSuffix(text, "!") {
-		return text
-	}
-	return text + "."
-}
-
 // Key of the profile setting that keeps a variable's value
 func variableKey(name string) string {
 	return skillsconfig.Variables + "." + strings.ToLower(name)
@@ -787,7 +778,7 @@ func (s *Scope) VariableSettings() []config.Setting {
 			if slices.ContainsFunc(out, func(o config.Setting) bool { return o.Key == key }) {
 				continue
 			}
-			about := sentence(v.Prompt)
+			about := strs.Sentence(v.Prompt)
 			if v.Prompt == asking(v.Name) {
 				about = "A secret that one of your skills needs."
 			}

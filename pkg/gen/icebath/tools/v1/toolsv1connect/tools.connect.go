@@ -26,6 +26,8 @@ const (
 const (
 	// ToolServiceListProcedure is the procedure name of the ToolService's List RPC.
 	ToolServiceListProcedure = "/icebath.tools.v1.ToolService/List"
+	// ToolServiceTurnProcedure is the procedure name of the ToolService's Turn RPC.
+	ToolServiceTurnProcedure = "/icebath.tools.v1.ToolService/Turn"
 )
 
 var (
@@ -36,11 +38,21 @@ var (
 			Procedure:  ToolServiceListProcedure,
 		}
 	})
+	toolServiceTurnSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_tools_v1_tools_proto.Services().ByName("ToolService").Methods().ByName("Turn"),
+			Procedure:  ToolServiceTurnProcedure,
+		}
+	})
 )
 
 // ToolServiceClient is a client for the icebath.tools.v1.ToolService service.
 type ToolServiceClient interface {
+	// The tools of a profile and how each of their groups stands
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
+	// Turns on or off the tools the words name, a word naming a tool or every tool of a group
+	Turn(context.Context, *v1.TurnRequest) (*v1.TurnResponse, error)
 }
 
 // NewToolServiceClient constructs a client for the icebath.tools.v1.ToolService service. Multiple
@@ -51,7 +63,10 @@ func NewToolServiceClient(client *connect.Client) ToolServiceClient {
 
 // ToolServiceHandler is an implementation of the icebath.tools.v1.ToolService service.
 type ToolServiceHandler interface {
+	// The tools of a profile and how each of their groups stands
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
+	// Turns on or off the tools the words name, a word naming a tool or every tool of a group
+	Turn(context.Context, *v1.TurnRequest) (*v1.TurnResponse, error)
 }
 
 // RegisterToolServiceHandler registers svc as the icebath.tools.v1.ToolService implementation on
@@ -60,6 +75,7 @@ func RegisterToolServiceHandler(server *connect.Server, svc ToolServiceHandler) 
 	adapter := toolServiceHandler{svc: svc}
 	server.Register(
 		connect.Method{Spec: toolServiceListSpec(), Handler: adapter.list},
+		connect.Method{Spec: toolServiceTurnSpec(), Handler: adapter.turn},
 	)
 }
 
@@ -68,6 +84,10 @@ type UnimplementedToolServiceHandler struct{}
 
 func (UnimplementedToolServiceHandler) List(context.Context, *v1.ListRequest) (*v1.ListResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.tools.v1.ToolService.List is not implemented")
+}
+
+func (UnimplementedToolServiceHandler) Turn(context.Context, *v1.TurnRequest) (*v1.TurnResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.tools.v1.ToolService.Turn is not implemented")
 }
 
 type toolServiceClient struct {
@@ -82,6 +102,14 @@ func (c *toolServiceClient) List(ctx context.Context, req *v1.ListRequest) (*v1.
 	return &res, nil
 }
 
+func (c *toolServiceClient) Turn(ctx context.Context, req *v1.TurnRequest) (*v1.TurnResponse, error) {
+	var res v1.TurnResponse
+	if err := c.client.CallUnary(ctx, toolServiceTurnSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 type toolServiceHandler struct{ svc ToolServiceHandler }
 
 func (h toolServiceHandler) list(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
@@ -90,6 +118,18 @@ func (h toolServiceHandler) list(ctx context.Context, _ connect.Spec, stream con
 		return err
 	}
 	res, err := h.svc.List(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h toolServiceHandler) turn(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.TurnRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Turn(ctx, &req)
 	if err != nil {
 		return err
 	}

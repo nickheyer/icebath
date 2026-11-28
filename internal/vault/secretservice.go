@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
+
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -37,7 +39,7 @@ type secretService struct{}
 
 func nativeKeyring() (keyring, error) {
 	if err := viable(); err != nil {
-		return nil, fmt.Errorf("No keychain can be reached from this session: %v", sentence(err.Error()))
+		return nil, fmt.Errorf("No keychain can be reached from this session: %v", strs.Full(err.Error()))
 	}
 	return secretService{}, nil
 }
@@ -79,7 +81,7 @@ func ssError(err error) error {
 		return &keyringError{"ItemNotFoundException", "The keychain has no such entry."}
 	case "org.freedesktop.DBus.Error.ServiceUnknown", "org.freedesktop.DBus.Error.Spawn.ExecFailed", "org.freedesktop.DBus.Error.NoReply",
 		"org.freedesktop.DBus.Error.Spawn.ChildExited":
-		return &keyringError{"SecretServiceNotAvailableException", "The Secret Service is not available: " + sentence(be.Error())}
+		return &keyringError{"SecretServiceNotAvailableException", "The Secret Service is not available: " + strs.Full(be.Error())}
 	}
 	return err
 }
@@ -213,19 +215,19 @@ func ssDefaultCollection(c *busConn) (objectPath, error) {
 	if _, err := ssProperty(c, path, ssCollection, "Label"); err != nil {
 		var ke *keyringError
 		if !errors.As(err, &ke) || ke.class != "ItemNotFoundException" {
-			return "", &keyringError{"InitError", "The keychain was not created: " + sentence(err.Error())}
+			return "", &keyringError{"InitError", "The keychain was not created: " + strs.Full(err.Error())}
 		}
 		props := []busEntry{{"org.freedesktop.Secret.Collection.Label", busVariant{"s", "Default"}}}
 		out, err := ssCall(c, ssPath, ssService, "CreateCollection", "a{sv}s", props, "default")
 		if err != nil {
-			return "", &keyringError{"InitError", "The keychain was not created: " + sentence(err.Error())}
+			return "", &keyringError{"InitError", "The keychain was not created: " + strs.Full(err.Error())}
 		}
 		path, _ = out[0].(objectPath)
 		if len(path) <= 1 {
 			dismissed, result, err := ssExecPrompt(c, out[1].(objectPath))
 			switch {
 			case err != nil:
-				return "", &keyringError{"InitError", "The keychain was not created: " + sentence(err.Error())}
+				return "", &keyringError{"InitError", "The keychain was not created: " + strs.Full(err.Error())}
 			case dismissed:
 				return "", &keyringError{"InitError", "The keychain was not created, because its prompt was closed."}
 			}

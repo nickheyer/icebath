@@ -12,8 +12,8 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	dockerconfig "github.com/nickheyer/icebath/internal/plugins/defaults/terminals/docker/config"
-	"github.com/nickheyer/icebath/internal/terminal"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 const (
@@ -117,7 +117,7 @@ func idleWorkspace(ctx context.Context, docker, id string) bool {
 
 // Key the persistent container of the sessions working in a folder is kept under, by a digest of the folder it resolves to
 func workspaceKey(dir string) string {
-	path := terminal.ExpandUser(dir)
+	path := fsx.ExpandHome(dir)
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}

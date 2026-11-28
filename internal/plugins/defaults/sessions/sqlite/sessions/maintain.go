@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -23,6 +22,7 @@ import (
 
 	sqliteconfig "github.com/nickheyer/icebath/internal/plugins/defaults/sessions/sqlite/config"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/sqlitex"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -55,20 +55,12 @@ func bytesOf(n int64) string {
 	return strs.Size(float64(n))
 }
 
-// Text that ends as a sentence: trimmed, with a period added when it ends in no mark of its own
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?") {
-		return text
-	}
-	return text + "."
-}
-
 // What a repair strategy did, in words
 func how(strategy string) string {
 	switch strategy {
 	case "reconcile_schema":
-		return "It added the tables and columns the database lacked."
+		return "It added the tables and columns the database lacked, and made its indexes, triggers and views as this version of icebath " +
+			"makes them."
 	case "rebuild_fts":
 		return "It rebuilt the search index."
 	case "reindex_btree":
@@ -105,7 +97,7 @@ func (s *store) optimize(ctx context.Context, r *sessionsv1.MaintainRequest, pro
 	progress("Tidying the search index and compacting the session database…")
 	merged := s.optimizeIndexes(ctx, db)
 	if err := s.vacuum(ctx); err != nil {
-		return fmt.Errorf("The session database could not be compacted: %s", sentence(err.Error()))
+		return fmt.Errorf("The session database could not be compacted: %s", strs.Sentence(err.Error()))
 	}
 	after := size(s.path)
 	var pages, pageSize int64
@@ -198,7 +190,7 @@ func (s *store) optimizeStorage(ctx context.Context, r *sessionsv1.MaintainReque
 		return nil
 	}
 	// One process rebuilds at a time: a server mending the index in the background holds the same lock
-	err = withFlock(s.path+".fts_rebuild.lock", 5*time.Second, func(locked bool) error {
+	err = sqlitex.Locked(s.path+".fts_rebuild.lock", 5*time.Second, func(locked bool) error {
 		if !locked {
 			return errors.New("Another icebath is rebuilding the search index right now. Run this again once it finishes.")
 		}
@@ -224,13 +216,13 @@ func (s *store) optimizeStorage(ctx context.Context, r *sessionsv1.MaintainReque
 		})
 	})
 	if err != nil {
-		return fmt.Errorf("The search index could not be rebuilt: %s\nNo data was lost. Run the command again to go on.", sentence(err.Error()))
+		return fmt.Errorf("The search index could not be rebuilt: %s\nNo data was lost. Run the command again to go on.", strs.Sentence(err.Error()))
 	}
 	if !r.GetNoVacuum() {
 		started := time.Now()
 		progress(fmt.Sprintf("  Compacting the database, from %s to about %s…", bytesOf(current), bytesOf(current*7/10)))
 		if err := s.vacuum(ctx); err != nil {
-			return fmt.Errorf("The database could not be compacted: %s\nNo data was lost. Run the command again to go on.", sentence(err.Error()))
+			return fmt.Errorf("The database could not be compacted: %s\nNo data was lost. Run the command again to go on.", strs.Sentence(err.Error()))
 		}
 		progress(fmt.Sprintf("  Compacted the database to %s in %s.", bytesOf(size(s.path)), strs.Span(time.Since(started).Round(time.Second))))
 	}
@@ -314,41 +306,6 @@ func (s *store) cleanMarkers(ctx context.Context, r *sessionsv1.MaintainRequest,
 	return nil
 }
 
-// Columns each table of the current schema has, read from a fresh database the schema is made in
-func declared(ctx context.Context) (map[string][]string, error) {
-	db, err := sql.Open("sqlite", "file::memory:")
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	if _, err := db.ExecContext(ctx, schema); err != nil {
-		return nil, err
-	}
-	return tableColumns(ctx, db)
-}
-
-func tableColumns(ctx context.Context, q querier) (map[string][]string, error) {
-	rows, err := q.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'messages_fts%'`)
-	if err != nil {
-		return nil, err
-	}
-	tables, err := collect(rows)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string][]string{}
-	for _, table := range tables {
-		rows, err := q.QueryContext(ctx, `SELECT name FROM pragma_table_info(?)`, table)
-		if err != nil {
-			return nil, err
-		}
-		if out[table], err = collect(rows); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
-}
-
 // Whether the file opens and works cleanly, and why not: its integrity, its tables, its search indexes read and written
 func probe(ctx context.Context, path string) (bool, string) {
 	db, err := sql.Open("sqlite", "file:"+path+"?"+url.Values{"_pragma": {"busy_timeout(5000)"}, "_txlock": {"immediate"}}.Encode())
@@ -398,38 +355,38 @@ func probe(ctx context.Context, path string) (bool, string) {
 	return true, ""
 }
 
-// Why the file's tables lack what the schema declares, empty when they hold it all
-func drift(ctx context.Context, path string) (string, error) {
+// What bringing the file into the layout of this version takes, read without changing it: a *sqlitex.Mismatch when it is of another layout
+func inspect(ctx context.Context, path string) (sqlitex.Plan, error) {
+	want, err := declare(ctx)
+	if err != nil {
+		return sqlitex.Plan{}, err
+	}
 	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
 	if err != nil {
-		return "", err
+		return sqlitex.Plan{}, err
 	}
 	defer db.Close()
-	want, err := declared(ctx)
-	if err != nil {
-		return "", err
+	return sqlitex.Inspect(ctx, db, want)
+}
+
+// What a plan changes, in words; empty when it changes nothing
+func changes(plan sqlitex.Plan) string {
+	var why []string
+	for _, table := range plan.Missing {
+		why = append(why, "the table "+table+" is missing")
 	}
-	have, err := tableColumns(ctx, db)
-	if err != nil {
-		return "", err
+	for _, column := range plan.Added {
+		table, name, _ := strings.Cut(column, ".")
+		why = append(why, "the column "+name+" of the table "+table+" is missing")
 	}
-	tables := make([]string, 0, len(want))
-	for table := range want {
-		tables = append(tables, table)
-	}
-	sort.Strings(tables)
-	for _, table := range tables {
-		columns, ok := have[table]
-		if !ok {
-			return "the table " + table + " is missing", nil
+	for _, o := range plan.Dropped {
+		kind := o.Type
+		if kind == sqlitex.Virtual {
+			kind = "virtual table"
 		}
-		for _, column := range want[table] {
-			if !strings.Contains(" "+strings.Join(columns, " ")+" ", " "+column+" ") {
-				return "the column " + column + " of the table " + table + " is missing", nil
-			}
-		}
+		why = append(why, "the "+kind+" "+o.Name+" is not as this version of icebath makes it")
 	}
-	return "", nil
+	return strings.Join(why, ", ")
 }
 
 func (s *store) repair(ctx context.Context, r *sessionsv1.MaintainRequest, progress func(string)) error {
@@ -439,12 +396,21 @@ func (s *store) repair(ctx context.Context, r *sessionsv1.MaintainRequest, progr
 		return nil
 	}
 	checkOnly := "✗ " + path + " does not open cleanly. Run icebath sessions repair without --check-only to repair it."
+	// A file of another layout is no damage to mend: it is set aside whole and a new database started, as opening it does
+	plan, layout := inspect(ctx, path)
+	if mismatch, other := errors.AsType[*sqlitex.Mismatch](layout); other {
+		progress("✗ " + path + " does not open, because it was made by another version of icebath: " + strings.Join(mismatch.Reasons, ", ") + ".")
+		if r.GetCheckOnly() {
+			return errors.New(checkOnly)
+		}
+		return s.setAside(ctx, path, progress)
+	}
 	healthy, reason := probe(ctx, path)
 	if healthy {
-		why, err := drift(ctx, path)
-		if err != nil {
-			return fmt.Errorf("✗ icebath could not check the layout of the session database: %s", sentence(err.Error()))
+		if layout != nil {
+			return fmt.Errorf("✗ icebath could not check the layout of the session database: %s", strs.Sentence(layout.Error()))
 		}
+		why := changes(plan)
 		if why == "" {
 			progress("✓ " + path + " opens cleanly, so it needs no repair.")
 			return nil
@@ -453,19 +419,17 @@ func (s *store) repair(ctx context.Context, r *sessionsv1.MaintainRequest, progr
 		if r.GetCheckOnly() {
 			return errors.New(checkOnly)
 		}
-		progress("Repairing it, after making a backup…")
-		if err := s.reconcile(ctx, path); err != nil {
-			return fmt.Errorf("✗ The repair failed: %s", sentence(err.Error()))
-		}
-		progress("  " + how("reconcile_schema"))
-		progress(s.recovered(ctx, path))
-		return nil
+		return s.relayout(ctx, path, r.GetBackup(), progress)
 	}
-	progress("✗ " + path + " does not open cleanly: " + sentence(reason))
+	progress("✗ " + path + " does not open cleanly: " + strs.Sentence(reason))
 	if r.GetCheckOnly() {
 		return errors.New(checkOnly)
 	}
-	progress("Repairing it, after making a backup…")
+	if r.GetBackup() {
+		progress("Repairing it, after making a backup…")
+	} else {
+		progress("Repairing it…")
+	}
 	if path == s.config.GetString(sqliteconfig.Path) {
 		// Copying the file opens it, and closing that would drop this process's locks on it
 		s.Close()
@@ -475,7 +439,7 @@ func (s *store) repair(ctx context.Context, r *sessionsv1.MaintainRequest, progr
 		progress("  Backed up the database to " + backup + ".")
 	}
 	if err != nil {
-		lines := []string{"✗ The repair failed: " + sentence(err.Error())}
+		lines := []string{"✗ The repair failed: " + strs.Sentence(err.Error())}
 		source := path
 		if backup != "" {
 			lines = append(lines, "  The backup is kept at "+backup+".")
@@ -506,82 +470,73 @@ func (s *store) recovered(ctx context.Context, path string) string {
 	return "✓ Repaired the database, which holds " + strs.Count(int(count), "session") + "."
 }
 
-// Adds what the schema declares and the file lacks: its tables, indexes, triggers and columns
-func (s *store) reconcile(ctx context.Context, path string) error {
-	s.Close()
-	db, err := sql.Open("sqlite", "file:"+path+"?"+url.Values{"_pragma": {"busy_timeout(5000)"}}.Encode())
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	want, err := declared(ctx)
-	if err != nil {
-		return err
-	}
-	have, err := tableColumns(ctx, db)
-	if err != nil {
-		return err
-	}
-	types, err := declaredTypes(ctx)
-	if err != nil {
-		return err
-	}
-	for table, columns := range want {
-		if _, ok := have[table]; !ok {
-			continue
+// Brings a database that opens cleanly into the layout of this version in place, under the lock of its first open, after a backup when
+// asked for
+func (s *store) relayout(ctx context.Context, path string, backup bool, progress func(string)) error {
+	progress("Repairing it…")
+	err := s.reopen(ctx, path, func() error {
+		if !backup {
+			return nil
 		}
-		for _, column := range columns {
-			if !strings.Contains(" "+strings.Join(have[table], " ")+" ", " "+column+" ") {
-				if _, err := db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+column+` `+types[table+"."+column]); err != nil {
-					return err
-				}
-			}
+		kept := fmt.Sprintf("%s.pre-repair-backup-%s", path, time.Now().Format("20060102_150405"))
+		db, err := sql.Open("sqlite", "file:"+path+"?"+url.Values{"_pragma": {"busy_timeout(5000)"}}.Encode())
+		if err != nil {
+			return err
 		}
+		defer db.Close()
+		// A copy SQLite writes from one read holds the database as it was at one moment, writes of other processes aside
+		if _, err := db.ExecContext(ctx, `VACUUM INTO ?`, kept); err != nil {
+			return fmt.Errorf("the backup could not be made, so the repair stopped rather than change the only copy of the database: %w", err)
+		}
+		progress("  Backed up the database to " + kept + ".")
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("✗ The repair failed: %s", strs.Sentence(err.Error()))
 	}
-	_, err = db.ExecContext(ctx, schema)
-	return err
+	progress("  " + how("reconcile_schema"))
+	progress(s.recovered(ctx, path))
+	return nil
 }
 
-// Declared type and default of each column, by table.column, for adding it to a table that lacks it
-func declaredTypes(ctx context.Context) (map[string]string, error) {
-	db, err := sql.Open("sqlite", "file::memory:")
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	if _, err := db.ExecContext(ctx, schema); err != nil {
-		return nil, err
-	}
-	columns, err := tableColumns(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]string{}
-	for table := range columns {
-		rows, err := db.QueryContext(ctx, `SELECT name, type, "notnull", dflt_value FROM pragma_table_info(?)`, table)
+// Moves a database of another layout aside, under the lock of its first open, and starts a new one in its place
+func (s *store) setAside(ctx context.Context, path string, progress func(string)) error {
+	err := s.reopen(ctx, path, func() error {
+		backup, err := sqlitex.Aside(path, sqlitex.OtherVersion)
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("the database could not be moved aside: %w", err)
 		}
-		for rows.Next() {
-			var name, kind string
-			var notNull int
-			var fallback sql.NullString
-			if err := rows.Scan(&name, &kind, &notNull, &fallback); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			declaration := kind
-			if fallback.Valid {
-				declaration += " DEFAULT " + fallback.String
-				if notNull == 1 {
-					declaration += " NOT NULL"
-				}
-			}
-			out[table+"."+name] = declaration
-		}
-		rows.Close()
+		progress("  Moved the database to " + backup + ". To see which sessions can be brought back, run icebath sessions recover --source " +
+			backup + " --inspect-only.")
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("✗ The repair failed: %s", strs.Sentence(err.Error()))
 	}
-	return out, nil
+	progress("✓ Started a new session database at " + path + ".")
+	return nil
+}
+
+// Opens the file at the path afresh under the lock of its first open, after the function readies it, the store letting go of it first
+// when it is the one in use; the store opens it again when it is next asked for
+func (s *store) reopen(ctx context.Context, path string, before func() error) error {
+	if path == s.config.GetString(sqliteconfig.Path) {
+		s.Close()
+	}
+	return sqlitex.FirstOpen(path, 5*time.Second, func(locked bool) error {
+		if !locked {
+			return errors.New("another icebath is opening the session database right now. Run the repair again in a moment")
+		}
+		if err := before(); err != nil {
+			return err
+		}
+		// A store of its own opens it, so the one in use keeps its state for its own file
+		db, err := (&store{config: s.config, registry: s.registry}).connect(ctx, path)
+		if err != nil {
+			return err
+		}
+		return db.Close()
+	})
 }
 
 // Failed repairs of the file as it is now, by a fingerprint of its head and tail
@@ -632,7 +587,7 @@ func (s *store) surgery(ctx context.Context, path string, keepBackup bool) (stri
 			"  To try the automatic repair again anyway, delete %s.", strs.Count(record.Failed, "time"), path, path, filepath.Base(ledger))
 	}
 	var backup, strategy string
-	err := withFlock(path+".repair.lock", 120*time.Second, func(locked bool) error {
+	err := sqlitex.Locked(path+".repair.lock", 120*time.Second, func(locked bool) error {
 		if !locked {
 			if healthy, _ := probe(ctx, path); healthy {
 				strategy = "repaired_by_other_process"
@@ -811,7 +766,7 @@ func (s *store) journalMode(ctx context.Context, r *sessionsv1.MaintainRequest, 
 		lines := []string{fmt.Sprintf("✗ The journal mode of %s stays as it is, because another process is using the file.", path)}
 		for _, h := range holders {
 			if h.pid <= 0 {
-				lines = append(lines, "  icebath can't tell whether the file is in use: "+sentence(h.target)+" Stop every icebath, then pass --force.")
+				lines = append(lines, "  icebath can't tell whether the file is in use: "+strs.Sentence(h.target)+" Stop every icebath, then pass --force.")
 				continue
 			}
 			lines = append(lines, fmt.Sprintf("  Process %d, %s, holds %s.", h.pid, commandLine(h.pid), h.target))
@@ -839,7 +794,7 @@ func (s *store) journalMode(ctx context.Context, r *sessionsv1.MaintainRequest, 
 	}
 	progress(fmt.Sprintf("✓ The journal mode of %s changed from %s to %s, and the file confirms it.", path, current, target))
 	if path == s.config.GetString(sqliteconfig.Path) && s.config.GetString(sqliteconfig.JournalMode) != target {
-		progress(fmt.Sprintf("  ⚠ Journal mode in /settings under Sessions › SQLite is %s, so icebath switches the file back the next time it "+
+		progress(fmt.Sprintf("  ⚠ Journal mode in /settings under Session storage › SQLite is %s, so icebath switches the file back the next time it "+
 			"opens it. Set it to %s to keep this.", s.config.GetString(sqliteconfig.JournalMode), target))
 	}
 	return nil

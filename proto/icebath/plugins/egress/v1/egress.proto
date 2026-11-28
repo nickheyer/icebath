@@ -8,20 +8,15 @@ service EgressService {
   rpc Status(StatusRequest) returns (StatusResponse);
   // Installs the pinned iron-proxy program, or checks and repairs the managed copy
   rpc Install(InstallRequest) returns (InstallResponse);
-  // Makes the certificate authority the proxy signs with, kept when there is one
-  rpc Authority(AuthorityRequest) returns (AuthorityResponse);
-  // Mints a token for every known provider whose key is set, keeping the tokens of those that had one unless told to rotate
-  rpc Mint(MintRequest) returns (MintResponse);
-  // Writes proxy.yaml and the mappings and turns the integration on
-  rpc Write(WriteRequest) returns (WriteResponse);
+  // Turns hiding the keys on, setting the proxy up first when it is not and starting it, or off, stopping it; each step told as it goes
+  // and how it ended last
+  rpc Turn(TurnRequest) returns (stream TurnEvent);
   // Starts the proxy, refusing when the key source can't give it the keys
   rpc Start(StartRequest) returns (StartResponse);
   // Stops the proxy
   rpc Stop(StopRequest) returns (StopResponse);
   // Reloads the running proxy's rules from proxy.yaml, keeping its connections
   rpc Reload(ReloadRequest) returns (ReloadResponse);
-  // Turns the integration off
-  rpc Disable(DisableRequest) returns (DisableResponse);
   // Status as plain lines, what /egress shows
   rpc Text(TextRequest) returns (TextResponse);
 }
@@ -68,54 +63,64 @@ message InstallResponse {
   string version = 2;
 }
 
-message AuthorityRequest {
+message TurnRequest {
   string profile = 1;
+  // Hide the keys, else stop hiding them
+  bool on = 2;
+  // Set the proxy up again though it is set up, making tokens for providers added since
+  bool again = 3;
+  // Port given for the tunnel, 0 for the one the settings have
+  int32 tunnel_port = 4;
+  // Names of the provider keys come from Bitwarden rather than the environment, or from the environment again after Bitwarden
+  bool from_bitwarden = 5;
+  bool no_bitwarden = 6;
+  // Makes a new token for every provider, so running sandboxes must restart
+  bool rotate = 7;
+  // Leaves the proxy stopped once it is set up
+  bool stopped = 8;
 }
 
-message AuthorityResponse {
-  string certificate = 1;
+// How a step of a turn went, as a line is shown
+enum Tone {
+  TONE_UNSPECIFIED = 0;
+  // The heading of a step
+  TONE_STEP = 1;
+  TONE_GOOD = 2;
+  TONE_WARN = 3;
+  TONE_BAD = 4;
+  // Said by the way, such as where a file is
+  TONE_DIM = 5;
 }
 
-message MintRequest {
-  string profile = 1;
-  // Names of the provider keys come from Bitwarden rather than the environment
-  bool from_bitwarden = 2;
-  bool rotate = 3;
+message TurnLine {
+  string text = 1;
+  Tone tone = 2;
 }
 
-message MintResponse {
+// Tokens a setup made, and the provider variables the proxy can't cover
+message Minted {
   repeated Mapping mappings = 1;
   repeated string uncovered = 2;
-  // Provider keys the .env adds to the names looked at
-  int32 loaded = 3;
-  // Mappings there were, and the copy kept of them before a rotation, or why it could not be kept
-  int32 existing = 4;
-  string backup = 5;
-  string backup_error = 6;
-  // Names Bitwarden gave, or why it gave none, the setup ending then
-  int32 pulled = 7;
-  repeated string refusal = 8;
 }
 
-message WriteRequest {
-  string profile = 1;
-  repeated Mapping mappings = 2;
-  // Port given for the tunnel, 0 for the one the settings have
-  int32 tunnel_port = 3;
-  bool from_bitwarden = 4;
-  bool no_bitwarden = 5;
+message TurnDone {
+  // Whether it did what was asked
+  bool ok = 1;
+  // What happened, or why it could not, in one or two sentences
+  string note = 2;
+  // Whether the keys are hidden now, and the proxy that hides them runs, as which process and on which port
+  bool on = 3;
+  bool running = 4;
+  int32 pid = 5;
+  int32 port = 6;
 }
 
-message WriteResponse {
-  string config = 1;
-  string mappings = 2;
-  // Audit log made, or why it could not be
-  string audit = 3;
-  string audit_error = 4;
-  // Lines said of the key source
-  repeated string notes = 5;
-  // Port given was out of range, nothing being written
-  bool bad_port = 6;
+message TurnEvent {
+  oneof kind {
+    TurnLine line = 1;
+    Minted minted = 2;
+    TurnDone done = 3;
+  }
 }
 
 message StartRequest {
@@ -149,16 +154,6 @@ message ReloadRequest {
 }
 
 message ReloadResponse {}
-
-message DisableRequest {
-  string profile = 1;
-}
-
-message DisableResponse {
-  bool was_enabled = 1;
-  // The proxy still runs
-  bool running = 2;
-}
 
 message TextRequest {
   string profile = 1;

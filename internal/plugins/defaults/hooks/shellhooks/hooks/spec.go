@@ -169,12 +169,7 @@ func (r *Registrant) entry(profile string, point hooks.Point, index int, raw any
 		}
 	}
 	closed := false
-	// The settings keep keys in lower case, so failClosed reads as failclosed
-	value, given := entry["fail_closed"]
-	if !given {
-		value, given = entry["failclosed"]
-	}
-	if given {
+	if value, given := entry[shellconfig.Block]; given {
 		on, isBool := value.(bool)
 		switch {
 		case !isBool:

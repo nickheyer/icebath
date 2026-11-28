@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -21,10 +20,8 @@ import (
 	"time"
 
 	"github.com/spf13/cast"
-	"github.com/spf13/viper"
 
 	"github.com/nickheyer/icebath/internal/config/remote"
-	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 type Kind int
@@ -56,8 +53,9 @@ const profiles = "profiles"
 // Variable naming where every profile's settings come from: file, the config.yaml of its folder, or remote, Remote Config's plane
 const BackendEnv = "ICEBATH_CONFIG_BACKEND"
 
-// Name a key can hold as one of its parts, such as a profile, a provider or an account: lower case letters, digits, dashes and underscores.
-// Keys are split on dots and folded to lower case, so a name holds neither
+// Name of a thing that a key holds as one of its parts, such as a profile, a provider or an account: lower case letters, digits, dashes and
+// underscores. A key is split on its dots, so a name holds none, and as no two names this rule makes differ only in case, a key answers to
+// one of them in any case (see keys.go)
 var named = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // Whether the name can be one part of a key
@@ -83,6 +81,9 @@ type Setting struct {
 	Env []string
 	// Values it may take, read each time they are shown: one of them for text, any of them for a list
 	Options func() []Option
+	// Things of the profile that its value names, such as its providers or the accounts of one, each by its name with the title a person
+	// knows it by, read each time a value is shown: a value naming one is shown by that title. Unlike Options, it leaves the value free
+	Names func() []Option
 	// Text that is never shown again once kept
 	Secret bool
 	// Kept by icebath itself, and left out of the settings a person goes through
@@ -112,6 +113,17 @@ type Setting struct {
 	// What one entry of a table holds, nil for a table whose entries are free. On a list whose default is a list of anything, what one
 	// record of the list holds
 	Entry *Entry
+	// The page of its area changes it with a view made for it, such as the accounts of a provider: no list of settings and no search
+	// shows it, the command line still does
+	Custom bool
+	// Kind of thing its value names, by the name a screen registers a picker under: the app asks that screen to show the value and to
+	// change it. Text that is typed when empty, or when no screen registered one
+	Picks string
+	// What its text names on this computer, a file, a folder or a program, written out and checked when a person saves it; nil for text
+	// that names no path. On a list, what each item names
+	Path *Path
+	// A list whose order matters, such as models tried one after another: its items move up and down where it is changed
+	Ordered bool
 	// Unit a length of time is kept in, as a number of it: a second when zero
 	Unit time.Duration
 	// Least and most a length of time may be, no bound when nil
@@ -157,8 +169,9 @@ type Entry struct {
 	Noun string
 	// What the name of an entry is called where one is asked for, Name when empty
 	Name string
-	// The names of the entries are names of variables: read in capitals whatever case the file keeps them in, and shown so
-	Capitals bool
+	// The names of the entries ignore case, as HTTP headers do: a name is found in any case, and two names that differ only in case are one
+	// entry, kept as it was last written. Every other table keeps two such names as two entries, as variables are
+	IgnoreCase bool
 	// Fields of an entry, each keyed by its name inside the entry; an entry that is one value has a single field with an empty key
 	Fields []Setting
 	// The names an entry may have, each with what a person calls it, for a table whose entries are known things such as events: a new
@@ -226,21 +239,37 @@ type Section struct {
 	Group Group
 	// Place among the sections beside it, lowest first, those of one place by title
 	Order int
+	// An area of the settings menu though its key sits under another section: it names Group and Order as a section at the top does, and
+	// the section it sits under does not list it
+	Area bool
+	// Key of the area whose page lists the settings of this section among its own, for settings kept under another key that belong to
+	// that area. The section is then no area and no row
+	Into string
 	// Kept once for every profile, in the config.yaml at the top of the config folder rather than in the profile's. Only a section at the
 	// top says so, those under it following it
 	Global   bool
 	Settings []Setting
 }
 
-// Sections in the order the settings screen lists them: those at the top by group, then all by their place beside each other and their
-// title
+// Whether the section is an area of the settings menu: one at the top, or one under another section that says so
+func (s Section) Menu() bool {
+	return s.Into == "" && (s.Parent == "" || s.Area)
+}
+
+// Sections in the order the settings menu lists them: the areas by group, place and title, then the sections inside them by the section
+// they sit under, their place beside each other and their title
 func Listed(sections []Section) []Section {
 	listed := slices.Clone(sections)
 	slices.SortStableFunc(listed, func(a, b Section) int {
-		if a.Parent == "" && b.Parent == "" {
-			if byGroup := cmp.Compare(a.Group.place(), b.Group.place()); byGroup != 0 {
-				return byGroup
+		if a.Menu() && b.Menu() {
+			return cmp.Or(cmp.Compare(a.Group.place(), b.Group.place()), cmp.Compare(a.Order, b.Order),
+				strings.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title)))
+		}
+		if a.Menu() != b.Menu() {
+			if a.Menu() {
+				return -1
 			}
+			return 1
 		}
 		return cmp.Or(strings.Compare(a.Parent, b.Parent), cmp.Compare(a.Order, b.Order),
 			strings.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title)))
@@ -397,51 +426,42 @@ func (r *Registry) Register(registrant Registrant) {
 func (r *Registry) Sections(values *Config) []Section {
 	var sections []Section
 	for _, registrant := range r.registrants {
-		sections = append(sections, registrant.Sections(values)...)
+		sections = append(sections, registrant.Sections(values.makingSections())...)
 	}
 	return sections
 }
 
+// Section registered under the key, spelled as the key is or else in any case. Fixed sections are looked through first, so finding one of
+// them never asks the sections that come and go
 func (r *Registry) Section(values *Config, key string) (Section, bool) {
-	key = strings.ToLower(strings.TrimSpace(key))
-	for _, section := range r.Sections(values) {
-		if section.Key == key {
-			return section, true
-		}
-	}
-	return Section{}, false
+	return r.finder(values).section(key)
 }
 
-// Setting registered under the key, with the section it belongs to. Fixed sections are looked through first, so finding one of them
-// never asks the sections that come and go
+// Setting registered under the key with the section it belongs to, spelled as the key is or else in any case. Fixed sections are looked
+// through first, so finding one of them never asks the sections that come and go
 func (r *Registry) Setting(values *Config, key string) (Section, Setting, bool) {
-	key = strings.ToLower(strings.TrimSpace(key))
-	var moving []Registrant
-	for _, registrant := range r.registrants {
-		fixed, ok := registrant.(Sections)
-		if !ok {
-			moving = append(moving, registrant)
-			continue
-		}
-		if section, setting, ok := find(fixed, key); ok {
-			return section, setting, true
-		}
-	}
-	for _, registrant := range moving {
-		if section, setting, ok := find(registrant.Sections(values), key); ok {
-			return section, setting, true
-		}
-	}
-	return Section{}, Setting{}, false
+	return r.finder(values).setting(key)
 }
 
-func find(sections []Section, key string) (Section, Setting, bool) {
+// Finder of the sections of the registry, those that come and go made for the profile of the values
+func (r *Registry) finder(values *Config) *finder {
+	f := &finder{values: values, registrants: r.registrants}
+	for _, registrant := range r.registrants {
+		if fixed, ok := registrant.(Sections); ok {
+			f.batches = append(f.batches, fixed)
+		}
+	}
+	return f
+}
+
+// Setting of the sections registered under the key, as the key answers to a declared one
+func find(sections []Section, key string, how match) (Section, Setting, bool) {
 	for _, section := range sections {
-		if !strings.HasPrefix(key, section.Key+".") {
+		if !below(key, section.Key, how) {
 			continue
 		}
 		for _, setting := range section.Settings {
-			if setting.Key == key {
+			if same(setting.Key, key, how) {
 				return section, setting, true
 			}
 		}
@@ -481,6 +501,9 @@ type core struct {
 	told   map[string]bool
 	// Names of the variables that start a program of icebath's, which the .env writer refuses, nil before the provider host tells them
 	launching func() []string
+	// Owners of the keys under each prefix, which take the writes a person asks for of them
+	guardMu sync.RWMutex
+	guards  map[string]Guard
 }
 
 // Whether the notice is given for the first time, which tells it
@@ -505,13 +528,21 @@ type Config struct {
 	plain bool
 	// What one session sets over the files, nil for none
 	session *Layer
+	// Handed to sections that come and go as they are made: the keys read through it are planned with the fixed sections alone, since
+	// planning one with those that come and go would make them again
+	making bool
+}
+
+// Settings that the sections that come and go are made from
+func (c *Config) makingSections() *Config {
+	return &Config{core: c.core, profile: c.profile, plain: c.plain, session: c.session, making: true}
 }
 
 func New(dir string) *Config {
 	c := &Config{core: &core{dir: dir, global: map[string]bool{}, profiles: map[string]layer{}, dotenvs: map[string]envFile{},
 		layers: map[string]envLayers{}, admin: map[string]adminFile{}, plane: remote.New(), told: map[string]bool{}}}
 	c.shared = newFile(c.core, filepath.Join(dir, "config.yaml"))
-	c.Register(general())
+	c.general()
 	return c
 }
 
@@ -566,7 +597,7 @@ func (c *Config) remote() bool {
 
 // Settings of the profile with the name, the one in use for no name. They share everything with these but the profile
 func (c *Config) In(profile string) *Config {
-	return &Config{core: c.core, profile: profile, plain: c.plain}
+	return &Config{core: c.core, profile: profile, plain: c.plain, making: c.making}
 }
 
 // Settings of the profile with the name, the one in use for no name, an error saying so when there is no profile of the name
@@ -741,7 +772,6 @@ func (c *Config) Register(registrant Registrant) {
 }
 
 func (c *Config) check(section Section) Section {
-	section.Key, section.Parent = strings.ToLower(section.Key), strings.ToLower(section.Parent)
 	key := section.Key
 	switch name, _ := strings.CutPrefix(key, section.Parent+"."); {
 	case section.Parent == "" && strings.Contains(key, "."):
@@ -760,17 +790,16 @@ func (c *Config) check(section Section) Section {
 		panic("config: section " + key + " is registered twice")
 	}
 	for i, setting := range section.Settings {
-		setting.Key = strings.ToLower(setting.Key)
-		section.Settings[i] = setting
 		if !strings.HasPrefix(setting.Key, key+".") {
 			panic("config: setting " + setting.Key + " is in section " + key + ", so its key starts with it")
 		}
-		if _, _, taken := find(Sections{{Key: key, Settings: section.Settings[:i]}}, setting.Key); taken {
+		// Twice in any case, as a key answers to a declared one in any case
+		if _, _, taken := find(Sections{{Key: key, Settings: section.Settings[:i]}}, setting.Key, spelled); taken {
 			panic("config: setting " + setting.Key + " is registered twice")
 		}
 		for _, registrant := range c.registry.registrants {
 			if fixed, ok := registrant.(Sections); ok {
-				if _, _, taken := find(fixed, setting.Key); taken {
+				if _, _, taken := find(fixed, setting.Key, spelled); taken {
 					panic("config: setting " + setting.Key + " is registered twice")
 				}
 			}
@@ -782,14 +811,12 @@ func (c *Config) check(section Section) Section {
 	return section
 }
 
-// Fixed section with the key
+// Fixed section with the key in any case
 func (c *Config) fixed(key string) (Section, bool) {
 	for _, registrant := range c.registry.registrants {
 		if fixed, ok := registrant.(Sections); ok {
-			for _, section := range fixed {
-				if section.Key == key {
-					return section, true
-				}
+			if section, ok := findSection(fixed, key, spelled); ok {
+				return section, true
 			}
 		}
 	}
@@ -801,30 +828,28 @@ func (c *Config) Sections() []Section {
 	return c.snapshot().Sections(c)
 }
 
+// Section registered under the key, spelled as the key is or else in any case
 func (c *Config) Section(key string) (Section, bool) {
-	return c.snapshot().Section(c, key)
+	return c.lookup().section(key)
 }
 
+// Setting registered under the key with its section, spelled as the key is or else in any case
 func (c *Config) Setting(key string) (Section, Setting, bool) {
-	return c.snapshot().Setting(c, key)
+	return c.lookup().setting(key)
 }
 
-// Table setting a key below it names a part of, such as one entry or a field of one, with the dotted path of the part inside the table;
-// false when no table setting is above the key
+// Table setting a key below it names a part of, such as one entry or a field of one, with the dotted path of the part inside the table as
+// the key spells it; false when no table setting is above the key
 func (c *Config) Under(key string) (Setting, string, bool) {
-	parts := strings.Split(strings.ToLower(strings.TrimSpace(key)), ".")
-	for n := len(parts) - 1; n > 0; n-- {
-		if _, setting, ok := c.Setting(strings.Join(parts[:n], ".")); ok {
-			if setting.Kind() != Table {
-				break
-			}
-			return setting, strings.Join(parts[n:], "."), true
-		}
-	}
-	return Setting{}, "", false
+	return c.lookup().under(key)
 }
 
-// Part of a value of tables under the dotted path, nil when it holds nothing there
+// Key as the settings keep it: the parts icebath declares spelled as declared, the names a person gives as the key spells them
+func (c *Config) Key(key string) string {
+	return c.planner().path(key).String()
+}
+
+// Part of a value of tables under the dotted path, each name spelled exactly as the path spells it, nil when it holds nothing there
 func Dig(value any, path string) any {
 	for _, part := range strings.Split(path, ".") {
 		table, ok := value.(map[string]any)
@@ -843,12 +868,17 @@ func (c *Config) snapshot() *Registry {
 	return &Registry{registrants: slices.Clone(c.registry.registrants)}
 }
 
-// Whether the key is kept once for every profile
+// Whether the key is kept once for every profile: its first part names a section kept so
 func (c *Config) Global(key string) bool {
-	root, _, _ := strings.Cut(strings.ToLower(key), ".")
+	root, _, _ := strings.Cut(strings.TrimSpace(key), ".")
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.global[root]
+	for section := range c.global {
+		if same(section, root, spelled) {
+			return true
+		}
+	}
+	return false
 }
 
 // Settings of the scope the key is kept in
@@ -861,7 +891,8 @@ func (c *Config) store(key string) (layer, error) {
 
 // Where the value of a setting comes from, and the environment variable when it is one
 func (c *Config) Source(setting Setting) (Source, string) {
-	if _, pinned := c.pinnedAt(setting.Key); pinned {
+	path := registered(setting.Key)
+	if _, pinned := c.pinnedAt(path); pinned {
 		return FromManaged, ""
 	}
 	for _, variable := range setting.Env {
@@ -881,33 +912,106 @@ func (c *Config) Source(setting Setting) (Source, string) {
 	if err != nil {
 		return FromDefault, ""
 	}
-	if store.holds(setting.Key) {
+	if store.holds(path) {
 		return FromFile, ""
 	}
 	return FromDefault, ""
 }
 
 // Value kept under the key, nil when there is none, without looking at environment variables or defaults: what the file of its scope holds,
-// the administrator's pins over it. Sections that come and go read what they are made of with it
+// the administrator's pins over it, the names icebath declares in it spelled as declared. Sections that come and go read what they are made
+// of with it
 func (c *Config) Stored(key string) any {
-	key = strings.ToLower(key)
-	value := c.stored(key)
-	if pin, pinned := c.pinnedAt(key); pinned {
-		return overlay(value, pin)
+	look := c.planner()
+	read := reading{look: look, path: look.path(key)}
+	value := c.stored(read.path)
+	if pin, pinned := c.pinnedAt(read.path); pinned {
+		return read.overlay(value, pin)
+	}
+	return read.canon(value)
+}
+
+// Names kept under the key, as Stored gives them, in the order the settings of its scope write them; the names only the administrator pins
+// there after them in order. A table whose names ignore case takes the spelling of a pinned name in the place of the name it pins
+func (c *Config) Order(key string) []string {
+	look := c.planner()
+	read := reading{look: look, path: look.path(key)}
+	var held []string
+	if value, ok := c.layered(read.path.String()); ok {
+		m, _ := value.(map[string]any)
+		held = ordered(m, nil)
+	} else if store, err := c.store(read.path.String()); err == nil {
+		held = store.order(read.path)
+	}
+	pin, _ := c.pinnedAt(read.path)
+	pins, _ := pin.(map[string]any)
+	place := read.at()
+	how := exact
+	if place.caseless() {
+		how = spelled
+	}
+	var names []string
+	add := func(name string, pinned bool) {
+		if place != nil && place.setting == nil {
+			name, _ = place.child(name)
+		}
+		at, ok := pick(names, name, how)
+		switch {
+		case !ok:
+			names = append(names, name)
+		case pinned:
+			names[slices.Index(names, at)] = name
+		}
+	}
+	for _, name := range held {
+		add(name, false)
+	}
+	for _, name := range slices.Sorted(maps.Keys(pins)) {
+		add(name, true)
+	}
+	return names
+}
+
+// Value the session's layer or the file of the key's scope holds, as written
+func (c *Config) stored(path keyPath) any {
+	if value, ok := c.layered(path.String()); ok {
+		return value
+	}
+	store, err := c.store(path.String())
+	if err != nil {
+		return nil
+	}
+	return store.get(path)
+}
+
+// Values read under one key, the names icebath declares in them spelled as declared, from what is declared there as it is first needed
+type reading struct {
+	look   *finder
+	path   keyPath
+	place  *declared
+	placed bool
+}
+
+// What is declared at the key
+func (r *reading) at() *declared {
+	if !r.placed {
+		r.place, r.placed = r.look.place(r.path), true
+	}
+	return r.place
+}
+
+// Value with the names icebath declares in it spelled as declared
+func (r *reading) canon(value any) any {
+	switch value.(type) {
+	case map[string]any, []any:
+		return r.at().canon(value)
 	}
 	return value
 }
 
-// Value the session's layer or the file of the key's scope holds, as written
-func (c *Config) stored(key string) any {
-	if value, ok := c.layered(key); ok {
-		return value
-	}
-	store, err := c.store(key)
-	if err != nil {
-		return nil
-	}
-	return store.get(key)
+// Value with the administrator's pin over it, both spelled as declared
+func (r *reading) overlay(value, pin any) any {
+	return overlay(r.canon(value), r.canon(pin), r.at())
 }
 
 // Value of the key: what the administrator pins, else the first environment variable of its setting set to more than spaces, else the file
@@ -915,18 +1019,24 @@ func (c *Config) stored(key string) any {
 // setting adds them to the value the rest gives; a key below a table setting is the part of the table's value under it. A length of time is
 // the number of its unit it comes to, its default for a value that spells none
 func (c *Config) Get(key string) any {
-	key = strings.ToLower(key)
-	_, setting, known := c.Setting(key)
+	look := c.lookup()
+	_, setting, known := look.setting(key)
 	if !known {
-		if table, path, under := c.Under(key); under {
-			return Dig(c.Get(table.Key), path)
+		if table, rest, under := look.under(key); under {
+			return table.dig(c.Get(table.Key), rest)
 		}
 	}
-	pin, pinned := c.pinnedAt(key)
+	read := reading{look: look, path: registered(setting.Key)}
+	if !known {
+		read.path = look.path(key)
+	}
+	// What is declared is read from the sections found so far, those that come and go made no further while they are being made
+	look.fixedOnly = c.making
+	pin, pinned := c.pinnedAt(read.path)
 	_, partial := pin.(map[string]any)
 	partial = partial && (!known || setting.Kind() == Table)
 	if pinned && !partial {
-		return pinValue(setting, known, pin)
+		return pinValue(setting, known, read.canon(pin))
 	}
 	value := func() any {
 		if known {
@@ -938,7 +1048,7 @@ func (c *Config) Get(key string) any {
 				}
 			}
 		}
-		if value := c.stored(key); value != nil {
+		if value := c.stored(read.path); value != nil {
 			value = c.expand(value, c.LookupEnv, func() string { return display(c.EnvPath()) })
 			if !known || setting.Kind() != Duration {
 				return value
@@ -953,9 +1063,9 @@ func (c *Config) Get(key string) any {
 		return nil
 	}()
 	if pinned {
-		return overlay(value, pin)
+		return read.overlay(value, pin)
 	}
-	return value
+	return read.canon(value)
 }
 
 // Words a variable may set a toggle with
@@ -1060,26 +1170,66 @@ func Yes(text string) bool {
 // person decides the key, or when the administrator pins keys below it that a value other than a mapping would replace, and the refusal of a
 // config.yaml that does not read or parse rather than replacing it
 func (c *Config) Set(key string, value any) error {
-	key = strings.ToLower(key)
-	if locked := c.Lock(key); locked != nil {
+	return c.write("", key, value)
+}
+
+// Saves the value under the names below the key, each name one part of the key whatever it holds, spelled as given and answering only
+// exactly, nil removing it: how a thing named with a dot is kept, such as a model, which a key split on its dots can't say. Refused as Set
+// refuses
+func (c *Config) SetNamed(key string, value any, names ...string) error {
+	return c.write("", key, value, names...)
+}
+
+// Layer that writes a key only while a table above it is kept, checked in the same write, and spells as declared every name the schema
+// declares as it writes
+type amender interface {
+	amend(within, key keyPath, value any, declares *declared) error
+}
+
+// Saves the value as Set does, but only while the table at within is kept: once it is gone nothing is written, so that a write to a part
+// of it never makes it again. Any write for no within. The names are parts of the key after it, each taken whole
+func (c *Config) write(within, key string, value any, names ...string) error {
+	look := c.planner()
+	path := look.path(key)
+	for _, name := range names {
+		path.add(name, exact)
+	}
+	if err := writableKey(path); err != nil {
+		return err
+	}
+	if locked := c.lock(look, path); locked != nil {
 		return locked
 	}
-	if _, below := c.pinnedAt(key); below && value != nil {
+	if _, below := c.pinnedAt(path); below && value != nil {
 		if _, mapping := value.(map[string]any); !mapping {
-			return &LockedError{Key: key, By: ByAdministrator, Source: managedSource("config.yaml")}
+			return &LockedError{Key: path.String(), By: ByAdministrator, Source: managedSource("config.yaml")}
 		}
 	}
-	store, err := c.store(key)
+	store, err := c.store(path.String())
 	if err != nil {
 		return err
 	}
-	return store.set(key, value)
+	var kept keyPath
+	if within != "" {
+		kept = look.path(within)
+		// A table the administrator pins is kept whatever the file holds
+		if _, pinned := c.pinnedAt(kept); pinned {
+			kept = keyPath{}
+		}
+	}
+	if amend, ok := store.(amender); ok {
+		return amend.amend(kept, path, value, look.schema())
+	}
+	if len(kept.parts) > 0 && !store.holds(kept) {
+		return nil
+	}
+	return store.set(path, value)
 }
 
 // Why a write of the key can't be saved now, nil when it can: the refusal of a config.yaml of its scope that does not read or parse, which a
 // write would replace
 func (c *Config) Writable(key string) error {
-	store, err := c.store(strings.ToLower(key))
+	store, err := c.store(key)
 	if err != nil {
 		return err
 	}
@@ -1088,34 +1238,23 @@ func (c *Config) Writable(key string) error {
 
 // Whether the settings of the key's scope hold a value under it, which unsetting it removes
 func (c *Config) Holds(key string) bool {
-	store, err := c.store(strings.ToLower(key))
-	return err == nil && store.holds(strings.ToLower(key))
+	store, err := c.store(key)
+	return err == nil && store.holds(c.planner().path(key))
 }
 
-// Everything the file of a scope holds: the settings every profile shares, or the profile's own
+// Everything the file of a scope holds: the settings every profile shares, or the profile's own, the names icebath declares in them spelled
+// as declared and the names nothing declares as written
 func (c *Config) Held(global bool) map[string]any {
-	if global {
-		return c.shared.all()
+	store := layer(c.shared)
+	if !global {
+		own, err := c.own()
+		if err != nil {
+			return nil
+		}
+		store = own
 	}
-	store, err := c.own()
-	if err != nil {
-		return nil
-	}
-	return store.all()
-}
-
-// Writes settings to a config file at once, so a reader never sees half of them
-func Write(path string, settings map[string]any) error {
-	changed := viper.New()
-	if err := changed.MergeConfigMap(settings); err != nil {
-		return err
-	}
-	changed.SetConfigType(strings.TrimPrefix(filepath.Ext(path), "."))
-	var data bytes.Buffer
-	if err := changed.WriteConfigTo(&data); err != nil {
-		return err
-	}
-	return fsx.Write(path, data.Bytes(), 0o600)
+	held, _ := c.planner().schema().canon(store.all()).(map[string]any)
+	return held
 }
 
 // Keys under one prefix, read and written by the names below it, such as the settings of one provider
@@ -1124,6 +1263,15 @@ type View struct {
 	prefix string
 	// Holds nothing, the profile's environment the one thing read through it
 	bare bool
+	// Table that every write through the view needs kept, empty for writes that make the tables they need
+	within string
+}
+
+// View whose writes are kept only while the table it names is kept, such as the fields of one account: a write to one of them never
+// makes the account again once something removed it
+func (v View) Within() View {
+	v.within = v.prefix
+	return v
 }
 
 // View of the same profile that holds nothing and reads only its environment: what an account with no fields of its own is
@@ -1164,23 +1312,23 @@ func (v View) EnvOrigin(name string) string {
 }
 
 func (c *Config) View(prefix string) View {
-	return View{config: c, prefix: strings.ToLower(prefix)}
+	return View{config: c, prefix: strings.TrimSpace(prefix)}
 }
 
 func (v View) Prefix() string {
 	return v.prefix
 }
 
-// Full key of the name under the prefix
+// Full key of the name under the prefix, the name as it is spelled
 func (v View) Key(name string) string {
-	return v.prefix + "." + strings.ToLower(name)
+	return v.prefix + "." + name
 }
 
 func (v View) View(name string) View {
-	return View{config: v.config, prefix: v.Key(name)}
+	return View{config: v.config, prefix: v.Key(name), within: v.within}
 }
 
-// Names of the tables kept under the prefix, in order
+// Names of the tables kept under the prefix, in order, each as it is spelled
 func (v View) Names() []string {
 	table, _ := v.Stored("").(map[string]any)
 	var names []string
@@ -1225,7 +1373,7 @@ func (v View) Set(name string, value any) error {
 	if v.config == nil || v.bare {
 		return errors.New("config: nothing to keep " + name + " under")
 	}
-	return v.config.Set(v.Key(name), value)
+	return v.config.write(v.within, v.Key(name), value)
 }
 
 // Removes everything under the prefix

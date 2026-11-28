@@ -301,7 +301,7 @@ func (h *Hub) Uninstall(ctx context.Context, scope *skills.Scope, name string) (
 	}
 	r.audit("UNINSTALL", name, entry.Source, entry.Trust, "n/a", "user_request")
 	h.registry.Forget()
-	return true, fmt.Sprintf("✓ Uninstalled %s from %s.", name, entry.InstallPath), nil
+	return true, fmt.Sprintf("Uninstalled %s from %s.", name, entry.InstallPath), nil
 }
 
 // A GitHub repository the user added to those the hub searches
@@ -332,22 +332,22 @@ func (h *Hub) Tap(ctx context.Context, scope *skills.Scope, repo string, remove 
 	return r.addTap(ctx, repo, "skills/")
 }
 
-// Trusts a project with its own skills, or stops trusting it, saying what it did
-func (h *Hub) Trust(scope *skills.Scope, path string, trust bool, say Say) bool {
+// Trusts a project with its own skills, or stops trusting it, saying what it did; what it did, and false when it could not
+func (h *Hub) Trust(scope *skills.Scope, path string, trust bool, say Say) (skills.Trust, bool) {
 	r := h.run(scope, say)
 	result, err := scope.SetTrusted(path, trust)
 	if err != nil {
 		r.line(Plain, err.Error())
-		return false
+		return result, false
 	}
 	switch {
 	case !trust && !result.Changed:
 		r.line(Plain, "You had not trusted %s, so nothing changed.", result.Root)
-		return true
+		return result, true
 	case !trust:
 		r.line(Good, "✓ You no longer trust %s.", result.Root)
 		r.line(Plain, "icebath no longer loads the skills this project keeps in its own folder.")
-		return true
+		return result, true
 	case result.Changed:
 		r.line(Good, "✓ You trust %s now.", result.Root)
 	default:
@@ -358,7 +358,7 @@ func (h *Hub) Trust(scope *skills.Scope, path string, trust bool, say Say) bool 
 	} else {
 		r.line(Plain, "The project has no skills yet. Add them under %s.", strings.Join(skills.ProjectSkillDirs(), " or "))
 	}
-	return true
+	return result, true
 }
 
 // One skill of a snapshot

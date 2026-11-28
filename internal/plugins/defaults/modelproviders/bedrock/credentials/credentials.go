@@ -166,8 +166,8 @@ func (s *source) Why(account credentials.Account) (string, bool) {
 	id := account.Provider.ID
 	switch name := s.detect(account); {
 	case name == "":
-		return fmt.Sprintf("Bedrock needs an AWS sign-in. Run `aws sso login` or `aws configure`, set AWS_PROFILE or AWS profile in /providers, "+
-			"or add a Bedrock API key with `icebath auth add %s --type api-key`.", id), true
+		return fmt.Sprintf("Bedrock needs an AWS sign-in. Run `aws sso login` or `aws configure`, pick its AWS profile, or add a Bedrock API key "+
+			"to %s.", id), true
 	case account.Ignores(name):
 		return fmt.Sprintf("This provider ignores the AWS sign-in of %s. Run `icebath auth add %s` to use it again, or add a Bedrock API key "+
 			"with `icebath auth add %s --type api-key`.", name, id, id), true

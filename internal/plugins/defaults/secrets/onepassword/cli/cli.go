@@ -11,9 +11,11 @@ import (
 
 	"github.com/nickheyer/icebath/internal/cli"
 	onepasswordconfig "github.com/nickheyer/icebath/internal/plugins/defaults/secrets/onepassword/config"
-	"github.com/nickheyer/icebath/internal/secrets"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	onepasswordv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/onepassword/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/onepassword/v1/onepasswordv1connect"
+	secretsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/secrets/v1"
+	"github.com/nickheyer/icebath/pkg/gen/icebath/secrets/v1/secretsv1connect"
 	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 )
@@ -25,24 +27,26 @@ func Register(registry *cli.Registry) {
 }
 
 func (commands) Commands(conn *connect.Client) []*cobra.Command {
-	o := onepassword{service: onepasswordv1connect.NewOnePasswordServiceClient(conn)}
+	o := onepassword{service: onepasswordv1connect.NewOnePasswordServiceClient(conn), stores: secretsv1connect.NewSecretServiceClient(conn)}
 	root := &cobra.Command{Use: onepasswordconfig.Name, Aliases: []string{"op", "1password"}, Short: "Load API keys from 1Password",
 		Long: "Sets environment variables from op:// references to 1Password items each time icebath starts. icebath reads them with op, the 1Password " +
-			"command line tool, signed in to your account or with a service account token.",
+			"command line tool, signed in to your account or with a service account token. icebath secrets on and off turn it on and off.",
 		Args: cobra.NoArgs}
-	root.AddCommand(o.setup(), o.status(), o.token(), o.set(), o.remove(), o.sync(), o.disable())
+	root.AddCommand(o.setup(), o.status(), o.token(), o.set(), o.remove(), o.sync())
 	return []*cobra.Command{root}
 }
 
 type onepassword struct {
 	service onepasswordv1connect.OnePasswordServiceClient
+	// The service every store shares, which fills variables, fetches now and turns stores on and off
+	stores secretsv1connect.SecretServiceClient
 }
 
 func (o onepassword) setup() *cobra.Command {
 	var account, tokenEnv, token, binaryPath string
 	command := &cobra.Command{Use: "setup", Short: "Set up 1Password step by step",
-		Long: "Checks that op is installed and can sign in, keeps your account or service account token and turns 1Password on. Then " +
-			"map each variable to an item with set.",
+		Long: "Checks that op is installed and signs in, with a service account token or your account on this computer, then keeps the token " +
+			"or the account and turns 1Password on. Nothing is kept while op can't sign in. Then set each variable from an item with set.",
 		Example: "  icebath secrets onepassword setup --account my.1password.com",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -51,7 +55,7 @@ func (o onepassword) setup() *cobra.Command {
 				" with op,", "the 1Password command line tool, installed and signed in on this computer.", "",
 				"To install op and sign in, follow "+c.Paint(onepasswordconfig.Docs, cli.Cyan)+".")
 			c.Step(1, "Find op")
-			set, err := o.service.Setup(cmd.Context(), &onepasswordv1.SetupRequest{Account: account, TokenEnv: tokenEnv, Token: token, BinaryPath: binaryPath})
+			set, err := o.service.Setup(cmd.Context(), &onepasswordv1.SetupRequest{Profile: picked.Picked(cmd.Context()), Account: account, TokenEnv: tokenEnv, Token: token, BinaryPath: binaryPath})
 			if err != nil {
 				return err
 			}
@@ -74,16 +78,19 @@ func (o onepassword) setup() *cobra.Command {
 			}
 			c.Step(2, "Sign in")
 			switch {
+			case set.GetNotSignedIn() && (strings.TrimSpace(token) != "" || set.GetEnvToken()):
+				c.Failure("1Password refused the service account token, so nothing changed.")
+				return cli.Exit(1)
+			case set.GetNotSignedIn():
+				c.Failure("op is not signed in, so nothing changed.")
+				c.Info("Run " + c.Paint("op signin", cli.Cyan) + " to sign in, or pass a service account token with --token. Then run setup again.")
+				return cli.Exit(1)
 			case set.GetSavedToken():
-				c.Success("The service account token is kept in " + set.GetEnvPath() + " as " + set.GetTokenEnv() + ".")
+				c.Success("The service account token is kept in " + set.GetEnvPath() + " as " + set.GetTokenEnv() + ", signed in as " + set.GetIdentity() + ".")
 			case set.GetEnvToken():
-				c.Success("icebath uses the service account token in " + set.GetTokenEnv() + ".")
-			case set.GetIdentity() != "":
-				c.Success("icebath uses op, which is signed in as " + set.GetIdentity() + ".")
+				c.Success("icebath uses the service account token in " + set.GetTokenEnv() + ", signed in as " + set.GetIdentity() + ".")
 			default:
-				c.Warning("There is no service account token, and op is not signed in.")
-				c.Info("Run " + c.Paint("op signin", cli.Cyan) + " to sign in, or set a service account token in " + set.GetTokenEnv() +
-					". Then run icebath secrets onepassword status to check.")
+				c.Success("icebath uses op, which is signed in as " + set.GetIdentity() + ".")
 			}
 			c.Blank()
 			c.Say("✓ 1Password is on.", cli.Green)
@@ -105,7 +112,7 @@ func (o onepassword) status() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
-			state, err := o.service.State(cmd.Context(), &onepasswordv1.StateRequest{})
+			state, err := o.service.State(cmd.Context(), &onepasswordv1.StateRequest{Profile: picked.Picked(cmd.Context())})
 			if err != nil {
 				return err
 			}
@@ -139,7 +146,8 @@ func (o onepassword) status() *cobra.Command {
 				c.Table([]string{"Variable", "Reference"}, rows)
 			}
 			if !state.GetEnabled() {
-				c.Say("\n  Run " + c.Paint("icebath secrets onepassword setup", cli.Cyan) + " to turn 1Password on.")
+				c.Say("\n  Run " + c.Paint("icebath secrets on onepassword", cli.Cyan) + " to turn 1Password on, or " +
+					c.Paint("icebath secrets onepassword setup", cli.Cyan) + " to set it up.")
 				return nil
 			}
 			if state.GetBinary() != "" && !state.GetTokenSet() {
@@ -169,7 +177,7 @@ func (o onepassword) token() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
 			ctx := cmd.Context()
-			state, err := o.service.State(ctx, &onepasswordv1.StateRequest{})
+			state, err := o.service.State(ctx, &onepasswordv1.StateRequest{Profile: picked.Picked(ctx)})
 			if err != nil {
 				return err
 			}
@@ -191,7 +199,7 @@ func (o onepassword) token() *cobra.Command {
 			if !noVerify {
 				c.Say("Checking the token with op…")
 			}
-			rotated, err := o.service.Token(ctx, &onepasswordv1.TokenRequest{Token: token, Verify: !noVerify})
+			rotated, err := o.service.Token(ctx, &onepasswordv1.TokenRequest{Profile: picked.Picked(ctx), Token: token, Verify: !noVerify})
 			if err != nil {
 				return err
 			}
@@ -207,7 +215,7 @@ func (o onepassword) token() *cobra.Command {
 			}
 			c.Success("The token is kept in " + rotated.GetEnvPath() + " as " + rotated.GetTokenEnv() + ", and icebath uses it from now on.")
 			if rotated.GetDisabled() {
-				c.Warning("1Password is off. Run icebath secrets onepassword setup to turn it on.")
+				c.Warning("1Password is off. Run icebath secrets on onepassword to turn it on.")
 			}
 			return nil
 		}}
@@ -218,26 +226,16 @@ func (o onepassword) token() *cobra.Command {
 
 func (o onepassword) set() *cobra.Command {
 	return &cobra.Command{Use: "set <env_var> <reference>", Short: "Set a variable from an op:// reference",
-		Long:    "Maps the environment variable to a 1Password item, so icebath sets the variable from the item each time it starts.",
+		Long:    "Fills the environment variable from a 1Password item each time icebath starts. The reference is checked before it is kept.",
 		Example: "  icebath secrets onepassword set OPENAI_API_KEY op://Private/OpenAI/credential",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := cli.NewConsole(cmd)
-			mapped, err := o.service.Map(cmd.Context(), &onepasswordv1.MapRequest{Env: args[0], Reference: args[1]})
+			bound, err := o.stores.Bind(cmd.Context(), &secretsv1.BindRequest{Profile: picked.Picked(cmd.Context()), Name: onepasswordconfig.Name, Variable: args[0], Reference: args[1]})
 			if err != nil {
-				return err
+				return c.Fail("✗ " + strs.Sentence(tui.Reason(err)))
 			}
-			if mapped.GetReference() == "" {
-				for _, warning := range mapped.GetWarnings() {
-					c.Say("✗ "+warning, cli.Red)
-				}
-				return cli.Exit(1)
-			}
-			c.Say(c.Tick() + " " + c.Paint(args[0], cli.Cyan) + " is set from " + mapped.GetReference() + " each time icebath starts.")
-			if !mapped.GetEnabled() {
-				c.Say(c.Paint("⚠ 1Password is off. Run ", cli.Yellow) + c.Paint("icebath secrets onepassword setup", cli.Cyan) +
-					c.Paint(" to turn it on.", cli.Yellow))
-			}
+			c.Say(c.Tick() + " " + bound.GetNote())
 			return nil
 		}}
 }
@@ -248,15 +246,11 @@ func (o onepassword) remove() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := cli.NewConsole(cmd)
-			removed, err := o.service.Unmap(cmd.Context(), &onepasswordv1.UnmapRequest{Env: args[0]})
+			removed, err := o.stores.Unbind(cmd.Context(), &secretsv1.UnbindRequest{Profile: picked.Picked(cmd.Context()), Name: onepasswordconfig.Name, Variable: args[0]})
 			if err != nil {
-				return err
+				return c.Fail("✗ " + strs.Sentence(tui.Reason(err)))
 			}
-			if !removed.GetMapped() {
-				c.Say("⚠ "+args[0]+" is not set from 1Password, so there was nothing to remove.", cli.Yellow)
-				return cli.Exit(1)
-			}
-			c.Say(c.Tick() + " " + c.Paint(args[0], cli.Cyan) + " is no longer set from 1Password.")
+			c.Say(c.Tick() + " " + removed.GetNote())
 			return nil
 		}}
 }
@@ -266,8 +260,8 @@ func action(c *cli.Console, kind string) string {
 	switch kind {
 	case "exported":
 		return c.Paint("Set", cli.Green)
-	case "skipped":
-		return c.Paint("Left alone, because it is set already or holds the token", cli.Dim)
+	case "overrode":
+		return c.Paint("Set over the value you had", cli.Green)
 	case "unresolved":
 		return c.Paint("Could not be read, as the warnings below say", cli.Red)
 	case "skip_token":
@@ -288,25 +282,29 @@ func (o onepassword) sync() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
-			synced, err := o.service.Sync(cmd.Context(), &onepasswordv1.SyncRequest{Apply: apply})
+			synced, err := o.stores.Preview(cmd.Context(), &secretsv1.PreviewRequest{Profile: picked.Picked(cmd.Context()), Name: onepasswordconfig.Name, Apply: apply})
 			if err != nil {
-				return c.Fail("✗ " + secrets.Sentence(tui.Reason(err)))
+				return c.Fail("✗ " + strs.Sentence(tui.Reason(err)))
 			}
-			if len(synced.GetRows()) == 0 && len(synced.GetWarnings()) == 0 {
+			if len(synced.GetOutcomes()) == 0 && len(synced.GetWarnings()) == 0 {
 				c.Say("No variable is set from 1Password yet. Add one with icebath secrets onepassword set <env_var> <reference>.", cli.Yellow)
 				return nil
 			}
 			var rows [][]string
-			for _, row := range synced.GetRows() {
+			set := 0
+			for _, row := range synced.GetOutcomes() {
 				rows = append(rows, []string{c.Paint(row.GetName(), cli.Cyan), action(c, row.GetAction())})
+				if row.GetAction() == "exported" || row.GetAction() == "overrode" {
+					set++
+				}
 			}
 			c.Table([]string{"Variable", "What happens"}, rows)
 			for _, warning := range synced.GetWarnings() {
-				c.Warning(secrets.Sentence(warning))
+				c.Warning(strs.Sentence(warning))
 			}
 			if apply {
 				c.Blank()
-				c.Success("Set " + strs.Count(int(synced.GetExported()), "secret") + " in the running icebath of this profile.")
+				c.Success("Set " + strs.Count(set, "secret") + " in the running icebath of this profile.")
 				return nil
 			}
 			c.Say("\n  Nothing changed, and icebath reads these references by itself each time it starts. To set them now in the running " +
@@ -315,20 +313,4 @@ func (o onepassword) sync() *cobra.Command {
 		}}
 	command.Flags().BoolVar(&apply, "apply", false, "Set the values in the running icebath of this profile")
 	return command
-}
-
-func (o onepassword) disable() *cobra.Command {
-	return &cobra.Command{Use: "disable", Short: "Turn 1Password off",
-		Long: "Stops setting variables from 1Password. Your references stay in the settings until you remove them.",
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			c := cli.NewConsole(cmd)
-			if _, err := o.service.Disable(cmd.Context(), &onepasswordv1.DisableRequest{}); err != nil {
-				return err
-			}
-			c.Success("1Password is off. icebath no longer reads its references, now or when it starts.")
-			c.Info("Your references stay in the settings. Remove one you no longer need with " +
-				c.Paint("icebath secrets onepassword remove <env_var>", cli.Cyan) + ".")
-			return nil
-		}}
 }

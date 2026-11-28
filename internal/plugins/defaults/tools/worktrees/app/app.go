@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/worktrees/v1/worktreesv1connect"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1/sessionsv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -118,19 +119,6 @@ func dry(rest string) bool {
 	return false
 }
 
-// Sentence of a reason a server gave: capital first letter, ending in a period
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	text = strings.ToUpper(text[:1]) + text[1:]
-	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
-		text += "."
-	}
-	return text
-}
-
 // Opens the list, then runs what the subcommand asks over it
 func (w *worktree) run(argument string) tea.Cmd {
 	sub, rest := split(argument)
@@ -140,14 +128,19 @@ func (w *worktree) run(argument string) tea.Cmd {
 		switch {
 		case !known:
 			return w.hub.Fail("There is no /worktree " + sub + ". It takes new and a name, list, or prune and --dry-run.")
+		case !w.repo:
+			// The list says the folder is in no repository
+			return nil
 		case handler == "list":
 			return w.listed()
 		case handler == "new" && rest != "":
 			return w.create(rest)
 		case handler == "new":
 			return w.ask()
+		case handler == "prune" && dry(rest):
+			return w.prune(true)
 		case handler == "prune":
-			return w.prune(dry(rest))
+			w.list.Confirm(prunes, func() tea.Cmd { return w.prune(false) })
 		}
 		return nil
 	})
@@ -191,7 +184,7 @@ func (w *worktree) open() tea.Cmd {
 			if i >= 0 && i < len(w.rows) && w.rows[i].archive != nil {
 				out = append(out, wm.Hint{Action: "worktree.restore"})
 			}
-			out = append(out, wm.Hint{Action: "hub.add", Label: "new worktree"})
+			out = append(out, wm.Hint{Action: "hub.add"})
 			if len(w.audit.GetTrees()) > 0 || len(w.audit.GetBranches()) > 0 {
 				out = append(out, wm.Hint{Action: "worktree.preview"}, wm.Hint{Action: "worktree.prune"})
 			}
@@ -220,7 +213,7 @@ func (w *worktree) open() tea.Cmd {
 				if !w.repo {
 					return nil
 				}
-				l.Confirm("Prune the worktrees and merged branches that hold no work?", func() tea.Cmd { return w.prune(false) })
+				l.Confirm(prunes, func() tea.Cmd { return w.prune(false) })
 				return nil
 			},
 			"hub.refresh": func(*cards.List, int) tea.Cmd { return w.load(nil, nil) },
@@ -253,13 +246,13 @@ func (w *worktree) intro() []string {
 func (w *worktree) empty() string {
 	switch {
 	case w.err != nil:
-		return "Could not read the worktrees. " + sentence(tui.Reason(w.err)) + " " + w.kit.Env.Keys.Display("hub.refresh") + " tries again."
+		return "Could not read the worktrees. " + strs.Full(tui.Reason(w.err)) + " " + w.kit.Env.Keys.Display("hub.refresh") + " tries again."
 	case !w.loaded:
 		return "Reading the worktrees…"
 	case !w.repo:
 		return "This folder is not inside a git repository, so it has no worktrees."
 	}
-	return "No worktrees yet. " + w.kit.Env.Keys.Display("hub.add") + " makes one and moves this session into it."
+	return "No worktrees yet. " + w.kit.Env.Keys.Display("hub.add") + " adds one and moves this session into it."
 }
 
 // Whether the worktree is the one the session works in
@@ -331,19 +324,17 @@ func (w *worktree) detail(e entry) []string {
 		}
 		lines = append(lines, render.Dim(strings.Join(facts, " · "), t))
 		if reason := e.tree.GetReason(); reason != "" {
-			lines = append(lines, sentence(reason))
+			lines = append(lines, strs.Full(reason))
 		}
 		return lines
+	case e.external != nil && e.external.GetMissing():
+		return []string{e.external.GetPath(), render.Warm("Its folder is gone, and git still lists it. A prune makes git forget it.", t)}
 	case e.external != nil:
-		lines := []string{e.external.GetPath(), "Registered outside .worktrees, so a prune never touches it."}
-		if e.external.GetMissing() {
-			lines = append(lines, render.Warm("Its folder is gone. git still lists it until git worktree prune runs.", t))
-		}
-		return lines
+		return []string{e.external.GetPath(), "Registered outside .worktrees, so a prune never touches it."}
 	}
 	lines := []string{"An archive of the worktree " + e.archive.GetName() + ". Restoring makes the worktree again."}
 	if reason := e.archive.GetReason(); reason != "" {
-		lines = append(lines, sentence("Archived because "+reason))
+		lines = append(lines, strs.Full("Archived because "+reason))
 	}
 	if path := e.archive.GetPath(); path != "" {
 		lines = append(lines, render.Dim("Was in "+path, t))
@@ -401,20 +392,42 @@ func (w *worktree) folder() string {
 	return w.kit.Env.WorkDir()
 }
 
+// Question asked before a prune
+var prunes = cards.Question{Text: "Delete the worktrees and merged branches that hold no work? Worktrees that hold work stay.", Verb: "Prune",
+	Deletes: true}
+
 // Pushes a page of lines over the list
 func (w *worktree) page(title string, lines []string) tea.Cmd {
-	page := cards.NewPage(w.kit.Env, cards.PageSpec{
-		Title: title,
-		Key:   "worktree:" + w.session + ":" + title,
-		Lines: func(width int) []string {
-			var out []string
-			for _, line := range lines {
-				out = append(out, strings.Split(render.Wrap(line, max(width, 1)), "\n")...)
-			}
-			return out
+	return w.hub.Push(cards.NewPage(w.kit.Env, cards.PageSpec{Title: title, Key: "worktree:" + w.session + ":" + title, Lines: wrapped(lines)}))
+}
+
+// Lines of a page wrapped to its width
+func wrapped(lines []string) func(width int) []string {
+	return func(width int) []string {
+		var out []string
+		for _, line := range lines {
+			out = append(out, strings.Split(render.Wrap(line, max(width, 1)), "\n")...)
+		}
+		return out
+	}
+}
+
+// Pushes the page of what a prune would do over the list, the prune itself on its key there
+func (w *worktree) preview(lines []string) tea.Cmd {
+	title := "What a prune would do"
+	return w.hub.Push(cards.NewPage(w.kit.Env, cards.PageSpec{
+		Title:   title,
+		Key:     "worktree:" + w.session + ":" + title,
+		Lines:   wrapped(lines),
+		Context: worktreeContext,
+		Hints:   func(*cards.Page) []wm.Hint { return []wm.Hint{{Action: "worktree.prune"}} },
+		Actions: map[string]func(*cards.Page) tea.Cmd{
+			"worktree.prune": func(p *cards.Page) tea.Cmd {
+				p.Confirm(prunes, func() tea.Cmd { return tea.Batch(w.hub.Close(p), w.prune(false)) })
+				return nil
+			},
 		},
-	})
-	return w.hub.Push(page)
+	}))
 }
 
 // Pages the worktrees as git lists them
@@ -432,14 +445,15 @@ func (w *worktree) listed() tea.Cmd {
 	})
 }
 
-// Asks the name of a new worktree, a made up one when left empty
+// Asks the name of a worktree to add, a made up one when left empty
 func (w *worktree) ask() tea.Cmd {
 	var form *cards.Form
 	form = cards.NewForm(w.kit.Env, cards.FormSpec{
-		Title:  "New worktree",
-		Intro:  []string{"Make a worktree of " + w.audit.GetRepo() + " on a branch of its own, and move this session into it."},
-		Fields: []cards.Field{{ID: "name", Label: "Name", Help: "The name of the worktree and of its branch.\nLeave empty for a made up name."}},
-		Submit: "Make",
+		Title: "Add a worktree",
+		Intro: []string{"Make a worktree of " + w.audit.GetRepo() + " on a branch of its own, and move this session into it."},
+		Fields: []cards.Field{{ID: "name", Label: "Worktree name",
+			Help: "The name of the worktree and of its branch, such as fix-login.\nLeft empty, icebath makes one up."}},
+		Submit: "Add",
 		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
 			return tea.Batch(w.hub.Close(form), w.create(strings.TrimSpace(values["name"])))
 		},
@@ -455,7 +469,7 @@ func (w *worktree) create(name string) tea.Cmd {
 		ctx := w.kit.Env.Ctx
 		created, err := w.service.Create(ctx, &worktreesv1.CreateRequest{Directory: w.cwd, Name: name, Pid: int64(os.Getpid())})
 		if err != nil {
-			return func() tea.Cmd { return w.hub.Fail("Could not make the worktree. " + sentence(tui.Reason(err))) }
+			return func() tea.Cmd { return w.hub.Fail("Could not make the worktree. " + strs.Full(tui.Reason(err))) }
 		}
 		if created.GetRepo() == "" {
 			return func() tea.Cmd { return w.hub.Fail("A worktree can only be made inside a git repository.") }
@@ -465,20 +479,30 @@ func (w *worktree) create(name string) tea.Cmd {
 		if tree == nil {
 			return func() tea.Cmd {
 				w.hub.Quiet()
-				return w.page("New worktree", lines)
+				return w.page("Add a worktree", lines)
 			}
 		}
 		entered, err := w.service.Enter(ctx, &worktreesv1.EnterRequest{SessionId: w.session, Tree: tree})
 		if err != nil {
-			lines = append(lines, "", "The worktree was made, but this session could not move into it. "+sentence(tui.Reason(err)))
+			lines = append(lines, "", "The worktree was made, but this session could not move into it. "+strs.Full(tui.Reason(err)))
+			// A worktree the tidying up left there is put in hand on the list, where it can be pruned
+			kept := true
 			if settled, err := w.service.Settle(ctx, &worktreesv1.SettleRequest{Tree: tree, Pid: int64(os.Getpid())}); err == nil {
 				lines = append(lines, settled.GetLines()...)
+				kept = !settled.GetGone()
 			} else {
-				lines = append(lines, "Could not tidy the worktree up. "+sentence(tui.Reason(err)))
+				lines = append(lines, "Could not tidy the worktree up. "+strs.Full(tui.Reason(err)))
 			}
 			return func() tea.Cmd {
 				w.hub.Quiet()
-				return tea.Batch(w.page("New worktree", lines), w.load(nil, nil))
+				return tea.Batch(w.page("Add a worktree", lines), w.load(nil, func() tea.Cmd {
+					for i, row := range w.rows {
+						if kept && row.tree != nil && row.tree.GetPath() == tree.GetPath() {
+							w.list.Select(i)
+						}
+					}
+					return nil
+				}))
 			}
 		}
 		lines = append(lines, entered.GetLines()...)
@@ -488,9 +512,9 @@ func (w *worktree) create(name string) tea.Cmd {
 			w.kit.Env.WorkDir = func() string { return path }
 			w.kit.Env.ProjectDir, w.kit.Env.Root = path, path
 			if err := os.Chdir(path); err != nil {
-				lines = append(lines, "", "This window could not move into "+path+". "+sentence(err.Error()))
+				lines = append(lines, "", "This window could not move into "+path+". "+strs.Full(err.Error()))
 			}
-			return tea.Batch(w.page("New worktree", lines), w.hub.Done("This session now works in the worktree "+filepath.Base(path)+"."), w.load(nil, nil))
+			return tea.Batch(w.page("Add a worktree", lines), w.hub.Done("This session now works in the worktree "+filepath.Base(path)+"."), w.load(nil, nil))
 		}
 	})
 }
@@ -502,7 +526,7 @@ func (w *worktree) restore(archive *worktreesv1.Archive) tea.Cmd {
 		return w.service.Restore(w.kit.Env.Ctx, &worktreesv1.RestoreRequest{Directory: w.cwd, Name: archive.GetName()})
 	}, func(restored *worktreesv1.RestoreResponse) tea.Cmd {
 		if failure := restored.GetError(); failure != "" {
-			return tea.Batch(w.hub.Fail("Could not restore "+archive.GetName()+". "+sentence(failure)), w.load(nil, nil))
+			return tea.Batch(w.hub.Fail("Could not restore "+archive.GetName()+". "+strs.Full(failure)), w.load(nil, nil))
 		}
 		said := "Restored " + archive.GetName() + " to " + restored.GetPath()
 		if branch := restored.GetBranch(); branch != "" && !restored.GetDetached() {
@@ -535,14 +559,14 @@ func (w *worktree) prune(dryRun bool) tea.Cmd {
 				return w.hub.Fail("This folder is not inside a git repository, so it has no worktrees.")
 			}
 			if err != nil {
-				return w.hub.Fail("Could not prune. " + sentence(tui.Reason(err)))
+				return w.hub.Fail("Could not prune. " + strs.Full(tui.Reason(err)))
 			}
 			w.hub.Quiet()
 			lines := append([]string{}, pruned.GetActions()...)
 			n := len(lines)
 			switch {
 			case n > 0 && dryRun:
-				lines = append(lines, "", render.Count(n, "change")+" would be made. "+w.kit.Env.Keys.Display("worktree.prune")+" in the list makes them.")
+				lines = append(lines, "", render.Count(n, "change")+" would be made.")
 			case n > 0:
 				lines = append(lines, "", render.Count(n, "change")+" made.")
 			default:
@@ -553,6 +577,9 @@ func (w *worktree) prune(dryRun bool) tea.Cmd {
 				for _, kept := range preserved {
 					lines = append(lines, "  "+kept.GetName()+": "+kept.GetReason())
 				}
+			}
+			if dryRun && n > 0 {
+				return tea.Batch(w.preview(lines), w.load(nil, nil))
 			}
 			title := "Prune"
 			if dryRun {

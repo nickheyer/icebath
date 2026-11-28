@@ -150,7 +150,7 @@ type Composer struct {
 	OnRecall func(Entry)
 	// Reports whether nothing typed may reach disk, the draft and history kept in memory alone
 	Volatile func() bool
-	// Hands every sent line to the app as typed, commands and shell lines included
+	// Hands every sent line to the app as typed, commands included
 	Literal bool
 	// Text an empty prompt shows in place of the command and palette legend
 	Hint string
@@ -1074,10 +1074,6 @@ func (c *Composer) submit() tea.Cmd {
 		c.attachments = nil
 		id := c.SessionID
 		return tea.Batch(cmd, func() tea.Msg { return SubmitMsg{Session: id, Text: text, Attachments: files} })
-	}
-	if line, ok := strings.CutPrefix(text, "!"); ok && strings.TrimSpace(line) != "" {
-		id := c.SessionID
-		return tea.Batch(cmd, func() tea.Msg { return RunMsg{Session: id, Line: strings.TrimSpace(line)} })
 	}
 	if strings.HasPrefix(text, "/") {
 		name, args, _ := strings.Cut(strings.TrimPrefix(text, "/"), " ")

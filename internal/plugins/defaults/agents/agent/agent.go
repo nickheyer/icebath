@@ -13,7 +13,7 @@ import (
 )
 
 func Register(registries *plugins.Registries) {
-	config.Register(registries.Config, registries.Provider.Options(registries.Config), prompt.Options(registries.Config))
+	config.Register(registries.Config, registries.Provider.Options, prompt.Options)
 	agent := server.Register(
 		registries.Server,
 		registries.Config,

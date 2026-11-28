@@ -4,12 +4,14 @@ package delegation
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
 	"slices"
 	"strings"
 
+	auxiliaryconfig "github.com/nickheyer/icebath/internal/auxiliary/config"
 	"github.com/nickheyer/icebath/internal/config"
 	delegationconfig "github.com/nickheyer/icebath/internal/delegation/config"
 )
@@ -78,6 +80,9 @@ type Backend struct {
 	Description func(cfg *config.Config) string
 	// Route of one task, a *Refusal refusing that task alone
 	Route func(cfg *config.Config, task Task) (Route, error)
+	// Settings of its own, each keyed by its name below delegation.backends and the backend's name, shown on its page once it is picked;
+	// none for a backend that has none
+	Fields []config.Setting
 }
 
 // Settings of the backend under delegation.backends, by its name; none when unset
@@ -169,10 +174,10 @@ func (r *Registry) Status(cfg *config.Config, name string) (Backend, string) {
 		return backend, "Subagents can't run, because this build of icebath leaves out the usual way to run them."
 	case !ok:
 		return backend, fmt.Sprintf("No plugin that is turned on runs subagents with %s. Install or turn on the plugin that does, or go back to "+
-			"the usual way with `/delegation default` or `icebath config set delegation.backend default`.", name)
+			"the built-in method with /delegation default.", name)
 	}
-	return backend, fmt.Sprintf("Subagents can't run with %s here, because its plugin says it can't. Fix its setup, or go back to the usual "+
-		"way with `/delegation default` or `icebath config set delegation.backend default`.", name)
+	return backend, fmt.Sprintf("Subagents can't run with %s here, because its plugin says it can't. Fix its setup, or go back to the "+
+		"built-in method with /delegation default.", name)
 }
 
 // Backend the settings select, a refusal naming it and the fix when it can't run
@@ -184,7 +189,7 @@ func (r *Registry) Active(cfg *config.Config) (Backend, error) {
 	return backend, nil
 }
 
-// A backend as pickers list it, unavailable ones with why
+// A backend as the methods are listed, unavailable ones with why
 type Info struct {
 	Name, Title, Summary string
 	Available            bool
@@ -214,18 +219,58 @@ type Delegation struct {
 
 func New(cfg *config.Config) *Delegation {
 	d := &Delegation{}
-	delegationconfig.Register(cfg, func() []config.Option {
+	delegationconfig.Register(cfg, d.choices, owned{d})
+	cfg.Guard(delegationconfig.Backend, config.Guard{Check: d.checkMethod})
+	cfg.Guard(delegationconfig.RequestOverrides, config.Guard{Write: auxiliaryconfig.WriteFields(delegationconfig.RequestOverrides)})
+	return d
+}
+
+// Methods that can run for the profile of the values, the choices of Method: the same answer /delegation gives
+func (d *Delegation) choices(values *config.Config) func() []config.Option {
+	return func() []config.Option {
 		var options []config.Option
-		for _, info := range d.List(cfg) {
-			about := info.Summary
-			if _, installed := d.Backend(info.Name); !installed {
-				about = "Not installed"
-			} else if !info.Available {
-				about = "Can't run here"
+		for _, info := range d.List(values) {
+			if info.Available {
+				options = append(options, config.Option{Value: info.Name, Title: info.Title, About: info.Summary})
 			}
-			options = append(options, config.Option{Value: info.Name, Title: info.Title, About: about})
 		}
 		return options
-	})
-	return d
+	}
+}
+
+// Refusal of a method that can't run for the profile, with why and what to do about it
+func (d *Delegation) checkMethod(cfg *config.Config, _ string, value any) error {
+	name, _ := value.(string)
+	if name = strings.ToLower(strings.TrimSpace(name)); name == "" {
+		return nil
+	}
+	if _, reason := d.Status(cfg, name); reason != "" {
+		return errors.New(reason)
+	}
+	return nil
+}
+
+// Sections of the settings each backend declares of its own, under delegation.backends and its name
+type owned struct{ d *Delegation }
+
+func (o owned) Sections(*config.Config) []config.Section {
+	var out []config.Section
+	for _, backend := range o.d.Backends() {
+		if len(backend.Fields) == 0 {
+			continue
+		}
+		key := SettingsKey(backend.Name)
+		fields := slices.Clone(backend.Fields)
+		for i := range fields {
+			fields[i].Key = key + "." + fields[i].Key
+		}
+		out = append(out, config.Section{Key: key, Parent: delegationconfig.Key, Title: cmp.Or(backend.Title, backend.Name), About: backend.Summary,
+			Settings: fields})
+	}
+	return out
+}
+
+// Key of the section of a backend's own settings
+func SettingsKey(name string) string {
+	return delegationconfig.Backends + "." + strings.ToLower(name)
 }

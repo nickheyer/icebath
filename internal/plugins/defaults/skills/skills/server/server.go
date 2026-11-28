@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,10 +20,8 @@ import (
 	skillsconfig "github.com/nickheyer/icebath/internal/skills/config"
 	skillsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/skills/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/skills/v1/skillsv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
-
-// Surfaces skills can be turned off on alone
-var surfaces = []*skillsv1.Surface{{Name: "tui", Title: "Terminal app"}, {Name: "cli", Title: "Command line"}}
 
 type service struct {
 	config *config.Config
@@ -93,30 +92,75 @@ func (s *service) List(ctx context.Context, request *skillsv1.ListRequest) (*ski
 	commands := scope.Commands(s.taken)
 	global := s.disabled(scope, "")
 	perSurface := map[string]map[string]bool{}
-	for _, surface := range surfaces {
+	response := &skillsv1.ListResponse{CreateDir: scope.CreateDisplay(), SkillsDir: scope.Dir(), Trusted: scope.TrustedDirs(),
+		Secrets: int32(len(scope.VariableSettings())), Values: int32(len(scope.ConfigSettings()))}
+	for _, surface := range skills.Surfaces {
 		perSurface[surface.Name] = s.disabled(scope, surface.Name)
+		response.Surfaces = append(response.Surfaces, &skillsv1.Surface{Name: surface.Name, Title: surface.Title})
 	}
-	response := &skillsv1.ListResponse{Surfaces: surfaces, CreateDir: scope.CreateDisplay(), SkillsDir: scope.Dir()}
-	root, count := scope.UntrustedProject()
-	response.UntrustedProject, response.UntrustedCount = root, int32(count)
+	project, trusted, held := scope.Project()
+	response.Project, response.ProjectTrusted, response.ProjectSkills = project, trusted, int32(held)
 	if _, err := os.Stat(scope.OptOutMarker()); err == nil {
 		response.OptedOut = true
 	}
+	surface := request.GetSurface()
 	for _, e := range scope.Loadable(true) {
-		response.Skills = append(response.Skills, s.row(e, hub, builtin, modified, usage, commands, global, perSurface))
+		row := s.row(e, hub, builtin, modified, usage, commands, global, perSurface)
+		row.Shown = scope.State(e.Load, e.Name, surface)
+		response.Skills = append(response.Skills, row)
 	}
-	disabled := scope.Disabled()
 	for _, p := range scope.Plugins() {
 		if !skills.Supported(p.Frontmatter) {
 			continue
 		}
-		row := &skillsv1.Skill{Name: p.Qualified(), Description: p.Description, Category: "plugin", Source: "plugin", Trust: "plugin", Enabled: !disabled[p.Qualified()], Path: p.Path}
-		if _, ok := commands[strings.ToLower(p.Qualified())]; ok {
-			row.Command = strings.ToLower(p.Qualified())
+		name := p.Qualified()
+		row := &skillsv1.Skill{Name: name, Description: p.Description, Category: "plugin", CategoryTitle: skills.CategoryTitle("plugin"), Source: "plugin",
+			Trust: "plugin", Enabled: !global[name], Path: p.Path, Shown: scope.State(name, name, surface)}
+		for _, known := range skills.Surfaces {
+			if perSurface[known.Name][name] {
+				row.DisabledOn = append(row.DisabledOn, known.Name)
+			}
+		}
+		if _, ok := commands[strings.ToLower(name)]; ok {
+			row.Command = strings.ToLower(name)
 		}
 		response.Skills = append(response.Skills, row)
 	}
+	response.Categories = categories(response.Skills)
+	for _, category := range response.Categories {
+		category.About = scope.CategoryAbout(category.GetName())
+	}
 	return response, nil
+}
+
+// Categories of the skills in the order they are listed, those in none last, each with how many of its skills are on in the app asked about
+func categories(rows []*skillsv1.Skill) []*skillsv1.Category {
+	byName := map[string]*skillsv1.Category{}
+	for _, row := range rows {
+		category := byName[row.GetCategory()]
+		if category == nil {
+			category = &skillsv1.Category{Name: row.GetCategory(), Title: row.GetCategoryTitle()}
+			byName[row.GetCategory()] = category
+		}
+		category.Total++
+		if shown := row.GetShown(); shown == skills.On || shown == skills.AlwaysOn {
+			category.On++
+		}
+	}
+	out := slices.Collect(maps.Values(byName))
+	slices.SortFunc(out, func(a, b *skillsv1.Category) int {
+		switch {
+		case a.GetName() == "":
+			return 1
+		case b.GetName() == "":
+			return -1
+		}
+		return strings.Compare(a.GetTitle(), b.GetTitle())
+	})
+	for _, category := range out {
+		category.State = skills.CategoryState(int(category.GetOn()), int(category.GetTotal()))
+	}
+	return out
 }
 
 // Skills turned off everywhere, or on the surface alone
@@ -151,17 +195,18 @@ func namesSet(names []string) map[string]bool {
 func (s *service) row(e skills.Entry, hub *skills.Lock, builtin map[string]bool, modified []string, usage map[string]*skills.Record, commands map[string]skills.Command, global map[string]bool, perSurface map[string]map[string]bool) *skillsv1.Skill {
 	src, trust := source(e, hub, builtin)
 	row := &skillsv1.Skill{
-		Name:        e.Load,
-		Description: strings.Join(strings.Fields(e.Description), " "),
-		Category:    e.Category,
-		Source:      src,
-		Trust:       trust,
-		Enabled:     skills.Essential[e.Load] || !global[e.Load] && !global[e.Name],
-		Path:        e.Path,
-		Essential:   skills.Essential[e.Load],
-		Modified:    slices.Contains(modified, e.Load),
+		Name:          e.Load,
+		Description:   strings.Join(strings.Fields(e.Description), " "),
+		Category:      e.Category,
+		CategoryTitle: skills.CategoryTitle(e.Category),
+		Source:        src,
+		Trust:         trust,
+		Enabled:       skills.Essential[e.Load] || !global[e.Load] && !global[e.Name],
+		Path:          e.Path,
+		Essential:     skills.Essential[e.Load],
+		Modified:      slices.Contains(modified, e.Load),
 	}
-	for _, surface := range surfaces {
+	for _, surface := range skills.Surfaces {
 		if perSurface[surface.Name][e.Load] || perSurface[surface.Name][e.Name] {
 			row.DisabledOn = append(row.DisabledOn, surface.Name)
 		}
@@ -256,11 +301,11 @@ func (s *service) Toggle(ctx context.Context, request *skillsv1.ToggleRequest) (
 	}
 	changed, err := scope.SetDisabled(request.GetNames(), request.GetEnabled(), request.GetSurface())
 	if err != nil {
-		return nil, err
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 	}
 	scope.Platform = request.GetSurface()
 	disabled := scope.Disabled()
-	response := &skillsv1.ToggleResponse{Changed: changed}
+	response := &skillsv1.ToggleResponse{Changed: changed, Said: turned(request, changed) + s.held(scope, request)}
 	for _, e := range scope.Loadable(true) {
 		if disabled[e.Load] || disabled[e.Name] {
 			response.Disabled++
@@ -269,6 +314,65 @@ func (s *service) Toggle(ctx context.Context, request *skillsv1.ToggleRequest) (
 		}
 	}
 	return response, nil
+}
+
+// What turning skills on or off did, in a sentence: the one skill asked about, or how many changed and which
+func turned(request *skillsv1.ToggleRequest, changed []string) string {
+	state, place := "off", ""
+	if request.GetEnabled() {
+		state = "on"
+	}
+	for _, known := range skills.Surfaces {
+		if known.Name == request.GetSurface() {
+			place = " in the " + strings.ToLower(known.Title)
+		}
+	}
+	names := request.GetNames()
+	switch {
+	case len(names) == 1 && len(changed) == 0:
+		return names[0] + " is " + state + place + " already."
+	case len(names) == 1:
+		return names[0] + " is now " + state + place + "."
+	case len(changed) == 0:
+		return "Those skills are " + state + place + " already."
+	}
+	return "Turned " + state + " " + strs.Count(len(changed), "skill") + place + ": " + strs.And(changed) + "."
+}
+
+// What still keeps skills that were turned on from the agent, as a sentence after what was done, empty when nothing does: one turned on in
+// every app stays off in an app it was turned off in alone, and one turned on in one app stays off while it is off in every app
+func (s *service) held(scope *skills.Scope, request *skillsv1.ToggleRequest) string {
+	if !request.GetEnabled() {
+		return ""
+	}
+	names := request.GetNames()
+	among := func(off map[string]bool) bool {
+		return slices.ContainsFunc(names, func(name string) bool {
+			return off[strings.TrimSpace(name)] && !skills.Essential[strings.TrimSpace(name)]
+		})
+	}
+	if request.GetSurface() != "" {
+		switch {
+		case !among(s.disabled(scope, "")):
+			return ""
+		case len(names) == 1:
+			return " It stays off all the same, because it is off in every app."
+		}
+		return " Some of them stay off all the same, because they are off in every app."
+	}
+	var places []string
+	for _, known := range skills.Surfaces {
+		if among(s.disabled(scope, known.Name)) {
+			places = append(places, "the "+strings.ToLower(known.Title))
+		}
+	}
+	switch {
+	case len(places) == 0:
+		return ""
+	case len(names) == 1:
+		return " It stays off in " + strs.And(places) + ", where it was turned off alone."
+	}
+	return " Some of them stay off in " + strs.And(places) + ", where they were turned off alone."
 }
 
 func synced(result *skills.Synced) *skillsv1.Synced {
@@ -339,7 +443,7 @@ func (s *service) OptOut(ctx context.Context, request *skillsv1.OptOutRequest) (
 		}
 		return response, nil
 	}
-	if response.Message, err = scope.OptOut(request.GetOut()); err != nil {
+	if response.Message, response.Changed, err = scope.OptOut(request.GetOut()); err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 	}
 	switch {

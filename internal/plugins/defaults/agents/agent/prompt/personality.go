@@ -62,7 +62,7 @@ func Personalities(settings *config.Config) []Personality {
 	return out
 }
 
-// Choices of the personality setting, read from the profile in use each time they are shown
+// Choices of the personality setting, read from the settings of the profile given each time they are shown
 func Options(settings *config.Config) func() []config.Option {
 	return func() []config.Option {
 		var options []config.Option
@@ -71,6 +71,11 @@ func Options(settings *config.Config) func() []config.Option {
 		}
 		return options
 	}
+}
+
+// Whether the name means no personality
+func Neutral(name string) bool {
+	return slices.Contains(neutral, strings.ToLower(strings.TrimSpace(name)))
 }
 
 // The personality the name asks for, the zero one for a name that means none, false for a name no personality has

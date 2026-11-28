@@ -48,7 +48,7 @@ func askSudo(ctx context.Context, env *tools.Env, command string) string {
 		ID:     "sudo",
 		Secret: true,
 		Text: "The command `" + command + "` needs your sudo password. Enter it for this session only, or leave it empty and the command fails. " +
-			"To stop being asked, set Sudo password in /settings under Terminal.",
+			"To stop being asked, set Sudo password in /sandbox.",
 	}})
 	if err != nil || reply.Outcome != tools.Submitted || len(reply.Answers["sudo"]) == 0 {
 		return ""
@@ -61,7 +61,7 @@ func (r *registrant) sudoNotes(call *tools.Call, command, output string) (string
 	cfg := call.Env.Config
 	configured := cfg.GetString(hostconfig.SudoPassword) != ""
 	if call.Env.Clarify == nil && terminal.SudoHeadless(output) {
-		output += "\n\n💡 Tip: This session cannot prompt for a sudo password. Set the sudo password in /settings under Terminal (or SUDO_PASSWORD " +
+		output += "\n\n💡 Tip: This session cannot prompt for a sudo password. Set Sudo password in /sandbox (or SUDO_PASSWORD " +
 			"in the environment icebath runs in), or run the command without sudo."
 	}
 	failed := terminal.SudoWrongPassword(output)

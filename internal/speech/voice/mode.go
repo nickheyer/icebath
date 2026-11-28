@@ -1,4 +1,4 @@
-// Voice mode on the machine the app runs on: recordings from its microphone turned into text by the server, replies the server speaks played
+// Voice input on the machine the app runs on: recordings from its microphone turned into text by the server, replies the server speaks played
 // on its speakers, talking over a reply to cut it off, and the wake word
 package voice
 
@@ -22,7 +22,7 @@ const silentLimit = 3
 // Runes of spoken text kept to tell the speaker's own sound from a person talking over it
 const spokenKeep = 3000
 
-// What voice mode tells the app, each called off the app's own goroutine
+// What voice input tells the app, each called off the app's own goroutine
 type Events struct {
 	// listening, transcribing or idle
 	Status func(state string)
@@ -30,19 +30,18 @@ type Events struct {
 	Partial func(text string)
 	// What a recording said, to send or put in the prompt
 	Transcript func(text string)
-	// A stop phrase ended voice chat
+	// A stop phrase ended voice input
 	Stopped func(text string)
-	// Recordings came back silent three times, which ended voice chat
+	// Recordings came back silent three times, which ended voice input
 	Silent func()
 	// Talking over a reply that was still being written, which the app stops
 	Interrupted func()
-	// The wake phrase was heard: of the profile, and whether a new session starts
-	Woke func(phrase, profile string, fresh bool)
-	// Something to tell the person
-	Notice func(text string)
+	// The wake phrase was heard: of the profile, which names the chat it is for when the phrases of the profiles are told apart, and whether
+	// Start a new session is on
+	Woke func(phrase, profile string, routed, fresh bool)
 }
 
-// Voice mode of the app
+// Voice input of the app
 type Mode struct {
 	speech  *speech.Speech
 	backend *backend
@@ -70,7 +69,7 @@ type Mode struct {
 	wake        *listener
 }
 
-// Voice mode over the speech service, of the profile the app is on, and the speech host of this machine for what runs here; the
+// Voice input over the speech service, of the profile the app is on, and the speech host of this machine for what runs here; the
 // recordings a capture that died left behind are removed
 func New(sp *speech.Speech, client speechv1connect.SpeechServiceClient, profile func() string, events Events) *Mode {
 	m := &Mode{speech: sp, backend: &backend{client: client, profile: profile}, events: events}
@@ -108,17 +107,6 @@ func (m *Mode) Settings() *speechv1.VoiceReply {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.settings
-}
-
-// Whether this machine can record, the server can transcribe and the environment has audio
-func (m *Mode) Requirements() Requirements {
-	r := m.Settings().GetRecognition()
-	return Check(r.GetEnabled(), r.GetLabel())
-}
-
-// Spoken hint naming the first stop phrase, empty when there are none
-func (m *Mode) StopHint() string {
-	return speech.StopHint(m.mode().GetStopPhrases())
 }
 
 // Whether the text alone is one of the stop phrases
@@ -514,6 +502,9 @@ func (m *Mode) noteSpoken(text string) {
 	}
 }
 
+// Whether speech of a reply is still to say or sounding
+func (m *Mode) Speaking() bool { return m.speaking() }
+
 // Whether speech is still to say or sounding
 func (m *Mode) speaking() bool {
 	m.mu.Lock()
@@ -522,48 +513,112 @@ func (m *Mode) speaking() bool {
 	return turn != nil && turn.pending() || m.player.sounding()
 }
 
-// Speech of one reply as it is written, which the app feeds and ends
+// Speech of one reply as it is written, which the app feeds and ends. Its words wait while the settings of its profile are read
 type Turn struct {
 	mode    *Mode
-	speaker *speaker
+	profile string
 	mu      sync.Mutex
-	ended   bool
+	speaker *speaker
+	// The settings were read, and the words that came before
+	opened bool
+	held   []string
+	ended  bool
+	// Its speech was cut, so none of it is read any more
+	cut bool
 }
 
-// Opens the speech of the reply now being written: its text read aloud as it arrives when replies are spoken, the thinking blips meanwhile,
-// and talking over it heard; nil when voice mode is off
-func (m *Mode) Reply(ctx context.Context) *Turn {
-	settings := m.Settings()
-	mode := settings.GetMode()
-	if !mode.GetInput() {
-		return nil
-	}
+// Opens the speech of a reply now being written in a chat on the profile, as the profile's own settings say, read as the reply starts:
+// its words read aloud as they arrive while Speak replies is on and a voice can read them, whether the message was typed or spoken and
+// whether voice input is on or off; the thinking sound meanwhile, which belongs to reading a reply aloud; and talking over it heard while
+// voice input is on with Interrupt by talking. Speech that sounds is cut first
+func (m *Mode) Reply(ctx context.Context, profile string) *Turn {
 	m.Cut()
-	turn := &Turn{mode: m}
-	if speaking := settings.GetSpeaking(); mode.GetSpeak() && speaking.GetReady() {
-		turn.speaker = newSpeaker(m, context.WithoutCancel(ctx), int(speaking.GetLeast()), speaking.GetStreams())
-		m.mu.Lock()
-		m.spoken, m.turn = nil, turn.speaker
-		m.mu.Unlock()
-	}
+	turn := &Turn{mode: m, profile: profile}
 	m.mu.Lock()
 	m.reply = turn
 	m.mu.Unlock()
-	if mode.GetThinkingSound() {
-		m.player.think(func() bool { return !m.player.sounding() && !m.Recording() })
+	go turn.open(context.WithoutCancel(ctx))
+	return turn
+}
+
+// Reads the settings of the reply's profile and starts what they ask for, the words that came meanwhile handed on
+func (t *Turn) open(ctx context.Context) {
+	m := t.mode
+	settings, err := m.backend.client.Voice(ctx, &speechv1.VoiceRequest{Profile: t.profile})
+	if err != nil {
+		slog.Debug(fmt.Sprintf("voice: settings of the reply's profile could not be read, so it is not read aloud: %s", err))
 	}
-	if mode.GetBargeIn() {
+	mode, speaking := settings.GetMode(), settings.GetSpeaking()
+	t.mu.Lock()
+	t.opened = true
+	held := t.held
+	t.held = nil
+	if t.cut || !mode.GetSpeak() || !speaking.GetReady() {
+		t.mu.Unlock()
+		return
+	}
+	t.speaker = newSpeaker(m, ctx, t.profile, int(speaking.GetLeast()), speaking.GetStreams())
+	for _, text := range held {
+		t.speaker.add(text)
+	}
+	ended := t.ended
+	if ended {
+		t.speaker.finish()
+	}
+	t.mu.Unlock()
+	m.mu.Lock()
+	current := m.reply == t
+	if current {
+		m.spoken, m.turn = nil, t.speaker
+	}
+	m.mu.Unlock()
+	if !current {
+		t.speaker.halt()
+		return
+	}
+	if mode.GetThinkingSound() && !ended {
+		m.player.think(func() bool { return !m.player.sounding() && !m.Recording() && !t.over() })
+	}
+	if mode.GetInput() && mode.GetBargeIn() {
 		m.listen(ctx)
 	}
-	return turn
+}
+
+// Cuts the speech of the reply for good: nothing more of it is read, and its speech, when it has started, stops
+func (t *Turn) stop() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	t.cut, t.held = true, nil
+	speaker := t.speaker
+	t.mu.Unlock()
+	if speaker != nil {
+		speaker.halt()
+	}
+}
+
+// Whether the reply's text ended or its speech was cut
+func (t *Turn) over() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.ended || t.cut
 }
 
 // Adds reply text
 func (t *Turn) Delta(text string) {
-	if t == nil || t.speaker == nil || text == "" {
+	if t == nil || text == "" {
 		return
 	}
-	t.speaker.add(text)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	switch {
+	case t.cut:
+	case !t.opened:
+		t.held = append(t.held, text)
+	case t.speaker != nil:
+		t.speaker.add(text)
+	}
 }
 
 // The reply text ended: the blips stop, what is queued is still said
@@ -574,34 +629,45 @@ func (t *Turn) Finish() {
 	t.mu.Lock()
 	ended := t.ended
 	t.ended = true
+	speaker := t.speaker
 	t.mu.Unlock()
 	if ended {
 		return
 	}
 	t.mode.player.quiet()
-	if t.speaker != nil {
-		t.speaker.finish()
+	if speaker != nil {
+		speaker.finish()
 	}
 }
 
 // Whether the reply is still written or said
 func (t *Turn) live() bool {
 	t.mu.Lock()
-	ended := t.ended
-	t.mu.Unlock()
-	return !ended || t.speaker != nil && t.speaker.pending()
+	defer t.mu.Unlock()
+	return !t.ended || t.speaker != nil && t.speaker.pending()
 }
 
-// Cuts the speech of the reply: what is queued dropped and what sounds silenced, speech that sounded or waited to latched for the next
-// message. The thinking blips go on until the reply ends
+// Whether the reply is read aloud, or its settings are still read to tell
+func (t *Turn) Spoken() bool {
+	if t == nil {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return !t.cut && (!t.opened || t.speaker != nil)
+}
+
+// Cuts the speech of the reply: what is queued dropped, what sounds silenced and nothing more of it read, speech that sounded or waited
+// to latched for the next message. The thinking blips go on until the reply ends
 func (m *Mode) Cut() {
 	m.mu.Lock()
 	turn := m.turn
 	m.turn = nil
+	reply := m.reply
 	m.mu.Unlock()
-	live := m.player.sounding()
+	live := m.player.sounding() || turn != nil && turn.pending() && turn.audible()
+	reply.stop()
 	if turn != nil && turn.pending() {
-		live = live || turn.audible()
 		turn.halt()
 	}
 	if !live {
@@ -613,12 +679,15 @@ func (m *Mode) Cut() {
 	m.mu.Unlock()
 }
 
-// Silences the speech of the reply with the next message not told of it, for the person turning spoken replies or voice mode off
+// Silences the speech of the reply, what sounds and what is still to come of it, with the next message not told of it: for Speak replies
+// turned off, the stop key, or the chat of the reply closing
 func (m *Mode) Hush() {
 	m.mu.Lock()
 	turn := m.turn
 	m.turn = nil
+	reply := m.reply
 	m.mu.Unlock()
+	reply.stop()
 	if turn != nil && turn.pending() {
 		turn.halt()
 	}
@@ -627,17 +696,16 @@ func (m *Mode) Hush() {
 
 // Cuts the speech and lets go of the reply, so nothing listens for talking over it any more
 func (m *Mode) drop() {
+	m.Cut()
 	m.mu.Lock()
 	m.reply = nil
 	m.mu.Unlock()
-	m.Cut()
 }
 
-// Whether the next message cuts a spoken reply off or follows one that was, the latch cleared; speech still playing cut first
+// Whether the next message cuts a spoken reply off or follows one that was, the latch cleared; the speech of the reply before cut first,
+// what plays and what was still to come of it
 func (m *Mode) TakeInterrupted() bool {
-	if m.speaking() {
-		m.Cut()
-	}
+	m.Cut()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	interrupted := m.interrupted

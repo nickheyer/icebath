@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/strs"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -41,7 +42,7 @@ func (c *Config) Example(global bool) ([]byte, error) {
 		}
 		heading := strings.Join(path, " › ")
 		if section.About != "" {
-			heading += ": " + sentence(section.About)
+			heading += ": " + strs.Sentence(section.About)
 		}
 		fmt.Fprintf(&b, "\n# ============================================================\n# %s\n# ============================================================\n", heading)
 		for _, setting := range shown {
@@ -61,20 +62,12 @@ func (c *Config) Example(global bool) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// Text ending in a full stop
-func sentence(text string) string {
-	if strings.HasSuffix(text, ".") || strings.HasSuffix(text, "?") || strings.HasSuffix(text, "!") {
-		return text
-	}
-	return text + "."
-}
-
 // Lines of what a setting does, as the example of a config.yaml says it above the setting: what the settings screen says under it and
 // under the field its value is typed into
 func (s Setting) described() []string {
 	lines := []string{s.Title}
 	if s.About != "" {
-		lines[0] += ": " + sentence(s.About)
+		lines[0] += ": " + strs.Sentence(s.About)
 	}
 	if s.Help != "" {
 		lines = append(lines, s.Help)
@@ -103,13 +96,13 @@ func (s Setting) described() []string {
 	case s.Kind() == Duration:
 		lines = append(lines, "In "+s.UnitName()+", or a length such as 30s or 5m.")
 		if s.Null != "" {
-			lines = append(lines, "Left out means: "+capital(s.Null, NotSet)+".")
+			lines = append(lines, "Left out means: "+strs.Filled(strs.Capital(s.Null), NotSet)+".")
 		}
 	case s.Kind() == Number && Counting(s.Counts) != "":
 		lines = append(lines, Counting(s.Counts))
 	}
 	if len(s.Env) > 0 {
-		lines = append(lines, "The "+strings.Join(s.Env, " or ")+" environment variable overrides it.")
+		lines = append(lines, "The "+strs.Or(s.Env)+" environment variable overrides it.")
 	}
 	return lines
 }

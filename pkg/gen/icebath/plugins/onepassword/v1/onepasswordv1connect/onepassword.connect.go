@@ -26,18 +26,13 @@ const (
 const (
 	// OnePasswordServiceStateProcedure is the procedure name of the OnePasswordService's State RPC.
 	OnePasswordServiceStateProcedure = "/icebath.plugins.onepassword.v1.OnePasswordService/State"
+	// OnePasswordServiceAccountsProcedure is the procedure name of the OnePasswordService's Accounts
+	// RPC.
+	OnePasswordServiceAccountsProcedure = "/icebath.plugins.onepassword.v1.OnePasswordService/Accounts"
 	// OnePasswordServiceSetupProcedure is the procedure name of the OnePasswordService's Setup RPC.
 	OnePasswordServiceSetupProcedure = "/icebath.plugins.onepassword.v1.OnePasswordService/Setup"
 	// OnePasswordServiceTokenProcedure is the procedure name of the OnePasswordService's Token RPC.
 	OnePasswordServiceTokenProcedure = "/icebath.plugins.onepassword.v1.OnePasswordService/Token"
-	// OnePasswordServiceMapProcedure is the procedure name of the OnePasswordService's Map RPC.
-	OnePasswordServiceMapProcedure = "/icebath.plugins.onepassword.v1.OnePasswordService/Map"
-	// OnePasswordServiceUnmapProcedure is the procedure name of the OnePasswordService's Unmap RPC.
-	OnePasswordServiceUnmapProcedure = "/icebath.plugins.onepassword.v1.OnePasswordService/Unmap"
-	// OnePasswordServiceSyncProcedure is the procedure name of the OnePasswordService's Sync RPC.
-	OnePasswordServiceSyncProcedure = "/icebath.plugins.onepassword.v1.OnePasswordService/Sync"
-	// OnePasswordServiceDisableProcedure is the procedure name of the OnePasswordService's Disable RPC.
-	OnePasswordServiceDisableProcedure = "/icebath.plugins.onepassword.v1.OnePasswordService/Disable"
 )
 
 var (
@@ -46,6 +41,13 @@ var (
 			StreamType: connect.StreamTypeUnary,
 			Schema:     v1.File_icebath_plugins_onepassword_v1_onepassword_proto.Services().ByName("OnePasswordService").Methods().ByName("State"),
 			Procedure:  OnePasswordServiceStateProcedure,
+		}
+	})
+	onePasswordServiceAccountsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_onepassword_v1_onepassword_proto.Services().ByName("OnePasswordService").Methods().ByName("Accounts"),
+			Procedure:  OnePasswordServiceAccountsProcedure,
 		}
 	})
 	onePasswordServiceSetupSpec = sync.OnceValue(func() connect.Spec {
@@ -62,34 +64,6 @@ var (
 			Procedure:  OnePasswordServiceTokenProcedure,
 		}
 	})
-	onePasswordServiceMapSpec = sync.OnceValue(func() connect.Spec {
-		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_plugins_onepassword_v1_onepassword_proto.Services().ByName("OnePasswordService").Methods().ByName("Map"),
-			Procedure:  OnePasswordServiceMapProcedure,
-		}
-	})
-	onePasswordServiceUnmapSpec = sync.OnceValue(func() connect.Spec {
-		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_plugins_onepassword_v1_onepassword_proto.Services().ByName("OnePasswordService").Methods().ByName("Unmap"),
-			Procedure:  OnePasswordServiceUnmapProcedure,
-		}
-	})
-	onePasswordServiceSyncSpec = sync.OnceValue(func() connect.Spec {
-		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_plugins_onepassword_v1_onepassword_proto.Services().ByName("OnePasswordService").Methods().ByName("Sync"),
-			Procedure:  OnePasswordServiceSyncProcedure,
-		}
-	})
-	onePasswordServiceDisableSpec = sync.OnceValue(func() connect.Spec {
-		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_plugins_onepassword_v1_onepassword_proto.Services().ByName("OnePasswordService").Methods().ByName("Disable"),
-			Procedure:  OnePasswordServiceDisableProcedure,
-		}
-	})
 )
 
 // OnePasswordServiceClient is a client for the icebath.plugins.onepassword.v1.OnePasswordService
@@ -97,18 +71,13 @@ var (
 type OnePasswordServiceClient interface {
 	// How the store is set up, with the op program, its version and every reference
 	State(context.Context, *v1.StateRequest) (*v1.StateResponse, error)
-	// Finds the op program and keeps its path, the account, the token variable and a new token when given, then turns the store on
+	// The 1Password accounts op knows on this computer
+	Accounts(context.Context, *v1.AccountsRequest) (*v1.AccountsResponse, error)
+	// Finds the op program and checks who it signs in as, with the token given or kept, else the account given; only once it is signed in
+	// keeps the program, the account, the token variable and a new token, and turns the store on
 	Setup(context.Context, *v1.SetupRequest) (*v1.SetupResponse, error)
 	// Keeps a new service account token once op accepts it, or without asking when told not to verify
 	Token(context.Context, *v1.TokenRequest) (*v1.TokenResponse, error)
-	// Binds a variable to the reference it resolves from
-	Map(context.Context, *v1.MapRequest) (*v1.MapResponse, error)
-	// Takes the reference of a variable away
-	Unmap(context.Context, *v1.UnmapRequest) (*v1.UnmapResponse, error)
-	// Resolves every reference now and says what the next start would do with each, setting them for the profile when asked
-	Sync(context.Context, *v1.SyncRequest) (*v1.SyncResponse, error)
-	// Turns the store off, its references staying in the settings
-	Disable(context.Context, *v1.DisableRequest) (*v1.DisableResponse, error)
 }
 
 // NewOnePasswordServiceClient constructs a client for the
@@ -123,18 +92,13 @@ func NewOnePasswordServiceClient(client *connect.Client) OnePasswordServiceClien
 type OnePasswordServiceHandler interface {
 	// How the store is set up, with the op program, its version and every reference
 	State(context.Context, *v1.StateRequest) (*v1.StateResponse, error)
-	// Finds the op program and keeps its path, the account, the token variable and a new token when given, then turns the store on
+	// The 1Password accounts op knows on this computer
+	Accounts(context.Context, *v1.AccountsRequest) (*v1.AccountsResponse, error)
+	// Finds the op program and checks who it signs in as, with the token given or kept, else the account given; only once it is signed in
+	// keeps the program, the account, the token variable and a new token, and turns the store on
 	Setup(context.Context, *v1.SetupRequest) (*v1.SetupResponse, error)
 	// Keeps a new service account token once op accepts it, or without asking when told not to verify
 	Token(context.Context, *v1.TokenRequest) (*v1.TokenResponse, error)
-	// Binds a variable to the reference it resolves from
-	Map(context.Context, *v1.MapRequest) (*v1.MapResponse, error)
-	// Takes the reference of a variable away
-	Unmap(context.Context, *v1.UnmapRequest) (*v1.UnmapResponse, error)
-	// Resolves every reference now and says what the next start would do with each, setting them for the profile when asked
-	Sync(context.Context, *v1.SyncRequest) (*v1.SyncResponse, error)
-	// Turns the store off, its references staying in the settings
-	Disable(context.Context, *v1.DisableRequest) (*v1.DisableResponse, error)
 }
 
 // RegisterOnePasswordServiceHandler registers svc as the
@@ -143,12 +107,9 @@ func RegisterOnePasswordServiceHandler(server *connect.Server, svc OnePasswordSe
 	adapter := onePasswordServiceHandler{svc: svc}
 	server.Register(
 		connect.Method{Spec: onePasswordServiceStateSpec(), Handler: adapter.state},
+		connect.Method{Spec: onePasswordServiceAccountsSpec(), Handler: adapter.accounts},
 		connect.Method{Spec: onePasswordServiceSetupSpec(), Handler: adapter.setup},
 		connect.Method{Spec: onePasswordServiceTokenSpec(), Handler: adapter.token},
-		connect.Method{Spec: onePasswordServiceMapSpec(), Handler: adapter._map},
-		connect.Method{Spec: onePasswordServiceUnmapSpec(), Handler: adapter.unmap},
-		connect.Method{Spec: onePasswordServiceSyncSpec(), Handler: adapter.sync},
-		connect.Method{Spec: onePasswordServiceDisableSpec(), Handler: adapter.disable},
 	)
 }
 
@@ -159,28 +120,16 @@ func (UnimplementedOnePasswordServiceHandler) State(context.Context, *v1.StateRe
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.onepassword.v1.OnePasswordService.State is not implemented")
 }
 
+func (UnimplementedOnePasswordServiceHandler) Accounts(context.Context, *v1.AccountsRequest) (*v1.AccountsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.onepassword.v1.OnePasswordService.Accounts is not implemented")
+}
+
 func (UnimplementedOnePasswordServiceHandler) Setup(context.Context, *v1.SetupRequest) (*v1.SetupResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.onepassword.v1.OnePasswordService.Setup is not implemented")
 }
 
 func (UnimplementedOnePasswordServiceHandler) Token(context.Context, *v1.TokenRequest) (*v1.TokenResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.onepassword.v1.OnePasswordService.Token is not implemented")
-}
-
-func (UnimplementedOnePasswordServiceHandler) Map(context.Context, *v1.MapRequest) (*v1.MapResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.onepassword.v1.OnePasswordService.Map is not implemented")
-}
-
-func (UnimplementedOnePasswordServiceHandler) Unmap(context.Context, *v1.UnmapRequest) (*v1.UnmapResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.onepassword.v1.OnePasswordService.Unmap is not implemented")
-}
-
-func (UnimplementedOnePasswordServiceHandler) Sync(context.Context, *v1.SyncRequest) (*v1.SyncResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.onepassword.v1.OnePasswordService.Sync is not implemented")
-}
-
-func (UnimplementedOnePasswordServiceHandler) Disable(context.Context, *v1.DisableRequest) (*v1.DisableResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.onepassword.v1.OnePasswordService.Disable is not implemented")
 }
 
 type onePasswordServiceClient struct {
@@ -190,6 +139,14 @@ type onePasswordServiceClient struct {
 func (c *onePasswordServiceClient) State(ctx context.Context, req *v1.StateRequest) (*v1.StateResponse, error) {
 	var res v1.StateResponse
 	if err := c.client.CallUnary(ctx, onePasswordServiceStateSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *onePasswordServiceClient) Accounts(ctx context.Context, req *v1.AccountsRequest) (*v1.AccountsResponse, error) {
+	var res v1.AccountsResponse
+	if err := c.client.CallUnary(ctx, onePasswordServiceAccountsSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -211,38 +168,6 @@ func (c *onePasswordServiceClient) Token(ctx context.Context, req *v1.TokenReque
 	return &res, nil
 }
 
-func (c *onePasswordServiceClient) Map(ctx context.Context, req *v1.MapRequest) (*v1.MapResponse, error) {
-	var res v1.MapResponse
-	if err := c.client.CallUnary(ctx, onePasswordServiceMapSpec(), req, &res); err != nil {
-		return nil, err
-	}
-	return &res, nil
-}
-
-func (c *onePasswordServiceClient) Unmap(ctx context.Context, req *v1.UnmapRequest) (*v1.UnmapResponse, error) {
-	var res v1.UnmapResponse
-	if err := c.client.CallUnary(ctx, onePasswordServiceUnmapSpec(), req, &res); err != nil {
-		return nil, err
-	}
-	return &res, nil
-}
-
-func (c *onePasswordServiceClient) Sync(ctx context.Context, req *v1.SyncRequest) (*v1.SyncResponse, error) {
-	var res v1.SyncResponse
-	if err := c.client.CallUnary(ctx, onePasswordServiceSyncSpec(), req, &res); err != nil {
-		return nil, err
-	}
-	return &res, nil
-}
-
-func (c *onePasswordServiceClient) Disable(ctx context.Context, req *v1.DisableRequest) (*v1.DisableResponse, error) {
-	var res v1.DisableResponse
-	if err := c.client.CallUnary(ctx, onePasswordServiceDisableSpec(), req, &res); err != nil {
-		return nil, err
-	}
-	return &res, nil
-}
-
 type onePasswordServiceHandler struct{ svc OnePasswordServiceHandler }
 
 func (h onePasswordServiceHandler) state(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
@@ -251,6 +176,18 @@ func (h onePasswordServiceHandler) state(ctx context.Context, _ connect.Spec, st
 		return err
 	}
 	res, err := h.svc.State(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h onePasswordServiceHandler) accounts(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.AccountsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Accounts(ctx, &req)
 	if err != nil {
 		return err
 	}
@@ -275,54 +212,6 @@ func (h onePasswordServiceHandler) token(ctx context.Context, _ connect.Spec, st
 		return err
 	}
 	res, err := h.svc.Token(ctx, &req)
-	if err != nil {
-		return err
-	}
-	return stream.Send(res)
-}
-
-func (h onePasswordServiceHandler) _map(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.MapRequest
-	if err := stream.Receive(&req); err != nil {
-		return err
-	}
-	res, err := h.svc.Map(ctx, &req)
-	if err != nil {
-		return err
-	}
-	return stream.Send(res)
-}
-
-func (h onePasswordServiceHandler) unmap(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.UnmapRequest
-	if err := stream.Receive(&req); err != nil {
-		return err
-	}
-	res, err := h.svc.Unmap(ctx, &req)
-	if err != nil {
-		return err
-	}
-	return stream.Send(res)
-}
-
-func (h onePasswordServiceHandler) sync(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.SyncRequest
-	if err := stream.Receive(&req); err != nil {
-		return err
-	}
-	res, err := h.svc.Sync(ctx, &req)
-	if err != nil {
-		return err
-	}
-	return stream.Send(res)
-}
-
-func (h onePasswordServiceHandler) disable(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.DisableRequest
-	if err := stream.Receive(&req); err != nil {
-		return err
-	}
-	res, err := h.svc.Disable(ctx, &req)
 	if err != nil {
 		return err
 	}

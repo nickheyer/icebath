@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	profileconfig "github.com/nickheyer/icebath/internal/profile/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // What a feature keeps for each profile, removed with it when it is deleted, and removed again by purge-identity when that failed. Removing
@@ -93,19 +94,19 @@ func failures(err error) []error {
 	return []error{err}
 }
 
-// Line of a failure of what a profile keeps elsewhere: not removed after a delete, or not moved to the new name after a rename
+// Sentence of a failure of what a profile keeps elsewhere: not removed after a delete, or not moved to the new name after a rename
 func failed(deleted bool, err error) string {
 	if worded, ok := errors.AsType[Worded](err); ok {
-		return "⚠ " + string(worded)
+		return string(worded)
 	}
 	done := "could not move to the new name"
 	if deleted {
 		done = "could not be removed"
 	}
 	if store, ok := errors.AsType[*StoreError](err); ok {
-		return fmt.Sprintf("⚠ What icebath keeps of the profile in %s %s: %s", store.Store, done, sentence(store.Err.Error()))
+		return fmt.Sprintf("What icebath keeps of the profile in %s %s: %s", store.Store, done, strs.Sentence(store.Err.Error()))
 	}
-	return fmt.Sprintf("⚠ Some of what icebath keeps of the profile %s: %s", done, sentence(err.Error()))
+	return fmt.Sprintf("Some of what icebath keeps of the profile %s: %s", done, strs.Sentence(err.Error()))
 }
 
 // What a feature tells of a profile for its listing and description, such as the model it runs or the skills it has
@@ -259,7 +260,17 @@ type Profiles struct {
 func New(cfg *config.Config) *Profiles {
 	p := &Profiles{config: cfg, making: map[string]*sync.Mutex{}}
 	profileconfig.Register(cfg, p.options)
+	cfg.Guard(profileconfig.Active, config.Guard{Write: p.writeActive})
 	return p
+}
+
+// Write of the profile in use that the command line asks for, made by Use as every other switch is
+func (p *Profiles) writeActive(_ *config.Config, _ string, value any) (bool, error) {
+	name, _ := value.(string)
+	if value == nil || strings.TrimSpace(name) == "" {
+		name = Default
+	}
+	return true, p.Use(name)
 }
 
 func (p *Profiles) options() []config.Option {
@@ -392,7 +403,12 @@ func (p *Profiles) root() string {
 
 // Every profile by name, the default one first
 func (p *Profiles) List() ([]string, error) {
-	entries, err := os.ReadDir(p.root())
+	return Names(p.config)
+}
+
+// Every profile the settings know, by name, the default one first
+func Names(cfg *config.Config) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Dir(cfg.ProfileDir(Default)))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}

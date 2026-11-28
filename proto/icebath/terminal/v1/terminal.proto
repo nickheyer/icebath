@@ -33,6 +33,9 @@ message Process {
 message ListRequest {
   // Session whose processes to list, every session's when empty
   string session_id = 1;
+  // One process alone, in whichever session it runs: the one of this id, or the one whose id starts with it; none when no process or
+  // several match
+  string id = 2;
 }
 
 message ListResponse {
@@ -40,10 +43,9 @@ message ListResponse {
 }
 
 message KillRequest {
-  // Id of the process, or the start of one
+  // Id of the process, or the start of one, in whichever session it runs
   string id = 1;
-  // Session the process must belong to, any session's when empty
-  string session_id = 2;
+  reserved 2;
 }
 
 message KillResponse {
@@ -53,7 +55,7 @@ message KillResponse {
 }
 
 message StopRequest {
-  // Session whose processes to stop, every session's when empty
+  // Session whose running processes stop, those started outside a session when empty
   string session_id = 1;
 }
 
@@ -61,18 +63,28 @@ message StopResponse {
   int32 killed = 1;
 }
 
-// Places the agent's commands can run: what each needs on this machine, whether it is ready, and readying one
+// Places the agent's commands can run: how each stands on this machine, readying one and choosing the one in use
 service BackendService {
   rpc Backends(BackendsRequest) returns (BackendsResponse);
   // Readies a backend ahead of its first command, such as building its image, a line at a time as it goes
   rpc Prepare(PrepareRequest) returns (stream PrepareResponse);
+  // Runs the profile's commands on the backend from the next one on, saying so, and that a variable of the environment wins when one
+  // names another backend
+  rpc Use(UseRequest) returns (UseResponse);
 }
 
 message Check {
   bool ok = 1;
+  // What was checked, in a few words, such as Docker daemon
   string label = 2;
-  // What was found or what is missing
+  // What was found, a sentence; empty when the state says it all
   string detail = 3;
+  // How it stands in a word or two, such as Running or Not set
+  string state = 4;
+  // What to do about it when it failed, in a person's words
+  string fix = 5;
+  // Key of the setting that fixes it, empty when the fix is outside icebath
+  string setting = 6;
 }
 
 message Backend {
@@ -82,15 +94,22 @@ message Backend {
   string about = 3;
   // The profile's commands run on it
   bool selected = 4;
-  // Why it can't run with the profile's settings, empty when it can
-  string unavailable = 5;
+  reserved 5, 7;
   repeated Check checks = 6;
-  // What the user does to make it usable
-  repeated string setup = 7;
   // Key of the section of its own settings, empty when it has none
   string section = 8;
   // Has something to get ready before commands run there, such as an image to build
   bool prepares = 9;
+  // How it stands in the state words: Ready, Needs setup or Can't run
+  string state = 10;
+  // Commands can run there now
+  bool ready = 11;
+  // This computer lacks what it needs, such as its program, so nothing on its page makes it run
+  bool missing = 12;
+  // What keeps it from running, a sentence; empty while it is ready
+  string why = 13;
+  // What getting it ready does, a sentence; empty when it needs nothing readied
+  string readies = 14;
 }
 
 message BackendsRequest {
@@ -101,6 +120,21 @@ message BackendsRequest {
 message BackendsResponse {
   string profile = 1;
   repeated Backend backends = 2;
+  // Environment variable that names the backend in use over the settings, empty when none does
+  string variable = 3;
+}
+
+message UseRequest {
+  string backend = 1;
+  // Profile whose commands run there, the one in use when empty
+  string profile = 2;
+}
+
+message UseResponse {
+  // What changed, in one or two sentences
+  string note = 1;
+  // A variable of the environment names another backend, which the profile's commands still run on
+  bool held = 2;
 }
 
 message PrepareRequest {

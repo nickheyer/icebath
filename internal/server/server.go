@@ -89,7 +89,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	address := s.config.GetString(serverconfig.Address)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		return fmt.Errorf("icebath can't serve at %s: %w. Stop the program that uses the address, or change Address in /settings under Server.", address, err)
+		return fmt.Errorf("icebath can't serve at %s: %w. Stop the program that uses the address, or change Address, the option of Server.", address, err)
 	}
 	token := s.config.GetString(serverconfig.Token)
 	if token == "" {
@@ -107,7 +107,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	guarded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, password, ok := r.BasicAuth(); !ok || subtle.ConstantTimeCompare([]byte(password), []byte(token)) != 1 {
 			w.Header().Set("WWW-Authenticate", `Basic realm="icebath"`)
-			http.Error(w, "The password is wrong. The password of this server is in /settings under Server.", http.StatusUnauthorized)
+			http.Error(w, "The password is wrong. The password of this server is Password, an option of Server.", http.StatusUnauthorized)
 			return
 		}
 		mux.ServeHTTP(w, r)

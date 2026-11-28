@@ -19,7 +19,8 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/mcp"
 	mcpconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/mcp/config"
-	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -89,8 +90,9 @@ type spec struct {
 
 type samplingConfig struct {
 	Enabled bool
-	// Model every request runs on, else the first a request hints
+	// Model every request runs on, else the first a request hints, and the provider of the profile it runs on, the helper task's when empty
 	Model         string
+	Provider      string
 	Allowed       []string
 	MaxRPM        int
 	Timeout       time.Duration
@@ -156,6 +158,18 @@ func seconds(v any) (float64, bool) {
 
 func duration(f float64) time.Duration { return time.Duration(f * float64(time.Second)) }
 
+// Words a server's command is given: a line split as a shell splits it, or a list kept as it is
+func Args(v any) []string {
+	if line, ok := v.(string); ok {
+		words, err := strs.Shell(line)
+		if err != nil {
+			return []string{line}
+		}
+		return words
+	}
+	return stringList(v)
+}
+
 func stringList(v any) []string {
 	switch list := v.(type) {
 	case []any:
@@ -190,12 +204,12 @@ type renderer struct {
 }
 
 func newRenderer(cfg *config.Config, workspace string, extra map[string]string) *renderer {
-	values := map[string]any{}
-	for k, v := range table(cfg.Get(mcpconfig.Env)) {
-		values[strings.ToLower(k)] = v
+	values := maps.Clone(table(cfg.Get(mcpconfig.Env)))
+	if values == nil {
+		values = map[string]any{}
 	}
 	for k, v := range extra {
-		values[strings.ToLower(k)] = v
+		values[k] = v
 	}
 	if workspace == "" {
 		workspace, _ = os.Getwd()
@@ -208,7 +222,7 @@ func (r *renderer) lookup(body string) (string, bool) {
 	name := strings.TrimSpace(body)
 	switch name {
 	case "userHome":
-		return terminal.ExpandUser("~"), true
+		return fsx.ExpandHome("~"), true
 	case "workspaceFolder":
 		return r.workspace, true
 	case "workspaceFolderBasename":
@@ -220,7 +234,7 @@ func (r *renderer) lookup(body string) (string, bool) {
 	if v, ok := r.config.LookupEnv(name); ok && v != "" {
 		return v, true
 	}
-	if v, ok := r.values[strings.ToLower(name)]; ok && fmt.Sprint(v) != "" {
+	if v, ok := r.values[name]; ok && fmt.Sprint(v) != "" {
 		return fmt.Sprint(v), true
 	}
 	return "", false
@@ -265,7 +279,7 @@ func (r *renderer) text(s string) string {
 	return r.render(s, "").(string)
 }
 
-// Env of a server: a list of NAME=value, or a table whose names the settings file kept in lower case
+// Env of a server: a list of NAME=value, or a table of names and values, each name as it is written
 func envOf(v any) map[string]string {
 	env := map[string]string{}
 	switch x := v.(type) {
@@ -277,7 +291,7 @@ func envOf(v any) map[string]string {
 		}
 	case map[string]any:
 		for name, value := range x {
-			env[strings.ToUpper(name)] = fmt.Sprint(value)
+			env[name] = fmt.Sprint(value)
 		}
 	}
 	return env
@@ -294,11 +308,15 @@ func parseSpecWith(cfg *config.Config, name string, raw map[string]any, workspac
 	rendered := r.render(raw, "").(map[string]any)
 	s := &spec{Name: name, Raw: raw, Enabled: boolish(rendered["enabled"], true), Missed: r.missed, Unset: map[string]bool{}}
 	s.Command = strings.TrimSpace(fmt.Sprint(orNil(rendered["command"])))
-	s.Args = stringList(rendered["args"])
+	// Split as a shell splits the line first, so a value put in for ${NAME} stays one word
+	s.Args = Args(raw["args"])
+	for i, word := range s.Args {
+		s.Args[i] = r.render(word, ".args").(string)
+	}
 	s.Env = envOf(rendered["env"])
 	for path := range r.unset {
 		if rest, ok := strings.CutPrefix(path, ".env"); ok {
-			// The settings file keeps env in lower case, a list keeps NAME=value: both point at the name
+			// A table keeps the name as it is written, a list keeps NAME=value: both point at the name
 			if i := strings.Index(rest, "["); i == 0 {
 				if at, err := strconv.Atoi(strings.Trim(rest, "[]")); err == nil {
 					if list, ok := raw["env"].([]any); ok && at < len(list) {
@@ -307,11 +325,11 @@ func parseSpecWith(cfg *config.Config, name string, raw map[string]any, workspac
 					}
 				}
 			} else {
-				s.Unset[strings.ToUpper(strings.TrimPrefix(rest, "."))] = true
+				s.Unset[strings.TrimPrefix(rest, ".")] = true
 			}
 		}
 	}
-	s.Cwd = terminal.ExpandUser(fmt.Sprint(orNil(rendered["cwd"])))
+	s.Cwd = fsx.ExpandHome(fmt.Sprint(orNil(rendered["cwd"])))
 	if rendered["url"] != nil {
 		s.URL = strings.TrimSpace(fmt.Sprint(rendered["url"]))
 	}
@@ -372,7 +390,8 @@ func parseSpecWith(cfg *config.Config, name string, raw map[string]any, workspac
 	s.Auth = strings.ToLower(strings.TrimSpace(fmt.Sprint(orNil(rendered["auth"]))))
 	s.OAuth, s.OAuthErr = mcp.ParseOAuthConfig(table(rendered["oauth"]))
 	sampling := table(rendered["sampling"])
-	s.Sampling = samplingConfig{Enabled: boolish(sampling["enabled"], true), Model: fmt.Sprint(orNil(sampling["model"])), Allowed: stringList(sampling["allowed_models"]),
+	s.Sampling = samplingConfig{Enabled: boolish(sampling["enabled"], true), Model: fmt.Sprint(orNil(sampling["model"])),
+		Provider: strings.TrimSpace(fmt.Sprint(orNil(sampling["provider"]))), Allowed: stringList(sampling["allowed_models"]),
 		MaxRPM: atLeast(sampling["max_rpm"], 10, 1), Timeout: duration(atLeastF(sampling["timeout"], 30, 1)), MaxTokens: atLeast(sampling["max_tokens_cap"], 4096, 1),
 		MaxToolRounds: atLeast(sampling["max_tool_rounds"], 5, 0), Tools: boolish(sampling["expose_client_tools"], false), LogLevel: logLevel(sampling["log_level"])}
 	elicit := table(rendered["elicitation"])
@@ -503,8 +522,8 @@ func (e *unsetError) Error() string {
 	for i, ref := range e.refs {
 		parts[i] = "${" + ref + "}"
 	}
-	return fmt.Sprintf("The address or headers of the MCP server %s use %s, which is set neither in your environment nor in /settings under "+
-		"Tools › MCP servers › Values.", e.server, strings.Join(parts, ", "))
+	return fmt.Sprintf("The address or headers of the MCP server %s use %s, which has no value. Set it in your environment or as a value of "+
+		"the server.", e.server, strings.Join(parts, ", "))
 }
 
 // Whether the tool is turned on by the server's tool filter

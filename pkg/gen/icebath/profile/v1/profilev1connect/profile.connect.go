@@ -56,6 +56,10 @@ const (
 	ProfileServiceUpdateProcedure = "/icebath.profile.v1.ProfileService/Update"
 	// ProfileServiceInfoProcedure is the procedure name of the ProfileService's Info RPC.
 	ProfileServiceInfoProcedure = "/icebath.profile.v1.ProfileService/Info"
+	// ProfileServiceBundledProcedure is the procedure name of the ProfileService's Bundled RPC.
+	ProfileServiceBundledProcedure = "/icebath.profile.v1.ProfileService/Bundled"
+	// ProfileServiceSyncImportsProcedure is the procedure name of the ProfileService's SyncImports RPC.
+	ProfileServiceSyncImportsProcedure = "/icebath.profile.v1.ProfileService/SyncImports"
 )
 
 var (
@@ -164,6 +168,20 @@ var (
 			Procedure:  ProfileServiceInfoProcedure,
 		}
 	})
+	profileServiceBundledSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("Bundled"),
+			Procedure:  ProfileServiceBundledProcedure,
+		}
+	})
+	profileServiceSyncImportsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_profile_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("SyncImports"),
+			Procedure:  ProfileServiceSyncImportsProcedure,
+		}
+	})
 )
 
 // ProfileServiceClient is a client for the icebath.profile.v1.ProfileService service.
@@ -191,6 +209,10 @@ type ProfileServiceClient interface {
 	Update(context.Context, *v1.UpdateRequest) (*v1.UpdateResponse, error)
 	// Manifest of a profile's distribution
 	Info(context.Context, *v1.InfoRequest) (*v1.InfoResponse, error)
+	// Gives a profile every skill that comes with icebath, or only the essential ones
+	Bundled(context.Context, *v1.BundledRequest) (*v1.BundledResponse, error)
+	// Has a profile keep pulling what the profile in use imports from other agents, or stop
+	SyncImports(context.Context, *v1.SyncImportsRequest) (*v1.SyncImportsResponse, error)
 }
 
 // NewProfileServiceClient constructs a client for the icebath.profile.v1.ProfileService service.
@@ -224,6 +246,10 @@ type ProfileServiceHandler interface {
 	Update(context.Context, *v1.UpdateRequest) (*v1.UpdateResponse, error)
 	// Manifest of a profile's distribution
 	Info(context.Context, *v1.InfoRequest) (*v1.InfoResponse, error)
+	// Gives a profile every skill that comes with icebath, or only the essential ones
+	Bundled(context.Context, *v1.BundledRequest) (*v1.BundledResponse, error)
+	// Has a profile keep pulling what the profile in use imports from other agents, or stop
+	SyncImports(context.Context, *v1.SyncImportsRequest) (*v1.SyncImportsResponse, error)
 }
 
 // RegisterProfileServiceHandler registers svc as the icebath.profile.v1.ProfileService
@@ -246,6 +272,8 @@ func RegisterProfileServiceHandler(server *connect.Server, svc ProfileServiceHan
 		connect.Method{Spec: profileServiceInstallSpec(), Handler: adapter.install},
 		connect.Method{Spec: profileServiceUpdateSpec(), Handler: adapter.update},
 		connect.Method{Spec: profileServiceInfoSpec(), Handler: adapter.info},
+		connect.Method{Spec: profileServiceBundledSpec(), Handler: adapter.bundled},
+		connect.Method{Spec: profileServiceSyncImportsSpec(), Handler: adapter.syncImports},
 	)
 }
 
@@ -310,6 +338,14 @@ func (UnimplementedProfileServiceHandler) Update(context.Context, *v1.UpdateRequ
 
 func (UnimplementedProfileServiceHandler) Info(context.Context, *v1.InfoRequest) (*v1.InfoResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Info is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) Bundled(context.Context, *v1.BundledRequest) (*v1.BundledResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.Bundled is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) SyncImports(context.Context, *v1.SyncImportsRequest) (*v1.SyncImportsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.profile.v1.ProfileService.SyncImports is not implemented")
 }
 
 type profileServiceClient struct {
@@ -431,6 +467,22 @@ func (c *profileServiceClient) Update(ctx context.Context, req *v1.UpdateRequest
 func (c *profileServiceClient) Info(ctx context.Context, req *v1.InfoRequest) (*v1.InfoResponse, error) {
 	var res v1.InfoResponse
 	if err := c.client.CallUnary(ctx, profileServiceInfoSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) Bundled(ctx context.Context, req *v1.BundledRequest) (*v1.BundledResponse, error) {
+	var res v1.BundledResponse
+	if err := c.client.CallUnary(ctx, profileServiceBundledSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) SyncImports(ctx context.Context, req *v1.SyncImportsRequest) (*v1.SyncImportsResponse, error) {
+	var res v1.SyncImportsResponse
+	if err := c.client.CallUnary(ctx, profileServiceSyncImportsSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -612,6 +664,30 @@ func (h profileServiceHandler) info(ctx context.Context, _ connect.Spec, stream 
 		return err
 	}
 	res, err := h.svc.Info(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) bundled(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.BundledRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Bundled(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) syncImports(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SyncImportsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SyncImports(ctx, &req)
 	if err != nil {
 		return err
 	}

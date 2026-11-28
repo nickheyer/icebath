@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	dockerconfig "github.com/nickheyer/icebath/internal/plugins/defaults/terminals/docker/config"
 	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -125,7 +126,7 @@ func (r *registrant) resourceArgs(ctx context.Context, docker string, o *options
 		case !set:
 			args = append(args, "--network=none")
 		case mode != "none":
-			return nil, fmt.Errorf("Network access is off in /settings under Terminal › Docker, but Extra flags there ask for --network=%s. Remove "+
+			return nil, fmt.Errorf("Network access is off on the Docker page of /sandbox, but Extra flags there ask for --network=%s. Remove "+
 				"that flag from Extra flags, or turn on Network access to use that network.", strconv.Quote(mode))
 		}
 	}
@@ -327,7 +328,7 @@ var windowsDrive = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
 
 // Absolute host path of a folder, a Windows drive path left as it is on another system
 func absHost(dir string) string {
-	expanded := terminal.ExpandUser(dir)
+	expanded := fsx.ExpandHome(dir)
 	if windowsDrive.MatchString(expanded) && runtime.GOOS != "windows" {
 		return expanded
 	}
@@ -419,7 +420,7 @@ func volatile(spec string) bool {
 	if err != nil {
 		return false
 	}
-	abs, err := filepath.Abs(terminal.ExpandUser(source))
+	abs, err := filepath.Abs(fsx.ExpandHome(source))
 	if err != nil {
 		return false
 	}

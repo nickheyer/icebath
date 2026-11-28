@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // What the user may do with a tree holding work as they are done with it
@@ -49,25 +50,12 @@ func (w *Worktrees) discard(tree Tree, say func(string)) {
 	say("✓ Removed the worktree " + tree.Path + " and threw away its changes.")
 }
 
-// Text as a sentence: its first letter capital and a period at the end unless it ends in a mark of its own
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	text = strings.ToUpper(text[:1]) + text[1:]
-	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
-		text += "."
-	}
-	return text
-}
-
 // Archives the tree, then removes it unless something keeps it, saying how it went
 func (w *Worktrees) archive(cfg *config.Config, tree Tree, say func(string), exclude ...int) {
 	say("Archiving " + tree.Path + "… A large worktree takes a while.")
 	removal, err := w.ArchiveThenRemove(tree.Repo, tree.Path, "session exit", w.Settings(cfg).ArchiveMaxFileMB, true, nil, false, exclude...)
 	if err != nil {
-		say("✗ " + tree.Path + " could not be archived, so it is kept. " + sentence(cmp.Or(err.Error(), "The archive was interrupted.")))
+		say("✗ " + tree.Path + " could not be archived, so it is kept. " + strs.Full(cmp.Or(err.Error(), "The archive was interrupted.")))
 		return
 	}
 	if removal.Removed {

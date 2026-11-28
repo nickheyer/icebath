@@ -33,12 +33,14 @@ type Tool struct {
 	Icon string `protobuf:"bytes,6,opt,name=icon,proto3" json:"icon,omitempty"`
 	// Argument whose value names what a call works on, such as "path"
 	Subject string `protobuf:"bytes,7,opt,name=subject,proto3" json:"subject,omitempty"`
-	// Turned off in the settings
+	// Turned off for the profile
 	Disabled bool `protobuf:"varint,8,opt,name=disabled,proto3" json:"disabled,omitempty"`
 	// What the tool lets the agent do, in a phrase written for a person; the description is written for the model
 	About string `protobuf:"bytes,9,opt,name=about,proto3" json:"about,omitempty"`
-	// Heading the app lists the tool under, the title of its toolset
-	Group         string `protobuf:"bytes,10,opt,name=group,proto3" json:"group,omitempty"`
+	// Heading the app lists the tool under, the title of its group
+	Group string `protobuf:"bytes,10,opt,name=group,proto3" json:"group,omitempty"`
+	// What it lacks to run, in a person's words, empty when it can run
+	Lacks         string `protobuf:"bytes,11,opt,name=lacks,proto3" json:"lacks,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -143,15 +145,199 @@ func (x *Tool) GetGroup() string {
 	return ""
 }
 
-type ListRequest struct {
+func (x *Tool) GetLacks() string {
+	if x != nil {
+		return x.Lacks
+	}
+	return ""
+}
+
+// A tool that is on and can't run, and what it lacks
+type Blocked struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tool          string                 `protobuf:"bytes,1,opt,name=tool,proto3" json:"tool,omitempty"`
+	Why           string                 `protobuf:"bytes,2,opt,name=why,proto3" json:"why,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Blocked) Reset() {
+	*x = Blocked{}
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Blocked) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Blocked) ProtoMessage() {}
+
+func (x *Blocked) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Blocked.ProtoReflect.Descriptor instead.
+func (*Blocked) Descriptor() ([]byte, []int) {
+	return file_icebath_tools_v1_tools_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Blocked) GetTool() string {
+	if x != nil {
+		return x.Tool
+	}
+	return ""
+}
+
+func (x *Blocked) GetWhy() string {
+	if x != nil {
+		return x.Why
+	}
+	return ""
+}
+
+// A group of tools and how it stands
+type Group struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Title string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	// On, Off, or how many of how many are on, such as 3 of 4 on
+	State string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	// How many that are on can't run, such as 1 can't run; empty for none
+	Note    string     `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
+	Blocked []*Blocked `protobuf:"bytes,4,rep,name=blocked,proto3" json:"blocked,omitempty"`
+	// Settings sections that hold the options of its tools: the first one's listed on its page, each other one a row that opens its own
+	Sections []string `protobuf:"bytes,5,rep,name=sections,proto3" json:"sections,omitempty"`
+	// Area of the settings menu its options are, for a group whose options are an area of their own, and what its page is opened with
+	Area  string `protobuf:"bytes,6,opt,name=area,proto3" json:"area,omitempty"`
+	Opens string `protobuf:"bytes,7,opt,name=opens,proto3" json:"opens,omitempty"`
+	// Its tools are turned on and off on the page of its area, so it lists none of them
+	Elsewhere     bool  `protobuf:"varint,8,opt,name=elsewhere,proto3" json:"elsewhere,omitempty"`
+	Total         int32 `protobuf:"varint,9,opt,name=total,proto3" json:"total,omitempty"`
+	On            int32 `protobuf:"varint,10,opt,name=on,proto3" json:"on,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Group) Reset() {
+	*x = Group{}
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Group) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Group) ProtoMessage() {}
+
+func (x *Group) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Group.ProtoReflect.Descriptor instead.
+func (*Group) Descriptor() ([]byte, []int) {
+	return file_icebath_tools_v1_tools_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Group) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Group) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Group) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *Group) GetBlocked() []*Blocked {
+	if x != nil {
+		return x.Blocked
+	}
+	return nil
+}
+
+func (x *Group) GetSections() []string {
+	if x != nil {
+		return x.Sections
+	}
+	return nil
+}
+
+func (x *Group) GetArea() string {
+	if x != nil {
+		return x.Area
+	}
+	return ""
+}
+
+func (x *Group) GetOpens() string {
+	if x != nil {
+		return x.Opens
+	}
+	return ""
+}
+
+func (x *Group) GetElsewhere() bool {
+	if x != nil {
+		return x.Elsewhere
+	}
+	return false
+}
+
+func (x *Group) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *Group) GetOn() int32 {
+	if x != nil {
+		return x.On
+	}
+	return 0
+}
+
+type ListRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Profile to read, the one in use when empty
+	Profile       string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListRequest) Reset() {
 	*x = ListRequest{}
-	mi := &file_icebath_tools_v1_tools_proto_msgTypes[1]
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -163,7 +349,7 @@ func (x *ListRequest) String() string {
 func (*ListRequest) ProtoMessage() {}
 
 func (x *ListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_tools_v1_tools_proto_msgTypes[1]
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -176,19 +362,27 @@ func (x *ListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
 func (*ListRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_tools_v1_tools_proto_rawDescGZIP(), []int{1}
+	return file_icebath_tools_v1_tools_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ListRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
 }
 
 type ListResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Tools         []*Tool                `protobuf:"bytes,1,rep,name=tools,proto3" json:"tools,omitempty"`
+	Groups        []*Group               `protobuf:"bytes,2,rep,name=groups,proto3" json:"groups,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListResponse) Reset() {
 	*x = ListResponse{}
-	mi := &file_icebath_tools_v1_tools_proto_msgTypes[2]
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -200,7 +394,7 @@ func (x *ListResponse) String() string {
 func (*ListResponse) ProtoMessage() {}
 
 func (x *ListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_tools_v1_tools_proto_msgTypes[2]
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -213,7 +407,7 @@ func (x *ListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
 func (*ListResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_tools_v1_tools_proto_rawDescGZIP(), []int{2}
+	return file_icebath_tools_v1_tools_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListResponse) GetTools() []*Tool {
@@ -223,11 +417,141 @@ func (x *ListResponse) GetTools() []*Tool {
 	return nil
 }
 
+func (x *ListResponse) GetGroups() []*Group {
+	if x != nil {
+		return x.Groups
+	}
+	return nil
+}
+
+type TurnRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Names or titles of tools, titles of groups or names of toolsets
+	Words         []string `protobuf:"bytes,2,rep,name=words,proto3" json:"words,omitempty"`
+	On            bool     `protobuf:"varint,3,opt,name=on,proto3" json:"on,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TurnRequest) Reset() {
+	*x = TurnRequest{}
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TurnRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TurnRequest) ProtoMessage() {}
+
+func (x *TurnRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TurnRequest.ProtoReflect.Descriptor instead.
+func (*TurnRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_tools_v1_tools_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *TurnRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *TurnRequest) GetWords() []string {
+	if x != nil {
+		return x.Words
+	}
+	return nil
+}
+
+func (x *TurnRequest) GetOn() bool {
+	if x != nil {
+		return x.On
+	}
+	return false
+}
+
+type TurnResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What to tell the person, such as "Read is now off."
+	Said string `protobuf:"bytes,1,opt,name=said,proto3" json:"said,omitempty"`
+	// Titles of the tools turned, and the words that named none
+	Turned        []string `protobuf:"bytes,2,rep,name=turned,proto3" json:"turned,omitempty"`
+	Unknown       []string `protobuf:"bytes,3,rep,name=unknown,proto3" json:"unknown,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TurnResponse) Reset() {
+	*x = TurnResponse{}
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TurnResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TurnResponse) ProtoMessage() {}
+
+func (x *TurnResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_tools_v1_tools_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TurnResponse.ProtoReflect.Descriptor instead.
+func (*TurnResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_tools_v1_tools_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *TurnResponse) GetSaid() string {
+	if x != nil {
+		return x.Said
+	}
+	return ""
+}
+
+func (x *TurnResponse) GetTurned() []string {
+	if x != nil {
+		return x.Turned
+	}
+	return nil
+}
+
+func (x *TurnResponse) GetUnknown() []string {
+	if x != nil {
+		return x.Unknown
+	}
+	return nil
+}
+
 var File_icebath_tools_v1_tools_proto protoreflect.FileDescriptor
 
 const file_icebath_tools_v1_tools_proto_rawDesc = "" +
 	"\n" +
-	"\x1cicebath/tools/v1/tools.proto\x12\x10icebath.tools.v1\"\x80\x02\n" +
+	"\x1cicebath/tools/v1/tools.proto\x12\x10icebath.tools.v1\"\x96\x02\n" +
 	"\x04Tool\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\atoolset\x18\x02 \x01(\tR\atoolset\x12 \n" +
@@ -239,12 +563,39 @@ const file_icebath_tools_v1_tools_proto_rawDesc = "" +
 	"\bdisabled\x18\b \x01(\bR\bdisabled\x12\x14\n" +
 	"\x05about\x18\t \x01(\tR\x05about\x12\x14\n" +
 	"\x05group\x18\n" +
-	" \x01(\tR\x05group\"\r\n" +
-	"\vListRequest\"<\n" +
+	" \x01(\tR\x05group\x12\x14\n" +
+	"\x05lacks\x18\v \x01(\tR\x05lacks\"/\n" +
+	"\aBlocked\x12\x12\n" +
+	"\x04tool\x18\x01 \x01(\tR\x04tool\x12\x10\n" +
+	"\x03why\x18\x02 \x01(\tR\x03why\"\x86\x02\n" +
+	"\x05Group\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\x12\x12\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\x123\n" +
+	"\ablocked\x18\x04 \x03(\v2\x19.icebath.tools.v1.BlockedR\ablocked\x12\x1a\n" +
+	"\bsections\x18\x05 \x03(\tR\bsections\x12\x12\n" +
+	"\x04area\x18\x06 \x01(\tR\x04area\x12\x14\n" +
+	"\x05opens\x18\a \x01(\tR\x05opens\x12\x1c\n" +
+	"\telsewhere\x18\b \x01(\bR\telsewhere\x12\x14\n" +
+	"\x05total\x18\t \x01(\x05R\x05total\x12\x0e\n" +
+	"\x02on\x18\n" +
+	" \x01(\x05R\x02on\"'\n" +
+	"\vListRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"m\n" +
 	"\fListResponse\x12,\n" +
-	"\x05tools\x18\x01 \x03(\v2\x16.icebath.tools.v1.ToolR\x05tools2T\n" +
+	"\x05tools\x18\x01 \x03(\v2\x16.icebath.tools.v1.ToolR\x05tools\x12/\n" +
+	"\x06groups\x18\x02 \x03(\v2\x17.icebath.tools.v1.GroupR\x06groups\"M\n" +
+	"\vTurnRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x14\n" +
+	"\x05words\x18\x02 \x03(\tR\x05words\x12\x0e\n" +
+	"\x02on\x18\x03 \x01(\bR\x02on\"T\n" +
+	"\fTurnResponse\x12\x12\n" +
+	"\x04said\x18\x01 \x01(\tR\x04said\x12\x16\n" +
+	"\x06turned\x18\x02 \x03(\tR\x06turned\x12\x18\n" +
+	"\aunknown\x18\x03 \x03(\tR\aunknown2\x9b\x01\n" +
 	"\vToolService\x12E\n" +
-	"\x04List\x12\x1d.icebath.tools.v1.ListRequest\x1a\x1e.icebath.tools.v1.ListResponseB\xc3\x01\n" +
+	"\x04List\x12\x1d.icebath.tools.v1.ListRequest\x1a\x1e.icebath.tools.v1.ListResponse\x12E\n" +
+	"\x04Turn\x12\x1d.icebath.tools.v1.TurnRequest\x1a\x1e.icebath.tools.v1.TurnResponseB\xc3\x01\n" +
 	"\x14com.icebath.tools.v1B\n" +
 	"ToolsProtoP\x01Z=github.com/nickheyer/icebath/pkg/gen/icebath/tools/v1;toolsv1\xa2\x02\x03ITX\xaa\x02\x10Icebath.Tools.V1\xca\x02\x10Icebath\\Tools\\V1\xe2\x02\x1cIcebath\\Tools\\V1\\GPBMetadata\xea\x02\x12Icebath::Tools::V1b\x06proto3"
 
@@ -260,21 +611,29 @@ func file_icebath_tools_v1_tools_proto_rawDescGZIP() []byte {
 	return file_icebath_tools_v1_tools_proto_rawDescData
 }
 
-var file_icebath_tools_v1_tools_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_icebath_tools_v1_tools_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_icebath_tools_v1_tools_proto_goTypes = []any{
 	(*Tool)(nil),         // 0: icebath.tools.v1.Tool
-	(*ListRequest)(nil),  // 1: icebath.tools.v1.ListRequest
-	(*ListResponse)(nil), // 2: icebath.tools.v1.ListResponse
+	(*Blocked)(nil),      // 1: icebath.tools.v1.Blocked
+	(*Group)(nil),        // 2: icebath.tools.v1.Group
+	(*ListRequest)(nil),  // 3: icebath.tools.v1.ListRequest
+	(*ListResponse)(nil), // 4: icebath.tools.v1.ListResponse
+	(*TurnRequest)(nil),  // 5: icebath.tools.v1.TurnRequest
+	(*TurnResponse)(nil), // 6: icebath.tools.v1.TurnResponse
 }
 var file_icebath_tools_v1_tools_proto_depIdxs = []int32{
-	0, // 0: icebath.tools.v1.ListResponse.tools:type_name -> icebath.tools.v1.Tool
-	1, // 1: icebath.tools.v1.ToolService.List:input_type -> icebath.tools.v1.ListRequest
-	2, // 2: icebath.tools.v1.ToolService.List:output_type -> icebath.tools.v1.ListResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	1, // 0: icebath.tools.v1.Group.blocked:type_name -> icebath.tools.v1.Blocked
+	0, // 1: icebath.tools.v1.ListResponse.tools:type_name -> icebath.tools.v1.Tool
+	2, // 2: icebath.tools.v1.ListResponse.groups:type_name -> icebath.tools.v1.Group
+	3, // 3: icebath.tools.v1.ToolService.List:input_type -> icebath.tools.v1.ListRequest
+	5, // 4: icebath.tools.v1.ToolService.Turn:input_type -> icebath.tools.v1.TurnRequest
+	4, // 5: icebath.tools.v1.ToolService.List:output_type -> icebath.tools.v1.ListResponse
+	6, // 6: icebath.tools.v1.ToolService.Turn:output_type -> icebath.tools.v1.TurnResponse
+	5, // [5:7] is the sub-list for method output_type
+	3, // [3:5] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_icebath_tools_v1_tools_proto_init() }
@@ -288,7 +647,7 @@ func file_icebath_tools_v1_tools_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_tools_v1_tools_proto_rawDesc), len(file_icebath_tools_v1_tools_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

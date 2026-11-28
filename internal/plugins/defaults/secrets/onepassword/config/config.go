@@ -26,6 +26,9 @@ const (
 	DefaultTokenEnv = "OP_SERVICE_ACCOUNT_TOKEN"
 )
 
+// Kind of thing the account settings of 1Password name, which the 1Password part of the page of Secret stores registers its picker under
+const Accounts = "onepassword-account"
+
 // Where the 1Password command-line tool is installed from
 const Docs = "https://developer.1password.com/docs/cli/get-started/"
 

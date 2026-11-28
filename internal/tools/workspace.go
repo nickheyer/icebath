@@ -3,6 +3,7 @@ package tools
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/internal/config"
@@ -41,6 +42,19 @@ const KanbanTaskEnv = "ICEBATH_KANBAN_TASK"
 // Folders of the trusted folders setting; false when it holds anything but a list of text, which then trusts nothing
 func TrustedFolders(cfg *config.Config) ([]string, bool) {
 	return Folders(cfg, toolsconfig.TrustedWorkspaces)
+}
+
+// Adds folders to the trusted folders setting, the one list of them, those in it already left as they are; a setting that holds no list
+// is replaced by the folders
+func Trust(cfg *config.Config, folders ...string) error {
+	kept, _ := TrustedFolders(cfg)
+	list := make([]any, 0, len(kept)+len(folders))
+	for _, folder := range append(kept, folders...) {
+		if !slices.Contains(list, any(folder)) {
+			list = append(list, folder)
+		}
+	}
+	return cfg.Set(toolsconfig.TrustedWorkspaces, list)
 }
 
 // Entries of a setting that lists folders or patterns of them, empty ones left out; false when it holds anything but a list of text

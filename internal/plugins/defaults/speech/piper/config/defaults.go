@@ -21,7 +21,7 @@ func Register(cfg *config.Config) {
 			{Key: SpeakerID, Title: "Speaker", About: "The number of the speaker that talks, in a voice with several speakers.", Default: 0,
 				Counts: config.Plain, Least: config.Num(0), Advanced: true},
 			{Key: VoicesDir, Title: "Voices folder", About: "The folder where Piper finds voices of yours by name.", Default: "", Zero: "The profile's cache",
-				Advanced: true},
+				Path: &config.Path{Kind: config.PathFolder}, Advanced: true},
 			{Key: MaxTextLength, Title: "Text limit", About: "The most characters one request to Piper takes.", Help: "Longer text is split into several requests.",
 				Default: 0, Zero: "5,000 characters", Counts: "characters", Least: config.Num(1), Advanced: true},
 		}}})

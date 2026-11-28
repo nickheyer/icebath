@@ -20,6 +20,7 @@ import (
 	delegationconfig "github.com/nickheyer/icebath/internal/delegation/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -353,7 +354,7 @@ func (a *Agent) SaveTree(session string, tree *agentv1.SpawnTree) (string, error
 		return "", err
 	}
 	if err := fsx.Write(path, data, 0o600); err != nil {
-		return "", errors.New("The subagent tree could not be saved. " + sentence(err.Error()))
+		return "", errors.New("The subagent tree could not be saved. " + strs.Full(err.Error()))
 	}
 	if statErr == nil {
 		return path, nil
@@ -434,7 +435,7 @@ func readTree(path string) (*agentv1.SpawnTree, error) {
 func (a *Agent) LoadTree(path string) (*agentv1.SpawnTree, error) {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, "The saved subagent tree could not be opened. "+sentence(err.Error()))
+		return nil, connect.NewError(connect.CodeNotFound, "The saved subagent tree could not be opened. "+strs.Full(err.Error()))
 	}
 	profiles, err := filepath.EvalSymlinks(filepath.Dir(a.config.ProfileDir(a.config.Profile())))
 	if err != nil {
@@ -447,7 +448,7 @@ func (a *Agent) LoadTree(path string) (*agentv1.SpawnTree, error) {
 	}
 	tree, err := readTree(resolved)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, "The saved subagent tree could not be read. "+sentence(err.Error()))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "The saved subagent tree could not be read. "+strs.Full(err.Error()))
 	}
 	tree.Path = resolved
 	return tree, nil

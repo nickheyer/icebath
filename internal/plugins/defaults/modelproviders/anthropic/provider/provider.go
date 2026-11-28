@@ -17,6 +17,7 @@ func (specs) Specs() []provider.Spec {
 	base := anthropicconfig.BaseURL
 	return []provider.Spec{{
 		Name:               anthropicconfig.Name,
+		SignIn:             true,
 		Native:             native,
 		DisplayName:        anthropicconfig.Title,
 		Rank:               3,
@@ -41,10 +42,6 @@ func (specs) Specs() []provider.Spec {
 		ListPrices:         "anthropic.com",
 		Billing:            []provider.Billing{{Label: "Anthropic", URL: "https://console.anthropic.com/settings/billing", Plan: "https://claude.ai/settings/usage"}},
 		AccountUsage:       accountUsage,
-		Settings: []config.Setting{
-			{Key: anthropicconfig.AdoptExternalLogins, Title: "Use Claude Code sign-in", About: "Use the Claude Code sign-in on this computer when there is one.",
-				Default: true},
-		},
 		Account: []config.Setting{
 			providerconfig.APIKey(),
 			{Key: anthropicconfig.Token, Title: "Sign-in token", About: "Your Claude sign-in token.", Default: "", Secret: true, Internal: true},

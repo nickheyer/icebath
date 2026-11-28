@@ -66,6 +66,7 @@ func (specs) Specs() []provider.Spec {
 		Prices:             prices,
 	}, {
 		Name:               minimaxconfig.OAuthName,
+		SignIn:             true,
 		Caching:            caching,
 		Shape:              shape,
 		Carriers:           []string{"reasoning_content", "reasoning_details"},

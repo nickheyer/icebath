@@ -1,6 +1,9 @@
 package config
 
-import toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
+import (
+	appconfig "github.com/nickheyer/icebath/internal/app/config"
+	toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
+)
 
 const (
 	Key = toolsconfig.Key + ".terminal"
@@ -10,7 +13,15 @@ const (
 	WaitNotify = Key + ".process_wait_auto_notify"
 	// Text of the user's own describing their machine, added to where the agent is told its commands run
 	EnvironmentHint = Key + ".environment_hint"
-	// Command a terminal window runs, and the lines it keeps above the screen
-	Shell      = Key + ".shell"
-	Scrollback = Key + ".scrollback"
 )
+
+const (
+	// Terminal windows a person opens
+	Windows = appconfig.Key + ".terminal"
+	// Command a terminal window runs, and the lines it keeps above the screen
+	Shell      = Windows + ".shell"
+	Scrollback = Windows + ".scrollback"
+)
+
+// Kind of the picker of a shell: the shells this computer lists
+const PickShell = "shell"

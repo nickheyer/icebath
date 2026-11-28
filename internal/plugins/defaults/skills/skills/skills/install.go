@@ -476,8 +476,8 @@ func (r *run) fetchFailure(identifier string, listed bool, source Source) {
 	}
 	r.fail("%s could not be downloaded.", identifier)
 	if len(rejected) > 0 {
-		r.line(Warn, "⚠ GitHub refused %s as wrong. Replace or remove the token in GITHUB_TOKEN, GH_TOKEN or GitHub token in /settings under Skills › "+
-			"Skills hub, or run gh auth login again.", strings.Join(rejected, " and "))
+		r.line(Warn, "⚠ GitHub refused %s as wrong. Replace or remove the GitHub token of the skills hub, or run gh auth login again.",
+			strs.And(rejected))
 	}
 	if limited {
 		r.line(Warn, "⚠ GitHub allows only 60 requests an hour without a sign-in, and they are used up.")

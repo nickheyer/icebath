@@ -4,7 +4,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/internal/config"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
+	"github.com/nickheyer/icebath/internal/web"
 )
 
 func Register(cfg *config.Config) {
@@ -15,8 +17,8 @@ func Register(cfg *config.Config) {
 		About:  "Search public posts on X with your xAI account",
 		Order:  120,
 		Settings: []config.Setting{
-			{Key: Model, Title: "Model", About: "The model that runs searches of X.", Help: "Connect your xAI account in /providers.", Default: DefaultModel,
-				Zero: DefaultModel},
+			{Key: Model, Title: "Model", About: "The model that runs searches of X.", Help: "A model of xAI, such as grok-4.5. Searches run on your xAI account.", Default: DefaultModel,
+				Zero: DefaultModel, Picks: providerconfig.ModelOf("xai", web.XAIOAuth)},
 			{Key: ReasoningEffort, Title: "Reasoning effort", About: "How hard the model thinks while it searches X.", Default: "", Options: config.Options(
 				config.Option{Title: "The model's default", About: "As much as the model does by itself"},
 				config.Option{Value: "low", Title: "Low", About: "The quickest answers, with the least thinking"},

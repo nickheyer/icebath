@@ -36,13 +36,14 @@ func (specs) Specs() []provider.Spec {
 		ListPrices:                "googleapis.com",
 		DefaultAuxModel:           "google/gemini-3.6-flash",
 		Settings: []config.Setting{
-			{Key: vertexconfig.Project, Title: "Google Cloud project", About: "The Google Cloud project that requests are made for.", Default: "",
-				Zero: "From your sign-in", Env: []string{vertexconfig.ProjectEnv}},
-			{Key: vertexconfig.Region, Title: "Region", About: "The Google Cloud region that requests are sent to.", Help: "Such as us-central1, or global.",
-				Default: vertexconfig.DefaultRegion, Env: []string{vertexconfig.RegionEnv}},
+			{Key: vertexconfig.Project, Title: "Google Cloud project", About: "The ID of the Google Cloud project that requests are made for.",
+				Help: "Such as my-project-123, as the Google Cloud console shows it.", Default: "", Zero: "From your sign-in",
+				Env: []string{vertexconfig.ProjectEnv}},
+			{Key: vertexconfig.Region, Title: "Region", About: "Which Google Cloud region requests are sent to.",
+				Help: "Global lets Google pick the region that serves the model.", Default: vertexconfig.DefaultRegion, Env: []string{vertexconfig.RegionEnv},
+				Options: regions},
 		},
-		Account: []config.Setting{{Key: vertexconfig.CredentialsPath, Title: "Service account key", About: "The path to a JSON key file of a Google service account.",
-			Default: ""}},
+		Account: []config.Setting{vertexconfig.KeyFile},
 	}}
 }
 

@@ -98,7 +98,7 @@ func TestSessionsOnProfilesAtOnce(t *testing.T) {
 	creds.Register(credentials.Keyed{Provider: "acme"})
 	wires := transport.New(cfg)
 	toolset := tools.New(cfg, nil)
-	agentconfig.Register(cfg, providers.Options(cfg), func() []config.Option { return nil })
+	agentconfig.Register(cfg, providers.Options, func(*config.Config) func() []config.Option { return func() []config.Option { return nil } })
 	catalog := models.New(cfg, &providers.Registry)
 	helpers := auxiliary.New(cfg, &providers.Registry, catalog, nil)
 	checks := new(approvals.Registry)
@@ -118,14 +118,10 @@ func TestSessionsOnProfilesAtOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 		settings := cfg.In(profile)
-		if _, err := providers.Add(settings, "acme", "", ""); err != nil {
+		if _, err := providers.Add(settings, "acme", "", "", ""); err != nil {
 			t.Fatal(err)
 		}
-		account, err := providers.AddAccount(settings, "acme", "", "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := settings.Set("providers.acme.accounts."+account+"."+providerconfig.APIKeyField, key); err != nil {
+		if _, err := providers.Connect(settings, "acme", "", "", "", map[string]any{providerconfig.APIKeyField: key}); err != nil {
 			t.Fatal(err)
 		}
 		// A known window, else each turn probes acme.test over the network for it and the sessions reach the wire apart

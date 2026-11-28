@@ -30,8 +30,16 @@ const (
 	LspServiceInstallProcedure = "/icebath.plugins.lsp.v1.LspService/Install"
 	// LspServiceWhichProcedure is the procedure name of the LspService's Which RPC.
 	LspServiceWhichProcedure = "/icebath.plugins.lsp.v1.LspService/Which"
-	// LspServiceRestartProcedure is the procedure name of the LspService's Restart RPC.
-	LspServiceRestartProcedure = "/icebath.plugins.lsp.v1.LspService/Restart"
+	// LspServiceStopProcedure is the procedure name of the LspService's Stop RPC.
+	LspServiceStopProcedure = "/icebath.plugins.lsp.v1.LspService/Stop"
+	// LspServiceAddProcedure is the procedure name of the LspService's Add RPC.
+	LspServiceAddProcedure = "/icebath.plugins.lsp.v1.LspService/Add"
+	// LspServiceTurnProcedure is the procedure name of the LspService's Turn RPC.
+	LspServiceTurnProcedure = "/icebath.plugins.lsp.v1.LspService/Turn"
+	// LspServiceRemoveProcedure is the procedure name of the LspService's Remove RPC.
+	LspServiceRemoveProcedure = "/icebath.plugins.lsp.v1.LspService/Remove"
+	// LspServiceTrustProcedure is the procedure name of the LspService's Trust RPC.
+	LspServiceTrustProcedure = "/icebath.plugins.lsp.v1.LspService/Trust"
 )
 
 var (
@@ -56,25 +64,62 @@ var (
 			Procedure:  LspServiceWhichProcedure,
 		}
 	})
-	lspServiceRestartSpec = sync.OnceValue(func() connect.Spec {
+	lspServiceStopSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
 			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_plugins_lsp_v1_lsp_proto.Services().ByName("LspService").Methods().ByName("Restart"),
-			Procedure:  LspServiceRestartProcedure,
+			Schema:     v1.File_icebath_plugins_lsp_v1_lsp_proto.Services().ByName("LspService").Methods().ByName("Stop"),
+			Procedure:  LspServiceStopProcedure,
+		}
+	})
+	lspServiceAddSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_lsp_v1_lsp_proto.Services().ByName("LspService").Methods().ByName("Add"),
+			Procedure:  LspServiceAddProcedure,
+		}
+	})
+	lspServiceTurnSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_lsp_v1_lsp_proto.Services().ByName("LspService").Methods().ByName("Turn"),
+			Procedure:  LspServiceTurnProcedure,
+		}
+	})
+	lspServiceRemoveSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_lsp_v1_lsp_proto.Services().ByName("LspService").Methods().ByName("Remove"),
+			Procedure:  LspServiceRemoveProcedure,
+		}
+	})
+	lspServiceTrustSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_lsp_v1_lsp_proto.Services().ByName("LspService").Methods().ByName("Trust"),
+			Procedure:  LspServiceTrustProcedure,
 		}
 	})
 )
 
 // LspServiceClient is a client for the icebath.plugins.lsp.v1.LspService service.
 type LspServiceClient interface {
-	// The language server service of a profile and every server it knows
+	// How the language servers of a profile stand, each server in the words of the one function that says so, whether code is checked or not
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
-	// Installs one server, or every server whose recipe installs by itself
+	// Installs one server, or each server not installed that icebath can install, saying at the end what was installed and what the others
+	// need
 	Install(context.Context, *v1.InstallRequest) (LspServiceInstallClientStream, error)
 	// Program a server runs from
 	Which(context.Context, *v1.WhichRequest) (*v1.WhichResponse, error)
-	// Stops every running server of every profile; the next edit starts them again
-	Restart(context.Context, *v1.RestartRequest) (*v1.RestartResponse, error)
+	// Stops the running servers of a profile; the next edit starts them again
+	Stop(context.Context, *v1.StopRequest) (*v1.StopResponse, error)
+	// Adds a server of your own: its name, the command that starts it and the file types it checks
+	Add(context.Context, *v1.AddRequest) (*v1.AddResponse, error)
+	// Turns a server off or on
+	Turn(context.Context, *v1.TurnRequest) (*v1.TurnResponse, error)
+	// Removes a server you added
+	Remove(context.Context, *v1.RemoveRequest) (*v1.RemoveResponse, error)
+	// Trusts the folders the servers of a profile were kept out of
+	Trust(context.Context, *v1.TrustRequest) (*v1.TrustResponse, error)
 }
 
 // NewLspServiceClient constructs a client for the icebath.plugins.lsp.v1.LspService service.
@@ -105,14 +150,23 @@ func (s LspServiceInstallClientStream) Close() error {
 
 // LspServiceHandler is an implementation of the icebath.plugins.lsp.v1.LspService service.
 type LspServiceHandler interface {
-	// The language server service of a profile and every server it knows
+	// How the language servers of a profile stand, each server in the words of the one function that says so, whether code is checked or not
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
-	// Installs one server, or every server whose recipe installs by itself
+	// Installs one server, or each server not installed that icebath can install, saying at the end what was installed and what the others
+	// need
 	Install(context.Context, *v1.InstallRequest, LspServiceInstallServerStream) error
 	// Program a server runs from
 	Which(context.Context, *v1.WhichRequest) (*v1.WhichResponse, error)
-	// Stops every running server of every profile; the next edit starts them again
-	Restart(context.Context, *v1.RestartRequest) (*v1.RestartResponse, error)
+	// Stops the running servers of a profile; the next edit starts them again
+	Stop(context.Context, *v1.StopRequest) (*v1.StopResponse, error)
+	// Adds a server of your own: its name, the command that starts it and the file types it checks
+	Add(context.Context, *v1.AddRequest) (*v1.AddResponse, error)
+	// Turns a server off or on
+	Turn(context.Context, *v1.TurnRequest) (*v1.TurnResponse, error)
+	// Removes a server you added
+	Remove(context.Context, *v1.RemoveRequest) (*v1.RemoveResponse, error)
+	// Trusts the folders the servers of a profile were kept out of
+	Trust(context.Context, *v1.TrustRequest) (*v1.TrustResponse, error)
 }
 
 // RegisterLspServiceHandler registers svc as the icebath.plugins.lsp.v1.LspService implementation
@@ -123,7 +177,11 @@ func RegisterLspServiceHandler(server *connect.Server, svc LspServiceHandler) {
 		connect.Method{Spec: lspServiceStatusSpec(), Handler: adapter.status},
 		connect.Method{Spec: lspServiceInstallSpec(), Handler: adapter.install},
 		connect.Method{Spec: lspServiceWhichSpec(), Handler: adapter.which},
-		connect.Method{Spec: lspServiceRestartSpec(), Handler: adapter.restart},
+		connect.Method{Spec: lspServiceStopSpec(), Handler: adapter.stop},
+		connect.Method{Spec: lspServiceAddSpec(), Handler: adapter.add},
+		connect.Method{Spec: lspServiceTurnSpec(), Handler: adapter.turn},
+		connect.Method{Spec: lspServiceRemoveSpec(), Handler: adapter.remove},
+		connect.Method{Spec: lspServiceTrustSpec(), Handler: adapter.trust},
 	)
 }
 
@@ -157,8 +215,24 @@ func (UnimplementedLspServiceHandler) Which(context.Context, *v1.WhichRequest) (
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.lsp.v1.LspService.Which is not implemented")
 }
 
-func (UnimplementedLspServiceHandler) Restart(context.Context, *v1.RestartRequest) (*v1.RestartResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.lsp.v1.LspService.Restart is not implemented")
+func (UnimplementedLspServiceHandler) Stop(context.Context, *v1.StopRequest) (*v1.StopResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.lsp.v1.LspService.Stop is not implemented")
+}
+
+func (UnimplementedLspServiceHandler) Add(context.Context, *v1.AddRequest) (*v1.AddResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.lsp.v1.LspService.Add is not implemented")
+}
+
+func (UnimplementedLspServiceHandler) Turn(context.Context, *v1.TurnRequest) (*v1.TurnResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.lsp.v1.LspService.Turn is not implemented")
+}
+
+func (UnimplementedLspServiceHandler) Remove(context.Context, *v1.RemoveRequest) (*v1.RemoveResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.lsp.v1.LspService.Remove is not implemented")
+}
+
+func (UnimplementedLspServiceHandler) Trust(context.Context, *v1.TrustRequest) (*v1.TrustResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.lsp.v1.LspService.Trust is not implemented")
 }
 
 type lspServiceClient struct {
@@ -189,9 +263,41 @@ func (c *lspServiceClient) Which(ctx context.Context, req *v1.WhichRequest) (*v1
 	return &res, nil
 }
 
-func (c *lspServiceClient) Restart(ctx context.Context, req *v1.RestartRequest) (*v1.RestartResponse, error) {
-	var res v1.RestartResponse
-	if err := c.client.CallUnary(ctx, lspServiceRestartSpec(), req, &res); err != nil {
+func (c *lspServiceClient) Stop(ctx context.Context, req *v1.StopRequest) (*v1.StopResponse, error) {
+	var res v1.StopResponse
+	if err := c.client.CallUnary(ctx, lspServiceStopSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *lspServiceClient) Add(ctx context.Context, req *v1.AddRequest) (*v1.AddResponse, error) {
+	var res v1.AddResponse
+	if err := c.client.CallUnary(ctx, lspServiceAddSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *lspServiceClient) Turn(ctx context.Context, req *v1.TurnRequest) (*v1.TurnResponse, error) {
+	var res v1.TurnResponse
+	if err := c.client.CallUnary(ctx, lspServiceTurnSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *lspServiceClient) Remove(ctx context.Context, req *v1.RemoveRequest) (*v1.RemoveResponse, error) {
+	var res v1.RemoveResponse
+	if err := c.client.CallUnary(ctx, lspServiceRemoveSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *lspServiceClient) Trust(ctx context.Context, req *v1.TrustRequest) (*v1.TrustResponse, error) {
+	var res v1.TrustResponse
+	if err := c.client.CallUnary(ctx, lspServiceTrustSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -231,12 +337,60 @@ func (h lspServiceHandler) which(ctx context.Context, _ connect.Spec, stream con
 	return stream.Send(res)
 }
 
-func (h lspServiceHandler) restart(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.RestartRequest
+func (h lspServiceHandler) stop(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.StopRequest
 	if err := stream.Receive(&req); err != nil {
 		return err
 	}
-	res, err := h.svc.Restart(ctx, &req)
+	res, err := h.svc.Stop(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h lspServiceHandler) add(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.AddRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Add(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h lspServiceHandler) turn(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.TurnRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Turn(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h lspServiceHandler) remove(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RemoveRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Remove(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h lspServiceHandler) trust(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.TrustRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Trust(ctx, &req)
 	if err != nil {
 		return err
 	}

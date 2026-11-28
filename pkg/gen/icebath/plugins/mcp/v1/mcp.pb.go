@@ -125,9 +125,14 @@ type Server struct {
 	Exclude  []string `protobuf:"bytes,17,rep,name=exclude,proto3" json:"exclude,omitempty"`
 	Auth     string   `protobuf:"bytes,18,opt,name=auth,proto3" json:"auth,omitempty"`
 	// Settings as kept, JSON
-	Settings      string           `protobuf:"bytes,19,opt,name=settings,proto3" json:"settings,omitempty"`
-	Sampling      map[string]int32 `protobuf:"bytes,20,rep,name=sampling,proto3" json:"sampling,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	Elicitation   map[string]int32 `protobuf:"bytes,21,rep,name=elicitation,proto3" json:"elicitation,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	Settings    string           `protobuf:"bytes,19,opt,name=settings,proto3" json:"settings,omitempty"`
+	Sampling    map[string]int32 `protobuf:"bytes,20,rep,name=sampling,proto3" json:"sampling,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	Elicitation map[string]int32 `protobuf:"bytes,21,rep,name=elicitation,proto3" json:"elicitation,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	// How it stands in the words every page and command says it: Connected, Not connected, Connecting, Failed, Off, Needs values, Not signed
+	// in, Starts on first use or Resting until used
+	Shown string `protobuf:"bytes,22,opt,name=shown,proto3" json:"shown,omitempty"`
+	// Values its settings name as ${NAME}, those of the context left out
+	Values        []string `protobuf:"bytes,23,rep,name=values,proto3" json:"values,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -305,6 +310,20 @@ func (x *Server) GetSampling() map[string]int32 {
 func (x *Server) GetElicitation() map[string]int32 {
 	if x != nil {
 		return x.Elicitation
+	}
+	return nil
+}
+
+func (x *Server) GetShown() string {
+	if x != nil {
+		return x.Shown
+	}
+	return ""
+}
+
+func (x *Server) GetValues() []string {
+	if x != nil {
+		return x.Values
 	}
 	return nil
 }
@@ -3496,7 +3515,7 @@ const file_icebath_plugins_mcp_v1_mcp_proto_rawDesc = "" +
 	"\x06prompt\x18\x02 \x01(\tR\x06prompt\x12\x1a\n" +
 	"\brequired\x18\x03 \x01(\bR\brequired\x12\x16\n" +
 	"\x06secret\x18\x04 \x01(\bR\x06secret\x12\x18\n" +
-	"\adefault\x18\x05 \x01(\tR\adefault\"\xe7\x05\n" +
+	"\adefault\x18\x05 \x01(\tR\adefault\"\x95\x06\n" +
 	"\x06Server\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
 	"\ttransport\x18\x02 \x01(\tR\ttransport\x12\x14\n" +
@@ -3519,7 +3538,9 @@ const file_icebath_plugins_mcp_v1_mcp_proto_rawDesc = "" +
 	"\x04auth\x18\x12 \x01(\tR\x04auth\x12\x1a\n" +
 	"\bsettings\x18\x13 \x01(\tR\bsettings\x12H\n" +
 	"\bsampling\x18\x14 \x03(\v2,.icebath.plugins.mcp.v1.Server.SamplingEntryR\bsampling\x12Q\n" +
-	"\velicitation\x18\x15 \x03(\v2/.icebath.plugins.mcp.v1.Server.ElicitationEntryR\velicitation\x1a;\n" +
+	"\velicitation\x18\x15 \x03(\v2/.icebath.plugins.mcp.v1.Server.ElicitationEntryR\velicitation\x12\x14\n" +
+	"\x05shown\x18\x16 \x01(\tR\x05shown\x12\x16\n" +
+	"\x06values\x18\x17 \x03(\tR\x06values\x1a;\n" +
 	"\rSamplingEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1a>\n" +

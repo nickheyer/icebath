@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect/v2"
 	"go.yaml.in/yaml/v3"
 
+	picked "github.com/nickheyer/icebath/internal/profile"
 	"github.com/nickheyer/icebath/internal/sessions"
 	sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
 	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
@@ -80,7 +81,7 @@ func Launch(ctx context.Context, conn *connect.Client, dir string, args []string
 	id := ""
 	switch {
 	case l.resume != "":
-		response, err := service.Resolve(ctx, &sessionsv1.ResolveRequest{Ref: l.resume, Tip: true})
+		response, err := service.Resolve(ctx, &sessionsv1.ResolveRequest{Profile: picked.Picked(ctx), Ref: l.resume, Tip: true})
 		if err != nil {
 			return true, fmt.Errorf("No session matches “%s”. Run icebath sessions list to see your sessions.", l.resume)
 		}
@@ -103,17 +104,33 @@ func openApp(ctx context.Context, conn *connect.Client, app App, id string, star
 		ctx = sessions.WithResume(ctx, id)
 	}
 	ctx, shown := sessions.WithShown(ctx)
-	if err := app(ctx, conn); err != nil {
+	err := app(ctx, conn)
+	Told(context.WithoutCancel(ctx), conn, os.Stderr)
+	if err != nil {
 		return err
 	}
 	goodbye(context.WithoutCancel(ctx), os.Stdout, sessionsv1connect.NewSessionServiceClient(conn), shown.ID(), started)
 	return nil
 }
 
+// Prints what icebath has to tell the person that nothing showed yet, such as a session database it set aside, each after a warning mark.
+// A server that can't be asked within a few seconds is left alone, as the command's own result already says so
+func Told(ctx context.Context, conn *connect.Client, out io.Writer) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	response, err := sessionsv1connect.NewSessionServiceClient(conn).Notices(ctx, &sessionsv1.NoticesRequest{})
+	if err != nil {
+		return
+	}
+	for _, notice := range response.GetNotices() {
+		fmt.Fprintln(out, "⚠ "+notice)
+	}
+}
+
 // Session -c continues: the one titled with the name, else the one this terminal showed last, else the latest one made here or anywhere
 func continued(ctx context.Context, conn *connect.Client, service sessionsv1connect.SessionServiceClient, dir, name string) (*sessionsv1.Session, error) {
 	if name != "" {
-		response, err := service.Resolve(ctx, &sessionsv1.ResolveRequest{Ref: name, Tip: true})
+		response, err := service.Resolve(ctx, &sessionsv1.ResolveRequest{Profile: picked.Picked(ctx), Ref: name, Tip: true})
 		if err != nil {
 			return nil, fmt.Errorf("No session matches “%s”. Run icebath sessions list to see your sessions.", name)
 		}
@@ -121,11 +138,11 @@ func continued(ctx context.Context, conn *connect.Client, service sessionsv1conn
 	}
 	settings := configv1connect.NewConfigServiceClient(conn)
 	on := true
-	if setting, err := settings.Get(ctx, &configv1.GetRequest{Key: sessionsconfig.TerminalContinue}); err == nil {
+	if setting, err := settings.Get(ctx, &configv1.GetRequest{Profile: picked.Picked(ctx), Key: sessionsconfig.TerminalContinue}); err == nil {
 		yaml.Unmarshal([]byte(setting.GetSetting().GetValue()), &on)
 	}
 	if crumb, ok := sessions.Remembered(dir); on && ok {
-		if response, err := service.Resolve(ctx, &sessionsv1.ResolveRequest{Ref: crumb.SessionID, Tip: true}); err == nil {
+		if response, err := service.Resolve(ctx, &sessionsv1.ResolveRequest{Profile: picked.Picked(ctx), Ref: crumb.SessionID, Tip: true}); err == nil {
 			return response.GetSession(), nil
 		}
 	}
@@ -137,7 +154,7 @@ func continued(ctx context.Context, conn *connect.Client, service sessionsv1conn
 			return nil, err
 		}
 		if found := listed.GetSessions(); len(found) > 0 {
-			response, err := service.Resolve(ctx, &sessionsv1.ResolveRequest{Ref: found[0].GetId(), Tip: true})
+			response, err := service.Resolve(ctx, &sessionsv1.ResolveRequest{Profile: picked.Picked(ctx), Ref: found[0].GetId(), Tip: true})
 			if err != nil {
 				return found[0], nil
 			}
@@ -177,13 +194,10 @@ func lasted(d time.Duration) string {
 			d -= time.Duration(n) * unit.length
 		}
 	}
-	switch len(parts) {
-	case 0:
+	if len(parts) == 0 {
 		return "Less than a second"
-	case 1:
-		return parts[0]
 	}
-	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
+	return strs.And(parts)
 }
 
 // Says how to come back to the session the app showed last

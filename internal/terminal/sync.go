@@ -91,7 +91,7 @@ func racy(key string) bool {
 
 // Host path resolved through links
 func resolved(path string) string {
-	path = ExpandUser(path)
+	path = fsx.ExpandHome(path)
 	if real, err := filepath.EvalSymlinks(path); err == nil {
 		path = real
 	}

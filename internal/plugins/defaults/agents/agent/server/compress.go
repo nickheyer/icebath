@@ -148,7 +148,7 @@ func (a *Agent) compress(ctx context.Context, r *run, settings *config.Config, e
 		// No memory provider here saves a checkpoint of the chat before it is compressed, so compression the settings make wait for one fails
 		// closed
 		return out, errors.New("Summarizing is stopped, because Require a checkpoint is on and nothing here saves a checkpoint of the session " +
-			"first. Turn off Require a checkpoint in /settings under Long sessions › Summaries.")
+			"first. Turn off Require a checkpoint with /settings require a checkpoint.")
 	}
 	history, err := store.Messages(ctx, env.Session, sessions.Model)
 	if err != nil {
@@ -355,7 +355,7 @@ func (a *Agent) watched(ctx context.Context, r *run, settings *config.Config, en
 		waited.Seconds(), ceiling.Seconds()))
 	engine.TimedOut("host compress_context timeout (no summary progress)", "stalled", idle)
 	a.tell(r, fmt.Sprintf("⚠ The summary model gave no output for %s, so the session goes on without a summary and no message was lost. Type "+
-		"/compress to try again, /new for a new session, or check Summaries in /settings under Helper models.", strs.Span(rounded(idle))))
+		"/compress to try again, /new for a new session, or check the summary model with /settings summaries.", strs.Span(rounded(idle))))
 	return nil, nil
 }
 
@@ -440,7 +440,7 @@ func (a *Agent) rejected(r *run, engine contexts.Engine, input []*sessionsv1.Mes
 		r.mu.Unlock()
 		if !repeat {
 			a.tell(r, fmt.Sprintf("⚠ The summary failed, so the session goes on unchanged. %s\nType /compress to try again, or /new to start a "+
-				"new session.", sentence(failure)))
+				"new session.", strs.Full(failure)))
 		}
 		engine.Settled(contexts.Outcome{})
 		return "aborted"
@@ -462,12 +462,12 @@ func (a *Agent) fellBack(r *run, result *contexts.Result) {
 	var text string
 	switch {
 	case result.Failure != "":
-		text = "⚠ The summary failed, so a short note stands in for the older messages. " + sentence(result.Failure)
+		text = "⚠ The summary failed, so a short note stands in for the older messages. " + strs.Full(result.Failure)
 	case result.AuxModel != "":
 		slog.Warn(fmt.Sprintf("Configured compression model %s failed (%s); recovered using the main model.", result.AuxModel,
 			cmp.Or(result.AuxFailure, "unknown error")))
-		text = fmt.Sprintf("⚠ The summary model %s failed, so your main model made the summary instead. Check Model in /settings under Helper "+
-			"models › Summaries.", result.AuxModel)
+		text = fmt.Sprintf("⚠ The summary model %s failed, so your main model made the summary instead. Check its model "+
+			"with /settings summaries.", result.AuxModel)
 	default:
 		return
 	}

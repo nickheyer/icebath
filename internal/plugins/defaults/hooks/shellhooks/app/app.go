@@ -1,87 +1,63 @@
-// The hooks screen: every shell hook of the profile under the event it runs on with whether it may run, and every address events are
-// posted to; allowing a hook or stopping it, adding and removing hooks, running one or every hook of an event on a sample event, and
-// checking one hook or all of them
+// The page of Hooks: every hook under the event it runs on with whether it may run, every webhook with whether its posts are signed, adding
+// either in a flow, the page of each, checking every hook and testing an event, and the options of the area
 package app
 
 import (
-	"encoding/json"
-	"math"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect/v2"
 
 	"github.com/nickheyer/icebath/internal/app"
-	"github.com/nickheyer/icebath/internal/config"
 	configapp "github.com/nickheyer/icebath/internal/config/app"
-	"github.com/nickheyer/icebath/internal/hooks"
+	hooksconfig "github.com/nickheyer/icebath/internal/hooks/config"
 	shellconfig "github.com/nickheyer/icebath/internal/plugins/defaults/hooks/shellhooks/config"
-	shellhooks "github.com/nickheyer/icebath/internal/plugins/defaults/hooks/shellhooks/hooks"
 	"github.com/nickheyer/icebath/internal/profile"
+	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
+	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
 	hooksv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/hooks/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/hooks/v1/hooksv1connect"
+	"github.com/nickheyer/icebath/pkg/gen/icebath/tools/v1/toolsv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Keymap context of the hooks screen
-const hooksContext = "tui.hooks"
+// Screen of Hooks
+const Screen = "hooks"
+
+// Keymap context of the rows of hooks
+const hooksContext = "hooks"
 
 var actions = []keys.Action{
-	{ID: "tui.hooks.toggle", Context: hooksContext, Label: "turn on/off", Doc: "Turn the highlighted hook on or off", Default: []string{"t"}},
-	{ID: "tui.hooks.test", Context: hooksContext, Label: "test", Doc: "Run the hook once on a sample event and show the answer", Default: []string{"r"}},
-	{ID: "tui.hooks.check", Context: hooksContext, Label: "check", Doc: "Check that the hook can run, is allowed, is unchanged and answers well", Default: []string{"c"}},
+	{ID: "hooks.allow", Context: hooksContext, Label: "allow", Doc: "Allow the hook in hand, or stop allowing it", Default: []string{"t"}},
+	{ID: "hooks.test", Context: hooksContext, Label: "test", Doc: "Run the hook in hand once on a sample of its event", Default: []string{"r"}},
+	{ID: "hooks.check", Context: hooksContext, Label: "check", Doc: "Check that the hook in hand can run, is allowed, is unchanged and answers well",
+		Default: []string{"c"}},
 }
 
-// Headings of the rows that are not hooks of an event
+// Headings of the page besides the events: the webhooks, then the options
 const (
 	webhooksGroup = "Webhooks"
-	moreGroup     = "More"
+	optionsGroup  = "Options"
 )
 
-// One event a shell hook runs on: its name in the settings file, what the screen calls it and what a hook of it does
-type event struct {
-	name, title, about string
-}
-
-// Events a shell hook runs on, in the order the screen lists them, as the settings name and order them
-var events = func() []event {
-	out := make([]event, len(shellconfig.Points))
-	for i, point := range shellconfig.Points {
-		out[i] = event{point.Name, point.Title, point.About}
-	}
-	return out
-}()
-
-// The event of the name as the screen shows it, the name itself for one the screen does not know
-func eventOf(name string) event {
-	for _, e := range events {
-		if e.name == name {
-			return e
-		}
-	}
-	return event{name: name, title: name}
-}
-
-// Place of the event in the order of the screen, those it does not know last
-func place(name string) int {
-	if i := slices.IndexFunc(events, func(e event) bool { return e.name == name }); i >= 0 {
-		return i
-	}
-	return len(events)
-}
-
-// Whether hooks of the event run for each tool call, so they may name the tools they are for
-func toolEvent(name string) bool {
-	point, _ := hooks.PointOf(name)
-	return point.Tool
-}
+// What the argument of the screen opens over the page: a hook, a webhook, a section of its options, or a job
+const (
+	hookOf        = "hook:"
+	webhookOf     = "webhook:"
+	sectionOf     = "section:"
+	argAdd        = "add"
+	argAddWebhook = "add-webhook"
+	argTest       = "test"
+	argCheck      = "check"
+)
 
 type screens struct{}
 
@@ -91,723 +67,575 @@ func Register(registry *app.Registry) {
 
 func (screens) Screens(conn *connect.Client) []tui.Screen {
 	service := hooksv1connect.NewHooksServiceClient(conn)
+	settings := configv1connect.NewConfigServiceClient(conn)
+	picker := &tools{service: toolsv1connect.NewToolServiceClient(conn)}
 	return []tui.Screen{{
-		ID:      "hooks",
+		ID:      Screen,
 		Group:   tui.GroupAbilities,
 		Order:   100,
 		Title:   "Hooks",
 		Short:   "Run your own commands when the agent acts",
 		Slash:   []string{"hooks"},
-		Usage:   "[@profile]",
+		Usage:   "[@profile] [add|add-webhook|test|check]",
+		Area:    hooksconfig.Key,
 		Actions: actions,
-		Where:   map[string]string{hooksContext: "hooks screen"},
+		Where:   map[string]string{hooksContext: "hooks page"},
+		Pages:   func(kit *tui.Kit, name string) []tui.Page { return hookPages(kit, service, name) },
+		Pickers: map[string]tui.Picker{shellconfig.PickTools: {Open: picker.open, Shown: picker.shown}},
 		Open: func(kit *tui.Kit, argument string) tea.Cmd {
-			name, _ := profile.Split(argument)
-			return (&screen{kit: kit, service: service, profile: name}).open()
+			name, rest := profile.Split(argument)
+			return (&page{kit: kit, service: service, settings: settings, tools: picker, profile: name}).open(rest)
 		},
 	}}
 }
 
-// One row of the screen: a shell hook, an address events are posted to, or something done to every hook
-type row struct {
-	hook    *hooksv1.Hook
-	webhook *hooksv1.Webhook
-	act     *action
-}
-
-// Something a row does to every hook
-type action struct {
-	title, about string
-	// Word on the button that does it
-	verb string
-	run  func(l *cards.List) tea.Cmd
-}
-
-type screen struct {
-	kit     *tui.Kit
-	service hooksv1connect.HooksServiceClient
-	// Profile the screen was opened on, the one in use when empty
+// The page of the area on one profile, and the views it opened over itself
+type page struct {
+	kit      *tui.Kit
+	service  hooksv1connect.HooksServiceClient
+	settings configv1connect.ConfigServiceClient
+	tools    *tools
+	// Profile the page was opened on, the one in use when empty
 	profile string
 	hub     *cards.Hub
 	list    *cards.List
+	options *configapp.Rows
 	listing *hooksv1.ListResponse
-	rows    []row
 	loaded  bool
 	err     error
+	// Rows as last listed
+	rows []row
+	// Lists of the pages opened over the page, read again with it
+	views cards.Watched
+	// Row put in hand once the hooks are read again: a hook by its event and command, a webhook by its key
+	focus string
 }
 
-func (s *screen) open() tea.Cmd {
-	title := "Hooks"
-	if s.profile != "" {
-		title += " · " + s.profile
-	}
-	s.list = cards.NewList(s.kit.Env, cards.ListSpec{
-		Title:   title,
-		Glyph:   s.kit.Env.Theme.Glyphs.Terminal,
-		Key:     "tui:hooks",
+// Row of the page: a hook, a webhook, a row that adds either, something done to every hook, an option, a section of options or the row of
+// the advanced options
+type row struct {
+	hook       *hooksv1.Hook
+	webhook    *hooksv1.Webhook
+	addHook    bool
+	addWebhook bool
+	act        *act
+	setting    *configv1.Setting
+	section    string
+	advanced   bool
+}
+
+// Something a row does, its name, what it does, the word on its button, and whether it opens a view of its own
+type act struct {
+	title, about, verb string
+	opens              bool
+	run                func(l *cards.List) tea.Cmd
+}
+
+// Shows the page, then reads the hooks, the tools they may name and the options; an argument opens what it names over the page
+func (p *page) open(argument string) tea.Cmd {
+	t := p.kit.Env.Theme
+	p.list = cards.NewList(p.kit.Env, cards.ListSpec{
+		Title:   "Hooks",
+		Glyph:   t.Glyphs.Terminal,
+		Key:     Screen,
 		Context: cards.HubContext,
-		// Its own keys stay in force on every row, those the footer has no room for too
 		Shared:  []string{hooksContext},
 		Primary: "hub.use",
-		Intro: func() []string {
-			lines := []string{"Hooks run your own commands when the agent acts, such as before it runs a tool."}
-			if s.listing.GetAcceptAll() {
-				lines = append(lines, "Every hook runs without asking, because Run without asking is on in settings.")
+		Intro:   p.intro,
+		Columns: configapp.Columns,
+		Rows: func() [][]string {
+			p.rows = p.order()
+			cells := make([][]string, len(p.rows))
+			for i, r := range p.rows {
+				cells[i] = p.cells(r)
 			}
-			return lines
+			return cells
 		},
-		Columns: []render.Column{{Flex: 1}, {}},
-		Rows:    s.cells,
-		Group:   func(i int) string { return s.group(s.rows[i]) },
-		Detail:  s.detail,
-		Empty: func() string {
-			return tui.Waiting(s.loaded, s.err, "No hooks yet. "+s.kit.Env.Keys.Display("hub.add")+" adds one.")
-		},
-		Hints: func(_ *cards.List, i int) []wm.Hint {
-			add := wm.Hint{Action: "hub.add", Label: "add"}
-			if i < 0 || i >= len(s.rows) {
-				return []wm.Hint{add}
+		Group: func(i int) string { return p.group(p.rows[i]) },
+		Detail: func(i int) []string {
+			if i < 0 || i >= len(p.rows) {
+				return nil
 			}
-			switch r := s.rows[i]; {
-			case r.hook != nil:
-				return []wm.Hint{{Action: "hub.use", Label: "open"}, {Action: "tui.hooks.toggle", Label: toggleLabel(r.hook)},
-					{Action: "tui.hooks.test", Label: "test"}, {Action: "hub.remove", Label: "remove"}, add}
-			case r.webhook != nil:
-				return []wm.Hint{{Action: "hub.use", Label: "change"}, add}
-			}
-			return []wm.Hint{{Action: "hub.use", Label: s.rows[i].act.verb}, add}
+			return p.detail(p.rows[i], p.list.Cut(i, 2))
 		},
-		Free: map[string]bool{"hub.add": true, "hub.refresh": true},
+		Empty:   func() string { return tui.Waiting(p.loaded, p.err, "") },
+		OnFocus: func(*cards.List) tea.Cmd { return p.load() },
+		Free:    map[string]bool{"hub.add": true, "hub.refresh": true},
+		Hints:   func(_ *cards.List, i int) []wm.Hint { return p.hints(i) },
 		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"hub.refresh": func(*cards.List, int) tea.Cmd { return s.load() },
-			"hub.use": func(l *cards.List, i int) tea.Cmd {
-				switch r := s.rows[i]; {
-				case r.hook != nil:
-					return s.page(r.hook)
-				case r.webhook != nil:
-					return s.webhooks()
-				}
-				return s.rows[i].act.run(l)
-			},
-			"hub.add":          func(*cards.List, int) tea.Cmd { return s.add() },
-			"hub.remove":       s.withHook(func(l *cards.List, hook *hooksv1.Hook) tea.Cmd { return s.remove(l, hook) }),
-			"tui.hooks.toggle": s.withHook(func(l *cards.List, hook *hooksv1.Hook) tea.Cmd { return s.toggle(l, hook) }),
-			"tui.hooks.test":   s.withHook(func(_ *cards.List, hook *hooksv1.Hook) tea.Cmd { return s.test(hook, "") }),
-			"tui.hooks.check":  s.withHook(func(_ *cards.List, hook *hooksv1.Hook) tea.Cmd { return s.check(hook) }),
+			"hub.use":     func(l *cards.List, i int) tea.Cmd { return p.use(l, p.rows[i]) },
+			"hub.remove":  func(l *cards.List, i int) tea.Cmd { return p.remove(l, p.rows[i]) },
+			"hub.add":     func(*cards.List, int) tea.Cmd { return p.addHook() },
+			"hub.refresh": func(*cards.List, int) tea.Cmd { return tea.Batch(p.load(), p.options.Load(nil)) },
+			"hooks.allow": p.withHook(func(l *cards.List, hook *hooksv1.Hook) tea.Cmd { return p.toggle(l, hook) }),
+			"hooks.test":  p.withHook(func(_ *cards.List, hook *hooksv1.Hook) tea.Cmd { return p.test(hook) }),
+			"hooks.check": p.withHook(func(_ *cards.List, hook *hooksv1.Hook) tea.Cmd { return p.check(hook) }),
 		},
-		OnFocus: func(*cards.List) tea.Cmd { return s.load() },
 	})
-	s.list.ToggleDetail()
-	s.hub = s.kit.Hub("hooks", s.list)
-	return tea.Batch(s.kit.WM.ShowOverlay(s.hub), s.load())
-}
-
-// Action on the hook of the row under the cursor, nothing on any other row
-func (s *screen) withHook(act func(l *cards.List, hook *hooksv1.Hook) tea.Cmd) func(*cards.List, int) tea.Cmd {
-	return func(l *cards.List, i int) tea.Cmd {
-		if i < 0 || i >= len(s.rows) || s.rows[i].hook == nil {
-			return nil
-		}
-		return act(l, s.rows[i].hook)
-	}
-}
-
-// Shows the hooks the service answered: the shell hooks under their events in the order of the screen, the webhooks, then what can be done
-// to every hook while there are any
-func (s *screen) show(listing *hooksv1.ListResponse) {
-	s.listing = listing
-	shell := slices.Clone(listing.GetHooks())
-	slices.SortStableFunc(shell, func(a, b *hooksv1.Hook) int { return place(a.GetEvent()) - place(b.GetEvent()) })
-	s.rows = s.rows[:0]
-	for _, hook := range shell {
-		s.rows = append(s.rows, row{hook: hook})
-	}
-	for _, webhook := range listing.GetWebhooks() {
-		s.rows = append(s.rows, row{webhook: webhook})
-	}
-	if len(shell) > 0 {
-		for _, act := range s.actions(shell) {
-			s.rows = append(s.rows, row{act: act})
-		}
-	}
-	s.list.Refresh()
-}
-
-// What can be done to every hook: allowing those not allowed yet, checking them all, and running the hooks of an event on a sample
-func (s *screen) actions(shell []*hooksv1.Hook) []*action {
-	var out []*action
-	if slices.ContainsFunc(shell, func(hook *hooksv1.Hook) bool { return !hook.GetAllowed() || hook.GetChanged() }) && !s.listing.GetAcceptAll() {
-		out = append(out, &action{"Allow every hook", "Let every hook in your settings run", "allow", func(l *cards.List) tea.Cmd {
-			l.Confirm("Allow every hook in your settings? Each one runs with your full rights.", s.acceptAll)
-			return nil
-		}})
-	}
-	return append(out,
-		&action{"Check every hook", "See whether each hook can run, is allowed, is unchanged and answers well", "check", func(*cards.List) tea.Cmd {
-			return s.checkAll()
-		}},
-		&action{"Test an event", "Run every hook of an event on a sample of it, with your own data if you like", "test", func(*cards.List) tea.Cmd {
-			return s.testEvent()
-		}})
-}
-
-// Reads the hooks again
-func (s *screen) load() tea.Cmd {
-	return tui.Async(func() func() tea.Cmd {
-		listing, err := s.service.List(s.kit.Env.Ctx, &hooksv1.ListRequest{Profile: s.profile})
-		return func() tea.Cmd {
-			s.err, s.loaded = err, true
-			if err == nil {
-				s.show(listing)
-			} else {
-				s.list.Refresh()
-			}
-			return nil
-		}
-	})
-}
-
-// Sends one change and shows the hooks it answers, back on the list, the note saying what was done
-func (s *screen) change(request *hooksv1.ChangeRequest, done string) tea.Cmd {
-	request.Profile = s.profile
-	back := s.hub.PopTo(s.list)
-	s.hub.Busy("Saving…")
-	return tea.Batch(back, tui.Call(s.hub, func() (*hooksv1.ChangeResponse, error) {
-		return s.service.Change(s.kit.Env.Ctx, request)
-	}, func(response *hooksv1.ChangeResponse) tea.Cmd {
-		s.show(response.GetHooks())
-		return s.hub.Done(done)
+	p.list.ToggleDetail()
+	hub, cmd := p.kit.Show(Screen, p.list)
+	p.hub = hub
+	p.options = configapp.NewRows(p.kit, hub, p.settings, p.profile)
+	p.options.Watch(p.list)
+	// What the argument opens may be a section of the options, so they are read first
+	return tea.Batch(cmd, p.tools.load(p.kit, p.profile, p.refresh), p.options.Load(func() tea.Cmd {
+		return p.read(func() tea.Cmd { return p.reach(strings.TrimSpace(argument)) })
 	}))
 }
 
-// Heading a row is listed under: the event of a hook, the webhooks, or what is done to every hook
-func (s *screen) group(r row) string {
+// Opens what the argument names over the page
+func (p *page) reach(argument string) tea.Cmd {
 	switch {
-	case r.hook != nil:
-		return eventOf(r.hook.GetEvent()).title
-	case r.webhook != nil:
-		return webhooksGroup
-	}
-	return moreGroup
-}
-
-// Whether a hook may run, in words
-func (s *screen) state(hook *hooksv1.Hook) string {
-	t := s.kit.Env.Theme
-	switch {
-	case hook.GetAllowed() && hook.GetChanged():
-		return render.Warm("Changed since you allowed it", t)
-	case hook.GetAllowed():
-		return render.Good("Allowed", t)
-	case s.listing.GetAcceptAll():
-		return "Runs without asking"
-	}
-	return render.Warm("Not allowed", t)
-}
-
-// Word for the button that lets a hook run or stops it
-func toggleLabel(hook *hooksv1.Hook) string {
-	if hook.GetAllowed() && !hook.GetChanged() {
-		return "stop allowing"
-	}
-	return "allow"
-}
-
-// Cells of every row: the command, the name of a webhook or what a row does, and the state of a hook or a webhook
-func (s *screen) cells() [][]string {
-	t := s.kit.Env.Theme
-	out := make([][]string, len(s.rows))
-	for i, r := range s.rows {
-		switch {
-		case r.hook != nil:
-			out[i] = []string{r.hook.GetCommand(), s.state(r.hook)}
-		case r.webhook != nil:
-			signed := render.Dim("Not signed", t)
-			if r.webhook.GetSigned() {
-				signed = "Signed"
-			}
-			out[i] = []string{r.webhook.GetLabel(), signed}
-		default:
-			out[i] = []string{r.act.title, ""}
-		}
-	}
-	return out
-}
-
-// Lines under the list about the highlighted row
-func (s *screen) detail(i int) []string {
-	if i < 0 || i >= len(s.rows) {
+	case argument == "":
 		return nil
+	case argument == argAdd:
+		return p.addHook()
+	case argument == argAddWebhook:
+		return p.addWebhook()
+	case argument == argTest:
+		return p.testEvent()
+	case argument == argCheck:
+		return p.checkAll()
+	case strings.HasPrefix(argument, hookOf):
+		event, command, _ := strings.Cut(strings.TrimPrefix(argument, hookOf), " ")
+		if p.hook(event, command) != nil {
+			return p.hookPage(event, command)
+		}
+		return p.hub.Fail("There is no hook " + command + " on " + shellconfig.PointOf(event).Title + " now.")
+	case strings.HasPrefix(argument, webhookOf):
+		key := strings.TrimPrefix(argument, webhookOf)
+		if p.webhook(key) != nil {
+			return p.webhookPage(key)
+		}
+		return p.hub.Fail("That webhook is no longer there.")
+	case strings.HasPrefix(argument, sectionOf):
+		return p.sectionPage(strings.TrimPrefix(argument, sectionOf))
 	}
-	switch r := s.rows[i]; {
-	case r.webhook != nil:
-		return s.webhookFacts(r.webhook)
-	case r.act != nil:
-		return []string{r.act.about + "."}
-	}
-	return s.facts(s.rows[i].hook)
+	return p.hub.Fail("The Hooks page has nothing called " + argument + ".")
 }
 
-// What a hook is and how it stands: its event, its command whole, the tools it is for, how long it may take, what its failure does,
-// whether it may run and whether its script changed since
-func (s *screen) facts(hook *hooksv1.Hook) []string {
-	t := s.kit.Env.Theme
-	e := eventOf(hook.GetEvent())
-	var lines []string
-	if e.about != "" {
-		lines = append(lines, e.about+".")
+// First line of the page, what the area is; in the warm colour the hooks left out under names that are no event; and while there are no
+// hooks that there are none
+func (p *page) intro() []string {
+	lines := []string{"Your own commands that run when the agent acts."}
+	if ignored := p.listing.GetIgnored(); len(ignored) > 0 {
+		lines = append(lines, render.Warm(ignoredWords(ignored), p.kit.Env.Theme))
 	}
-	lines = append(lines, "Command: "+hook.GetCommand(), render.Dim("Event in the settings file: "+hook.GetEvent(), t))
-	if matcher := hook.GetMatcher(); matcher != "" {
-		lines = append(lines, "Only for the tools "+matcher+".")
-	}
-	lines = append(lines, "May take up to "+seconds(float64(hook.GetTimeout()))+".")
-	if hook.GetFailClosed() {
-		lines = append(lines, "If the command fails, the tool call is blocked.")
-	}
-	switch {
-	case hook.GetAllowed() && hook.GetApprovedAt() != "":
-		lines = append(lines, render.Good("You allowed it on "+hook.GetApprovedAt()+".", t))
-	case hook.GetAllowed():
-		lines = append(lines, render.Good("You allowed it.", t))
-	case s.listing.GetAcceptAll():
-		lines = append(lines, "It runs without asking, because Run without asking is on in settings.")
-	default:
-		lines = append(lines, render.Warm("Not allowed yet, so it doesn't run.", t))
-	}
-	if hook.GetChanged() {
-		lines = append(lines, render.Warm(changed(hook.GetChangedWas(), hook.GetChangedNow()), t))
+	if p.loaded && p.err == nil && len(p.listing.GetHooks()) == 0 {
+		lines = append(lines, "No hooks yet.")
 	}
 	return lines
 }
 
-// What changed in a script since it was allowed, from its times then and now
-func changed(was, now string) string {
-	return "The script changed after you allowed it. It was dated " + was + " then, and is dated " + now + " now. Allow it again to let it run."
+// Hooks left out under names that are no event, in a sentence
+func ignoredWords(names []string) string {
+	if len(names) == 1 {
+		return "The hooks under " + names[0] + " in your settings file are left out, because icebath has no event of that name."
+	}
+	return "The hooks under " + strs.And(names) + " in your settings file are left out, because icebath has no events of those names."
 }
 
-// Where a webhook posts, on which events, for which tools, how long it may take and whether its posts are signed
-func (s *screen) webhookFacts(target *hooksv1.Webhook) []string {
-	t := s.kit.Env.Theme
-	lines := []string{"Posts what the agent does to " + target.GetUrl() + "."}
-	var on []string
-	for _, name := range target.GetEvents() {
-		on = append(on, eventOf(name).title)
-	}
-	lines = append(lines, "On: "+strings.Join(on, ", ")+".")
-	if matcher := target.GetMatcher(); matcher != "" {
-		lines = append(lines, "Only for the tools "+matcher+".")
-	}
-	lines = append(lines, "May take up to "+seconds(float64(target.GetTimeout()))+".")
-	if target.GetSigned() {
-		lines = append(lines, "Each post is signed with your secret.")
-	} else {
-		lines = append(lines, render.Dim("Posts are not signed.", t))
-	}
-	return append(lines, render.Dim("Webhooks are kept under Hooks › Shell hooks › Webhooks in settings.", t))
-}
+// Reads the hooks again
+func (p *page) load() tea.Cmd { return p.read(nil) }
 
-// Opens the webhooks setting in place of the screen
-func (s *screen) webhooks() tea.Cmd {
-	return tea.Batch(s.kit.WM.DismissCard(s.hub), s.kit.Open(configapp.Edit, profile.Join(s.profile, shellconfig.Outbound)))
-}
-
-// One hook over the list: what it is, then what can be done to it
-func (s *screen) page(hook *hooksv1.Hook) tea.Cmd {
-	type step struct {
-		title, about string
-		// Word on the button that runs it
-		verb string
-		run  func(l *cards.List) tea.Cmd
-	}
-	t := s.kit.Env.Theme
-	current := func() *hooksv1.Hook {
-		for _, have := range s.listing.GetHooks() {
-			if have.GetEvent() == hook.GetEvent() && have.GetCommand() == hook.GetCommand() {
-				return have
+// Reads the hooks again, then runs then
+func (p *page) read(then func() tea.Cmd) tea.Cmd {
+	return tui.Async(func() func() tea.Cmd {
+		listing, err := p.service.List(p.kit.Env.Ctx, &hooksv1.ListRequest{Profile: p.profile})
+		return func() tea.Cmd {
+			p.err, p.loaded = err, true
+			if err == nil {
+				p.listing = listing
 			}
-		}
-		return hook
-	}
-	steps := func() []step {
-		now := current()
-		toggle := step{"Allow", "Let it run. A hook runs with your full rights", "allow", func(l *cards.List) tea.Cmd { return s.toggle(l, now) }}
-		if toggleLabel(now) != "allow" {
-			toggle = step{"Stop allowing", "It stays in your settings but no longer runs", "stop allowing", func(l *cards.List) tea.Cmd { return s.toggle(l, now) }}
-		}
-		out := []step{toggle, {"Test", "Run it once on a sample event and show what it answers", "test", func(*cards.List) tea.Cmd { return s.test(now, "") }}}
-		if toolEvent(now.GetEvent()) {
-			out = append(out, step{"Test with a tool", "Run it on a sample call of a tool you name", "test", func(*cards.List) tea.Cmd { return s.testTool(now) }})
-		}
-		return append(out, step{"Check", "See whether it can run, is allowed, is unchanged and answers well", "check", func(*cards.List) tea.Cmd { return s.check(now) }},
-			step{"Remove", "Take it out of your settings", "remove", func(l *cards.List) tea.Cmd { return s.remove(l, now) }})
-	}
-	var shown []step
-	var list *cards.List
-	list = cards.NewList(s.kit.Env, cards.ListSpec{
-		Title:   hook.GetCommand(),
-		Glyph:   t.Glyphs.Terminal,
-		Key:     "tui:hooks:" + hook.GetEvent() + ":" + hook.GetCommand(),
-		Context: cards.HubContext,
-		Primary: "hub.use",
-		Intro:   func() []string { return s.facts(current()) },
-		Columns: []render.Column{{}, {Flex: 1, Whole: true}},
-		Rows: func() [][]string {
-			shown = steps()
-			cells := make([][]string, len(shown))
-			for i, st := range shown {
-				cells[i] = []string{st.title, render.Dim(st.about, t)}
-			}
-			return cells
-		},
-		Detail: func(i int) []string {
-			if list.Shows(1) || i < 0 || i >= len(shown) {
-				return nil
-			}
-			return []string{shown[i].about + "."}
-		},
-		Hints: func(_ *cards.List, i int) []wm.Hint {
-			if i < 0 || i >= len(shown) {
-				return nil
-			}
-			return []wm.Hint{{Action: "hub.use", Label: shown[i].verb}}
-		},
-		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"hub.use": func(l *cards.List, i int) tea.Cmd { return shown[i].run(l) },
-		},
-	})
-	list.ToggleDetail()
-	return s.hub.Push(list)
-}
-
-// Form of a new hook: the event it runs on, its command, and behind more options the tools it is for and how long it may take
-func (s *screen) add() tea.Cmd {
-	names := slices.Clone(s.listing.GetEvents())
-	slices.SortStableFunc(names, func(a, b string) int { return place(a) - place(b) })
-	chosen := ""
-	if len(names) > 0 {
-		chosen = names[0]
-	}
-	fields := func(on string, values map[string]string) []cards.Field {
-		choice := cards.Field{ID: "event", Label: "Event", Kind: cards.FieldChoice, Value: on, Required: true}
-		for _, name := range names {
-			e := eventOf(name)
-			choice.Choices = append(choice.Choices, cards.Choice{Value: name, Label: e.title, Meaning: e.about})
-		}
-		out := []cards.Field{choice,
-			{ID: "command", Label: "Command", Value: values["command"], Required: true, Help: "The path of a script, or a command line.\nIt gets what happened as JSON on its input."}}
-		if toolEvent(on) {
-			out = append(out, cards.Field{ID: "tools", Label: "Tools", Value: values["tools"], More: true,
-				Help: "A pattern of tool names, such as terminal or web_*.\nLeave empty for every tool."})
-		}
-		return append(out, cards.Field{ID: "seconds", Label: "Time limit", Kind: cards.FieldNumber, Value: values["seconds"], More: true,
-			Help:  "Seconds the command may take, from 1 to " + strconv.Itoa(shellhooks.MaxTimeout) + ".\nLeave empty for " + strconv.Itoa(shellhooks.DefaultTimeout) + " seconds.",
-			Check: limit})
-	}
-	var form *cards.Form
-	form = cards.NewForm(s.kit.Env, cards.FormSpec{
-		Title:  "New hook",
-		Intro:  []string{"A hook runs your command when the agent acts. Choose when it runs, then the command."},
-		Fields: fields(chosen, nil),
-		Submit: "Add",
-		Pick: func(f *cards.Form, field cards.Field) tea.Cmd {
-			return s.pickEvent(field, func(name string) tea.Cmd { return f.Commit(field.ID, name) })
-		},
-		Changed: func(f *cards.Form, field cards.Field) tea.Cmd {
-			if field.ID == "event" && field.Value != chosen {
-				chosen = field.Value
-				f.SetFields(fields(chosen, f.Values()))
+			p.refresh()
+			if then != nil {
+				return then()
 			}
 			return nil
-		},
-		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
-			timeout, _ := strconv.Atoi(strings.TrimSpace(values["seconds"]))
-			command := strings.TrimSpace(values["command"])
-			told := "Added " + command + ". It runs once you allow it."
-			if s.listing.GetAcceptAll() {
-				told = "Added " + command + "."
-			}
-			return s.change(&hooksv1.ChangeRequest{Verb: "add", Event: values["event"], Command: command, Matcher: strings.TrimSpace(values["tools"]),
-				Timeout: int32(timeout)}, told)
-		},
+		}
 	})
-	return s.hub.Push(form)
 }
 
-// What is wrong with a time limit typed for a hook, nothing for an empty one or whole seconds within the bounds
-func limit(typed string) string {
-	typed = strings.TrimSpace(typed)
-	if typed == "" {
-		return ""
+// Shows the hooks as last read on the page and on every page opened over it, the row asked for in hand
+func (p *page) refresh() {
+	p.list.Refresh()
+	p.views.Refresh()
+	if p.focus == "" {
+		return
 	}
-	n, err := strconv.Atoi(typed)
-	if err != nil || n < 1 || n > shellhooks.MaxTimeout {
-		return "Must be whole seconds from 1 to " + strconv.Itoa(shellhooks.MaxTimeout) + "."
+	for i, r := range p.rows {
+		if p.focusOf(r) == p.focus && p.list.Select(i) {
+			p.focus = ""
+			return
+		}
+	}
+}
+
+// What a row is put in hand by
+func (p *page) focusOf(r row) string {
+	switch {
+	case r.hook != nil:
+		return hookOf + r.hook.GetEvent() + " " + r.hook.GetCommand()
+	case r.webhook != nil:
+		return webhookOf + r.webhook.GetKey()
 	}
 	return ""
 }
 
-// Opens the events to choose one from, the one in the field marked
-func (s *screen) pickEvent(field cards.Field, chose func(name string) tea.Cmd) tea.Cmd {
-	choices := make([]tui.Choice, len(field.Choices))
-	for i, choice := range field.Choices {
-		choices[i] = tui.Choice{ID: choice.Value, Title: choice.Label, Detail: choice.Meaning}
+// Hook of the event and command as last read, nil for none
+func (p *page) hook(event, command string) *hooksv1.Hook {
+	for _, hook := range p.listing.GetHooks() {
+		if hook.GetEvent() == event && hook.GetCommand() == command {
+			return hook
+		}
 	}
-	return s.kit.Pick(s.hub, "When it runs", "choose", choices, field.Value, func(choice tui.Choice) tea.Cmd { return chose(choice.ID) })
-}
-
-// Lets every hook the settings set run, after a yes
-func (s *screen) acceptAll() tea.Cmd {
-	s.hub.Busy("Saving…")
-	return tui.Call(s.hub, func() (*hooksv1.AcceptResponse, error) {
-		return s.service.Accept(s.kit.Env.Ctx, &hooksv1.AcceptRequest{Profile: s.profile})
-	}, func(*hooksv1.AcceptResponse) tea.Cmd {
-		return tea.Batch(s.load(), s.hub.Done("Every hook in your settings is now allowed."))
-	})
-}
-
-// Lets a hook run
-func (s *screen) allow(hook *hooksv1.Hook) tea.Cmd {
-	return s.change(&hooksv1.ChangeRequest{Verb: "allow", Event: hook.GetEvent(), Command: hook.GetCommand()}, hook.GetCommand()+" is now allowed.")
-}
-
-// Stops a hook from running, its settings staying
-func (s *screen) revoke(hook *hooksv1.Hook) tea.Cmd {
-	return s.change(&hooksv1.ChangeRequest{Verb: "revoke", Event: hook.GetEvent(), Command: hook.GetCommand()},
-		hook.GetCommand()+" is no longer allowed. It stays in your settings.")
-}
-
-// Takes a hook out of the settings
-func (s *screen) drop(hook *hooksv1.Hook) tea.Cmd {
-	return s.change(&hooksv1.ChangeRequest{Verb: "remove", Event: hook.GetEvent(), Command: hook.GetCommand()}, "Removed "+hook.GetCommand()+".")
-}
-
-// Lets a hook run after a yes, or stops an allowed one at once
-func (s *screen) toggle(l *cards.List, hook *hooksv1.Hook) tea.Cmd {
-	if toggleLabel(hook) != "allow" {
-		return s.revoke(hook)
-	}
-	l.Confirm("Allow "+hook.GetCommand()+"? It runs with your full rights.", func() tea.Cmd { return s.allow(hook) })
 	return nil
 }
 
-// Takes a hook out of the settings after a yes
-func (s *screen) remove(l *cards.List, hook *hooksv1.Hook) tea.Cmd {
-	l.Confirm("Remove "+hook.GetCommand()+"? It leaves your settings and no longer runs.", func() tea.Cmd { return s.drop(hook) })
+// Webhook of the key as last read, nil for none
+func (p *page) webhook(key string) *hooksv1.Webhook {
+	for _, webhook := range p.listing.GetWebhooks() {
+		if webhook.GetKey() == key {
+			return webhook
+		}
+	}
 	return nil
 }
 
-// Length of time in words from a count of seconds, to the millisecond
-func seconds(value float64) string {
-	return config.Span(time.Duration(math.Round(value*1000)) * time.Millisecond)
+// Hooks under their events in the order the events are listed
+func (p *page) sorted() []*hooksv1.Hook {
+	shell := slices.Clone(p.listing.GetHooks())
+	slices.SortStableFunc(shell, func(a, b *hooksv1.Hook) int { return shellconfig.Place(a.GetEvent()) - shellconfig.Place(b.GetEvent()) })
+	return shell
 }
 
-// Lines telling how one run of a hook's command ended
-func (s *screen) runLines(run *hooksv1.Run) []string {
-	t := s.kit.Env.Theme
-	var out []string
+// Rows of the page once the hooks are read: the hooks by event, the row that adds one, what is done to every hook while there are any, the
+// webhooks and the row that adds one, then the options, the section of long output and the row of the advanced options
+func (p *page) order() []row {
+	if !p.loaded || p.err != nil {
+		return nil
+	}
+	var rows []row
+	shell := p.sorted()
+	for _, hook := range shell {
+		rows = append(rows, row{hook: hook})
+	}
+	rows = append(rows, row{addHook: true})
+	if len(shell) > 0 {
+		for _, a := range p.acts(shell) {
+			rows = append(rows, row{act: a})
+		}
+	}
+	for _, webhook := range p.listing.GetWebhooks() {
+		rows = append(rows, row{webhook: webhook})
+	}
+	rows = append(rows, row{addWebhook: true})
+	everyday, _ := p.options.Section(hooksconfig.Key)
+	for _, setting := range everyday {
+		rows = append(rows, row{setting: setting})
+	}
+	if p.options.Info(hooksconfig.SpillKey) != nil {
+		rows = append(rows, row{section: hooksconfig.SpillKey})
+	}
+	if _, _, ok := p.options.Advanced(hooksconfig.Key); ok {
+		rows = append(rows, row{advanced: true})
+	}
+	return rows
+}
+
+// What is done to every hook: allowing those that wait for it, checking them all, and testing an event
+func (p *page) acts(shell []*hooksv1.Hook) []*act {
+	var out []*act
+	waiting := 0
+	for _, hook := range shell {
+		if !hook.GetAllowed() && !hook.GetUnasked() {
+			waiting++
+		}
+	}
+	if waiting > 1 {
+		out = append(out, &act{title: "Allow every hook", about: "Lets each hook that is not allowed run, with your full rights.", verb: "allow",
+			run: func(l *cards.List) tea.Cmd {
+				l.Confirm(cards.Question{Text: "Allow " + render.Count(waiting, "hook") + " to run? Each runs with your full rights when its event happens.",
+					Verb: "Allow"}, p.acceptAll)
+				return nil
+			}})
+	}
+	return append(out,
+		&act{title: "Check every hook", about: "Checks that each hook can run, is allowed, is unchanged and answers well.", verb: "check",
+			run: func(*cards.List) tea.Cmd { return p.checkAll() }},
+		&act{title: "Test an event", about: "Runs every hook of an event once, on a sample of what happens then.", verb: "test", opens: true,
+			run: func(*cards.List) tea.Cmd { return p.testEvent() }})
+}
+
+// Heading a row is listed under: a hook the title of its event, the rows after the hooks none so they sit with them, the webhooks theirs,
+// and the options theirs
+func (p *page) group(r row) string {
 	switch {
-	case run.GetError() != "":
-		out = append(out, render.Bad("It couldn't run: "+run.GetError(), t))
-	case run.GetTimedOut():
-		out = append(out, render.Bad("It didn't finish within "+seconds(run.GetSeconds())+".", t))
-	case run.GetExited() && run.GetExitCode() != 0:
-		out = append(out, render.Warm("It ended with code "+strconv.Itoa(int(run.GetExitCode()))+" after "+seconds(run.GetSeconds())+".", t))
-	case run.GetExited():
-		out = append(out, render.Good("It ended well after "+seconds(run.GetSeconds())+".", t))
-	}
-	if text := strings.TrimSpace(run.GetStdout()); text != "" {
-		out = append(out, "Output: "+text)
-	}
-	if text := strings.TrimSpace(run.GetStderr()); text != "" {
-		out = append(out, "Errors: "+text)
-	}
-	if run.GetDirective() == "" {
-		return append(out, "It answered nothing.")
-	}
-	return append(out, "It answered: "+run.GetDirective())
-}
-
-// Page of the hub showing the lines
-func (s *screen) showPage(title, key string, lines []string) tea.Cmd {
-	return s.hub.Push(cards.NewPage(s.kit.Env, cards.PageSpec{Title: title, Key: key, Lines: func(int) []string { return lines }}))
-}
-
-// Runs a hook once on a sample event, the tool given named in it, and shows how it ended
-func (s *screen) test(hook *hooksv1.Hook, tool string) tea.Cmd {
-	s.hub.Busy("Running " + hook.GetCommand() + "…")
-	return tui.Call(s.hub, func() (*hooksv1.TestResponse, error) {
-		return s.service.Test(s.kit.Env.Ctx, &hooksv1.TestRequest{Profile: s.profile, Event: hook.GetEvent(), Command: hook.GetCommand(), Tool: tool})
-	}, func(response *hooksv1.TestResponse) tea.Cmd {
-		s.hub.Quiet()
-		t := s.kit.Env.Theme
-		lines := []string{render.Heading(hook.GetCommand(), t), render.Dim("Ran on a sample of "+eventOf(hook.GetEvent()).title+".", t), ""}
-		if tool != "" {
-			lines[1] = render.Dim("Ran on a sample call of "+tool+".", t)
-		}
-		for _, tested := range response.GetRuns() {
-			lines = append(lines, s.runLines(tested.GetRun())...)
-		}
-		return s.showPage("Test", "tui:hooks:test", lines)
-	})
-}
-
-// Asks the tool a sample call names, then runs the hook on it
-func (s *screen) testTool(hook *hooksv1.Hook) tea.Cmd {
-	field := cards.Field{Label: "Tool", Help: "The name of the tool the sample call is for, such as terminal."}
-	return s.kit.Ask(s.hub, "Test with a tool", field, "Test", func(tool string) tea.Cmd { return s.test(hook, tool) })
-}
-
-// Form that runs every hook of an event on a sample of it: the event, the tool a sample call names, and fields laid over the sample
-func (s *screen) testEvent() tea.Cmd {
-	names := slices.Clone(s.listing.GetEvents())
-	slices.SortStableFunc(names, func(a, b string) int { return place(a) - place(b) })
-	chosen := ""
-	for _, hook := range s.listing.GetHooks() {
-		if chosen == "" || place(hook.GetEvent()) < place(chosen) {
-			chosen = hook.GetEvent()
-		}
-	}
-	fields := func(on string, values map[string]string) []cards.Field {
-		choice := cards.Field{ID: "event", Label: "Event", Kind: cards.FieldChoice, Value: on, Required: true}
-		for _, name := range names {
-			e := eventOf(name)
-			choice.Choices = append(choice.Choices, cards.Choice{Value: name, Label: e.title, Meaning: e.about})
-		}
-		out := []cards.Field{choice}
-		if toolEvent(on) {
-			out = append(out, cards.Field{ID: "tool", Label: "Tool", Value: values["tool"],
-				Help: "The tool the sample call is for, such as terminal.\nOnly the hooks for that tool run. Leave empty to run every hook of the event."})
-		}
-		return append(out, cards.Field{ID: "payload", Label: "Your data", Value: values["payload"],
-			Help:  "Fields laid over the sample, as JSON such as {\"command\": \"ls\"}.\nLeave empty to use the sample as it is.",
-			Check: object})
-	}
-	var form *cards.Form
-	form = cards.NewForm(s.kit.Env, cards.FormSpec{
-		Title:  "Test an event",
-		Intro:  []string{"Runs every hook of an event once, on a sample of what happens then."},
-		Fields: fields(chosen, nil),
-		Submit: "Test",
-		Pick: func(f *cards.Form, field cards.Field) tea.Cmd {
-			return s.pickEvent(field, func(name string) tea.Cmd { return f.Commit(field.ID, name) })
-		},
-		Changed: func(f *cards.Form, field cards.Field) tea.Cmd {
-			if field.ID == "event" && field.Value != chosen {
-				chosen = field.Value
-				f.SetFields(fields(chosen, f.Values()))
-			}
-			return nil
-		},
-		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
-			name, tool, payload := values["event"], strings.TrimSpace(values["tool"]), strings.TrimSpace(values["payload"])
-			s.hub.Busy("Running the hooks of " + eventOf(name).title + "…")
-			return tui.Call(s.hub, func() (*hooksv1.TestResponse, error) {
-				return s.service.Test(s.kit.Env.Ctx, &hooksv1.TestRequest{Profile: s.profile, Event: name, Tool: tool, Payload: payload})
-			}, func(response *hooksv1.TestResponse) tea.Cmd {
-				s.hub.Quiet()
-				t := s.kit.Env.Theme
-				lines := []string{render.Dim("Ran on a sample of "+eventOf(name).title+".", t)}
-				if len(response.GetRuns()) == 0 {
-					lines = append(lines, "", "No hook runs on this event.")
-				}
-				for _, tested := range response.GetRuns() {
-					lines = append(append(lines, "", render.Heading(tested.GetCommand(), t)), s.runLines(tested.GetRun())...)
-				}
-				return tea.Batch(s.hub.Close(form), s.showPage("Test", "tui:hooks:test-event", lines))
-			})
-		},
-	})
-	return s.hub.Push(form)
-}
-
-// What is wrong with fields typed to lay over a sample, nothing for none or a JSON object
-func object(typed string) string {
-	if strings.TrimSpace(typed) == "" {
-		return ""
-	}
-	var fields map[string]any
-	if json.Unmarshal([]byte(typed), &fields) != nil {
-		return "Must be a JSON object, such as {\"command\": \"ls\"}."
+	case r.hook != nil:
+		return shellconfig.PointOf(r.hook.GetEvent()).Title
+	case r.webhook != nil, r.addWebhook:
+		return webhooksGroup
+	case r.setting != nil, r.section != "", r.advanced:
+		return optionsGroup
 	}
 	return ""
 }
 
-// Lines telling what a check of one hook found
-func (s *screen) checkLines(c *hooksv1.Checked) []string {
-	t := s.kit.Env.Theme
-	var lines []string
-	if c.GetRunnable() {
-		lines = append(lines, render.Good("The script is there and can run.", t))
-	} else {
-		lines = append(lines, render.Bad("The script is missing or can't run.", t))
-	}
+// Cells of a row: its name, the mark of a changed value or of a row that opens, and its state or value
+func (p *page) cells(r row) []string {
+	t := p.kit.Env.Theme
+	opens := render.Dim(t.Glyphs.Forward, t)
 	switch {
-	case c.GetAllowed() && c.GetApprovedAt() != "" && c.GetApprovedAt() != "?":
-		lines = append(lines, render.Good("You allowed it on "+c.GetApprovedAt()+".", t))
-	case c.GetAllowed():
-		lines = append(lines, render.Good("You allowed it.", t))
-	default:
-		lines = append(lines, render.Bad("Not allowed, so it doesn't run.", t))
+	case r.hook != nil:
+		return []string{r.hook.GetCommand(), "", hookState(r.hook.GetState(), t)}
+	case r.webhook != nil:
+		return []string{r.webhook.GetLabel(), "", webhookState(r.webhook, t)}
+	case r.addHook:
+		return []string{"Add a hook", opens, ""}
+	case r.addWebhook:
+		return []string{"Add a webhook", opens, ""}
+	case r.act != nil && r.act.opens:
+		return []string{r.act.title, opens, ""}
+	case r.act != nil:
+		return []string{r.act.title, "", ""}
+	case r.setting != nil:
+		return p.options.Cells(r.setting)
+	case r.section != "":
+		return []string{p.options.Info(r.section).GetTitle(), opens, render.Dim(p.inside(r.section), t)}
 	}
-	switch {
-	case c.GetChanged():
-		lines = append(lines, render.Bad(changed(c.GetChangedWas(), c.GetChangedNow()), t))
-	case c.GetCompared():
-		lines = append(lines, render.Good("Unchanged since you allowed it.", t))
-	}
-	if run := c.GetRun(); run != nil {
-		switch c.GetOutput() {
-		case "empty":
-			lines = append(lines, render.Good("It ran and answered nothing, so it only watches.", t))
-		case "json":
-			lines = append(lines, render.Good("It ran and its answer is well formed.", t))
-		case "invalid":
-			lines = append(lines, render.Bad("Its answer is not well formed: "+strings.TrimSpace(run.GetStdout()), t))
-		default:
-			lines = append(lines, s.runLines(run)[0])
-		}
-	}
-	if n := int(c.GetProblems()); n > 0 {
-		return append(lines, render.Bad(render.Count(n, "problem")+" found.", t))
-	}
-	return append(lines, render.Good("No problems found.", t))
+	cells, _, _ := p.options.Advanced(hooksconfig.Key)
+	return cells
 }
 
-// Checks a hook and shows what was found
-func (s *screen) check(hook *hooksv1.Hook) tea.Cmd {
-	s.hub.Busy("Checking " + hook.GetCommand() + "…")
-	return tui.Call(s.hub, func() (*hooksv1.CheckResponse, error) {
-		return s.service.Check(s.kit.Env.Ctx, &hooksv1.CheckRequest{Profile: s.profile, Event: hook.GetEvent(), Command: hook.GetCommand()})
-	}, func(response *hooksv1.CheckResponse) tea.Cmd {
-		s.hub.Quiet()
-		lines := []string{render.Heading(hook.GetCommand(), s.kit.Env.Theme), ""}
-		for _, c := range response.GetChecks() {
-			lines = append(lines, s.checkLines(c)...)
+// State of a hook in its words, in the colour of what it means
+func hookState(state string, t theme.Theme) string {
+	switch state {
+	case "Allowed":
+		return render.Good(state, t)
+	case "Not allowed":
+		return render.Warm(state, t)
+	}
+	return render.Bad(state, t)
+}
+
+// State of a webhook in its words, dim while its posts are not signed
+func webhookState(webhook *hooksv1.Webhook, t theme.Theme) string {
+	if webhook.GetSigned() {
+		return webhook.GetState()
+	}
+	return render.Dim(webhook.GetState(), t)
+}
+
+// How many settings a row that opens a section holds, and how many were changed
+func (p *page) inside(key string) string {
+	everyday, advanced := p.options.Own(key)
+	all := append(everyday, advanced...)
+	changed := 0
+	for _, setting := range all {
+		if setting.GetSource() == configv1.Source_SOURCE_FILE {
+			changed++
 		}
-		return s.showPage("Check", "tui:hooks:check", lines)
+	}
+	said := render.Count(len(all), "setting")
+	if changed > 0 {
+		said += ", " + strconv.Itoa(changed) + " changed"
+	}
+	return said
+}
+
+// Lines under the list about the row in hand, never what the row or the first line says
+func (p *page) detail(r row, cut bool) []string {
+	t := p.kit.Env.Theme
+	switch {
+	case r.hook != nil:
+		return p.hookFacts(r.hook)
+	case r.webhook != nil:
+		return p.webhookFacts(r.webhook)
+	case r.addHook:
+		return []string{"A command of yours that runs when the agent acts, such as a check before each tool call."}
+	case r.addWebhook:
+		return []string{"A web address that is told what the agent does, such as a bot of your team."}
+	case r.act != nil:
+		return []string{r.act.about}
+	case r.setting != nil:
+		return p.options.Detail(r.setting, cut)
+	case r.section != "":
+		return []string{strs.Full(p.options.Info(r.section).GetDescription())}
+	}
+	return []string{render.Dim("Settings that few people change.", t)}
+}
+
+// What the list says of a hook under the rows: what its event is, and what its state means for it
+func (p *page) hookFacts(hook *hooksv1.Hook) []string {
+	t := p.kit.Env.Theme
+	lines := []string{strs.Full(shellconfig.PointOf(hook.GetEvent()).About)}
+	switch {
+	case hook.GetChanged():
+		lines = append(lines, render.Warm("Its script changed on "+when(hook.GetChangedNow())+", after you allowed it. It still runs.", t))
+	case hook.GetUnasked():
+		lines = append(lines, "It runs because Run without asking is on.")
+	case !hook.GetAllowed():
+		lines = append(lines, "It doesn't run until you allow it.")
+	}
+	return lines
+}
+
+// What the list says of a webhook under the rows: where it posts and which events, and why its posts are not signed
+func (p *page) webhookFacts(webhook *hooksv1.Webhook) []string {
+	t := p.kit.Env.Theme
+	said := "Posts " + eventWords(webhook.GetEvents())
+	if webhook.GetName() != "" {
+		said += " to " + webhook.GetUrl()
+	}
+	lines := []string{said + "."}
+	if why := webhook.GetUnsigned(); why != "" {
+		lines = append(lines, render.Warm("Its posts are not signed, because "+why+".", t))
+	}
+	return lines
+}
+
+// Buttons for the row in hand: what enter does, the keys of a hook, remove where a row can be removed, then add
+func (p *page) hints(i int) []wm.Hint {
+	add := wm.Hint{Action: "hub.add", Label: "add"}
+	if i < 0 || i >= len(p.rows) {
+		return []wm.Hint{add}
+	}
+	switch r := p.rows[i]; {
+	case r.hook != nil:
+		allow := "allow"
+		if r.hook.GetState() == "Allowed" && !r.hook.GetUnasked() {
+			allow = "stop allowing"
+		}
+		return []wm.Hint{{Action: "hub.use", Label: "open"}, {Action: "hooks.allow", Label: allow}, {Action: "hooks.test", Label: "test"},
+			{Action: "hooks.check", Label: "check"}, {Action: "hub.remove", Label: "remove"}, add}
+	case r.webhook != nil:
+		return []wm.Hint{{Action: "hub.use", Label: "open"}, {Action: "hub.remove", Label: "remove"}, add}
+	case r.addHook, r.addWebhook:
+		return []wm.Hint{{Action: "hub.use", Label: "add"}}
+	case r.act != nil:
+		return []wm.Hint{{Action: "hub.use", Label: r.act.verb}, add}
+	case r.setting != nil:
+		return append(p.options.Hints(r.setting), add)
+	}
+	return []wm.Hint{{Action: "hub.use", Label: "open"}, add}
+}
+
+// What enter does on a row
+func (p *page) use(l *cards.List, r row) tea.Cmd {
+	switch {
+	case r.hook != nil:
+		return p.hookPage(r.hook.GetEvent(), r.hook.GetCommand())
+	case r.webhook != nil:
+		return p.webhookPage(r.webhook.GetKey())
+	case r.addHook:
+		return p.addHook()
+	case r.addWebhook:
+		return p.addWebhook()
+	case r.act != nil:
+		return r.act.run(l)
+	case r.setting != nil:
+		return p.options.Change(r.setting)
+	case r.section != "":
+		return p.sectionPage(r.section)
+	}
+	_, open, _ := p.options.Advanced(hooksconfig.Key)
+	return open()
+}
+
+// What ctrl+d does on a row: removes a hook or a webhook after a question, or puts a changed option back to its default
+func (p *page) remove(l *cards.List, r row) tea.Cmd {
+	switch {
+	case r.hook != nil:
+		return p.removeHook(l, r.hook)
+	case r.webhook != nil:
+		return p.removeWebhook(l, r.webhook)
+	case r.setting != nil:
+		return p.options.Reset(l, r.setting)
+	}
+	return nil
+}
+
+// Action on the hook of the row in hand, nothing on any other row
+func (p *page) withHook(do func(l *cards.List, hook *hooksv1.Hook) tea.Cmd) func(*cards.List, int) tea.Cmd {
+	return func(l *cards.List, i int) tea.Cmd {
+		if i < 0 || i >= len(p.rows) || p.rows[i].hook == nil {
+			return nil
+		}
+		return do(l, p.rows[i].hook)
+	}
+}
+
+// Sends one change of a hook, shows the hooks it answers and says what was done; then runs once it was kept
+func (p *page) change(request *hooksv1.ChangeRequest, then func(response *hooksv1.ChangeResponse) tea.Cmd) tea.Cmd {
+	request.Profile = p.profile
+	p.hub.Busy("Saving…")
+	return tui.Call(p.hub, func() (*hooksv1.ChangeResponse, error) {
+		return p.service.Change(p.kit.Env.Ctx, request)
+	}, func(response *hooksv1.ChangeResponse) tea.Cmd {
+		p.listing = response.GetHooks()
+		p.refresh()
+		cmds := []tea.Cmd{p.hub.Done(response.GetSaid())}
+		if then != nil {
+			cmds = append(cmds, then(response))
+		}
+		return tea.Batch(cmds...)
 	})
 }
 
-// Checks every hook and shows what was found for each, under its command and event
-func (s *screen) checkAll() tea.Cmd {
-	s.hub.Busy("Checking every hook…")
-	return tui.Call(s.hub, func() (*hooksv1.CheckResponse, error) {
-		return s.service.Check(s.kit.Env.Ctx, &hooksv1.CheckRequest{Profile: s.profile})
-	}, func(response *hooksv1.CheckResponse) tea.Cmd {
-		s.hub.Quiet()
-		t := s.kit.Env.Theme
-		var lines []string
-		problems := 0
-		for _, c := range response.GetChecks() {
-			problems += int(c.GetProblems())
-			lines = append(lines, "", render.Heading(c.GetCommand(), t)+render.Dim(" · "+eventOf(c.GetEvent()).title, t))
-			lines = append(lines, s.checkLines(c)...)
-		}
-		summary := render.Good("Every hook looks healthy.", t)
-		if problems > 0 {
-			summary = render.Bad(render.Count(problems, "problem")+" found.", t)
-		}
-		return s.showPage("Check every hook", "tui:hooks:check-all", append([]string{summary}, lines...))
+// Lets a hook run after the question, or stops an allowed one at once
+func (p *page) toggle(l *cards.List, hook *hooksv1.Hook) tea.Cmd {
+	if hook.GetState() == "Allowed" && !hook.GetUnasked() {
+		return p.change(&hooksv1.ChangeRequest{Verb: "revoke", Event: hook.GetEvent(), Command: hook.GetCommand()}, nil)
+	}
+	l.Confirm(cards.Question{Text: "Allow " + hook.GetCommand() + " to run on " + shellconfig.PointOf(hook.GetEvent()).Title + "? It runs with your full " +
+		"rights each time.", Verb: "Allow"}, func() tea.Cmd {
+		return p.change(&hooksv1.ChangeRequest{Verb: "allow", Event: hook.GetEvent(), Command: hook.GetCommand()}, nil)
 	})
+	return nil
+}
+
+// Takes a hook out after the question, back on the page
+func (p *page) removeHook(l *cards.List, hook *hooksv1.Hook) tea.Cmd {
+	l.Confirm(cards.Question{Text: "Remove " + hook.GetCommand() + " from " + shellconfig.PointOf(hook.GetEvent()).Title + "? It no longer runs, and " +
+		"its script stays on this computer.", Verb: "Remove", Deletes: true}, func() tea.Cmd {
+		return p.change(&hooksv1.ChangeRequest{Verb: "remove", Event: hook.GetEvent(), Command: hook.GetCommand()}, func(*hooksv1.ChangeResponse) tea.Cmd {
+			return p.hub.PopTo(p.list)
+		})
+	})
+	return nil
+}
+
+// Takes a webhook out after the question, back on the page
+func (p *page) removeWebhook(l *cards.List, webhook *hooksv1.Webhook) tea.Cmd {
+	l.Confirm(cards.Question{Text: "Remove the webhook to " + webhook.GetUrl() + "? The address is no longer told what the agent does.",
+		Verb: "Remove", Deletes: true}, func() tea.Cmd {
+		p.hub.Busy("Saving…")
+		return tui.Call(p.hub, func() (*hooksv1.ChangeResponse, error) {
+			return p.service.ChangeWebhook(p.kit.Env.Ctx, &hooksv1.WebhookRequest{Profile: p.profile, Verb: "remove", Key: webhook.GetKey()})
+		}, func(response *hooksv1.ChangeResponse) tea.Cmd {
+			p.listing = response.GetHooks()
+			p.refresh()
+			return tea.Batch(p.hub.PopTo(p.list), p.hub.Done(response.GetSaid()), p.options.Load(nil))
+		})
+	})
+	return nil
+}
+
+// Lets every hook that waits for it run, after the question
+func (p *page) acceptAll() tea.Cmd {
+	p.hub.Busy("Saving…")
+	return tui.Call(p.hub, func() (*hooksv1.AcceptResponse, error) {
+		return p.service.Accept(p.kit.Env.Ctx, &hooksv1.AcceptRequest{Profile: p.profile})
+	}, func(response *hooksv1.AcceptResponse) tea.Cmd {
+		return tea.Batch(p.load(), p.hub.Done("Allowed "+render.Count(int(response.GetAllowed()), "hook")+"."))
+	})
+}
+
+// Events as a person reads them in a sentence: their titles joined
+func eventWords(events []string) string {
+	titles := make([]string, len(events))
+	for i, event := range events {
+		titles[i] = shellconfig.PointOf(event).Title
+	}
+	return strs.And(titles)
 }

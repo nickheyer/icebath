@@ -2,12 +2,17 @@ syntax = "proto3";
 
 package icebath.plugins.generate.v1;
 
-// The services that draw pictures and make videos for image_generate and video_generate, and how each of them stands for a profile
+// The services that make images and videos for image_generate and video_generate, how each of them stands for a profile, and the choice of
+// them
 service GenerateService {
-  // Services of a kind and the one in use
+  // Services of a kind with how each stands, the one chosen, and whether the agent makes things of the kind
   rpc List(ListRequest) returns (ListResponse);
   // Models of one service, read live where the service lists its own
   rpc Models(ModelsRequest) returns (ModelsResponse);
+  // Uses a service for a kind, the model it has kept as it was; the first service that is ready for none
+  rpc Choose(ChooseRequest) returns (ChooseResponse);
+  // Turns the making of videos on or off
+  rpc Videos(VideosRequest) returns (ChooseResponse);
 }
 
 // What a service makes
@@ -17,50 +22,63 @@ enum Kind {
   KIND_VIDEO = 2;
 }
 
+// How a service stands for the profile
+enum State {
+  STATE_UNSPECIFIED = 0;
+  // Makes things of the kind for the agent now
+  STATE_IN_USE = 1;
+  STATE_READY = 2;
+  // Ready, and costs nothing
+  STATE_FREE = 3;
+  STATE_NEEDS_KEY = 4;
+  STATE_NOT_CONNECTED = 5;
+}
+
 message Service {
   // As image_gen.provider and video_gen.provider name it
   string name = 1;
   string title = 2;
   // What it makes and how
   string description = 3;
-  // Price and needs in a few words, such as paid
-  string badge = 4;
-  // Its key or sign-in is there
-  bool ready = 5;
-  // Chosen in the settings, and the one the tool uses now
+  State state = 4;
+  // The state in the words every page says it in
+  string words = 5;
+  // Chosen in the settings
   bool chosen = 6;
-  bool active = 7;
-  // Settings a person sets to use it
-  repeated string settings = 8;
-  // Setting of the key it asks for, what to ask and where to get one; empty when it asks for none
+  // Section of its settings for the kind, whose page is its page
+  string section = 7;
+  // Setting of its own model for the kind
+  string model_setting = 8;
+  // Setting of the API key of its own and where to get one; empty for a service that uses an account at a provider
   string key = 9;
-  string prompt = 10;
-  string link = 11;
-  // Kind of model provider whose key or sign-in it uses, connected in /providers; empty for none
-  string provider = 12;
+  string link = 10;
+  // Provider of the profile whose account it uses and its name, empty while the profile has none; the kind of provider a person adds
+  // otherwise
+  string provider = 11;
+  string provider_title = 12;
+  string provider_kind = 13;
   // What it says of itself as the settings have it, such as what its storage keeps
-  repeated string notes = 13;
-  // Setting a model picked for it is kept in, and the model the settings name for it now, empty for its default
-  string model_setting = 14;
-  string model = 15;
+  repeated string notes = 14;
 }
 
 message ListRequest {
   // Profile to read, the one in use when empty
   string profile = 1;
   Kind kind = 2;
+  // Only what each service is, its name, title, description, section and key setting, with nothing that takes time to find
+  bool bare = 3;
 }
 
 message ListResponse {
   repeated Service services = 1;
-  // Service chosen in the settings and the model they name, empty for none
+  // Service chosen in the settings, empty for the first that is ready
   string chosen = 2;
-  string model = 3;
-  // Whether the tool is offered, and why not when it isn't
-  bool offered = 4;
-  string reason = 5;
-  // Whether video_gen.enabled is on, for videos
-  bool enabled = 6;
+  // Whether the agent makes things of the kind: images always, videos while Make videos is on
+  bool on = 3;
+  // What keeps the agent from making them, a sentence; empty when nothing does
+  string hindrance = 4;
+  // Title of the service that makes them now, empty while none does
+  string serving = 5;
 }
 
 message Model {
@@ -83,6 +101,23 @@ message ModelsRequest {
 
 message ModelsResponse {
   repeated Model models = 1;
-  // Model the service uses when no setting names one
+  // Model the service uses when its setting names none
   string default = 2;
+}
+
+message ChooseRequest {
+  string profile = 1;
+  Kind kind = 2;
+  // Name of the service, empty for the first that is ready
+  string service = 3;
+}
+
+// What the change says once it is kept
+message ChooseResponse {
+  string note = 1;
+}
+
+message VideosRequest {
+  string profile = 1;
+  bool on = 2;
 }

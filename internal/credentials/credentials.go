@@ -45,8 +45,9 @@ type Credential struct {
 	Region string
 }
 
-// One account of a provider of the profile: the fields it keeps, under the provider's accounts. A provider with no account has one with
-// no name and no fields, whose credential can only come from the environment or another program
+// One account of a provider of the profile: the fields it keeps, under the provider's accounts. Its credential is what it keeps alone: a
+// secret of its own, the variable it reads its key from, or the program whose sign-in it uses. The account with no name and no fields is
+// the provider's credential outside its accounts, which comes from the environment or another program's sign-in on this computer
 type Account struct {
 	Name     string
 	Provider provider.Instance
@@ -81,14 +82,27 @@ func (r *Registry) Credential(account Account) (Credential, bool) {
 	return Credential{}, false
 }
 
-// Account of the provider with the name, the one in use for no name; with none, one that holds nothing and reads the profile's
-// environment
+// Account of the provider with the name, the one the provider's choice names for no name; with none, its credential outside its accounts
 func Of(instance provider.Instance, name string) Account {
 	name = cmp.Or(name, instance.Account)
 	if name == "" {
-		return Account{Provider: instance, Fields: instance.Settings.Bare()}
+		return Outside(instance)
 	}
 	return Account{Name: name, Provider: instance, Fields: instance.AccountFields(name)}
+}
+
+// Credential the provider takes from outside its accounts: from the variables of its kind or the sign-in of another program on this
+// computer, those it ignores left out
+func Outside(instance provider.Instance) Account {
+	return Account{Provider: instance, Fields: instance.Settings.Bare()}
+}
+
+// Account whose credential a route of the provider carries: the account the route names, else the credential outside its accounts
+func Carried(instance provider.Instance, route provider.Route) Account {
+	if route.Account == "" {
+		return Outside(instance)
+	}
+	return Of(instance, route.Account)
 }
 
 // Credential of a kind no provider of the profile has yet, found in the profile's environment or another program
@@ -101,13 +115,53 @@ func (a Account) Ignores(source string) bool {
 	return source != "" && slices.Contains(a.Provider.Settings.GetStringSlice(providerconfig.Ignored), source)
 }
 
-// Credential kept in the field of the account, else read from the variable the account links to, else from the first of the variables
-// set that its provider doesn't ignore
+// Credential of a key: for an account, the key kept in its field, else the one in the variable it reads its key from; for the credential
+// outside the accounts, the first of the variables set that its provider doesn't ignore
 func (a Account) Lookup(field string, variables ...string) (Credential, bool) {
-	if linked := strings.TrimSpace(a.Fields.GetString(providerconfig.KeyEnv)); linked != "" && a.Name != "" {
+	if a.Name == "" {
+		return Lookup(a.Fields, "", slices.DeleteFunc(slices.Clone(variables), a.Ignores)...)
+	}
+	if linked := strings.TrimSpace(a.Fields.GetString(providerconfig.KeyEnv)); linked != "" {
 		return Lookup(a.Fields, field, linked)
 	}
-	return Lookup(a.Fields, field, slices.DeleteFunc(slices.Clone(variables), a.Ignores)...)
+	return Lookup(a.Fields, field)
+}
+
+// Program whose sign-in on this computer the account uses, empty for one that uses none
+func (a Account) Program() string {
+	if a.Name == "" {
+		return ""
+	}
+	return strings.TrimSpace(a.Fields.GetString(providerconfig.Program))
+}
+
+// Whether the account keeps text that signs in, usable or not, besides the fields named: a secret or a choice its kind keeps, the variable
+// it reads its key from or the program whose sign-in it uses
+func (a Account) Holds(except ...string) bool {
+	if a.Name == "" {
+		return false
+	}
+	names := []string{providerconfig.KeyEnv, providerconfig.Program}
+	for _, field := range a.Provider.Spec.AccountFields() {
+		if kind := field.Kind(); kind == config.Text || kind == config.Choice {
+			names = append(names, field.Key)
+		}
+	}
+	names = slices.DeleteFunc(names, func(name string) bool { return slices.Contains(except, name) })
+	return slices.ContainsFunc(names, func(name string) bool {
+		text, _ := a.Fields.Stored(name).(string)
+		return strings.TrimSpace(text) != ""
+	})
+}
+
+// What follows a variable's name in the source of its credential when a secret store supplied the variable, before that store's name
+const suppliedBy = " (from "
+
+// Variable or program the source of a credential names, as a provider leaves it out or takes it again by: without the secret store that
+// supplied the variable
+func SourceName(source string) string {
+	name, _, _ := strings.Cut(source, suppliedBy)
+	return strings.TrimSpace(name)
 }
 
 // Credential kept in the field of the account, else in the first of the variables the account's profile has set, a variable a secret
@@ -125,7 +179,7 @@ func Lookup(fields config.View, field string, variables ...string) (Credential, 
 		}
 		source := variable
 		if store := fields.EnvOrigin(variable); store != "" {
-			source += " (from " + store + ")"
+			source += suppliedBy + store + ")"
 		}
 		return Credential{APIKey: value, Origin: Environment, Source: source}, true
 	}

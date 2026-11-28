@@ -407,7 +407,7 @@ func haltNotice(v verdict) string {
 	case "identical_cycle_halt":
 		why = "was called over and over in the same cycle"
 	}
-	return fmt.Sprintf("The reply was stopped because the tool %s %s. Tool loops in /settings under Agent sets when this happens.", cmp.Or(v.tool, "in use"), why)
+	return fmt.Sprintf("The reply was stopped because the tool %s %s. /settings tool loops sets when this happens.", cmp.Or(v.tool, "in use"), why)
 }
 
 func haltReply(v verdict) string {

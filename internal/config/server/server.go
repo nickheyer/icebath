@@ -3,6 +3,9 @@ package server
 import (
 	"context"
 	"errors"
+	"maps"
+	"slices"
+	"strconv"
 	"strings"
 
 	"connectrpc.com/connect/v2"
@@ -81,16 +84,49 @@ func (s *service) List(_ context.Context, request *configv1.ListRequest) (*confi
 	}
 	for _, section := range config.Listed(cfg.Sections()) {
 		response.Sections = append(response.Sections, &configv1.Section{Key: section.Key, Parent: section.Parent, Title: section.Title,
-			Description: section.About, Global: cfg.Global(section.Key), Group: string(section.Group)})
+			Description: section.About, Global: cfg.Global(section.Key), Group: string(section.Group), Area: section.Menu(), Into: section.Into})
 		for _, setting := range section.Settings {
 			message, err := describe(cfg, section, setting, !request.GetBare())
 			if err != nil {
 				return nil, err
 			}
 			response.Settings = append(response.Settings, message)
+			if request.GetEntries() && setting.Kind() == config.Table && setting.Things() {
+				fields, err := entryFields(cfg, section, setting, !request.GetBare())
+				if err != nil {
+					return nil, err
+				}
+				response.Settings = append(response.Settings, fields...)
+			}
 		}
 	}
 	return response, nil
+}
+
+// The declared fields of every entry the table holds, each a setting keyed below its entry, the entries by name
+func entryFields(cfg *config.Config, section config.Section, table config.Setting, options bool) ([]*configv1.Setting, error) {
+	held, _ := cfg.Get(table.Key).(map[string]any)
+	var out []*configv1.Setting
+	for _, name := range slices.Sorted(maps.Keys(held)) {
+		// An entry whose name can't be one part of a key, such as one written by hand with a dot in it, has no field a key could name: it
+		// is listed by what it holds, and renamed or removed whole
+		if config.KeyName(name) != nil {
+			continue
+		}
+		for _, declared := range table.Entry.Fields {
+			if declared.Key == "" {
+				continue
+			}
+			field, _ := table.EntryField(name + "." + declared.Key)
+			message, err := describe(cfg, section, field, options)
+			if err != nil {
+				return nil, err
+			}
+			entryMessage(cfg, field, table, message)
+			out = append(out, message)
+		}
+	}
+	return out, nil
 }
 
 func (s *service) Get(_ context.Context, request *configv1.GetRequest) (*configv1.GetResponse, error) {
@@ -99,6 +135,15 @@ func (s *service) Get(_ context.Context, request *configv1.GetRequest) (*configv
 		return nil, err
 	}
 	section, setting, ok := cfg.Setting(request.GetKey())
+	entryOf := ""
+	if !ok {
+		// A declared field of one entry of a table is a setting of its own too
+		if table, path, under := cfg.Under(request.GetKey()); under {
+			setting, ok = table.EntryField(path)
+			section, _, _ = cfg.Setting(table.Key)
+			entryOf = table.Key
+		}
+	}
 	if !ok {
 		return nil, connect.NewError(connect.CodeNotFound, "There is no setting named "+request.GetKey()+".")
 	}
@@ -106,11 +151,39 @@ func (s *service) Get(_ context.Context, request *configv1.GetRequest) (*configv
 	if err != nil {
 		return nil, err
 	}
+	if entryOf != "" {
+		table, _, _ := cfg.Under(request.GetKey())
+		entryMessage(cfg, setting, table, message)
+	}
 	return &configv1.GetResponse{Setting: message}, nil
 }
 
+// Marks a declared field of one entry of a table as such. A field the file holds at its default reads as the default: the entry does the
+// same without it, and the settings file keeps no empty entry, so a thing with nothing changed is kept by its fields' defaults
+func entryMessage(cfg *config.Config, field, table config.Setting, message *configv1.Setting) {
+	message.EntryOf = table.Key
+	if message.Source == configv1.Source_SOURCE_FILE && same(cfg.Get(field.Key), field.DefaultValue()) {
+		message.Source = configv1.Source_SOURCE_DEFAULT
+	}
+}
+
+// Whether two values are the same value, a whole number and the same number with a point being one
+func same(a, b any) bool {
+	x, errX := encode(a)
+	y, errY := encode(b)
+	if errX != nil || errY != nil {
+		return false
+	}
+	if x == y {
+		return true
+	}
+	numberX, errX := strconv.ParseFloat(x, 64)
+	numberY, errY := strconv.ParseFloat(y, 64)
+	return errX == nil && errY == nil && numberX == numberY
+}
+
 // Saves a value written in YAML, null putting the default back, once the setting it is for takes it; a part of a table setting, such as one
-// entry, takes any value
+// entry, takes any value. The owner of a key that guards it checks the write and may make it itself
 func (s *service) Set(_ context.Context, request *configv1.SetRequest) (*configv1.SetResponse, error) {
 	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
@@ -118,10 +191,15 @@ func (s *service) Set(_ context.Context, request *configv1.SetRequest) (*configv
 	}
 	_, setting, known := cfg.Setting(request.GetKey())
 	if !known {
-		if _, _, under := cfg.Under(request.GetKey()); !under {
+		table, path, under := cfg.Under(request.GetKey())
+		if !under {
 			return nil, connect.NewError(connect.CodeNotFound, "There is no setting named "+request.GetKey()+".")
 		}
-		setting.Key = strings.ToLower(request.GetKey())
+		setting.Key = cfg.Key(request.GetKey())
+		// A declared field of one entry is checked as the field it is
+		if field, ok := table.EntryField(path); ok {
+			setting, known = field, true
+		}
 	}
 	var value any
 	if err := yaml.Unmarshal([]byte(request.GetValue()), &value); err != nil {
@@ -131,8 +209,11 @@ func (s *service) Set(_ context.Context, request *configv1.SetRequest) (*configv
 		if value, err = setting.Check(value); err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 		}
+		if value, err = setting.Located(value); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
+		}
 	}
-	if err := cfg.Set(setting.Key, value); err != nil {
+	if err := cfg.Change(setting.Key, value); err != nil {
 		return nil, refusal(err)
 	}
 	return &configv1.SetResponse{}, nil
@@ -195,10 +276,21 @@ func shape(setting config.Setting, options bool) (*configv1.Setting, error) {
 		Need:        setting.Need,
 		Starts:      setting.Starts,
 		Bounds:      setting.Bounds(),
+		Custom:      setting.Custom,
+		Picks:       setting.Picks,
+		Ordered:     setting.Ordered,
 	}
 	if options && setting.Options != nil {
 		for _, option := range setting.Options() {
 			message.Options = append(message.Options, &configv1.Option{Value: option.Value, Title: option.Title, Description: option.About})
+		}
+	}
+	if path := setting.Path; path != nil {
+		message.Path = &configv1.Path{Kind: configv1.PathKind(path.Kind), Exists: path.Exists}
+	}
+	if options && setting.Names != nil {
+		for _, name := range setting.Names() {
+			message.Names = append(message.Names, &configv1.Option{Value: name.Value, Title: name.Title, Description: name.About})
 		}
 	}
 	var err error
@@ -231,7 +323,7 @@ func shape(setting config.Setting, options bool) (*configv1.Setting, error) {
 		message.DefaultShown = setting.Say(setting.DefaultValue())
 	}
 	if entry := setting.Entry; entry != nil {
-		message.Entry = &configv1.Entry{Noun: entry.Noun, Name: entry.Name, Capitals: entry.Capitals}
+		message.Entry = &configv1.Entry{Noun: entry.Noun, Name: entry.Name, IgnoreCase: entry.IgnoreCase}
 		if entry.Names != nil {
 			for _, name := range entry.Names() {
 				message.Entry.Names = append(message.Entry.Names, &configv1.Option{Value: name.Value, Title: name.Title, Description: name.About})

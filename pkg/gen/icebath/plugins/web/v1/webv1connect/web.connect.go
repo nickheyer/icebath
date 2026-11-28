@@ -26,6 +26,8 @@ const (
 const (
 	// WebServiceListProcedure is the procedure name of the WebService's List RPC.
 	WebServiceListProcedure = "/icebath.plugins.web.v1.WebService/List"
+	// WebServiceChooseProcedure is the procedure name of the WebService's Choose RPC.
+	WebServiceChooseProcedure = "/icebath.plugins.web.v1.WebService/Choose"
 )
 
 var (
@@ -36,12 +38,22 @@ var (
 			Procedure:  WebServiceListProcedure,
 		}
 	})
+	webServiceChooseSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_web_v1_web_proto.Services().ByName("WebService").Methods().ByName("Choose"),
+			Procedure:  WebServiceChooseProcedure,
+		}
+	})
 )
 
 // WebServiceClient is a client for the icebath.plugins.web.v1.WebService service.
 type WebServiceClient interface {
 	// Web backends of a profile and how each of them stands
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
+	// Chooses what a backend is used for and its plan, clearing what the choice replaces, and says what is in use for what now; no backend
+	// leaves every choice to Automatic
+	Choose(context.Context, *v1.ChooseRequest) (*v1.ChooseResponse, error)
 }
 
 // NewWebServiceClient constructs a client for the icebath.plugins.web.v1.WebService service.
@@ -54,6 +66,9 @@ func NewWebServiceClient(client *connect.Client) WebServiceClient {
 type WebServiceHandler interface {
 	// Web backends of a profile and how each of them stands
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
+	// Chooses what a backend is used for and its plan, clearing what the choice replaces, and says what is in use for what now; no backend
+	// leaves every choice to Automatic
+	Choose(context.Context, *v1.ChooseRequest) (*v1.ChooseResponse, error)
 }
 
 // RegisterWebServiceHandler registers svc as the icebath.plugins.web.v1.WebService implementation
@@ -62,6 +77,7 @@ func RegisterWebServiceHandler(server *connect.Server, svc WebServiceHandler) {
 	adapter := webServiceHandler{svc: svc}
 	server.Register(
 		connect.Method{Spec: webServiceListSpec(), Handler: adapter.list},
+		connect.Method{Spec: webServiceChooseSpec(), Handler: adapter.choose},
 	)
 }
 
@@ -70,6 +86,10 @@ type UnimplementedWebServiceHandler struct{}
 
 func (UnimplementedWebServiceHandler) List(context.Context, *v1.ListRequest) (*v1.ListResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.web.v1.WebService.List is not implemented")
+}
+
+func (UnimplementedWebServiceHandler) Choose(context.Context, *v1.ChooseRequest) (*v1.ChooseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.web.v1.WebService.Choose is not implemented")
 }
 
 type webServiceClient struct {
@@ -84,6 +104,14 @@ func (c *webServiceClient) List(ctx context.Context, req *v1.ListRequest) (*v1.L
 	return &res, nil
 }
 
+func (c *webServiceClient) Choose(ctx context.Context, req *v1.ChooseRequest) (*v1.ChooseResponse, error) {
+	var res v1.ChooseResponse
+	if err := c.client.CallUnary(ctx, webServiceChooseSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 type webServiceHandler struct{ svc WebServiceHandler }
 
 func (h webServiceHandler) list(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
@@ -92,6 +120,18 @@ func (h webServiceHandler) list(ctx context.Context, _ connect.Spec, stream conn
 		return err
 	}
 	res, err := h.svc.List(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h webServiceHandler) choose(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ChooseRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Choose(ctx, &req)
 	if err != nil {
 		return err
 	}

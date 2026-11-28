@@ -33,7 +33,7 @@ func found(re *regexp2.Regexp, text string) bool {
 // network or writing persistence surfaces. None for a server of no such shape
 func validate(name string, entry map[string]any) []string {
 	command := strings.TrimSpace(fmt.Sprint(orNil(entry["command"])))
-	script := strings.Join(stringList(entry["args"]), " ")
+	script := strings.Join(Args(entry["args"]), " ")
 	flat := []string{command, script}
 	for _, v := range envOf(entry["env"]) {
 		flat = append(flat, v)

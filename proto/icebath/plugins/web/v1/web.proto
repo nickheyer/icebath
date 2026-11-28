@@ -5,6 +5,9 @@ package icebath.plugins.web.v1;
 service WebService {
   // Web backends of a profile and how each of them stands
   rpc List(ListRequest) returns (ListResponse);
+  // Chooses what a backend is used for and its plan, clearing what the choice replaces, and says what is in use for what now; no backend
+  // leaves every choice to Automatic
+  rpc Choose(ChooseRequest) returns (ChooseResponse);
 }
 
 // One way of using a backend
@@ -22,6 +25,8 @@ message Plan {
   string link = 7;
   // What a person gives before the plan works
   Needs needs = 8;
+  // Kind of provider whose sign-in the plan runs on, empty for none
+  string sign_in = 9;
 }
 
 // What a plan asks a person for
@@ -60,6 +65,12 @@ message Backend {
   // Settings a person sets to use it
   repeated string settings = 13;
   repeated Plan plans = 14;
+  // How it stands in the state words, such as In use, Ready, Free or Needs an API key
+  string state = 15;
+  // Can answer as it is: set up, or free
+  bool usable = 16;
+  // Key of the section of its own settings, empty when it has none
+  string section = 17;
 }
 
 message ListRequest {
@@ -79,4 +90,31 @@ message ListResponse {
   bool free = 6;
   // Plans pinned per backend in web.provider_tier
   map<string, string> tiers = 7;
+  // What answers searches and reads pages now, a sentence
+  string serving = 8;
+}
+
+// What a backend is chosen for
+enum Use {
+  // Left as it is, when only the plan changes
+  USE_UNSPECIFIED = 0;
+  // Searches and pages
+  USE_BOTH = 1;
+  USE_SEARCH = 2;
+  USE_PAGES = 3;
+}
+
+message ChooseRequest {
+  // Profile to change, the one in use when empty
+  string profile = 1;
+  // Backend chosen, empty for Automatic
+  string backend = 2;
+  Use use = 3;
+  // Plan of the backend: free, paid or auto; empty leaves it as it is
+  string plan = 4;
+}
+
+message ChooseResponse {
+  // What is in use for what now, one sentence
+  string note = 1;
 }

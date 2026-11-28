@@ -14,6 +14,8 @@ const (
 	WriteSafeRoot = Key + ".write_safe_root"
 	// Files of this machine read, written and searched directly rather than through shell commands
 	NativeRead = Key + ".native_read"
-	// Lets writes go ahead without the full read or the unchanged file the stale write guard asks for
-	DisableStateGuard = Key + ".disable_state_guard"
+	// Refuses a write to a file the agent has not read in full or that changed since it read it
+	StateGuard = Key + ".state_guard"
+	// Variable that turns the stale write guard off for a run, whatever the setting says
+	NoStateGuardEnv = "ICEBATH_DISABLE_FILE_STATE_GUARD"
 )

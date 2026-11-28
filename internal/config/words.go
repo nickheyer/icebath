@@ -45,7 +45,7 @@ func (s Setting) Say(value any) string {
 		}
 	case Duration:
 		if value == nil {
-			return capital(s.Null, NotSet)
+			return strs.Filled(strs.Capital(s.Null), NotSet)
 		}
 		if length, ok := Length(value, s.unit()); ok {
 			return Span(length)
@@ -82,10 +82,13 @@ func (s Setting) Say(value any) string {
 	return NotSet
 }
 
-// Title of the choice with the value, the value itself when no choice has it or has a title
+// Title of the choice or of the named thing with the value, the value itself when none has it or has a title
 func (s Setting) named(value string) string {
-	if s.Options != nil {
-		for _, option := range s.Options() {
+	for _, listed := range []func() []Option{s.Options, s.Names} {
+		if listed == nil {
+			continue
+		}
+		for _, option := range listed() {
 			if option.Value == value && option.Title != "" {
 				return option.Title
 			}
@@ -199,7 +202,7 @@ func (s Setting) within(number any) error {
 	}
 	if (s.Least != nil && n < *s.Least) || (s.Most != nil && n > *s.Most) {
 		bounds := s.Bounds()
-		return fmt.Errorf("%s must be %s.", s.Title, strings.ToLower(bounds[:1])+bounds[1:])
+		return fmt.Errorf("%s must be %s.", s.Title, strs.Lower(bounds))
 	}
 	if n < 0 && !s.Negative() {
 		return fmt.Errorf("%s can't be less than 0.", s.Title)
@@ -251,14 +254,6 @@ func Size(n float64) string { return strs.Size(n) }
 // Length of time in words, in the largest unit that divides it, as every screen and command says one
 func Span(length time.Duration) string { return strs.Span(length) }
 
-// Text with a capital first letter, the fallback when it is empty
-func capital(text, fallback string) string {
-	if text == "" {
-		return fallback
-	}
-	return strings.ToUpper(text[:1]) + text[1:]
-}
-
 // Line saying what a number counts, as the field a value is typed into and the example of a settings file say it, empty for a number
 // that counts nothing
 func Counting(counts string) string {
@@ -281,5 +276,5 @@ func (s Setting) started(text string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%s must start with %s.", s.Title, strings.Join(s.Starts, " or "))
+	return fmt.Errorf("%s must start with %s.", s.Title, strs.Or(s.Starts))
 }

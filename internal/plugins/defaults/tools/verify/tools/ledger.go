@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,11 +14,11 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
-
 	"github.com/nickheyer/icebath/internal/config"
 	verifyconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/verify/config"
 	"github.com/nickheyer/icebath/internal/tools"
+	"github.com/nickheyer/icebath/pkg/sqlitex"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -71,6 +72,8 @@ var schema = []string{
 type Ledger struct {
 	mu  sync.Mutex
 	dbs map[string]*sql.DB
+	// Tells the person something once, such as a ledger file set aside
+	tell func(text string)
 	// Newest check of each session and workspace that did not count, the shell hiding its own status
 	unattributed map[[2]string]unattributed
 	seq          uint64
@@ -81,8 +84,8 @@ type unattributed struct {
 	seq         uint64
 }
 
-func newLedger() *Ledger {
-	return &Ledger{dbs: map[string]*sql.DB{}, unattributed: map[[2]string]unattributed{}}
+func newLedger(tell func(text string)) *Ledger {
+	return &Ledger{dbs: map[string]*sql.DB{}, tell: tell, unattributed: map[[2]string]unattributed{}}
 }
 
 // One check as the ledger keeps it
@@ -139,7 +142,8 @@ func Enabled(cfg *config.Config, platform string) bool {
 	return false
 }
 
-// Database of the profile's ledger, opened once with its schema
+// Database of the profile's ledger, opened once in the shape its schema declares. Under the lock of the file's first open, a damaged file or
+// one of another layout is moved aside, the person told where it went, and a new ledger started in its place
 func (l *Ledger) db(ctx context.Context, cfg *config.Config) (*sql.DB, error) {
 	path := filepath.Join(cfg.ProfileDir(cfg.Profile()), ledgerFile)
 	if db, ok := l.dbs[path]; ok {
@@ -148,22 +152,100 @@ func (l *Ledger) db(ctx context.Context, cfg *config.Config) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_txlock=immediate")
+	want, err := sqlitex.Declare(ctx, schema...)
 	if err != nil {
 		return nil, err
 	}
-	for _, ddl := range schema {
-		if _, err := db.ExecContext(ctx, ddl); err != nil {
-			db.Close()
-			return nil, err
+	var db *sql.DB
+	err = sqlitex.FirstOpen(path, 5*time.Second, func(locked bool) error {
+		if locked {
+			if err := l.quarantine(path); err != nil {
+				return err
+			}
 		}
-	}
-	if _, err := db.ExecContext(ctx, "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)", schemaVersion); err != nil {
-		db.Close()
+		var err error
+		db, err = openLedger(ctx, path, want)
+		if _, other := errors.AsType[*sqlitex.Mismatch](err); other && locked {
+			if err := l.aside(path, sqlitex.OtherVersion, otherVersionText); err != nil {
+				return err
+			}
+			db, err = openLedger(ctx, path, want)
+		}
+		return err
+	})
+	if err != nil {
 		return nil, err
 	}
 	l.dbs[path] = db
 	return db, nil
+}
+
+// Told the person once when a ledger file was set aside, by why, with where it went
+const (
+	damagedText      = "The record of the checks the agent ran was empty or damaged, so icebath started a new one. The old record is kept at %s."
+	otherVersionText = "The record of the checks the agent ran was made by another version of icebath, so icebath started a new one. The old " +
+		"record is kept at %s."
+)
+
+// Moves a damaged ledger file aside, telling the person where it went
+func (l *Ledger) quarantine(path string) error {
+	kind, _, err := sqlitex.Damaged(path)
+	if err != nil || kind == "" {
+		return err
+	}
+	return l.aside(path, kind, damagedText)
+}
+
+// Moves the ledger file aside as the kind of file it is and tells the person where it went
+func (l *Ledger) aside(path, kind, told string) error {
+	backup, err := sqlitex.Aside(path, kind)
+	if err != nil {
+		return fmt.Errorf("The record of the checks the agent ran at %s can't be used, and it could not be moved aside: %s", path,
+			strs.Sentence(err.Error()))
+	}
+	l.tell(fmt.Sprintf(told, backup))
+	return nil
+}
+
+// Opens the ledger file: found to be of the schema's layout before anything of it changes, then reconciled with the schema and its tables
+// made in one transaction; a *sqlitex.Mismatch for a file of another layout
+func openLedger(ctx context.Context, path string, want *sqlitex.Schema) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)&_txlock=immediate")
+	if err != nil {
+		return nil, err
+	}
+	if err := ready(ctx, db, want); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+// Checks, reconciles and makes the ledger's tables, its journal mode set once the file is known to be of the schema
+func ready(ctx context.Context, db *sql.DB, want *sqlitex.Schema) error {
+	if _, err := sqlitex.Inspect(ctx, db, want); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
+		return err
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := sqlitex.Reconcile(ctx, tx, want); err != nil {
+		return err
+	}
+	for _, ddl := range schema {
+		if _, err := tx.ExecContext(ctx, ddl); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)", schemaVersion); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Runs body in one transaction of the profile's ledger, one at a time in the process, l.mu held

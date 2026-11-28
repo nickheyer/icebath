@@ -52,9 +52,9 @@ func (s services) draw(ctx context.Context, job *generation.Job, request generat
 	route := s.endpoint(cfg)
 	if route.APIKey == "" {
 		return generation.Call{Provider: openaiconfig.Name, Aspect: aspect}.Fail("OPENAI_API_KEY not set (or the variable named by image_gen.openai.key_env is "+
-			"empty). Connect OpenAI in /providers, or pick another image service with /imagegen.", "auth_required")
+			"empty). The user connects OpenAI in /providers, or picks another image service with /images.", "auth_required")
 	}
-	t := pick(models, cfg.GetString(openaiconfig.Model), true, request.Model)
+	t := pick(models, request.Model, true)
 	call := generation.Call{Provider: openaiconfig.Name, Model: t.id, Prompt: prompt, Aspect: aspect}
 	size := generation.Size(aspect)
 	client := generation.OpenAI{BaseURL: route.BaseURL, Key: route.APIKey, Headers: map[string]string{}}

@@ -88,9 +88,12 @@ func Register(
 		commands:    map[string]*observing{},
 	}
 	agent.async = newBackground(agent)
+	agent.guard(cfg)
+	agent.approvals.OnYolo(agent.skipped)
 	stores.OnStart(agent.serve)
 	stores.OnRelease(func(_ context.Context, session string) { agent.async.stop(session) })
 	registry.Register(&service{agent: agent})
+	providers.Follow(agent)
 	skillset.Register(runner{agent})
 	toolset.Register(edits{agent})
 	toolset.Register(delegates{agent})
@@ -119,7 +122,9 @@ func (s *service) Send(ctx context.Context, request *agentv1.SendRequest) (*agen
 		return nil, err
 	}
 	if request.GetYolo() {
-		s.agent.setYolo(r, true)
+		if _, err := s.agent.approvals.Skip(r.sessionID(), true); err != nil {
+			return nil, err
+		}
 	}
 	r.finite.Store(request.GetFinite())
 	if left := request.GetLeft(); left != "" && left != request.GetSessionId() {

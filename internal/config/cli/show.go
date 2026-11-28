@@ -81,6 +81,10 @@ func showConfig(cmd *cobra.Command, service configv1connect.ConfigServiceClient,
 	}
 	heading("Files")
 	rows.add("Settings file", cmp.Or(files.GetOwn(), files.GetRemote()), "")
+	// The dated copies icebath keeps of the settings file, which a broken one is put back from
+	if copies := files.GetBackups(); copies != "" {
+		rows.add("Copies of it", copies, "")
+	}
 	rows.add("Shared settings file", files.GetShared(), "")
 	rows.add("Keys file", files.GetEnv(), "")
 	rows.add("Program folder", extra.GetInstall(), "")

@@ -95,6 +95,7 @@ func (r *registrant) Tools() []tools.Def {
 		Schema:  schema,
 		Handler: r.handle,
 		Check:   r.available,
+		Lacks:   r.lacks,
 		Effect:  tools.MayChange,
 		// Desktop control has nothing to do with code
 		Unfocused: true,
@@ -231,4 +232,17 @@ func (r *registrant) unchanged(session, digest string, target [2]string) bool {
 	}
 	r.shots[session] = &shot{digest: digest, target: target}
 	return false
+}
+
+// What computer use lacks to run: a computer it can drive, or the program that drives it
+func (r *registrant) lacks(*tools.Env) string {
+	if !cua.Supported() {
+		return "icebath can't drive the screen of this computer."
+	}
+	return "It needs the program that drives the screen, which is not installed."
+}
+
+// The group of computer use, whose options are the computer use section
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: "Computer use", Sections: []string{cuconfig.Key}, Order: 70}}
 }

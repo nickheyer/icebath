@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,13 +15,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
-// What a delete, rename or identity retry did, line by line, and whether every feature settled what it keeps under the name
+// What a delete, rename or identity retry did, and whether every feature settled what it keeps under the name
 type Done struct {
 	Path string
-	// Lines said before the profile's alias is dealt with, and those said after it
-	Lines, Later []string
+	// Name the profile has now, or the name the default profile shows
+	Name string
+	// What was done besides the act itself, and what failed, each a sentence; the act stands all the same
+	Done, Failed []string
 	Settled      bool
-	// Why a delete failed once nothing could stop it, said after its lines
+	// Why a delete failed once nothing could stop it
 	Failure string
 }
 
@@ -67,27 +70,25 @@ func (p *Profiles) Delete(name string) (Done, error) {
 		return Done{}, &ValueError{why}
 	}
 	dir := p.Dir(canon)
-	done := Done{Path: dir, Settled: true}
+	done := Done{Path: dir, Name: canon, Settled: true}
 	if canon == p.Active() {
 		if err := p.use(Default); err != nil {
 			return Done{}, err
 		}
-		done.Lines = append(done.Lines, "✓ Switched to the default profile.")
+		done.Done = append(done.Done, "icebath uses the default profile now.")
 	}
 	for _, err := range failures(p.Registry.Delete(canon)) {
 		done.Settled = false
-		done.Lines = append(done.Lines, failed(true, err))
+		done.Failed = append(done.Failed, failed(true, err))
 	}
 	p.config.Forget(canon)
-	removeErr := removeTree(dir)
-	if removeErr == nil {
-		done.Later = append(done.Later, "✓ Removed the folder "+dir+".")
+	if removeErr := removeTree(dir); removeErr == nil {
+		done.Done = append(done.Done, "Removed the folder "+Tilde(dir)+".")
 	} else {
-		done.Later = append(done.Later, fmt.Sprintf("⚠ The folder %s could not be removed: %s.", dir, failure(removeErr)))
 		done.Failure = fmt.Sprintf("The folder %s could not be removed: %s.", dir, failure(removeErr))
 	}
 	if p.sticky() == canon && p.stick(Default) == nil {
-		done.Later = append(done.Later, "✓ icebath starts with the default profile from now on.")
+		done.Done = append(done.Done, "icebath starts with the default profile from now on.")
 	}
 	return done, nil
 }
@@ -125,15 +126,14 @@ func (p *Profiles) Rename(old, renamed string) (Done, error) {
 	if why := p.Registry.Holds(oldCanon); why != "" {
 		return Done{}, &ValueError{why}
 	}
-	done := Done{Path: newDir, Settled: true}
+	done := Done{Path: newDir, Name: newCanon, Settled: true}
 	if err := p.Registry.Stop(oldCanon); err != nil {
-		done.Lines = append(done.Lines, fmt.Sprintf("⚠ Some of what runs for %s could not be stopped: %s", oldCanon, sentence(err.Error())))
+		done.Failed = append(done.Failed, fmt.Sprintf("Some of what runs for %s could not be stopped: %s", oldCanon, strs.Sentence(err.Error())))
 	}
 	p.config.Forget(oldCanon)
 	if err := os.Rename(oldDir, newDir); err != nil {
 		return Done{}, err
 	}
-	done.Lines = append(done.Lines, fmt.Sprintf("✓ Renamed %s to %s.", oldCanon, newCanon))
 	history := ReadMeta(newDir).PreviousNames
 	if !slices.Contains(history, oldCanon) {
 		history = append(history, oldCanon)
@@ -146,29 +146,37 @@ func (p *Profiles) Rename(old, renamed string) (Done, error) {
 		}
 	}
 	if p.sticky() == oldCanon && p.stick(newCanon) == nil {
-		done.Later = append(done.Later, "✓ icebath starts with "+newCanon+" from now on.")
+		done.Done = append(done.Done, "icebath starts with "+newCanon+" from now on.")
 	}
-	moved, settled := p.migrate(oldCanon, newCanon)
-	done.Later, done.Settled = append(done.Later, moved...), settled
+	moved, broken := p.migrate(oldCanon, newCanon)
+	done.Done, done.Failed, done.Settled = append(done.Done, moved...), append(done.Failed, broken...), len(broken) == 0
 	return done, nil
 }
 
-// Has every feature move what it keeps under the old name to the new one: the lines saying what moved and what did not, and whether all did
-func (p *Profiles) migrate(old, renamed string) ([]string, bool) {
+// Has every feature move what it keeps under the old name to the new one: what moved and what did not, each a sentence
+func (p *Profiles) migrate(old, renamed string) (moved, broken []string) {
 	lines, err := p.Registry.Move(old, renamed)
-	broken := failures(err)
-	for _, err := range broken {
-		lines = append(lines, failed(false, err))
+	for _, line := range lines {
+		moved = append(moved, unmarked(line))
 	}
-	return lines, len(broken) == 0
+	for _, err := range failures(err) {
+		broken = append(broken, failed(false, err))
+	}
+	return moved, broken
 }
 
-// Sets or clears the name the default profile shows, its name staying default
+// A line a feature reports without the mark it may start with
+func unmarked(line string) string {
+	return strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "✓⚠✗"))
+}
+
+// Sets the name the default profile shows, or clears it for no name so it shows as default again, its name staying default: the name
+// it shows now
 func (p *Profiles) displayName(name string) (Done, error) {
-	if strings.TrimSpace(name) == "" {
-		return Done{}, &ValueError{"Give the default profile a name to show."}
-	}
 	cleaned := strings.TrimSpace(name)
+	if strings.EqualFold(cleaned, Default) {
+		cleaned = ""
+	}
 	if n := utf8.RuneCountInString(cleaned); n > 64 {
 		return Done{}, &ValueError{fmt.Sprintf("The name is %s long, and the most it can be is 64.", strs.Counted(float64(n), "characters"))}
 	}
@@ -176,7 +184,7 @@ func (p *Profiles) displayName(name string) (Done, error) {
 	if err := WriteMeta(dir, MetaUpdate{DisplayName: &cleaned}); err != nil {
 		return Done{}, err
 	}
-	return Done{Path: dir, Settled: true, Lines: []string{fmt.Sprintf("✓ The default profile now shows as %s. Its name stays default.", cleaned)}}, nil
+	return Done{Path: dir, Name: cmp.Or(cleaned, Default), Settled: true}, nil
 }
 
 // Removes again what the features keep of a deleted profile, for a delete whose removal of it failed: a line for each that failed again
@@ -191,10 +199,10 @@ func (p *Profiles) PurgeIdentity(name string) (Done, error) {
 	if p.config.Exists(canon) {
 		return Done{}, &ValueError{fmt.Sprintf("The profile %s still exists. purge-identity only finishes a delete that already happened.", canon)}
 	}
-	done := Done{Settled: true}
+	done := Done{Name: canon, Settled: true}
 	for _, err := range failures(p.Registry.Delete(canon)) {
 		done.Settled = false
-		done.Lines = append(done.Lines, failed(true, err))
+		done.Failed = append(done.Failed, failed(true, err))
 	}
 	return done, nil
 }
@@ -215,8 +223,8 @@ func (p *Profiles) MigrateIdentity(old, renamed string) (Done, error) {
 	if !p.config.Exists(newCanon) {
 		return Done{}, unknown(newCanon)
 	}
-	lines, settled := p.migrate(oldCanon, newCanon)
-	return Done{Path: p.Dir(newCanon), Lines: lines, Settled: settled}, nil
+	moved, broken := p.migrate(oldCanon, newCanon)
+	return Done{Path: p.Dir(newCanon), Name: newCanon, Done: moved, Failed: broken, Settled: len(broken) == 0}, nil
 }
 
 // Sets a profile's description, the default profile's included

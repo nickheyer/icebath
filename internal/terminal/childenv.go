@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 // Credentials and messaging settings never handed to a command unless passed through by name
@@ -340,7 +341,7 @@ func normHome(path string) string {
 	if path = strings.TrimSpace(path); path == "" {
 		return ""
 	}
-	if abs, err := filepath.Abs(ExpandUser(path)); err == nil {
+	if abs, err := filepath.Abs(fsx.ExpandHome(path)); err == nil {
 		path = abs
 	}
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
@@ -465,19 +466,4 @@ func scratchTemp(dir string, env map[string]string) {
 		env[name] = scratch
 	}
 	env[scratchMarker] = scratch
-}
-
-// Expands a leading ~ to the user's home
-func ExpandUser(path string) string {
-	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
-		if home, err := os.UserHomeDir(); err == nil {
-			return home + path[1:]
-		}
-	}
-	return path
-}
-
-// Expands environment references and a leading ~
-func ExpandPath(path string) string {
-	return ExpandUser(os.ExpandEnv(path))
 }

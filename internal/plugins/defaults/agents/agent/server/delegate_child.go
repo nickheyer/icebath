@@ -385,7 +385,7 @@ func (c *child) answer(command, description string) string {
 		slog.Warn(fmt.Sprintf("Subagent auto-approved dangerous command: %s (%s)", command, description))
 		return "once"
 	}
-	slog.Warn(fmt.Sprintf("Subagent auto-denied dangerous command: %s (%s). Turn on subagent auto approve in /settings Subagents to allow.", command,
+	slog.Warn(fmt.Sprintf("Subagent auto-denied dangerous command: %s (%s). Turn on Run risky commands under Subagents in /settings to allow.", command,
 		description))
 	return "deny"
 }

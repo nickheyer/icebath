@@ -45,10 +45,11 @@ func (s *services) Services() []generation.Service {
 		Name:  deepinfraconfig.Name,
 		Title: "DeepInfra",
 		Ready: func(cfg *config.Config) bool { _, ok := s.route(cfg); return ok },
-		Setup: generation.Setup{Badge: "paid", Prompt: "DeepInfra API key", Link: "https://deepinfra.com/dash/api_keys", Provider: deepinfraprovider.Name},
+		Setup: generation.Setup{Badge: "paid", Prompt: "DeepInfra API key", Link: "https://deepinfra.com/dash/api_keys",
+			Providers: []string{deepinfraprovider.Name}},
 		Images: &generation.Images{
 			About:    "Open image models, needs a DeepInfra API key",
-			Settings: []string{deepinfraconfig.Model, deepinfraconfig.BaseURL},
+			Section:  deepinfraconfig.Key,
 			Model:    deepinfraconfig.Model,
 			Models:   s.imageModels,
 			Default:  func(ctx context.Context, cfg *config.Config) string { return s.imageModel(ctx, cfg, "") },
@@ -57,6 +58,8 @@ func (s *services) Services() []generation.Service {
 		},
 		Videos: &generation.Videos{
 			About:   "Open video models from text or an image, needs a DeepInfra API key",
+			Section: deepinfraconfig.VideoKey,
+			Model:   deepinfraconfig.VideoModel,
 			Models:  s.videoModels,
 			Default: s.videoDefault,
 			Takes: func(*config.Config) generation.VideoTakes {

@@ -283,20 +283,21 @@ func (s *Scope) ProjectDirs() []string {
 	return s.projectDirs(root)
 }
 
-// Untrusted project the session works in and how many skills it holds, none when it holds none
-func (s *Scope) UntrustedProject() (string, int) {
-	root := s.project(false)
+// Project the session works in, whether it is trusted, and how many skills it keeps in its own folder; none when project skills are off or
+// the folder is in no project
+func (s *Scope) Project() (string, bool, int) {
+	if !s.Config.GetBool(skillsconfig.ProjectDiscovery) {
+		return "", false, 0
+	}
+	root := s.projectRoot()
 	if root == "" {
-		return "", 0
+		return "", false, 0
 	}
 	count := 0
 	for _, dir := range s.projectDirs(root) {
 		count += len(skillFiles(dir))
 	}
-	if count == 0 {
-		return "", 0
-	}
-	return root, count
+	return root, s.Trusted(root), count
 }
 
 // Whether the path lies in an extra skill folder or a trusted project's, which belong to others and are never changed by maintenance
@@ -584,41 +585,4 @@ func same(paths []string) bool {
 		digests[hex.EncodeToString(sum[:])] = true
 	}
 	return len(digests) == 1
-}
-
-// Turns skills on or off for the agent, everywhere or on one surface alone; the names that changed, essential skills never among them
-func (s *Scope) SetDisabled(names []string, enabled bool, surface string) ([]string, error) {
-	current := map[string]bool{}
-	table := map[string]any{}
-	if surface == "" {
-		current = namesOf(s.Config.Get(skillsconfig.Disabled))
-	} else {
-		if stored, ok := s.Config.Get(skillsconfig.PlatformDisabled).(map[string]any); ok {
-			for key, value := range stored {
-				table[key] = value
-			}
-		}
-		current = namesOf(table[surface])
-	}
-	var changed []string
-	for _, name := range names {
-		if name = strings.TrimSpace(name); name == "" || Essential[name] || current[name] == !enabled {
-			continue
-		}
-		current[name] = !enabled
-		changed = append(changed, name)
-	}
-	if len(changed) == 0 {
-		return nil, nil
-	}
-	list := sorted(current)
-	var err error
-	if surface == "" {
-		err = s.Config.Set(skillsconfig.Disabled, list)
-	} else {
-		table[surface] = list
-		err = s.Config.Set(skillsconfig.PlatformDisabled, table)
-	}
-	s.registry.Forget()
-	return changed, err
 }

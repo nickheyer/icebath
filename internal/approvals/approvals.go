@@ -76,6 +76,8 @@ type Approvals struct {
 	order   []string
 	// Writes of the allowlist, one at a time
 	allow sync.Mutex
+	// Kinds of risky action the tools ask about, which the allowlist may hold by name
+	risks func() []config.Option
 	// Told of every change of the prompts of any session, by the key Observe gave them
 	observers map[int]func(session string, prompts []Prompt)
 	observed  int
@@ -118,6 +120,8 @@ func New(cfg *config.Config, helpers *auxiliary.Auxiliary, points *hooks.Hooks) 
 		}
 		return options
 	})
+	cfg.Guard(approvalsconfig.Allowlist, config.Guard{Write: a.writeAllowlist})
+	cfg.Guard(approvalsconfig.Mode, config.Guard{Check: checkMode, Write: a.writeMode})
 	helpers.Register(tasks{})
 	return a
 }
@@ -153,8 +157,8 @@ func (a *Approvals) session(id string) *session {
 	return s
 }
 
-// Whether the session runs without asking, from the launch or for the session
-func (a *Approvals) skips(id string) bool {
+// Whether the session runs without asking, from the launch or for the session: the one answer every page, command and status line reads
+func (a *Approvals) Skips(id string) bool {
 	return a.launch || a.Yolo(id)
 }
 
@@ -257,36 +261,6 @@ func (a *Approvals) remember(cfg *config.Config, id, choice string, keys []strin
 	}
 	_, _, err := a.Allow(cfg, keys)
 	return err
-}
-
-// Adds the entries to the profile's allowlist, giving those that were new and how many it holds now
-func (a *Approvals) Allow(cfg *config.Config, entries []string) ([]string, int, error) {
-	a.allow.Lock()
-	defer a.allow.Unlock()
-	list := cfg.GetStringSlice(approvalsconfig.Allowlist)
-	var added []string
-	for _, entry := range entries {
-		if entry = strings.TrimSpace(entry); entry != "" && !slices.Contains(list, entry) {
-			list = append(list, entry)
-			added = append(added, entry)
-		}
-	}
-	if len(added) == 0 {
-		return nil, len(list), nil
-	}
-	slices.Sort(list)
-	if err := cfg.Set(approvalsconfig.Allowlist, list); err != nil {
-		return nil, 0, err
-	}
-	return added, len(list), nil
-}
-
-// Takes entries out of the profile's allowlist
-func (a *Approvals) Disallow(cfg *config.Config, entries []string) error {
-	a.allow.Lock()
-	defer a.allow.Unlock()
-	list := slices.DeleteFunc(cfg.GetStringSlice(approvalsconfig.Allowlist), func(entry string) bool { return slices.Contains(entries, entry) })
-	return cfg.Set(approvalsconfig.Allowlist, list)
 }
 
 // Counts one more smart denial in a row for the session, giving the count

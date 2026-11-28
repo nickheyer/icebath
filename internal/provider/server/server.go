@@ -3,11 +3,15 @@ package server
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect/v2"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/credentials"
@@ -18,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/internal/transport"
 	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1/providerv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 var origins = map[credentials.Origin]providerv1.Origin{
@@ -46,7 +51,9 @@ type finding struct {
 }
 
 func Register(host *server.Server, cfg *config.Config, p *provider.Provider, t *transport.Transport, c *credentials.Credentials, m *models.Models) {
-	host.Register(&service{config: cfg, providers: p, transports: t, credentials: c, models: m})
+	s := &service{config: cfg, providers: p, transports: t, credentials: c, models: m}
+	s.guard()
+	host.Register(s)
 }
 
 func (s *service) Mount(services *connect.Server) {
@@ -63,7 +70,7 @@ func (s *service) List(ctx context.Context, request *providerv1.ListRequest) (*p
 	var asked []provider.Route
 	for _, instance := range s.providers.Instances(cfg) {
 		message := s.message(cfg, instance, wired)
-		if instance.Spec.AccountUsage != nil {
+		if instance.Spec.AccountUsage != nil && message.GetReady() {
 			if route, err := s.credentials.Route(instance, ""); err == nil {
 				asked = append(asked, route)
 				if reading := s.models.CachedUsage(cfg, route); !models.StaleUsage(reading) {
@@ -77,43 +84,71 @@ func (s *service) List(ctx context.Context, request *providerv1.ListRequest) (*p
 	return response, nil
 }
 
+// Provider as a listing shows it: whether it is ready by the one test every screen and the agent use and why not, the account and the
+// credential that requests go out with now, the credential found outside its accounts, and each account
 func (s *service) message(cfg *config.Config, instance provider.Instance, wired map[provider.APIMode]provider.Factory) *providerv1.Provider {
 	spec := instance.Spec
 	_, usable := wired[spec.Mode]
-	credential, _ := s.credentials.Credential(credentials.Of(instance, ""))
+	using, credential, unready := s.credentials.Ready(instance, wired)
 	message := &providerv1.Provider{
-		Name:             instance.ID,
-		Spec:             spec.Name,
-		DisplayName:      instance.Label(),
-		Description:      spec.Description,
-		SignupUrl:        spec.SignupURL,
-		BaseUrl:          cmp.Or(credential.BaseURL, spec.BaseURL),
-		ApiMode:          string(spec.Mode),
-		DefaultModel:     spec.DefaultModel,
-		Models:           instance.Models,
-		Aliases:          spec.Aliases,
-		Local:            spec.Local,
-		Aggregator:       spec.Aggregator,
-		CredentialOrigin: origins[credential.Origin],
-		CredentialSource: credential.Source,
-		KeyEnv:           spec.KeyEnvNames(),
-		Keyed:            spec.Keyed(),
-		Section:          instance.Settings.Prefix(),
-		Usable:           instance.Known && usable && spec.BaseURL != "",
-		Account:          instance.Account,
-		Known:            instance.Known,
-		Hidden:           s.models.Hidden(cfg, instance.ID, spec.Name),
-		Usage:            spec.AccountUsage != nil,
-		Strategy:         instance.Settings.GetString(providerconfig.Strategy),
-		OnExhausted:      instance.Settings.GetString(providerconfig.OnExhausted),
-		Pinned:           instance.Pinned,
-		Rotate:           instance.Rotate,
-		Ignored:          instance.Settings.GetStringSlice(providerconfig.Ignored),
+		Name:         instance.ID,
+		Spec:         spec.Name,
+		DisplayName:  instance.Label(),
+		Description:  spec.Description,
+		SignupUrl:    spec.SignupURL,
+		BaseUrl:      cmp.Or(credential.BaseURL, spec.BaseURL),
+		ApiMode:      string(spec.Mode),
+		DefaultModel: cmp.Or(spec.DefaultModel, s.models.DefaultModel(cfg, provider.Route{Provider: instance.ID, Spec: spec.Name})),
+		Models:       instance.Models,
+		Aliases:      spec.Aliases,
+		Local:        spec.Local,
+		Aggregator:   spec.Aggregator,
+		KeyEnv:       spec.KeyEnvNames(),
+		Keyed:        spec.Keyed(),
+		Section:      instance.Settings.Prefix(),
+		Usable:       instance.Known && usable && cmp.Or(credential.BaseURL, spec.BaseURL) != "",
+		Account:      instance.Account,
+		Known:        instance.Known,
+		Hidden:       !instance.Offered(cfg),
+		Usage:        spec.AccountUsage != nil,
+		Strategy:     instance.Settings.GetString(providerconfig.Strategy),
+		OnExhausted:  instance.Settings.GetString(providerconfig.OnExhausted),
+		Pinned:       instance.Pinned,
+		Rotate:       instance.Rotate,
+		Ignored:      instance.Settings.GetStringSlice(providerconfig.Ignored),
+		Ready:        unready == nil,
+		Own:          instance.Own,
+		SignsIn:      spec.SignIn,
+	}
+	if worded, ok := errors.AsType[*credentials.Unready](unready); ok {
+		message.Instead, message.InsteadOf = worded.Instead, worded.Of
+	}
+	switch {
+	case unready != nil:
+		message.Why = unready.Error()
+	case credential.APIKey == "" && credential.Sign == nil:
+		message.CredentialOrigin, message.Using = providerv1.Origin_ORIGIN_UNNEEDED, using.Name
+	default:
+		message.CredentialOrigin, message.CredentialSource, message.Using = origins[credential.Origin], credential.Source, using.Name
+	}
+	if outside, ok := s.credentials.Credential(credentials.Outside(instance)); ok && (outside.APIKey != "" || outside.Sign != nil) {
+		message.OutsideOrigin, message.OutsideSource = origins[outside.Origin], outside.Source
+		message.OutsideUsed = unready == nil && using.Name == "" && (credential.APIKey != "" || credential.Sign != nil)
 	}
 	for _, name := range instance.Accounts {
-		message.Accounts = append(message.Accounts, s.account(instance, name))
+		message.Accounts = append(message.Accounts, s.account(instance, name, message.GetUsing()))
 	}
+	message.State, message.Standing = providerState(instance, message, credential, unready)
 	return message
+}
+
+// Account that requests to the provider go out with now, empty for the credential outside its accounts and while it is not ready
+func (s *service) inUse(instance provider.Instance) string {
+	using, _, err := s.credentials.Ready(instance, s.transports.Factories())
+	if err != nil {
+		return ""
+	}
+	return using.Name
 }
 
 func (s *service) Specs(_ context.Context, request *providerv1.SpecsRequest) (*providerv1.SpecsResponse, error) {
@@ -137,13 +172,16 @@ func (s *service) Specs(_ context.Context, request *providerv1.SpecsRequest) (*p
 			ApiMode:        string(spec.Mode),
 			Local:          spec.Local,
 			Aggregator:     spec.Aggregator,
-			Usable:         usable && (spec.BaseURL != "" || spec.Resolve != nil),
+			Usable:         usable,
 			DetectedOrigin: origins[detected.Origin],
 			DetectedSource: detected.Source,
 			KeyEnv:         spec.KeyEnvNames(),
 			Aliases:        spec.Aliases,
 			Keyed:          spec.Keyed(),
 			Rank:           uint32(max(spec.Rank, 0)),
+			SignsIn:        spec.SignIn,
+			Own:            spec.Own(),
+			NeedsAddress:   spec.BaseURL == "",
 		}
 		for _, instance := range instances {
 			if instance.Spec.Name == spec.Name {
@@ -211,12 +249,13 @@ func (s *service) instance(profile, name string) (provider.Instance, error) {
 	}
 	instance, ok := s.providers.Instance(cfg, name)
 	if !ok {
-		return instance, connect.NewError(connect.CodeNotFound, "The profile "+cfg.Profile()+" has no provider named "+name+". Add it in /providers.")
+		return instance, connect.NewError(connect.CodeNotFound, "The profile "+cfg.Profile()+" has no provider named "+name+".")
 	}
 	return instance, nil
 }
 
-// Models the provider offers with what is known of each: their windows, prices and what they can do
+// Models the provider offers with what is known of each: their windows, prices and what they can do; with why it gave no list of its own
+// when it gave none. Refused while the provider is not ready, saying why
 func (s *service) Models(ctx context.Context, request *providerv1.ModelsRequest) (*providerv1.ModelsResponse, error) {
 	instance, err := s.instance(request.GetProfile(), request.GetProvider())
 	if err != nil {
@@ -226,6 +265,9 @@ func (s *service) Models(ctx context.Context, request *providerv1.ModelsRequest)
 	if err != nil {
 		return nil, err
 	}
+	if _, _, err := s.credentials.Ready(instance, s.transports.Factories()); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
+	}
 	route, err := s.credentials.Route(instance, "")
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
@@ -234,11 +276,14 @@ func (s *service) Models(ctx context.Context, request *providerv1.ModelsRequest)
 		s.models.RefreshCatalogs(cfg)
 	}
 	catalog := s.models.Catalog(ctx, cfg, route, request.GetRefresh())
-	if len(catalog.IDs) == 0 {
-		return nil, connect.NewError(connect.CodeUnavailable, instance.Label()+" didn't send its list of models. Check that it is connected, then try again.")
-	}
 	prices := s.models.Prices(ctx, cfg, route, request.GetRefresh())
 	response := &providerv1.ModelsResponse{Models: catalog.IDs, Fallback: catalog.Fallback}
+	switch {
+	case catalog.Unlisted != nil:
+		response.Unlisted = catalog.Unlisted.Reason(instance.Label())
+	case len(catalog.IDs) == 0:
+		response.Unlisted = instance.Label() + " gives no list of its models that icebath can read."
+	}
 	for _, id := range catalog.IDs {
 		model := route
 		model.Model = id
@@ -313,62 +358,132 @@ func (s *service) Add(_ context.Context, request *providerv1.AddRequest) (*provi
 	if err != nil {
 		return nil, err
 	}
-	instance, err := s.providers.Add(cfg, request.GetSpec(), request.GetName(), request.GetTitle())
+	instance, err := s.providers.Add(cfg, request.GetSpec(), request.GetName(), request.GetTitle(), request.GetBaseUrl())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 	}
 	return &providerv1.AddResponse{Provider: s.message(cfg, instance, s.transports.Factories())}, nil
 }
 
-func (s *service) Remove(_ context.Context, request *providerv1.RemoveRequest) (*providerv1.RemoveResponse, error) {
+func (s *service) Remove(ctx context.Context, request *providerv1.RemoveRequest) (*providerv1.RemoveResponse, error) {
 	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
-	}
-	if err := s.providers.Remove(cfg, request.GetProvider()); err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, err.Error())
-	}
-	return &providerv1.RemoveResponse{}, nil
-}
-
-func (s *service) AddAccount(_ context.Context, request *providerv1.AddAccountRequest) (*providerv1.AddAccountResponse, error) {
-	cfg, err := server.Profile(s.config, request.GetProfile())
-	if err != nil {
-		return nil, err
-	}
-	name, err := s.providers.AddAccount(cfg, request.GetProvider(), request.GetName(), request.GetTitle())
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 	}
 	instance, err := s.instance(request.GetProfile(), request.GetProvider())
 	if err != nil {
 		return nil, err
 	}
-	for _, account := range s.message(cfg, instance, nil).GetAccounts() {
-		if account.GetName() == name {
-			return &providerv1.AddAccountResponse{Account: account}, nil
-		}
+	removed, err := s.providers.Remove(ctx, cfg, instance.ID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 	}
-	return nil, connect.NewError(connect.CodeInternal, "The account was added, but icebath can't read it back. Open /providers to check it.")
+	return &providerv1.RemoveResponse{Cleared: removed.Variables, Named: removed.Named, Said: said("Removed "+instance.Label()+".", removed)}, nil
 }
 
-func (s *service) RemoveAccount(_ context.Context, request *providerv1.RemoveAccountRequest) (*providerv1.RemoveAccountResponse, error) {
+// What a removal did in a sentence or two: the act, then what it cleared from the keys file and what named the thing removed
+func said(done string, removed provider.Removed) string {
+	if len(removed.Variables) > 0 {
+		done = strings.TrimSuffix(done, ".") + " and cleared " + strs.AndMore(removed.Variables, 4) + " from your keys file."
+	}
+	if cleared := provider.Cleared(removed.Named); cleared != "" {
+		done += " " + cleared
+	}
+	return done
+}
+
+func (s *service) Rename(ctx context.Context, request *providerv1.RenameRequest) (*providerv1.RenameResponse, error) {
 	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
-	if source := request.GetSource(); source != "" {
-		cleared, err := s.providers.Ignore(cfg, request.GetProvider(), source)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeNotFound, err.Error())
-		}
-		return &providerv1.RemoveAccountResponse{Cleared: cleared}, nil
+	instance, err := s.instance(request.GetProfile(), request.GetProvider())
+	if err != nil {
+		return nil, err
 	}
-	cleared, err := s.providers.RemoveAccount(cfg, request.GetProvider(), request.GetAccount())
+	to, err := s.providers.Rename(ctx, cfg, instance.ID, request.GetTitle())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
+	}
+	renamed, err := s.instance(request.GetProfile(), to)
+	if err != nil {
+		return nil, err
+	}
+	return &providerv1.RenameResponse{Provider: s.message(cfg, renamed, s.transports.Factories())}, nil
+}
+
+func (s *service) Connect(_ context.Context, request *providerv1.ConnectRequest) (*providerv1.ConnectResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	instance, err := s.instance(request.GetProfile(), request.GetProvider())
+	if err != nil {
+		return nil, err
+	}
+	fields := map[string]any{}
+	for name, text := range request.GetFields() {
+		var value any
+		if err := yaml.Unmarshal([]byte(text), &value); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Sprintf("The value given for %s can't be read: %s.", name,
+				strings.TrimPrefix(err.Error(), "yaml: ")))
+		}
+		fields[name] = value
+	}
+	account := cmp.Or(request.GetAccount(), s.signedAs(instance, request.GetIdentity()))
+	before, settings := instance.Settings.Stored(""), instance.Settings
+	name, err := s.providers.Connect(cfg, instance.ID, account, request.GetTitle(), request.GetIdentity(), fields)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
+	}
+	if instance, err = s.instance(request.GetProfile(), instance.ID); err != nil {
+		return nil, err
+	}
+	if !slices.Contains(instance.Accounts, name) {
+		return nil, connect.NewError(connect.CodeInternal, "The account was kept, but icebath can't read it back.")
+	}
+	// The sign-in of another program is read where the server runs, with the account's own environment, which may not be where the person
+	// asked for it: an account that would use one the server does not find is not kept, the provider put back as it was
+	if program, _ := fields[providerconfig.Program].(string); strings.TrimSpace(program) != "" {
+		if missing := s.credentials.Missing(credentials.Of(instance, name)); missing != "" {
+			if err := settings.Replace(before); err != nil {
+				return nil, err
+			}
+			return nil, connect.NewError(connect.CodeFailedPrecondition, missing)
+		}
+	}
+	return &providerv1.ConnectResponse{Account: s.account(instance, name, s.inUse(instance))}, nil
+}
+
+// Account of the provider that signs in as the identity, which a sign-in as the same one connects again rather than adding a second;
+// empty for none or no identity
+func (s *service) signedAs(instance provider.Instance, identity string) string {
+	if identity = strings.TrimSpace(identity); identity == "" {
+		return ""
+	}
+	for _, name := range instance.Accounts {
+		if found, _ := s.credentials.Credential(credentials.Of(instance, name)); strings.EqualFold(found.Identity, identity) {
+			return name
+		}
+	}
+	return ""
+}
+
+func (s *service) RemoveAccount(ctx context.Context, request *providerv1.RemoveAccountRequest) (*providerv1.RemoveAccountResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	instance, err := s.instance(request.GetProfile(), request.GetProvider())
+	if err != nil {
+		return nil, err
+	}
+	title := instance.AccountTitle(request.GetAccount())
+	removed, err := s.providers.RemoveAccount(ctx, cfg, instance.ID, request.GetAccount())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, err.Error())
 	}
-	return &providerv1.RemoveAccountResponse{Cleared: cleared}, nil
+	return &providerv1.RemoveAccountResponse{Cleared: removed.Variables, Named: removed.Named, Said: said("Removed the account "+title+".", removed)}, nil
 }
 
 func (s *service) UseAccount(_ context.Context, request *providerv1.UseAccountRequest) (*providerv1.UseAccountResponse, error) {
@@ -377,7 +492,68 @@ func (s *service) UseAccount(_ context.Context, request *providerv1.UseAccountRe
 		return nil, err
 	}
 	if err := s.providers.UseAccount(cfg, request.GetProvider(), request.GetAccount()); err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, err.Error())
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 	}
 	return &providerv1.UseAccountResponse{}, nil
+}
+
+func (s *service) SetTurns(_ context.Context, request *providerv1.SetTurnsRequest) (*providerv1.SetTurnsResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	instance, err := s.instance(request.GetProfile(), request.GetProvider())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.providers.SetTurns(cfg, instance.ID, request.GetAccount(), request.GetOn()); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
+	}
+	title := instance.AccountTitle(request.GetAccount())
+	if request.GetOn() {
+		return &providerv1.SetTurnsResponse{Said: title + " now takes turns with the other accounts of " + instance.Label() + " that take turns."}, nil
+	}
+	return &providerv1.SetTurnsResponse{Said: title + " no longer takes turns."}, nil
+}
+
+func (s *service) SetOutside(_ context.Context, request *providerv1.SetOutsideRequest) (*providerv1.SetOutsideResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	instance, err := s.instance(request.GetProfile(), request.GetProvider())
+	if err != nil {
+		return nil, err
+	}
+	// A source is turned by the variable or program it names, whichever store supplied the variable
+	source := credentials.SourceName(request.GetSource())
+	if _, err := s.providers.SetOutside(cfg, instance.ID, source, request.GetOn()); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
+	}
+	what := credentials.Words(credentials.Credential{Origin: credentials.External, Source: source})
+	if config.EnvName(source) {
+		what = credentials.Words(credentials.Credential{Origin: credentials.Environment, Source: source})
+	}
+	if request.GetOn() {
+		return &providerv1.SetOutsideResponse{Said: instance.Label() + " uses " + what + " again."}, nil
+	}
+	return &providerv1.SetOutsideResponse{Said: instance.Label() + " no longer uses " + what + "."}, nil
+}
+
+func (s *service) SetOffered(_ context.Context, request *providerv1.SetOfferedRequest) (*providerv1.SetOfferedResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	instance, err := s.instance(request.GetProfile(), request.GetProvider())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.providers.SetOffered(cfg, instance.ID, request.GetOn()); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
+	}
+	if request.GetOn() {
+		return &providerv1.SetOfferedResponse{Said: "The model list offers the models of " + instance.Label() + "."}, nil
+	}
+	return &providerv1.SetOfferedResponse{Said: "The model list no longer offers the models of " + instance.Label() + "."}, nil
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -22,7 +23,8 @@ const HubViewContext = "hub.view"
 
 // Keys shared by every screen of things to manage, registered with the keymap of the app
 func RegisterHubKeys(km *keys.Map) {
-	for name, doc := range map[string]string{HubContext: "dialog rows", HubViewContext: "dialogs"} {
+	for name, doc := range map[string]string{HubContext: "dialog rows", HubViewContext: "dialogs", MenuAreasContext: "the areas of a menu",
+		MenuPageContext: "the page of a menu"} {
 		if keys.ContextDocs[name] == "" {
 			if err := keys.AddContext(name, doc); err != nil {
 				panic(err)
@@ -35,8 +37,14 @@ func RegisterHubKeys(km *keys.Map) {
 		{ID: "hub.edit", Context: HubContext, Label: "edit", Doc: "Edit the selected row", Default: []string{"ctrl+e"}, Quiet: true},
 		{ID: "hub.rename", Context: HubContext, Label: "rename", Doc: "Rename the selected row", Default: []string{"f2"}, Quiet: true},
 		{ID: "hub.remove", Context: HubContext, Label: "remove", Doc: "Remove the selected row", Default: []string{"ctrl+d"}, Quiet: true},
+		{ID: "hub.up", Context: HubContext, Label: "move up", Doc: "Move the selected row up a list whose order matters", Default: []string{"shift+up"},
+			Quiet: true},
+		{ID: "hub.down", Context: HubContext, Label: "move down", Doc: "Move the selected row down a list whose order matters",
+			Default: []string{"shift+down"}, Quiet: true},
 		{ID: "hub.back", Context: HubViewContext, Label: "back", Doc: "Go back, or close the dialog", Default: []string{"esc"}, Quiet: true},
 		{ID: "hub.refresh", Context: HubViewContext, Label: "refresh", Doc: "Reload the rows", Default: []string{"ctrl+r"}, Quiet: true},
+		{ID: "menu.in", Context: MenuAreasContext, Label: "open", Doc: "Give the keys to the page of the area", Default: []string{"right"}, Quiet: true},
+		{ID: "menu.out", Context: MenuPageContext, Label: "back", Doc: "Give the keys back to the areas", Default: []string{"left"}, Quiet: true},
 	} {
 		km.Register(a)
 	}
@@ -84,6 +92,13 @@ type Hub struct {
 	// Held beneath a palette or another overlay instead of dropped, for a question that waits for its answer
 	sticky bool
 	w, h   int
+	// Menu the hub sits in, as the page of an area or as the hub of its areas, nil for a dialog of its own
+	menu *Menu
+	// The next view pushed is the job the person came straight to
+	job bool
+	// Runs once the hub holds depth views, once
+	next  func() tea.Cmd
+	depth int
 }
 
 // Window manager interfaces the hub answers through the view on top
@@ -123,21 +138,133 @@ func (h *Hub) Top() wm.Card { return h.stack[len(h.stack)-1] }
 // Root view of the hub
 func (h *Hub) Root() wm.Card { return h.stack[0] }
 
-// Reports whether the view is stacked on the hub
-func (h *Hub) Holds(c wm.Card) bool { return slices.Contains(h.stack, c) }
+// Reports whether the view is stacked on the hub, or is a step of a view stacked on it
+func (h *Hub) Holds(c wm.Card) bool { return h.holder(c) != nil }
+
+// View stacked on the hub that is c or holds it, nil for none
+func (h *Hub) holder(c wm.Card) wm.Card {
+	for _, view := range h.stack {
+		if view == c {
+			return view
+		}
+		if steps, ok := view.(*Steps); ok && slices.Contains(steps.steps, c) {
+			return view
+		}
+	}
+	return nil
+}
 
 // Number of views stacked over the root
 func (h *Hub) Depth() int { return len(h.stack) - 1 }
 
-// Reports whether the hub is on screen
-func (h *Hub) Shown() bool { return h.shown }
+// Reports whether the hub is on screen: a dialog of its own while the window manager shows it, the page of an area while its menu shows
+// and the page is the one in view
+func (h *Hub) Shown() bool {
+	if h.menu != nil {
+		return h.menu.shows(h)
+	}
+	return h.shown
+}
 
 // Puts a view on top, the one under it waiting until it closes
 func (h *Hub) Push(c wm.Card) tea.Cmd {
+	h.opened()
 	cmds := []tea.Cmd{h.send(h.Top(), wm.FocusMsg{})}
 	h.stack = append(h.stack, c)
 	cmds = append(cmds, c.Init(), h.send(c, wm.FocusMsg{Focused: true}))
+	if next := h.next; next != nil && len(h.stack) >= h.depth {
+		h.next = nil
+		cmds = append(cmds, next())
+	}
 	return tea.Batch(cmds...)
+}
+
+// Runs then once the hub holds depth views, its first counted, at once when it does already: such as to put a control over the page a
+// screen pushes, with the pages above it inside the area, once it read what they show
+func (h *Hub) At(depth int, then func() tea.Cmd) tea.Cmd {
+	if len(h.stack) >= depth {
+		return then()
+	}
+	h.next, h.depth = then, depth
+	return nil
+}
+
+// A job of one pick is done once the value picked is kept: in a menu the person came straight into for it and did nothing else in since,
+// the menu closes; nothing else closes, the picker having closed its own list
+func (h *Hub) Picked() tea.Cmd {
+	if h.menu != nil && h.menu.direct {
+		return h.Leave()
+	}
+	return nil
+}
+
+// Another view opened in the menu the hub sits in, so the job the person came straight to is no longer all they did there; the view of
+// that job itself, when it is the first pushed since Direct, leaves it so
+func (h *Hub) opened() {
+	switch {
+	case h.job:
+		h.job = false
+	case h.menu != nil:
+		h.menu.direct = false
+	}
+}
+
+// View the person works in on top: the step in view of a job in steps, else the view on top itself
+func (h *Hub) face() wm.Card {
+	if steps, ok := h.Top().(*Steps); ok && len(steps.steps) > 0 {
+		return steps.Step()
+	}
+	return h.Top()
+}
+
+// The job the person came for is done. In a menu they came straight into for this job and did nothing else in since, the menu closes;
+// otherwise the view closes, nothing closing for no view. A dialog of its own closes itself for no view or its first
+func (h *Hub) Finish(view wm.Card) tea.Cmd {
+	switch {
+	case h.menu != nil && h.menu.direct:
+		return h.Leave()
+	case h.menu == nil && (view == nil || view == h.Root()):
+		return h.Leave()
+	case view == nil:
+		return nil
+	}
+	return h.Close(view)
+}
+
+// Says the person came straight to one job on the hub, as a command that names one job does: the job of the next view pushed, which may
+// come once something is read, or of the view on top when none is. In a menu, Finish then closes the menu unless they do something else
+// there first. A dialog of its own is unchanged
+func (h *Hub) Direct() {
+	if h.menu != nil {
+		h.menu.Direct()
+		h.job = true
+	}
+}
+
+// Closes the dialog the hub is in: the hub itself as a dialog of its own, else the menu it sits in. A note it shows that says what was done
+// is said again as a toast, since the dialog goes with it
+func (h *Hub) Leave() tea.Cmd {
+	var dialog wm.Card = h
+	if h.menu != nil {
+		dialog = h.menu
+	}
+	return tea.Batch(h.toast(), wm.RequestDismissOf(dialog))
+}
+
+// The note under the view as a toast, nothing for none or for work still in flight
+func (h *Hub) toast() tea.Cmd {
+	if h.note == "" {
+		return nil
+	}
+	switch h.level {
+	case NoteDone:
+		return wm.Notify(h.note, wm.Success)
+	case NoteFailed:
+		return wm.Notify(h.note, wm.Error)
+	case NoteInfo:
+		return wm.Notify(h.note, wm.Info)
+	}
+	return nil
 }
 
 // View of a hub that is told when it leaves the hub for good, by its way back, by the code that closes it or with the hub itself, so
@@ -179,6 +306,7 @@ func (h *Hub) PopTo(c wm.Card) tea.Cmd {
 
 // Puts c in the place of the view on top, such as another tab of the root, the views keeping their order
 func (h *Hub) Swap(c wm.Card) tea.Cmd {
+	h.opened()
 	top := h.Top()
 	h.stack[len(h.stack)-1] = c
 	return tea.Batch(h.send(top, wm.FocusMsg{}), closed(top), c.Init(), h.send(c, wm.FocusMsg{Focused: true}))
@@ -241,24 +369,34 @@ const trailLeast, trailChrome = 24, 28
 // Title of the first view, and from a view opened over it the mark that steps back and the whole trail to that view, each view named
 // once. A trail too long for the width folds its middle and keeps the first and the last name
 func (h *Hub) Title() string {
-	g := h.env.Theme.Glyphs
-	var names []string
-	for _, view := range h.stack {
-		if title := view.Title(); title != "" && (len(names) == 0 || names[len(names)-1] != title) {
-			names = append(names, title)
-		}
-	}
+	names := h.names(nil)
 	if len(names) == 0 {
 		return ""
 	}
 	if len(h.stack) == 1 {
 		return names[0]
 	}
+	return trail(h.env.Theme.Glyphs, names, h.w)
+}
+
+// Names after those given of every view stacked on the hub, each named once
+func (h *Hub) names(names []string) []string {
+	for _, view := range h.stack {
+		if title := view.Title(); title != "" && (len(names) == 0 || names[len(names)-1] != title) {
+			names = append(names, title)
+		}
+	}
+	return names
+}
+
+// The mark that steps back and the names of a trail from the first view to the one in hand. A trail too long for the width folds its
+// middle and keeps the first and the last name; before the first paint the width is not known and nothing folds
+func trail(g theme.Glyphs, names []string, w int) string {
+	names = slices.Clone(names)
 	sep := " " + g.Forward + " "
-	trail := func() string { return g.Back + " " + strings.Join(names, sep) }
-	// Before the first paint the width is not known and nothing folds
-	room := max(h.w-trailChrome, trailLeast)
-	for h.w > 0 && len(names) > 2 && ansi.StringWidth(trail()) > room {
+	said := func() string { return g.Back + " " + strings.Join(names, sep) }
+	room := max(w-trailChrome, trailLeast)
+	for w > 0 && len(names) > 2 && ansi.StringWidth(said()) > room {
 		if names[1] != g.Ellipsis {
 			names[1] = g.Ellipsis
 			continue
@@ -268,7 +406,7 @@ func (h *Hub) Title() string {
 		}
 		names = slices.Delete(names, 2, 3)
 	}
-	return trail()
+	return said()
 }
 
 func (h *Hub) Glyph() string {
@@ -337,8 +475,8 @@ func (h *Hub) Contexts() []string {
 		out = c.Contexts()
 	}
 	// A form answers esc itself and may take any letter, so the hub's own keys stay out of it
-	_, form := h.Top().(*Form)
-	list, listed := h.Top().(*List)
+	_, form := h.face().(*Form)
+	list, listed := h.face().(*List)
 	filtering := listed && list.Picks() && slices.Contains(out, keys.Search)
 	if !form && (filtering || !takesTyping(out)) {
 		out = append(slices.Clone(out), HubViewContext)
@@ -363,20 +501,25 @@ func takesTyping(ctxs []string) bool {
 	return false
 }
 
-// Buttons of the view on top, the way out last: cancel on a form, back from a view opened over another and close from the first. A view
-// that asks a question or records a key names its own way out
+// Buttons of the view on top, the way out last: cancel on a form, back from a view opened over another and close from the first, back from
+// the first view of the page of an area too, which gives the keys back to the areas. A view that asks a question or records a key names
+// its own way out
 func (h *Hub) Hints() []wm.Hint {
 	var hints []wm.Hint
 	if c, ok := h.Top().(wm.Hinter); ok {
 		hints = c.Hints()
 	}
 	out, label := "hub.back", "back"
-	if len(h.stack) == 1 {
+	if len(h.stack) == 1 && (h.menu == nil || h.menu.areas == h) {
 		label = "close"
 	}
-	switch top := h.Top().(type) {
+	switch top := h.face().(type) {
 	case *Form:
 		out, label = "form.cancel", "cancel"
+	case *Page:
+		if top.ask != nil {
+			return hints
+		}
 	case *List:
 		if top.capture != nil || top.ask != nil || top.edit != nil {
 			return hints
@@ -414,34 +557,49 @@ func (h *Hub) Grabs(x, y int) bool {
 	return ok && g.Grabs(x, y)
 }
 
-// Esc on the hub while its view takes typing and has no step back of its own: a stacked view closes, the root lets the hub close
+// Esc on the hub while its view takes typing and has no step back of its own: a job in steps goes back a step, a stacked view closes, the
+// root lets the hub close
 func (h *Hub) Back() bool {
+	if steps, ok := h.Top().(*Steps); ok {
+		if cmd, stepped := steps.back(); stepped {
+			h.env.run(cmd)
+			return true
+		}
+	}
 	if len(h.stack) == 1 {
 		return false
 	}
-	if cmd := h.Pop(); cmd != nil && h.env.Send != nil {
-		go func() {
-			if msg := cmd(); msg != nil {
-				h.env.Send(msg)
-			}
-		}()
-	}
+	h.env.run(h.Pop())
 	return true
 }
 
-// One step back: the view on top steps back first, a filter clears, a stacked view closes, and the root closes the hub
+// One step back: the view on top steps back first, a filter clears, then the view on top goes away
 func (h *Hub) back() tea.Cmd {
-	top := h.Top()
-	if b, ok := top.(wm.Backer); ok && b.Back() {
+	if b, ok := h.Top().(wm.Backer); ok && b.Back() {
 		return nil
 	}
-	if l, ok := top.(*List); ok && l.bar.Shown() && !l.pick {
+	if l, ok := h.face().(*List); ok && l.bar.Shown() && !l.pick {
+		before := l.Query()
 		l.bar.Close()
 		l.refresh()
-		return nil
+		return l.searchedSince(before)
 	}
-	if len(h.stack) > 1 {
+	return h.away()
+}
+
+// The view on top goes away: a job in steps goes back a step, a stacked view closes, the first view of the page of an area gives the keys
+// back to the areas, and the first of any other hub closes the dialog
+func (h *Hub) away() tea.Cmd {
+	if steps, ok := h.Top().(*Steps); ok {
+		if cmd, stepped := steps.back(); stepped {
+			return cmd
+		}
+	}
+	switch {
+	case len(h.stack) > 1:
 		return h.Pop()
+	case h.menu != nil:
+		return h.menu.home(h)
 	}
 	return wm.RequestDismissOf(h)
 }
@@ -451,6 +609,12 @@ func (h *Hub) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	case hubNoteExpired:
 		if msg.gen == h.gen {
 			h.note = ""
+		}
+		return h, nil
+	case wm.Addressed:
+		// A message for one of the views goes to it, wherever it is stacked
+		if view := h.holder(msg.Addressee()); view != nil {
+			return h, h.send(view, msg)
 		}
 		return h, nil
 	case wm.FocusMsg:
@@ -471,21 +635,18 @@ func (h *Hub) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		case "hub.back":
 			return h, h.back()
 		case "form.cancel":
-			if f, ok := h.Top().(*Form); ok && f.spec.Cancel == nil {
+			if f, ok := h.face().(*Form); ok && f.spec.Cancel == nil {
 				return h, h.back()
 			}
 		case "search.close":
 			// Esc on a list to pick from clears what was typed first, then goes back, closing the hub from its first view
-			if l, ok := h.Top().(*List); ok && l.pick {
-				if l.Query() != "" {
+			if l, ok := h.face().(*List); ok && l.pick {
+				if before := l.Query(); before != "" {
 					l.bar.Close()
 					l.refresh()
-					return h, nil
+					return h, l.searchedSince(before)
 				}
-				if len(h.stack) > 1 {
-					return h, h.Pop()
-				}
-				return h, wm.RequestDismissOf(h)
+				return h, h.away()
 			}
 		}
 		if h.level == NoteFailed {
@@ -499,6 +660,17 @@ func (h *Hub) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	return h, h.send(h.Top(), msg)
 }
 
+// Whether the view the person works in asks a question along its bottom
+func (h *Hub) asking() bool {
+	switch face := h.face().(type) {
+	case *List:
+		return face.ask != nil
+	case *Page:
+		return face.ask != nil
+	}
+	return false
+}
+
 // Rows the view on top paints, the last ones kept for the note while there is one
 func (h *Hub) bodyRows() int {
 	return max(h.h-len(h.noteLines(h.w)), 0)
@@ -506,6 +678,10 @@ func (h *Hub) bodyRows() int {
 
 func (h *Hub) View(w, ht int) string {
 	h.w, h.h = w, ht
+	// A question asked along the bottom of the view replaces the note, which no longer says anything of what is in hand
+	if h.note != "" && h.asking() {
+		h.Quiet()
+	}
 	body := h.bodyRows()
 	lines := strings.Split(h.Top().View(w, body), "\n")
 	lines = lines[:min(len(lines), body)]

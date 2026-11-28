@@ -174,4 +174,6 @@ message Screen {
   string placement = 15;
   ImageSwitch image_switch = 16;
   Lease lease = 17;
+  // Title of the place of the agent's commands the screen runs in, for one in their sandbox
+  string sandbox = 18;
 }

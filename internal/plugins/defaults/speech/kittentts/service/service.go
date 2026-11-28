@@ -83,8 +83,8 @@ func (a answer) err() error {
 // Worker holding the model of the settings, loaded on first use
 func (k *kitten) load(job *speech.Job) (*speech.Worker, error) {
 	if !job.Provisioned(config.Extra) {
-		return nil, speech.Absent("KittenTTS provider selected but 'kittentts' package not installed. Start 'icebath', type '/voice setup' and choose " +
-			"KittenTTS, or run `" + packages.InstallHint(config.Extra) + "`.")
+		return nil, speech.Absent("KittenTTS is not installed. Install it in Settings › Voice › Text to speech › KittenTTS, or run `" +
+			packages.InstallHint(config.Extra) + "`.")
 	}
 	model := job.Text(config.Model, config.DefaultModel)
 	return k.models.Load(model, func() (*speech.Worker, error) {

@@ -24,7 +24,7 @@ import (
 )
 
 // What the credentials of xAI answer when none resolve
-const noCredentials = "xAI needs a sign-in or an API key. Sign in to xAI in /providers, or set XAI_API_KEY in your keys file."
+const noCredentials = "xAI needs an API key or a Grok sign-in. Give it one in Settings › Voice, on its page under Speech to text or Text to speech."
 
 // Speeds xAI takes
 const (
@@ -177,14 +177,10 @@ func synthesize(ctx context.Context, job *speech.Job, request speech.Request) (s
 	return speech.Save(response, request.Path, "xAI TTS")
 }
 
-// Latency boost of xAI speech, 0 to 2: its own setting, else the general one; false when neither is set
+// Latency boost of xAI speech, 1 or 2: its own setting, else the general one, by the one rule of values kept both ways; false while it is off
 func latency(job *speech.Job) (int, bool) {
-	for _, key := range []string{config.Latency, speechconfig.Latency} {
-		if job.Set(key) {
-			return max(0, min(2, job.Config.GetInt(key))), true
-		}
-	}
-	return 0, false
+	boost := speech.Either(max(0, min(2, job.Config.GetInt(config.Latency))), max(0, min(2, job.Config.GetInt(speechconfig.Latency))))
+	return boost, boost > 0
 }
 
 // Bearer of xAI recognition and where it goes: XAI_API_KEY of the environment at XAI_BASE_URL, else the Grok sign in first

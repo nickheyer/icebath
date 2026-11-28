@@ -77,6 +77,8 @@ const (
 	SessionServiceRetitleSkillsProcedure = "/icebath.sessions.v1.SessionService/RetitleSkills"
 	// SessionServiceWatchProcedure is the procedure name of the SessionService's Watch RPC.
 	SessionServiceWatchProcedure = "/icebath.sessions.v1.SessionService/Watch"
+	// SessionServiceNoticesProcedure is the procedure name of the SessionService's Notices RPC.
+	SessionServiceNoticesProcedure = "/icebath.sessions.v1.SessionService/Notices"
 )
 
 var (
@@ -248,6 +250,13 @@ var (
 			Procedure:  SessionServiceWatchProcedure,
 		}
 	})
+	sessionServiceNoticesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_sessions_v1_sessions_proto.Services().ByName("SessionService").Methods().ByName("Notices"),
+			Procedure:  SessionServiceNoticesProcedure,
+		}
+	})
 )
 
 // SessionServiceClient is a client for the icebath.sessions.v1.SessionService service.
@@ -293,6 +302,8 @@ type SessionServiceClient interface {
 	RetitleSkills(context.Context, *v1.RetitleSkillsRequest) (*v1.RetitleSkillsResponse, error)
 	// Tells the watcher each time sessions are made, changed or deleted
 	Watch(context.Context, *v1.WatchRequest) (SessionServiceWatchClientStream, error)
+	// What icebath has to tell you once, such as a session database it set aside; each is handed out once
+	Notices(context.Context, *v1.NoticesRequest) (*v1.NoticesResponse, error)
 }
 
 // NewSessionServiceClient constructs a client for the icebath.sessions.v1.SessionService service.
@@ -384,6 +395,8 @@ type SessionServiceHandler interface {
 	RetitleSkills(context.Context, *v1.RetitleSkillsRequest) (*v1.RetitleSkillsResponse, error)
 	// Tells the watcher each time sessions are made, changed or deleted
 	Watch(context.Context, *v1.WatchRequest, SessionServiceWatchServerStream) error
+	// What icebath has to tell you once, such as a session database it set aside; each is handed out once
+	Notices(context.Context, *v1.NoticesRequest) (*v1.NoticesResponse, error)
 }
 
 // RegisterSessionServiceHandler registers svc as the icebath.sessions.v1.SessionService
@@ -415,6 +428,7 @@ func RegisterSessionServiceHandler(server *connect.Server, svc SessionServiceHan
 		connect.Method{Spec: sessionServiceDiscardSpec(), Handler: adapter.discard},
 		connect.Method{Spec: sessionServiceRetitleSkillsSpec(), Handler: adapter.retitleSkills},
 		connect.Method{Spec: sessionServiceWatchSpec(), Handler: adapter.watch},
+		connect.Method{Spec: sessionServiceNoticesSpec(), Handler: adapter.notices},
 	)
 }
 
@@ -545,6 +559,10 @@ func (UnimplementedSessionServiceHandler) RetitleSkills(context.Context, *v1.Ret
 
 func (UnimplementedSessionServiceHandler) Watch(context.Context, *v1.WatchRequest, SessionServiceWatchServerStream) error {
 	return connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Watch is not implemented")
+}
+
+func (UnimplementedSessionServiceHandler) Notices(context.Context, *v1.NoticesRequest) (*v1.NoticesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.sessions.v1.SessionService.Notices is not implemented")
 }
 
 type sessionServiceClient struct {
@@ -741,6 +759,14 @@ func (c *sessionServiceClient) Watch(ctx context.Context, req *v1.WatchRequest) 
 		return SessionServiceWatchClientStream{}, err
 	}
 	return SessionServiceWatchClientStream{stream: stream}, nil
+}
+
+func (c *sessionServiceClient) Notices(ctx context.Context, req *v1.NoticesRequest) (*v1.NoticesResponse, error) {
+	var res v1.NoticesResponse
+	if err := c.client.CallUnary(ctx, sessionServiceNoticesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
 type sessionServiceHandler struct{ svc SessionServiceHandler }
@@ -1023,4 +1049,16 @@ func (h sessionServiceHandler) watch(ctx context.Context, _ connect.Spec, stream
 		return err
 	}
 	return h.svc.Watch(ctx, &req, SessionServiceWatchServerStream{stream: stream})
+}
+
+func (h sessionServiceHandler) notices(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.NoticesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Notices(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

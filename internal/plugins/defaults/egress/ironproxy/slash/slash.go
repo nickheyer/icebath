@@ -22,7 +22,7 @@ func Register(registry *slash.Registry, cfg *config.Config, egress *ironterminal
 }
 
 func (c commands) Commands() []slash.Command {
-	return []slash.Command{{Name: "egress", Usage: "[status]", Help: "Show the state of the sandbox proxy", Run: c.status}}
+	return []slash.Command{{Name: "egress", Usage: "[status]", Help: "Show the state of the key proxy", Run: c.status}}
 }
 
 func (c commands) status(ctx context.Context, call *slash.Call) (string, error) {

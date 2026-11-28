@@ -9,7 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/internal/speech"
 	"github.com/nickheyer/icebath/internal/speech/portaudio"
@@ -33,10 +32,12 @@ type sentence struct {
 
 // Reads a reply aloud as its text arrives: the text cut into sentences, each spoken once, fetched ahead while the one before plays
 type speaker struct {
-	mode   *Mode
-	ctx    context.Context
-	cancel context.CancelFunc
-	live   bool
+	mode *Mode
+	// Profile whose voice reads the reply
+	profile string
+	ctx     context.Context
+	cancel  context.CancelFunc
+	live    bool
 	// Closed to cut the speech
 	stop     chan struct{}
 	stopOnce sync.Once
@@ -48,7 +49,6 @@ type speaker struct {
 	ended   bool
 	wake    chan struct{}
 	chunker *speech.Chunker
-	said    []string
 	queue   chan *sentence
 	slots   chan struct{}
 	// Fetch of the sentence before, which a file voice waits for
@@ -61,10 +61,11 @@ type speaker struct {
 	reinit int
 }
 
-// Speech of a reply cut into sentences of at least least characters; live asks a streaming voice for PCM as it is made
-func newSpeaker(m *Mode, ctx context.Context, least int, live bool) *speaker {
+// Speech of a reply in the voice of the profile, cut into sentences of at least least characters; live asks a streaming voice for PCM as it
+// is made
+func newSpeaker(m *Mode, ctx context.Context, profile string, least int, live bool) *speaker {
 	ctx, cancel := context.WithCancel(ctx)
-	s := &speaker{mode: m, ctx: ctx, cancel: cancel, live: live, stop: make(chan struct{}), done: make(chan struct{}), wake: make(chan struct{}, 1),
+	s := &speaker{mode: m, profile: profile, ctx: ctx, cancel: cancel, live: live, stop: make(chan struct{}), done: make(chan struct{}), wake: make(chan struct{}, 1),
 		chunker: speech.NewChunker(least), queue: make(chan *sentence, ahead), slots: make(chan struct{}, prefetch)}
 	if live {
 		s.queue = make(chan *sentence, 1024)
@@ -130,7 +131,8 @@ func (s *speaker) audible() bool {
 	return !s.stopped() && s.ready.Load() > 0
 }
 
-// Cuts the queued text into sentences and speaks each, what is held flushed once it passes 100 characters with no text for half a second
+// Cuts the queued text into sentences of speech and speaks each, the speech held back but its last word spoken once more than 100 characters
+// of it wait with no text for half a second
 func (s *speaker) split() {
 	defer close(s.queue)
 	for {
@@ -154,31 +156,23 @@ func (s *speaker) split() {
 		case <-s.stop:
 			return
 		case <-time.After(500 * time.Millisecond):
-			if utf8.RuneCountInString(s.chunker.Held()) > 100 {
-				for _, line := range s.chunker.Flush() {
-					s.say(line)
-				}
+			for _, line := range s.chunker.Spill(100) {
+				s.say(line)
 			}
 		}
 	}
 }
 
-// Speaks one sentence unless it was already said: a streaming voice's fetched while two others are, a file voice's after the one before
+// Speaks one sentence of speech text, already cleaned with the whole reply: a streaming voice's fetched while two others are, a file voice's
+// after the one before
 func (s *speaker) say(line string) {
 	if s.stopped() {
 		return
 	}
-	cleaned := strings.TrimSpace(speech.Spoken(line, 0))
+	cleaned := strings.TrimSpace(line)
 	if cleaned == "" {
 		return
 	}
-	key := strings.TrimRight(strings.ToLower(cleaned), ".!,")
-	for _, prev := range s.said {
-		if strings.TrimRight(strings.ToLower(prev), ".!,") == key {
-			return
-		}
-	}
-	s.said = append(s.said, cleaned)
 	s.mode.noteSpoken(cleaned)
 	if s.live {
 		select {
@@ -213,7 +207,7 @@ func (s *speaker) fetch(next *sentence, text string, prev, fetched chan struct{}
 	if s.stopped() {
 		return
 	}
-	err := s.mode.backend.speak(s.ctx, text, s.live, func(c *clip) {
+	err := s.mode.backend.speak(s.ctx, s.profile, text, s.live, func(c *clip) {
 		if next.heard.CompareAndSwap(false, true) {
 			s.ready.Add(1)
 		}

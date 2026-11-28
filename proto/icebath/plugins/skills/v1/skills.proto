@@ -7,7 +7,8 @@ service SkillsService {
   rpc List(ListRequest) returns (ListResponse);
   // One skill as the agent loads it, with its files, what it needs, its usage and how it is written
   rpc Show(ShowRequest) returns (ShowResponse);
-  // Turns skills on or off for the agent, everywhere or on one surface
+  // Turns skills on or off for the agent, in every app or in one alone: the one way a skill is turned on or off, which the page, the commands
+  // and the settings service all end in, a skill that is always on refused
   rpc Toggle(ToggleRequest) returns (ToggleResponse);
   // Lets a built in skill follow its source again, or puts the shipped copy back
   rpc Reset(ResetRequest) returns (ResetResponse);
@@ -350,6 +351,8 @@ message TrustRequest {
 message TrustResponse {
   repeated Line lines = 1;
   bool ok = 2;
+  // What was done, in a sentence or two
+  string said = 3;
 }
 
 // What a request is about: the profile and the folder project skills are found in
@@ -394,10 +397,30 @@ message Skill {
   bool pinned = 18;
   // The user locked its content from the agent
   bool locked = 19;
+  // How it stands in the words every page and command shows: On, Off, Off in this app or Always on
+  string shown = 20;
+  // Its category as a person reads it, Other for none
+  string category_title = 21;
 }
 
 message ListRequest {
   Scope scope = 1;
+  // App whose own turned off skills a state of Off in this app reads, such as tui; none reads every app alone
+  string surface = 2;
+}
+
+// A category of skills and how many of them are on
+message Category {
+  // Folder the skills sit under, empty for those in none
+  string name = 1;
+  // As a person reads it
+  string title = 2;
+  // In the words every page and command shows: On, Off, or how many of how many are on, such as 3 of 4 on
+  string state = 3;
+  int32 on = 4;
+  int32 total = 5;
+  // What its skills are for, as the description of its folder says; empty when none does
+  string about = 6;
 }
 
 message ListResponse {
@@ -408,11 +431,21 @@ message ListResponse {
   string create_dir = 3;
   // Folder of the profile's own skills
   string skills_dir = 4;
-  // Untrusted project the folder is in whose skills don't load, and how many it holds
-  string untrusted_project = 5;
-  int32 untrusted_count = 6;
+  reserved 5, 6;
   // The profile opted out of the bundled skills being copied into it
   bool opted_out = 7;
+  // Categories of the skills, as they are listed, with how many of each are on
+  repeated Category categories = 8;
+  // Project folders whose own skills load, as the settings keep them
+  repeated string trusted = 9;
+  // Git project the scope's folder is in, empty for none or one project skills are not read for, whether it is trusted and the skills
+  // it keeps in its own folder
+  string project = 10;
+  bool project_trusted = 11;
+  int32 project_skills = 12;
+  // Secrets the skills ask for and values they read, each a setting of its own
+  int32 secrets = 13;
+  int32 values = 14;
 }
 
 message Surface {
@@ -480,6 +513,8 @@ message ToggleResponse {
   repeated string changed = 1;
   int32 enabled = 2;
   int32 disabled = 3;
+  // What was done, in a sentence
+  string said = 4;
 }
 
 message Synced {
@@ -553,12 +588,15 @@ message KeptSkill {
 }
 
 message OptOutResponse {
+  // What changed, or that nothing did, in a sentence
   string message = 1;
   // Marker file of the opt out
   string marker = 2;
   repeated string removed = 3;
   repeated KeptSkill kept = 4;
   Synced synced = 5;
+  // The profile was opted out or back in now, as it was not already
+  bool changed = 6;
 }
 
 message RepairRequest {

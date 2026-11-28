@@ -132,7 +132,7 @@ func (r *registrant) policyError(cfg *config.Config, raw string, local bool) map
 	if web.AlwaysBlocked(raw) {
 		return policyError("Blocked: URL targets a cloud metadata endpoint", nil)
 	}
-	if !r.localBackend(cfg) && !local && !privateURLs(cfg) && !web.SafeURL(cfg, raw) {
+	if !r.localBackend(cfg) && !local && !privateURLs(cfg) && !web.SafeFor(cfg, raw, false) {
 		return policyError("Blocked: URL targets a private or internal address", nil)
 	}
 	if block := web.Blocked(cfg, raw); block != nil {
@@ -161,7 +161,7 @@ func (r *registrant) guardActive(cfg *config.Config) bool {
 
 // Whether the URL hits the metadata floor or fails the private address guard
 func blocked(cfg *config.Config, raw string) bool {
-	return web.AlwaysBlocked(raw) || !web.SafeURL(cfg, raw)
+	return web.AlwaysBlocked(raw) || !web.SafeFor(cfg, raw, privateURLs(cfg))
 }
 
 // Every http or https literal of the text, scheme relative ones too when asked, and the host read past a userinfo cut

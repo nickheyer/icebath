@@ -222,7 +222,7 @@ func (e *Egress) Authority(ctx context.Context, cfg *config.Config, force bool) 
 		return crt, key, nil
 	}
 	if _, err := exec.LookPath("openssl"); err != nil {
-		return "", "", errors.New("openssl is not on your PATH, and the CA certificate of the sandbox proxy needs it. Install OpenSSL, such as with `apt install openssl` or `brew install openssl`.")
+		return "", "", errors.New("openssl is not on your PATH, and the CA certificate of the key proxy needs it. Install OpenSSL, such as with `apt install openssl` or `brew install openssl`.")
 	}
 	scratch, err := os.MkdirTemp("", "icebath-proxy-ca-")
 	if err != nil {
@@ -349,7 +349,7 @@ var reloadErrors = map[int]string{
 // Reloads the running daemon's rules from proxy.yaml through its management API, a config it refuses leaving the running one in place
 func (e *Egress) Reload(ctx context.Context, cfg *config.Config) error {
 	if pid := e.pid(cfg); pid == 0 || !e.alive(cfg, pid) {
-		return errors.New("The sandbox proxy is not running, so there is nothing to reload. Run `icebath egress start`.")
+		return errors.New("The key proxy is not running, so there is nothing to reload. Run `icebath egress start`.")
 	}
 	host, port, ok := configListen(e.configPath(cfg), "management", "listen")
 	if !ok {
@@ -369,7 +369,7 @@ func (e *Egress) Reload(ctx context.Context, cfg *config.Config) error {
 	client := &http.Client{Transport: &http.Transport{Proxy: nil}}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("The sandbox proxy did not answer at %s:%d: %v. If it started before reloads worked, run `icebath egress restart` once.", host, port, err)
+		return fmt.Errorf("The key proxy did not answer at %s:%d: %v. If it started before reloads worked, run `icebath egress restart` once.", host, port, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusOK {
@@ -785,11 +785,11 @@ func (e *Egress) Start(ctx context.Context, cfg *config.Config, start Start) (St
 	}
 	binary := e.Find(ctx, cfg, start.Install)
 	if binary == "" {
-		return Status{}, errors.New("iron-proxy is not installed. Run `icebath egress install`.")
+		return Status{}, errors.New("iron-proxy is not installed. Turn on Hide your keys in Key proxy, in /sandbox, or run `icebath egress install`.")
 	}
 	path := e.configPath(cfg)
 	if !fsx.IsFile(path) {
-		return Status{}, fmt.Errorf("There is no proxy.yaml at %s. Run `icebath egress setup` first.", path)
+		return Status{}, fmt.Errorf("There is no proxy.yaml at %s. Turn on Hide your keys in Key proxy, in /sandbox, or run `icebath egress setup` first.", path)
 	}
 	env, err := e.daemonEnv(ctx, cfg, start)
 	if err != nil {
@@ -945,13 +945,13 @@ func (e *Egress) refresh(ctx context.Context, cfg *config.Config, env map[string
 	source, ok := host.Source(Bitwarden)
 	if !ok {
 		return shortfall(fallback, "Bitwarden is not there to give the proxy its keys, and Fall back to environment is off. Set Key source to "+
-			"Environment in /settings under Sandbox proxy, or turn on Fall back to environment there.",
+			"Environment in Key proxy, in /sandbox, or turn on Fall back to environment there.",
 			"Bitwarden is not available to refresh the proxy's keys, falling back to the profile's environment (allow_env_fallback=true).")
 	}
 	token := strings.TrimSpace(host.Existing(cfg)[host.TokenEnv(cfg, source.Spec())])
 	if configured, _ := host.Configured(cfg, source); token == "" || !configured {
 		return shortfall(fallback, "Key source is Bitwarden, but its access token variable or its project is not set. Set both, set Key source to "+
-			"Environment in /settings under Sandbox proxy, or turn on Fall back to environment there.",
+			"Environment in Key proxy, in /sandbox, or turn on Fall back to environment there.",
 			"credential_source=bitwarden but access-token env or project_id is empty — proxy will fall back to parent env (allow_env_fallback=true).")
 	}
 	result := host.Fetch(ctx, cfg, source, true)
@@ -969,7 +969,7 @@ func (e *Egress) refresh(ctx context.Context, cfg *config.Config, env map[string
 	slices.Sort(missing)
 	if len(missing) > 0 {
 		if err := shortfall(fallback, fmt.Sprintf("Bitwarden gave no secrets for %s. Add them to your Bitwarden project, read keys from the "+
-			"environment with `icebath egress setup --no-bitwarden`, or turn on Fall back to environment in /settings under Sandbox proxy.", strings.Join(missing, ", ")),
+			"environment with `icebath egress setup --no-bitwarden`, or turn on Fall back to environment in Key proxy, in /sandbox.", strings.Join(missing, ", ")),
 			fmt.Sprintf("Bitwarden refresh did not return secrets for %v — falling back to host env for those names (allow_env_fallback=true).", missing)); err != nil {
 			return err
 		}

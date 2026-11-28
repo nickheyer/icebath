@@ -276,8 +276,7 @@ func (s *source) Why(account credentials.Account) (string, bool) {
 		return "", false
 	}
 	if Mode(account) != azurefoundryconfig.EntraID {
-		return fmt.Sprintf("Azure Foundry needs an API key. Add one with `icebath auth add %s`, set %s in your keys file, or connect it in "+
-			"/providers.\nTo sign in with Microsoft Entra ID instead, pick Microsoft Entra ID when you connect it.", account.Provider.ID,
+		return fmt.Sprintf("Azure Foundry needs an API key, or %s set to one. To sign in with Microsoft Entra ID instead, connect it that way.",
 			azurefoundryconfig.APIKeyEnv), true
 	}
 	m := s.minter(account)

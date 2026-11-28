@@ -37,11 +37,10 @@ func (c commands) reload(ctx context.Context, call *slash.Call) (string, error) 
 	if argument != "" && argument != "now" {
 		return "", fmt.Errorf("Usage: /reload-mcp [now]")
 	}
+	// The one rule of asking, which Connect again on the page of MCP servers follows too: ask first while Confirm tool reload is on
 	if argument != "now" && cfg.GetBool(mcpconfig.ReloadConfirm) {
-		return "Connecting the MCP servers again changes the tools of this session, so the provider loses its cache of the session. Your next " +
-			"message then sends the whole session again, which can cost a lot on long sessions or on models that reason.\n\n" +
-			"Run /reload-mcp now to connect them again anyway. To stop this question, turn off Confirm tool reload in /settings under " +
-			"Tools › MCP servers.\n\nUntil then the MCP tools stay as they are.", nil
+		return "Connecting the MCP servers again gives this session your changes. Your next message then sends the whole session again, " +
+			"which can cost a lot on a long session.\n\nType /reload-mcp now to connect them again.", nil
 	}
 	r := c.manager.Reload(ctx, cfg)
 	lines := []string{"Connected the MCP servers again.", ""}

@@ -7,8 +7,9 @@ import (
 	"github.com/nickheyer/icebath/internal/plugins/defaults/secrets/onepassword"
 )
 
+// In the order the stores and the password managers are listed and asked by default
 func Register(registries *plugins.Registries) {
-	bitwarden.Register(registries)
 	onepassword.Register(registries)
+	bitwarden.Register(registries)
 	command.Register(registries)
 }

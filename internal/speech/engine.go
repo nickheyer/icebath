@@ -4,6 +4,10 @@ import (
 	"context"
 	"slices"
 	"strings"
+
+	"github.com/nickheyer/icebath/internal/config"
+	"github.com/nickheyer/icebath/internal/profile"
+	speechconfig "github.com/nickheyer/icebath/internal/speech/config"
 )
 
 // Sample rate every wake engine hears, 16 kHz mono 16 bit
@@ -24,8 +28,11 @@ type Engine struct {
 	Extra string
 	// Whether this machine has a build of it at all
 	Supported func(s *Speech) bool
-	// Whether what it runs is installed now, never installing anything
-	Installed func(s *Speech) bool
+	// Whether what it runs is installed now with its settings by key, never installing anything
+	Installed func(s *Speech, settings map[string]string) bool
+	// Downloads what it runs onto this computer, saying each step, for an engine whose install is a download rather than a Python set;
+	// what it would otherwise fetch the first time it listens
+	Fetch func(ctx context.Context, wake *Wake, say func(step string)) error
 	// Setting of the model file it needs set, empty for an engine that needs none
 	Model string
 	// Needs the Picovoice access key of the profile's environment
@@ -79,25 +86,42 @@ type Matcher interface {
 	LastMatch() (phrase, profile string, ok bool)
 }
 
-// Engine a wake_word.provider setting resolves to, auto taking the open vocabulary engine unless a model file is set, else the first this
-// machine supports; false for a name no engine has
+// The wake phrase in effect for the profile, the one every page, message and listener says: its own, else hey and the profile's name while
+// each profile has its own phrase, the profile icebath starts with keeping hey icebath, else hey icebath
+func WakePhrase(cfg *config.Config) string {
+	if own := strings.TrimSpace(cfg.GetString(speechconfig.WakePhrase)); own != "" {
+		return own
+	}
+	if name := cfg.Profile(); cfg.GetBool(speechconfig.WakeProfileRouting) && name != "" && name != profile.Default {
+		return "hey " + name
+	}
+	return speechconfig.DefaultPhrase
+}
+
+// Engine a wake_word.provider setting resolves to, auto taking the open vocabulary engine this machine has a build of unless a model file is
+// set, else the first by rank this machine has a build of, else the first by rank; false for a name no engine has. The engines are in the
+// fixed order their plugins register them, so the choice is the same on every run
 func (r *Registry) WakeEngine(provider string, model bool) (Engine, bool) {
 	if provider != "" && provider != "auto" {
 		return r.Engine(provider)
 	}
 	engines := r.Engines()
+	builds := func(e Engine) bool { return e.Supported == nil || e.Supported(r.host) }
 	if !model {
 		for _, engine := range engines {
-			if engine.Open {
+			if engine.Open && builds(engine) {
 				return engine, true
 			}
 		}
 	}
 	slices.SortStableFunc(engines, func(a, b Engine) int { return a.Rank - b.Rank })
 	for _, engine := range engines {
-		if engine.Supported == nil || engine.Supported(r.host) {
+		if builds(engine) {
 			return engine, true
 		}
 	}
-	return r.Engine("porcupine")
+	if len(engines) == 0 {
+		return Engine{}, false
+	}
+	return engines[0], true
 }

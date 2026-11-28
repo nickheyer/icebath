@@ -68,6 +68,9 @@ func (s *service) List(ctx context.Context, request *checkpointsv1.ListRequest) 
 		return nil, err
 	}
 	response := &checkpointsv1.ListResponse{Enabled: scope.Enabled(), Refusal: scope.Refusal, Directory: scope.Directory}
+	if scope.Profile != s.config.Profile() {
+		response.Profile = scope.Profile
+	}
 	if !scope.Enabled() {
 		return response, nil
 	}
@@ -159,10 +162,14 @@ func Restored(restored *checkpoints.Restored) *checkpointsv1.RestoreResponse {
 		Safe: restored.Safe, Restored: restored.Files, KeptEdits: restored.Edits, KeptOversize: restored.Oversize, FailedDeletes: restored.FailedDeletes}
 }
 
-func (s *service) Status(context.Context, *checkpointsv1.StatusRequest) (*checkpointsv1.StatusResponse, error) {
-	status := checkpoints.Open(s.config).Status()
+func (s *service) Status(_ context.Context, request *checkpointsv1.StatusRequest) (*checkpointsv1.StatusResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	status := checkpoints.Open(cfg).Status()
 	response := &checkpointsv1.StatusResponse{Base: status.Base, Exists: status.Exists, StoreBytes: status.StoreBytes,
-		LegacyBytes: status.LegacyBytes, TotalBytes: status.TotalBytes, Footprint: checkpoints.Footprint(s.config)}
+		LegacyBytes: status.LegacyBytes, TotalBytes: status.TotalBytes, Footprint: checkpoints.Footprint(cfg), Profile: cfg.Profile()}
 	for _, project := range status.Projects {
 		response.Projects = append(response.Projects, &checkpointsv1.Project{Hash: project.Hash, Workdir: project.Workdir, Exists: project.Exists,
 			Created: stamp(project.Created), Touched: stamp(project.Touched), Commits: int32(project.Commits)})
@@ -174,6 +181,10 @@ func (s *service) Status(context.Context, *checkpointsv1.StatusRequest) (*checkp
 }
 
 func (s *service) Prune(_ context.Context, request *checkpointsv1.PruneRequest) (*checkpointsv1.PruneResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
 	options := checkpoints.PruneOptions{Retention: time.Duration(request.GetRetentionDays()) * 24 * time.Hour, Orphans: request.GetOrphans(),
 		MaxTotalMB: int(request.GetMaxSizeMb())}
 	if request.GetAllowListed() {
@@ -182,7 +193,7 @@ func (s *service) Prune(_ context.Context, request *checkpointsv1.PruneRequest) 
 			options.Allow[hash] = true
 		}
 	}
-	pruned, err := checkpoints.Open(s.config).Prune(options)
+	pruned, err := checkpoints.Open(cfg).Prune(options)
 	if err != nil {
 		return nil, err
 	}
@@ -190,36 +201,32 @@ func (s *service) Prune(_ context.Context, request *checkpointsv1.PruneRequest) 
 		Errors: int32(pruned.Errors), Freed: pruned.Freed}, nil
 }
 
-func (s *service) Clear(context.Context, *checkpointsv1.ClearRequest) (*checkpointsv1.ClearResponse, error) {
-	freed, err := checkpoints.Open(s.config).Clear()
+func (s *service) Clear(_ context.Context, request *checkpointsv1.ClearRequest) (*checkpointsv1.ClearResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	freed, err := checkpoints.Open(cfg).Clear()
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, "Could not delete the checkpoints: "+err.Error()+".")
 	}
 	return &checkpointsv1.ClearResponse{Freed: freed}, nil
 }
 
-func (s *service) ClearLegacy(context.Context, *checkpointsv1.ClearLegacyRequest) (*checkpointsv1.ClearLegacyResponse, error) {
-	cleared := checkpoints.Open(s.config).ClearLegacy()
+func (s *service) ClearLegacy(_ context.Context, request *checkpointsv1.ClearLegacyRequest) (*checkpointsv1.ClearLegacyResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	cleared := checkpoints.Open(cfg).ClearLegacy()
 	return &checkpointsv1.ClearLegacyResponse{Deleted: int32(cleared.Deleted), Freed: cleared.Freed, Errors: int32(cleared.Errors)}, nil
-}
-
-// Paths a line of a restore names, five at most and the rest counted
-func named(paths []string) string {
-	shown := paths[:min(5, len(paths))]
-	if rest := len(paths) - len(shown); rest > 0 {
-		return strings.Join(shown, ", ") + " and " + strs.Number(float64(rest)) + " more"
-	}
-	if len(shown) < 2 {
-		return strings.Join(shown, "")
-	}
-	return strings.Join(shown[:len(shown)-1], ", ") + " and " + shown[len(shown)-1]
 }
 
 // What a restore did as the user reads it, line by line
 func Report(restored *checkpointsv1.RestoreResponse) []string {
 	if restored.GetSafe() && len(restored.GetRestored()) == 0 && len(restored.GetKeptEdits()) > 0 {
 		return []string{"Nothing was restored, because you changed every one of those files yourself since the checkpoint: " +
-			named(restored.GetKeptEdits()) + ".", "Run /rollback <N> --all to restore them anyway."}
+			strs.AndMore(restored.GetKeptEdits(), 6) + ".", "Run /rollback <N> --all to restore them anyway."}
 	}
 	target := "your files"
 	if restored.GetFile() != "" {
@@ -231,13 +238,13 @@ func Report(restored *checkpointsv1.RestoreResponse) []string {
 	}
 	lines := []string{head + ".", "A checkpoint of how they were just before was saved first, so you can undo this."}
 	if edits := restored.GetKeptEdits(); len(edits) > 0 {
-		lines = append(lines, "Kept the changes you made yourself to "+named(edits)+".", "Run /rollback <N> --all to restore those files too.")
+		lines = append(lines, "Kept the changes you made yourself to "+strs.AndMore(edits, 6)+".", "Run /rollback <N> --all to restore those files too.")
 	}
 	if oversize := restored.GetKeptOversize(); len(oversize) > 0 {
-		lines = append(lines, "Kept "+named(oversize)+" as they are, because they are too large for checkpoints and no copy of them was saved.")
+		lines = append(lines, "Kept "+strs.AndMore(oversize, 6)+" as they are, because they are too large for checkpoints and no copy of them was saved.")
 	}
 	if failed := restored.GetFailedDeletes(); len(failed) > 0 {
-		lines = append(lines, "⚠ Could not delete "+named(failed)+", so they are still there.")
+		lines = append(lines, "⚠ Could not delete "+strs.AndMore(failed, 6)+", so they are still there.")
 	}
 	return lines
 }

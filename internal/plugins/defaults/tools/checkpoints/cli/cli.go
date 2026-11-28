@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/internal/cli"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	checkpointsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/checkpoints/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/checkpoints/v1/checkpointsv1connect"
 	"github.com/nickheyer/icebath/pkg/strs"
@@ -89,7 +90,7 @@ func folder(project *checkpointsv1.Project) string {
 // Prints the sizes of the store and the archives, every project by when it was last snapshotted, and the archives
 func status(cmd *cobra.Command, service checkpointsv1connect.CheckpointServiceClient, limit int) error {
 	c := cli.NewConsole(cmd)
-	info, err := service.Status(cmd.Context(), &checkpointsv1.StatusRequest{})
+	info, err := service.Status(cmd.Context(), &checkpointsv1.StatusRequest{Profile: picked.Picked(cmd.Context())})
 	if err != nil {
 		return err
 	}
@@ -178,9 +179,10 @@ func prune(service checkpointsv1connect.CheckpointServiceClient) *cobra.Command 
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
-			request := &checkpointsv1.PruneRequest{RetentionDays: int32(retention), MaxSizeMb: int32(megabytes), Orphans: !keepOrphans}
+			request := &checkpointsv1.PruneRequest{Profile: picked.Picked(cmd.Context()), RetentionDays: int32(retention), MaxSizeMb: int32(megabytes),
+				Orphans: !keepOrphans}
 			if request.Orphans && !force {
-				info, err := service.Status(cmd.Context(), &checkpointsv1.StatusRequest{})
+				info, err := service.Status(cmd.Context(), &checkpointsv1.StatusRequest{Profile: picked.Picked(cmd.Context())})
 				if err != nil {
 					return err
 				}
@@ -262,7 +264,7 @@ func clearAll(service checkpointsv1connect.CheckpointServiceClient) *cobra.Comma
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
-			info, err := service.Status(cmd.Context(), &checkpointsv1.StatusRequest{})
+			info, err := service.Status(cmd.Context(), &checkpointsv1.StatusRequest{Profile: picked.Picked(cmd.Context())})
 			if err != nil {
 				return err
 			}
@@ -279,7 +281,7 @@ func clearAll(service checkpointsv1connect.CheckpointServiceClient) *cobra.Comma
 			if !confirmed(cmd, force, "Delete every checkpoint of every folder? /rollback can then restore nothing saved before.") {
 				return exit(1)
 			}
-			result, err := service.Clear(cmd.Context(), &checkpointsv1.ClearRequest{})
+			result, err := service.Clear(cmd.Context(), &checkpointsv1.ClearRequest{Profile: picked.Picked(cmd.Context())})
 			if err != nil {
 				c.Failure(tui.Reason(err))
 				return exit(2)
@@ -302,7 +304,7 @@ func clearLegacy(service checkpointsv1connect.CheckpointServiceClient) *cobra.Co
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
-			info, err := service.Status(cmd.Context(), &checkpointsv1.StatusRequest{})
+			info, err := service.Status(cmd.Context(), &checkpointsv1.StatusRequest{Profile: picked.Picked(cmd.Context())})
 			if err != nil {
 				return err
 			}
@@ -323,7 +325,7 @@ func clearLegacy(service checkpointsv1connect.CheckpointServiceClient) *cobra.Co
 			if !confirmed(cmd, force, "Delete these archives? They cannot be brought back.") {
 				return exit(1)
 			}
-			result, err := service.ClearLegacy(cmd.Context(), &checkpointsv1.ClearLegacyRequest{})
+			result, err := service.ClearLegacy(cmd.Context(), &checkpointsv1.ClearLegacyRequest{Profile: picked.Picked(cmd.Context())})
 			if err != nil {
 				return err
 			}

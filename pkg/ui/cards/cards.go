@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/term"
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -52,12 +53,24 @@ type Env struct {
 func (e *Env) Shell() term.Command {
 	if e.Settings != nil {
 		if line := e.Settings()[TerminalShell]; line != "" {
-			if words, err := ShellWords(line); err == nil && len(words) > 0 {
+			if words, err := strs.Shell(line); err == nil && len(words) > 0 {
 				return term.Command{Path: words[0], Args: words[1:]}
 			}
 		}
 	}
 	return term.DefaultShell()
+}
+
+// Runs a command from a step that can hand none back, its message sent to the program
+func (e *Env) run(cmd tea.Cmd) {
+	if cmd == nil || e.Send == nil {
+		return
+	}
+	go func() {
+		if msg := cmd(); msg != nil {
+			e.Send(msg)
+		}
+	}()
 }
 
 // First key of the action the terminal can send, as a legend shows it
@@ -90,12 +103,6 @@ type CommandMsg struct {
 	Session string
 	Name    string
 	Args    string
-}
-
-// Shell line typed with a leading bang, to run in the terminal window beside the session
-type RunMsg struct {
-	Session string
-	Line    string
 }
 
 // Setting the app applied, sent to every card so those showing it follow
@@ -140,73 +147,4 @@ func footed(lines, foot []string, h int) string {
 		body = append(body, "")
 	}
 	return strings.Join(append(body, foot...), "\n")
-}
-
-// Error of ShellWords when a quote or a trailing backslash is left open
-type UnterminatedQuoteError struct {
-	Quote rune
-}
-
-// Words of a command line split the way a POSIX shell splits them, honoring quotes and backslashes
-func ShellWords(line string) ([]string, error) {
-	var words []string
-	var cur strings.Builder
-	in := false
-	quote := rune(0)
-	esc := false
-	for _, r := range line {
-		switch {
-		case esc:
-			cur.WriteRune(r)
-			esc = false
-			in = true
-		case quote == '\'':
-			if r == '\'' {
-				quote = 0
-			} else {
-				cur.WriteRune(r)
-			}
-		case quote == '"':
-			switch r {
-			case '"':
-				quote = 0
-			case '\\':
-				esc = true
-			default:
-				cur.WriteRune(r)
-			}
-		case r == '\\':
-			esc = true
-			in = true
-		case r == '\'' || r == '"':
-			quote = r
-			in = true
-		case r == ' ' || r == '\t' || r == '\n':
-			if in {
-				words = append(words, cur.String())
-				cur.Reset()
-				in = false
-			}
-		default:
-			cur.WriteRune(r)
-			in = true
-		}
-	}
-	if quote != 0 {
-		return nil, &UnterminatedQuoteError{Quote: quote}
-	}
-	if esc {
-		return nil, &UnterminatedQuoteError{Quote: '\\'}
-	}
-	if in {
-		words = append(words, cur.String())
-	}
-	return words, nil
-}
-
-func (e *UnterminatedQuoteError) Error() string {
-	if e.Quote == '\\' {
-		return "line ends with a backslash"
-	}
-	return "unterminated " + string(e.Quote) + " quote"
 }

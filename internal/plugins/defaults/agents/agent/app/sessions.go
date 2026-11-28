@@ -3,19 +3,23 @@ package app
 import (
 	"cmp"
 	"context"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/nickheyer/icebath/internal/config"
+	"github.com/nickheyer/icebath/internal/profile"
+	sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
 	"github.com/nickheyer/icebath/internal/sessions/export"
+	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -26,7 +30,7 @@ import (
 const sessionsContext = "agent.sessions"
 
 // Sessions each list of the screen reads, at most
-const listed = 200
+const sessionLimit = 200
 
 var sessionsKeys = []keys.Action{
 	{ID: "agent.sessions.beside", Context: sessionsContext, Label: "open beside", Doc: "Open the session in a new chat beside this one", Default: []string{"alt+b"}},
@@ -333,41 +337,25 @@ func origin(source string) string {
 	case "subagent":
 		return "a subagent"
 	}
-	return strings.ToUpper(source[:1]) + source[1:]
+	return strs.Capital(source)
 }
 
-// Lines under the list about the highlighted session: how it started, what it is doing, then its model, profile, origin and folder, its
-// size, when it was used and what it cost, and last the id that /resume takes
+// Lines under the list about the highlighted session beyond what its row says: its first message and how many messages it has where the
+// row has no room for them, why it was archived or that it is only stored, then its model, profile, origin and folder, its tool calls,
+// when it was used and what it cost, and last the id that /resume takes
 func (b *browser) detail(row listing) []string {
 	t := b.desk.kit.Env.Theme
 	s := row.session
 	var lines []string
-	if preview := strings.Join(strings.Fields(s.GetPreview()), " "); preview != "" {
+	if preview := strings.Join(strings.Fields(s.GetPreview()), " "); preview != "" && !b.list.Shows(2) {
 		lines = append(lines, "Started with: "+preview)
-	}
-	state := "Kept in your sessions."
-	switch shown := b.desk.shows(s.GetId()); {
-	case shown != nil && shown == b.from:
-		state = "Open in the chat you came from."
-	case shown != nil:
-		state = "Open in another chat of this window."
-	case row.live != nil && row.live.GetWaiting():
-		state = "Open in the background and waiting for your answer."
-	case row.live != nil && row.live.GetBusy():
-		state = "Open in the background and working on a reply."
-	case row.live != nil:
-		state = "Open in the background. " + b.desk.kit.Env.Keys.Display("hub.remove") + " closes it and keeps it in your sessions."
-	}
-	if s.GetPinned() {
-		state += " Pinned to the top of the list."
 	}
 	switch {
 	case s.GetAutoArchived():
-		state += " Archived because it was not used for a while."
-	case s.GetArchived():
-		state += " Archived."
+		lines = append(lines, "It was archived because it was not used for a while.")
+	case b.state(row) == "":
+		lines = append(lines, "Kept in your sessions.")
 	}
-	lines = append(lines, state)
 	var facts []string
 	if model := strings.TrimPrefix(s.GetProvider()+"/"+s.GetModel(), "/"); s.GetModel() != "" {
 		facts = append(facts, "Model: "+model)
@@ -378,8 +366,14 @@ func (b *browser) detail(row listing) []string {
 	if from := origin(s.GetSource()); from != "" {
 		facts = append(facts, "Started from "+from)
 	}
+	if from := s.GetDelegatedFrom(); from != "" {
+		facts = append(facts, "Delegated by the session "+from)
+	}
+	if row.live != nil && row.live.GetWatchers() > 1 {
+		facts = append(facts, "Open in "+render.Count(int(row.live.GetWatchers()), "window"))
+	}
 	if s.GetDirectory() != "" {
-		facts = append(facts, "Folder: "+tilde(s.GetDirectory()))
+		facts = append(facts, "Folder: "+profile.Tilde(s.GetDirectory()))
 	}
 	if s.GetGitBranch() != "" {
 		facts = append(facts, "Git branch: "+s.GetGitBranch())
@@ -387,7 +381,10 @@ func (b *browser) detail(row listing) []string {
 	if len(facts) > 0 {
 		lines = append(lines, render.Dim(strings.Join(facts, " · "), t))
 	}
-	size := []string{render.Count(int(s.GetMessages()), "message")}
+	var size []string
+	if !b.list.Shows(3) {
+		size = append(size, render.Count(int(s.GetMessages()), "message"))
+	}
 	if n := s.GetToolCalls(); n > 0 {
 		size = append(size, render.Count(int(n), "tool call"))
 	}
@@ -400,17 +397,10 @@ func (b *browser) detail(row listing) []string {
 	if s.GetYolo() {
 		size = append(size, "Approvals skipped")
 	}
-	lines = append(lines, render.Dim(strings.Join(size, " · "), t), render.Dim("Id: "+s.GetId()+", which /resume takes", t))
-	return lines
-}
-
-// Path with the home folder written as ~
-func tilde(path string) string {
-	home, _ := os.UserHomeDir()
-	if rest, inside := strings.CutPrefix(path, home+string(filepath.Separator)); inside && home != "" {
-		return "~" + string(filepath.Separator) + rest
+	if len(size) > 0 {
+		lines = append(lines, render.Dim(strings.Join(size, " · "), t))
 	}
-	return path
+	return append(lines, render.Dim("Id: "+s.GetId()+", which /resume takes", t))
 }
 
 func (b *browser) leave(cmd tea.Cmd) tea.Cmd {
@@ -431,7 +421,7 @@ func (b *browser) load() tea.Cmd {
 	return tui.Async(func() func() tea.Cmd {
 		ctx := kit.Env.Ctx
 		live, liveErr := b.desk.agents.Live(ctx, &agentv1.LiveRequest{})
-		stored, err := b.desk.sessions.List(ctx, &sessionsv1.ListRequest{Filter: &sessionsv1.Filter{Limit: listed, IncludeArchived: archived}})
+		stored, err := b.desk.sessions.List(ctx, &sessionsv1.ListRequest{Filter: &sessionsv1.Filter{Limit: sessionLimit, IncludeArchived: archived}})
 		rows := []listing{}
 		seen := map[string]bool{}
 		open := map[string]*agentv1.LiveSession{}
@@ -597,7 +587,7 @@ func (b *browser) rename(row listing) tea.Cmd {
 	kit := b.desk.kit
 	name := b.name(row)
 	session := row.session
-	field := cards.Field{Label: "Title", Value: session.GetTitle(), Help: "The name the session is listed by and its chat shows."}
+	field := cards.Field{Label: "Title", Value: session.GetTitle(), Help: "The name the session is listed by and its chat shows, such as Fix the login bug."}
 	return kit.Ask(b.hub, "Rename "+name, field, "Rename", func(title string) tea.Cmd {
 		if title == "" || title == session.GetTitle() {
 			return nil
@@ -657,7 +647,7 @@ func (b *browser) remove(row listing) tea.Cmd {
 		return b.hub.Fail(name + " is open in a chat. Close that chat first.")
 	}
 	if row.live != nil {
-		b.list.Confirm("Close "+name+"? It stops running in the background and stays in your sessions.", func() tea.Cmd {
+		b.list.Confirm(cards.Question{Text: "Close " + name + "? It stops running in the background and stays in your sessions.", Verb: "Close"}, func() tea.Cmd {
 			b.hub.Busy("Closing " + name + "…")
 			return tui.Call(b.hub, func() (*agentv1.ShutResponse, error) {
 				return b.desk.agents.Shut(kit.Env.Ctx, &agentv1.ShutRequest{SessionId: id})
@@ -665,7 +655,7 @@ func (b *browser) remove(row listing) tea.Cmd {
 		})
 		return nil
 	}
-	b.list.Confirm("Delete "+name+"? Its messages are gone for good.", func() tea.Cmd {
+	b.list.Confirm(cards.Question{Text: "Delete " + name + "? Its messages are gone for good.", Verb: "Delete", Deletes: true}, func() tea.Cmd {
 		b.hub.Busy("Deleting " + name + "…")
 		return tui.Call(b.hub, func() (*sessionsv1.DeleteResponse, error) {
 			return b.desk.sessions.Delete(kit.Env.Ctx, &sessionsv1.DeleteRequest{Id: id})
@@ -674,93 +664,143 @@ func (b *browser) remove(row listing) tea.Cmd {
 	return nil
 }
 
-// Form that saves the session to a file, by the rules /save follows
+// Saves the session to a file in steps, by the rules /save follows: the kind of file, whether its secrets are hidden, then where it goes
 func (b *browser) export(row listing) tea.Cmd {
 	kit := b.desk.kit
 	name, id := b.name(row), row.session.GetId()
 	folder := "the saved sessions folder"
 	if path, err := export.Folder(savedFolder); err == nil {
-		folder = tilde(path)
+		folder = profile.Tilde(path)
 	}
-	var form *cards.Form
-	form = cards.NewForm(kit.Env, cards.FormSpec{
-		Title: "Save to a file",
-		Intro: []string{"Writes " + name + " to a file you can keep or share."},
-		Fields: []cards.Field{
-			{ID: "format", Label: "Format", Kind: cards.FieldChoice, Value: "md", Choices: []cards.Choice{
-				{Value: "md", Label: "Markdown", Meaning: "The messages as text you can read"},
-				{Value: "json", Label: "JSON", Meaning: "Every message with all its details, for other programs"},
-				{Value: "html", Label: "HTML", Meaning: "One page to open in a browser"},
-			}},
-			{ID: "file", Label: "File", Placeholder: "Named by icebath",
-				Help: "A name alone goes in the folder of the session.\nLeave empty and icebath names the file and puts it in " + folder + "."},
-			{ID: "redact", Label: "Hide secrets", Kind: cards.FieldBool, Value: "true", Help: "Replaces API keys and other secrets in the file with a mark."},
-		},
-		Submit: "Save",
-		Done: func(f *cards.Form, values map[string]string) tea.Cmd {
-			b.hub.Busy("Saving " + name + " to a file…")
-			return tui.Call(b.hub, func() (string, error) {
-				return b.desk.save(kit.Env.Ctx, id, values["format"], values["file"], values["redact"] == "true")
-			}, func(path string) tea.Cmd {
-				return tea.Batch(b.hub.Close(form), b.hub.Done("Saved "+name+" to "+tilde(path)+"."))
+	flow := kit.Flow(b.hub, "Save to a file")
+	formats := []tui.Choice{
+		{ID: "md", Title: "Markdown", Detail: "The messages as text you can read"},
+		{ID: "json", Title: "JSON", Detail: "Every message with all its details, for other programs"},
+		{ID: "html", Title: "HTML", Detail: "One page to open in a browser"},
+	}
+	secrets := []tui.Choice{
+		{ID: "hide", Title: "Hide them", Detail: "API keys and other secrets are replaced with a mark"},
+		{ID: "keep", Title: "Keep them", Detail: "The file holds them as they are"},
+	}
+	file := cards.Field{ID: "file", Label: "File", Help: "A file name or a path, such as notes.md. A name alone goes in the folder of the session.\n" +
+		"Left empty, icebath names the file and puts it in " + folder + "."}
+	return flow.Pick("Which kind of file should "+name+" be saved as?", formats, "", func(format tui.Choice) tea.Cmd {
+		return flow.Pick("What becomes of the API keys and other secrets in it?", secrets, "", func(secret tui.Choice) tea.Cmd {
+			return flow.Ask("Where should the file go?", []cards.Field{file}, "Save", func(values map[string]string) tea.Cmd {
+				b.hub.Busy("Saving " + name + " to a file…")
+				return tui.Call(b.hub, func() (string, error) {
+					return b.desk.save(kit.Env.Ctx, id, format.ID, strings.TrimSpace(values["file"]), secret.ID == "hide")
+				}, func(path string) tea.Cmd {
+					return tea.Batch(flow.End(), b.hub.Done("Saved "+name+" to "+profile.Tilde(path)+"."))
+				})
 			})
-		},
+		})
 	})
-	return b.hub.Push(form)
 }
 
-// Form that deletes stored sessions not used for a number of days, after a yes; sessions a chat or the server holds open are kept
+// Which sessions a cleanup may delete: the choice that names them, the filter that picks them and what a question calls one of them
+type cleanup struct {
+	choice           tui.Choice
+	archived, pinned bool
+	which            string
+}
+
+var cleanups = []cleanup{
+	{tui.Choice{ID: "unpinned", Title: "Sessions not pinned", Detail: "Pinned sessions stay"}, false, false, "session"},
+	{tui.Choice{ID: "archived", Title: "Archived, not pinned", Detail: "Only sessions you archived, and pinned ones stay"}, true, false, "archived session"},
+	{tui.Choice{ID: "all", Title: "Every session", Detail: "Pinned sessions go too"}, false, true, "session"},
+	{tui.Choice{ID: "archived.all", Title: "Every archived session", Detail: "Only sessions you archived, pinned ones too"}, true, true, "archived session"},
+}
+
+// Deletes stored sessions not used for a number of days, in steps: which sessions may go, then how many days, starting from the days
+// Session storage sets for deleting old sessions; asks before it deletes, saying how many go. Sessions a chat or the server holds open
+// always stay
 func (b *browser) prune() tea.Cmd {
 	kit := b.desk.kit
-	var form *cards.Form
-	form = cards.NewForm(kit.Env, cards.FormSpec{
-		Title: "Delete old sessions",
-		Intro: []string{"Deletes the sessions you have not used for a while. Sessions that are open are kept."},
-		Fields: []cards.Field{
-			{ID: "days", Label: "Not used for", Kind: cards.FieldNumber, Value: "30", Required: true,
-				Help: "A number of days. Sessions nobody used for this long are deleted.", Check: func(value string) string {
-					if n, err := strconv.Atoi(strings.TrimSpace(value)); err != nil || n < 1 {
-						return "Enter a whole number of days, such as 30."
-					}
-					return ""
-				}},
-			{ID: "archived", Label: "Archived only", Kind: cards.FieldBool, Value: "false", Help: "Delete only sessions you archived."},
-			{ID: "pinned", Label: "Pinned too", Kind: cards.FieldBool, Value: "false", Help: "Delete pinned sessions as well. They are kept otherwise."},
-		},
-		Submit: "Delete",
-		Done: func(f *cards.Form, values map[string]string) tea.Cmd {
-			days, _ := strconv.Atoi(strings.TrimSpace(values["days"]))
-			archived, pinned := values["archived"] == "true", values["pinned"] == "true"
-			// Sessions a chat or the server holds open are not ended, which pruning never deletes
-			filter := &sessionsv1.Filter{ActiveBefore: timestamppb.New(time.Now().Add(-time.Duration(days) * 24 * time.Hour)),
-				IncludePinned: pinned, OnlyArchived: archived, IncludeArchived: true}
-			which := "session"
-			if archived {
-				which = "archived session"
-			}
-			if pinned {
-				which += ", pinned ones too,"
-			}
-			question := "Delete every " + which + " not used for " + render.Count(days, "day") + "? They are gone for good."
-			return tea.Batch(b.hub.Close(form), tui.Async(func() func() tea.Cmd {
-				return func() tea.Cmd {
-					b.list.Confirm(question, func() tea.Cmd {
-						b.hub.Busy("Deleting old sessions…")
-						return tui.Call(b.hub, func() (*sessionsv1.PruneResponse, error) {
-							return b.desk.sessions.Prune(kit.Env.Ctx, &sessionsv1.PruneRequest{Filter: filter})
-						}, func(response *sessionsv1.PruneResponse) tea.Cmd {
-							if response.GetDeleted() == 0 {
-								return tea.Batch(b.hub.Done("No session was that old, so nothing was deleted."), b.load())
-							}
-							return tea.Batch(b.hub.Done("Deleted "+render.Count(int(response.GetDeleted()), "session")+"."), b.load())
-						})
-					})
-					return nil
+	// The sessions of every profile are kept in one store, which deletes by the setting of the profile in use
+	return tui.Call(b.hub, func() (*configv1.GetResponse, error) {
+		return b.desk.settings.Get(kit.Env.Ctx, &configv1.GetRequest{Key: sessionsconfig.RetentionDays})
+	}, func(got *configv1.GetResponse) tea.Cmd {
+		kept, _ := wholeDays(got.GetSetting().GetValue())
+		flow := kit.Flow(b.hub, "Delete old sessions")
+		choices := make([]tui.Choice, len(cleanups))
+		for i, c := range cleanups {
+			choices[i] = c.choice
+		}
+		return flow.Pick("Which sessions may go? Sessions that are open always stay.", choices, "", func(choice tui.Choice) tea.Cmd {
+			for _, c := range cleanups {
+				if c.choice.ID == choice.ID {
+					return b.age(flow, c, kept)
 				}
-			}))
-		},
+			}
+			return nil
+		})
 	})
-	return b.hub.Push(form)
+}
+
+// Whole days a setting of a length of time counted in days holds, false when its value reads as none
+func wholeDays(value string) (int, bool) {
+	var decoded any
+	if yaml.Unmarshal([]byte(value), &decoded) != nil || decoded == nil {
+		return 0, false
+	}
+	length, ok := config.Length(decoded, 24*time.Hour)
+	return int(length / (24 * time.Hour)), ok
+}
+
+// Asks how long the sessions must have sat unused, starting from the days Session storage sets, then counts those that would go and asks
+// before it deletes them
+func (b *browser) age(flow *tui.Flow, c cleanup, kept int) tea.Cmd {
+	kit := b.desk.kit
+	// Session storage set to delete every ended session names no days to start from
+	help := "Days since a session was last used, such as 30. It starts at the days Session storage sets for deleting old sessions."
+	if kept < 1 {
+		kept, help = 30, "Days since a session was last used, such as 30."
+	}
+	field := cards.Field{ID: "days", Label: "Not used for", Kind: cards.FieldNumber, Value: strconv.Itoa(kept), Help: help,
+		Check: func(value string) string {
+			if n, err := strconv.Atoi(strings.TrimSpace(value)); err != nil || n < 1 {
+				return "Type a whole number of days, such as 30."
+			}
+			return ""
+		}}
+	return flow.Ask("How long since they were last used?", []cards.Field{field}, "Delete", func(values map[string]string) tea.Cmd {
+		days, _ := strconv.Atoi(strings.TrimSpace(values["days"]))
+		// Sessions a chat or the server holds open are not ended, which pruning never deletes
+		filter := &sessionsv1.Filter{ActiveBefore: timestamppb.New(time.Now().Add(-time.Duration(days) * 24 * time.Hour)),
+			IncludePinned: c.pinned, OnlyArchived: c.archived, IncludeArchived: true}
+		b.hub.Busy("Counting the sessions that would go…")
+		return tui.Call(b.hub, func() (*sessionsv1.PruneResponse, error) {
+			return b.desk.sessions.Prune(kit.Env.Ctx, &sessionsv1.PruneRequest{Filter: filter, DryRun: true})
+		}, func(found *sessionsv1.PruneResponse) tea.Cmd {
+			b.hub.Quiet()
+			old := " not used for " + render.Count(days, "day")
+			switch n := int(found.GetDeleted()); n {
+			case 0:
+				return tea.Batch(flow.End(), b.hub.Say("No "+c.which+" is that old, so nothing was deleted.", cards.NoteInfo))
+			case 1:
+				b.list.Confirm(cards.Question{Text: "Delete 1 " + c.which + old + "? Its messages are gone for good.", Verb: "Delete", Deletes: true},
+					func() tea.Cmd { return b.cut(filter) })
+			default:
+				b.list.Confirm(cards.Question{Text: "Delete " + render.Count(n, c.which) + old + "? Their messages are gone for good.", Verb: "Delete",
+					Deletes: true}, func() tea.Cmd { return b.cut(filter) })
+			}
+			return flow.End()
+		})
+	})
+}
+
+// Deletes the sessions the filter picks and says how many went
+func (b *browser) cut(filter *sessionsv1.Filter) tea.Cmd {
+	b.hub.Busy("Deleting old sessions…")
+	return tui.Call(b.hub, func() (*sessionsv1.PruneResponse, error) {
+		return b.desk.sessions.Prune(b.desk.kit.Env.Ctx, &sessionsv1.PruneRequest{Filter: filter})
+	}, func(response *sessionsv1.PruneResponse) tea.Cmd {
+		if response.GetDeleted() == 0 {
+			return tea.Batch(b.hub.Done("No session was that old any more, so nothing was deleted."), b.load())
+		}
+		return tea.Batch(b.hub.Done("Deleted "+render.Count(int(response.GetDeleted()), "session")+"."), b.load())
+	})
 }
 
 // One thing a screen does, as a row of the view that lists all it does: its words, the heading it is listed under, the keymap action whose

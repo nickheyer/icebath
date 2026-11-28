@@ -2,14 +2,13 @@ package tools
 
 import (
 	"context"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	browserconfig "github.com/nickheyer/icebath/internal/browser/config"
 	"github.com/nickheyer/icebath/internal/config"
-	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 // Floors of the waits the profile sets
@@ -81,13 +80,9 @@ func dialogPolicy(cfg *config.Config) (string, float64) {
 // Folder of the profile
 func profileDir(cfg *config.Config) string { return cfg.ProfileDir(cfg.Profile()) }
 
-// Folder browser code keeps its files in for every task, ~ expanded and a relative one under the profile folder; empty for one per task
+// Folder browser code keeps its files in for every task, ~ expanded; empty for one per task
 func execWorkspace(cfg *config.Config) string {
-	path := terminal.ExpandUser(strings.TrimSpace(cfg.GetString(browserconfig.ExecWorkspace)))
-	if path != "" && !filepath.IsAbs(path) {
-		path = filepath.Join(profileDir(cfg), path)
-	}
-	return path
+	return fsx.ExpandHome(strings.TrimSpace(cfg.GetString(browserconfig.ExecWorkspace)))
 }
 
 // Endpoint the profile attaches to without asking the network: a live /browser connect, else browser.cdp_url

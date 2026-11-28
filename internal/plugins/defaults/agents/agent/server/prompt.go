@@ -210,7 +210,8 @@ func (a *Agent) Preview(_ context.Context, directory, surface string) (*prompt.E
 	return env, toolsets, nil
 }
 
-// Lists the personalities, or sets the one every session of the profile speaks with from its next message on
+// Lists the personalities outside this app, or sets the one every session of the profile speaks with from its next message on, saying what
+// its row under Agent says
 func (a *Agent) Personality(id, name string) (string, error) {
 	r, err := a.run(id)
 	if err != nil {
@@ -241,14 +242,13 @@ func (a *Agent) Personality(id, name string) (string, error) {
 		return "", errors.New("There is no personality named `" + strings.ToLower(name) + "`. You can choose `none`, " + strings.Join(names, ", ") + ".")
 	}
 	var stored any
+	title := "None"
 	if personality.Name != "" {
-		stored = personality.Name
+		stored, title = personality.Name, strings.ToUpper(personality.Name[:1])+personality.Name[1:]
 	}
-	if err := settings.Set(agentconfig.Personality, stored); err != nil {
+	// The personality of new chats, as its row under Agent sets it, which every session of the profile takes from its next message
+	if err := a.config.In(r.profileName()).Change(agentconfig.Personality, stored); err != nil {
 		return "", err
 	}
-	if personality.Name == "" {
-		return "The agent replies in its own tone, with no personality, from your next message on.", nil
-	}
-	return "The agent replies as **" + personality.Name + "** from your next message on.", nil
+	return "Personality is now " + title + ". Takes effect from your next message.", nil
 }

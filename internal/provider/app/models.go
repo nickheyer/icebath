@@ -7,7 +7,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"connectrpc.com/connect/v2"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/internal/models"
@@ -26,81 +25,126 @@ import (
 // Cells of the bar of a usage window
 const usageBar = 10
 
-// Why a list of the provider could not be read, in words: what to do when no account is connected, else the reason
-func unread(err error, provider *providerv1.Provider, what string) string {
-	if connect.CodeOf(err) == connect.CodeFailedPrecondition {
-		return "Connect an account to " + provider.GetDisplayName() + " to see " + what + "."
-	}
+// Why a list of the provider could not be read, in words
+func unread(err error) string {
 	return strings.TrimSuffix(tui.Reason(err), ".") + "."
 }
 
-// Models the provider lists, each turned on or off for /model; with none on, /model offers every model listed. ctrl+r reads the list
-// from the provider again
-func (p *providers) models(pg *page) tea.Cmd {
+// What a page of a provider's models knows: what the provider lists and of each model, and why it gave no list of its own
+type listing struct {
+	listed   []string
+	details  map[string]*providerv1.Model
+	failed   error
+	loaded   bool
+	fallback bool
+	unlisted string
+}
+
+// Models the provider lists, each ticked or not for the model list; with none ticked it offers every model listed. A provider whose own
+// list is missing takes a model name typed on purpose. ctrl+r reads the list from the provider again
+func (p *providers) models(name string) tea.Cmd {
 	t := p.kit.Env.Theme
-	var listed []string
-	details := map[string]*providerv1.Model{}
-	var failed error
-	loaded, fallback := false, false
+	if p.find(name) == nil {
+		return nil
+	}
+	current := func() *providerv1.Provider {
+		if entry := p.find(name); entry != nil {
+			return entry
+		}
+		return &providerv1.Provider{Name: name}
+	}
+	l := &listing{details: map[string]*providerv1.Model{}}
+	// Models in the order they show, then the row that asks for a name while the provider's own list is missing or names no model
 	all := func() []string {
-		ids := slices.Clone(pg.provider.GetModels())
-		for _, model := range listed {
+		ids := slices.Clone(current().GetModels())
+		for _, model := range l.listed {
 			if !slices.Contains(ids, model) {
 				ids = append(ids, model)
 			}
+		}
+		if l.loaded && (l.failed != nil || l.unlisted != "" || len(ids) == 0) {
+			ids = append(ids, "")
 		}
 		return ids
 	}
 	var list *cards.List
 	read := func(refresh bool) tea.Cmd {
 		if refresh {
-			p.hub.Busy("Asking " + pg.provider.GetDisplayName() + " for its models…")
+			p.hub.Busy("Asking " + current().GetDisplayName() + " for its models…")
 		}
 		return tui.Async(func() func() tea.Cmd {
-			response, err := p.service.Models(p.kit.Env.Ctx, &providerv1.ModelsRequest{Profile: p.profile, Provider: pg.provider.GetName(), Refresh: refresh})
+			response, err := p.service.Models(p.kit.Env.Ctx, &providerv1.ModelsRequest{Profile: p.profile, Provider: name, Refresh: refresh})
 			return func() tea.Cmd {
-				failed, loaded = err, true
+				l.failed, l.loaded = err, true
 				if err == nil {
-					listed, fallback = response.GetModels(), response.GetFallback()
+					l.listed, l.fallback, l.unlisted = response.GetModels(), response.GetFallback(), response.GetUnlisted()
 					for _, detail := range response.GetDetails() {
-						details[detail.GetId()] = detail
+						l.details[detail.GetId()] = detail
 					}
 				}
 				list.Refresh()
-				if refresh && err == nil {
-					return p.hub.Done("Read the models of " + pg.provider.GetDisplayName() + " again: " + render.Count(len(listed), "model") + ".")
+				switch {
+				case refresh && err == nil && l.unlisted != "" && len(l.listed) == 0:
+					return p.hub.Fail(l.unlisted)
+				case refresh && err == nil:
+					return p.hub.Done("Read the models of " + current().GetDisplayName() + " again: " + render.Count(len(l.listed), "model") + ".")
 				}
 				p.hub.Quiet()
 				return nil
 			}
 		})
 	}
+	tick := func(model string, on bool) tea.Cmd {
+		picked := slices.Clone(current().GetModels())
+		if on && !slices.Contains(picked, model) {
+			picked = append(picked, model)
+		} else if !on {
+			picked = slices.DeleteFunc(picked, func(have string) bool { return have == model })
+		}
+		value, err := yaml.Marshal(picked)
+		if err != nil {
+			return p.hub.Fail(err.Error())
+		}
+		return tui.Call(p.hub, func() (*configv1.SetResponse, error) {
+			return p.settings.Set(p.kit.Env.Ctx, &configv1.SetRequest{Profile: p.profile, Key: current().GetSection() + "." + providerconfig.Models,
+				Value: string(value)})
+		}, func(*configv1.SetResponse) tea.Cmd {
+			done := "The model list offers " + model + "."
+			switch {
+			case !on && len(picked) == 0:
+				done = "The model list offers every model of " + current().GetDisplayName() + " again."
+			case !on:
+				done = "The model list no longer offers " + model + "."
+			}
+			return tea.Batch(p.hub.Done(done), p.load(name), p.options.Load(nil))
+		})
+	}
 	list = cards.NewList(p.kit.Env, cards.ListSpec{
-		Title:   "Models",
+		Title:   "Models offered",
 		Glyph:   t.Glyphs.Models,
-		Key:     "providers:" + pg.provider.GetName() + ":models",
+		Key:     "providers:" + name + ":models",
 		Context: cards.HubContext,
 		Primary: "hub.use",
 		Pick:    true,
 		Bar:     true,
 		Search:  "Search models",
 		Intro: func() []string {
-			name := pg.provider.GetDisplayName()
-			if len(pg.provider.GetModels()) == 0 {
-				return []string{"Turn on the models that /model offers for " + name + ". While none is on, /model offers every model listed."}
-			}
-			return []string{"The models that /model offers for " + name + ". Turn them all off and /model offers every model listed."}
+			return []string{"The models of " + current().GetDisplayName() + " that the model list offers. While none is ticked, it offers them all."}
 		},
 		Columns: []render.Column{{}, {}, {}, {}, {Flex: 1}},
 		Rows: func() [][]string {
 			ids := all()
 			rows := make([][]string, len(ids))
 			for i, model := range ids {
+				if model == "" {
+					rows[i] = []string{"", render.Dim("Type a model name", t), "", "", ""}
+					continue
+				}
 				box := "[ ]"
-				if slices.Contains(pg.provider.GetModels(), model) {
+				if slices.Contains(current().GetModels(), model) {
 					box = "[x]"
 				}
-				detail := details[model]
+				detail := l.details[model]
 				window := ""
 				if detail.GetContext() > 0 {
 					window = models.Tokens(detail.GetContext()) + " context"
@@ -109,70 +153,55 @@ func (p *providers) models(pg *page) tea.Cmd {
 			}
 			return rows
 		},
-		Words:  func(i int) string { return details[all()[i]].GetAbilities() + " " + details[all()[i]].GetNote() },
-		Detail: func(i int) []string { return describeModel(details[all()[i]], t) },
+		Words: func(i int) string { return l.details[all()[i]].GetAbilities() + " " + l.details[all()[i]].GetNote() },
+		Detail: func(i int) []string {
+			if all()[i] == "" {
+				return []string{"Type the name of a model that " + current().GetDisplayName() + " serves, as it names it."}
+			}
+			return describeModel(l.details[all()[i]], t)
+		},
 		Banner: func() string {
 			switch {
-			case failed != nil && len(all()) > 0:
-				return render.Warm("The list could not be read: "+unread(failed, pg.provider, "its models"), t)
-			case fallback:
-				return render.Warm(pg.provider.GetDisplayName()+" gave no list, so these are the models icebath knows for it.", t)
+			case l.failed != nil:
+				return render.Warm("The list could not be read: "+unread(l.failed), t)
+			case l.fallback && l.unlisted != "":
+				return render.Warm(l.unlisted+" These are the models icebath knows for it.", t)
+			case l.fallback:
+				return render.Warm(current().GetDisplayName()+" gave no list, so these are the models icebath knows for it.", t)
+			case l.unlisted != "":
+				return render.Warm(l.unlisted, t)
+			case l.loaded && len(l.listed) == 0:
+				return render.Warm(current().GetDisplayName()+" lists no model.", t)
 			}
 			return ""
 		},
-		Empty: func() string {
-			switch {
-			case failed != nil:
-				return unread(failed, pg.provider, "its models")
-			case !loaded:
-				return "Asking " + pg.provider.GetDisplayName() + " for its models…"
-			}
-			return pg.provider.GetDisplayName() + " lists no models. " + p.kit.Env.Keys.Display("hub.refresh") + " asks again."
-		},
-		Free: map[string]bool{"hub.refresh": true},
+		Empty: func() string { return "Asking " + current().GetDisplayName() + " for its models…" },
+		Free:  map[string]bool{"hub.refresh": true},
 		Hints: func(_ *cards.List, i int) []wm.Hint {
-			if i < 0 {
+			switch {
+			case i < 0:
 				return []wm.Hint{{Action: "hub.refresh", Label: "read again"}}
+			case all()[i] == "":
+				return []wm.Hint{{Action: "hub.use", Label: "type"}, {Action: "hub.refresh", Label: "read again"}}
+			case slices.Contains(current().GetModels(), all()[i]):
+				return []wm.Hint{{Action: "hub.use", Label: "untick"}, {Action: "hub.refresh", Label: "read again"}}
 			}
-			if slices.Contains(pg.provider.GetModels(), all()[i]) {
-				return []wm.Hint{{Action: "hub.use", Label: "turn off"}, {Action: "hub.refresh", Label: "read again"}}
-			}
-			return []wm.Hint{{Action: "hub.use", Label: "turn on"}, {Action: "hub.refresh", Label: "read again"}}
+			return []wm.Hint{{Action: "hub.use", Label: "tick"}, {Action: "hub.refresh", Label: "read again"}}
 		},
 		Actions: map[string]func(*cards.List, int) tea.Cmd{
 			"hub.use": func(_ *cards.List, i int) tea.Cmd {
 				model := all()[i]
-				picked := slices.Clone(pg.provider.GetModels())
-				on := !slices.Contains(picked, model)
-				if on {
-					picked = append(picked, model)
-				} else {
-					picked = slices.DeleteFunc(picked, func(have string) bool { return have == model })
+				if model != "" {
+					return tick(model, !slices.Contains(current().GetModels(), model))
 				}
-				value, err := yaml.Marshal(picked)
-				if err != nil {
-					return p.hub.Fail(err.Error())
-				}
-				return tui.Call(p.hub, func() (*configv1.SetResponse, error) {
-					return p.settings.Set(p.kit.Env.Ctx, &configv1.SetRequest{Profile: p.profile, Key: pg.provider.GetSection() + "." + providerconfig.Models, Value: string(value)})
-				}, func(*configv1.SetResponse) tea.Cmd {
-					pg.provider.Models = picked
-					list.Refresh()
-					done := "/model now offers " + model + "."
-					switch {
-					case !on && len(picked) == 0:
-						done = model + " is off. With none on, /model offers every model of " + pg.provider.GetDisplayName() + "."
-					case !on:
-						done = "/model no longer offers " + model + "."
-					}
-					return tea.Batch(p.hub.Done(done), p.load(pg.provider.GetName()))
-				})
+				field := cards.Field{Label: "Model", Help: "The name of a model that " + current().GetDisplayName() + " serves, such as llama3.1:8b."}
+				return p.kit.Ask(p.hub, "Type a model name", field, "Add", func(typed string) tea.Cmd { return tick(typed, true) })
 			},
 			"hub.refresh": func(*cards.List, int) tea.Cmd { return read(true) },
 		},
 	})
 	list.ToggleDetail()
-	p.views = append(p.views, list)
+	p.views.Add(list)
 	return tea.Batch(p.hub.Push(list), read(false))
 }
 
@@ -247,16 +276,20 @@ func resetWords(at time.Time) string {
 
 // What the provider says the account in use may still spend, read now, each window a row with its bar and when it starts over. ctrl+r
 // reads it again
-func (p *providers) usage(pg *page) tea.Cmd {
+func (p *providers) usage(name string) tea.Cmd {
 	t := p.kit.Env.Theme
+	entry := p.find(name)
+	if entry == nil {
+		return nil
+	}
 	var reading *providerv1.AccountUsage
 	var failed error
 	loaded := false
 	var list *cards.List
-	name := pg.provider.GetDisplayName()
+	shown := entry.GetDisplayName()
 	read := func() tea.Cmd {
 		return tui.Async(func() func() tea.Cmd {
-			response, err := p.service.Usage(p.kit.Env.Ctx, &providerv1.UsageRequest{Profile: p.profile, Provider: pg.provider.GetName()})
+			response, err := p.service.Usage(p.kit.Env.Ctx, &providerv1.UsageRequest{Profile: p.profile, Provider: name})
 			return func() tea.Cmd {
 				failed, loaded, reading = err, true, response.GetUsage()
 				list.Refresh()
@@ -267,10 +300,10 @@ func (p *providers) usage(pg *page) tea.Cmd {
 	list = cards.NewList(p.kit.Env, cards.ListSpec{
 		Title:   "Usage",
 		Glyph:   t.Glyphs.Models,
-		Key:     "providers:" + pg.provider.GetName() + ":usage",
+		Key:     "providers:" + name + ":usage",
 		Context: cards.HubContext,
 		Intro: func() []string {
-			lines := []string{"What " + name + " says the account in use may still spend."}
+			lines := []string{"What " + shown + " says the account in use may still spend."}
 			if plan := reading.GetPlan(); plan != "" {
 				lines = append(lines, "Plan: "+plan)
 			}
@@ -295,18 +328,12 @@ func (p *providers) usage(pg *page) tea.Cmd {
 		},
 		Detail: func(i int) []string {
 			window := reading.GetWindows()[i]
-			lines := []string{window.GetLabel()}
+			var lines []string
 			if window.GetModel() {
 				lines = append(lines, "A limit on one family of models, not on the whole account.")
 			}
 			if window.Used != nil {
-				used := min(max(window.GetUsed(), 0), 100)
-				lines = append(lines, strconv.Itoa(int(100-used))+"% is left.")
-			}
-			if resets := window.GetResets(); resets != nil {
-				lines = append(lines, resetWords(resets.AsTime())+".")
-			} else if window.GetDetail() != "" {
-				lines = append(lines, window.GetDetail())
+				lines = append(lines, strconv.Itoa(int(100-min(max(window.GetUsed(), 0), 100)))+"% is left.")
 			}
 			if fetched := reading.GetFetched(); fetched != nil {
 				lines = append(lines, render.Dim("Read at "+clock(fetched.AsTime()), t))
@@ -315,20 +342,20 @@ func (p *providers) usage(pg *page) tea.Cmd {
 		},
 		Banner: func() string {
 			if why := reading.GetUnavailable(); why != "" {
-				return render.Warm(name+" can't say what this account may spend: "+strings.TrimSuffix(why, ".")+".", t)
+				return render.Warm(shown+" can't say what this account may spend: "+strings.TrimSuffix(why, ".")+".", t)
 			}
 			return ""
 		},
 		Empty: func() string {
 			switch {
 			case failed != nil:
-				return unread(failed, pg.provider, "what it may spend")
+				return unread(failed)
 			case !loaded:
-				return "Asking " + name + " what the account may still spend…"
+				return "Asking " + shown + " what the account may still spend…"
 			case reading.GetUnavailable() != "":
 				return ""
 			}
-			return name + " said nothing of the limits of this account. " + p.kit.Env.Keys.Display("hub.refresh") + " asks again."
+			return shown + " said nothing of the limits of this account. " + p.kit.Env.Keys.Display("hub.refresh") + " asks again."
 		},
 		Free:    map[string]bool{"hub.refresh": true},
 		Hints:   func(*cards.List, int) []wm.Hint { return []wm.Hint{{Action: "hub.refresh", Label: "read again"}} },

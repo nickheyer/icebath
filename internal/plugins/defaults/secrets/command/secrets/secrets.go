@@ -33,11 +33,21 @@ func Register(registry *secrets.Registry) {
 func (source) Spec() secrets.Spec {
 	return secrets.Spec{Name: commandconfig.Name, Label: "Your own command", Short: "your helper command", Shape: secrets.Bulk,
 		Hints: map[secrets.Failure]string{
-			secrets.NotConfigured: "Set Helper command in /settings under Secret stores › Your own command to a quick command that asks nothing and " +
-				"prints NAME=value lines.",
+			secrets.NotConfigured: "Give it a quick command that asks nothing and prints NAME=value lines, with icebath config set secrets.command.command.",
 			secrets.Internal: "Run the command yourself in a shell to see its error. icebath never shows the errors it prints, so no secret can " +
 				"leak that way.",
 		}}
+}
+
+// What keeps the command from filling anything: no command, or no /bin/sh to run it with
+func (source) Needs(_ context.Context, f secrets.Fetch) (string, string) {
+	switch {
+	case strings.TrimSpace(f.Config.GetString(commandconfig.Command)) == "":
+		return "Needs a command", "No command is set yet."
+	case runtime.GOOS == "windows":
+		return "Can't run here", "Your own command needs /bin/sh, which Windows does not have."
+	}
+	return "", ""
 }
 
 // Value of a line without one layer of matching quotes

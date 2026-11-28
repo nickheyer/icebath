@@ -18,7 +18,7 @@ func Register(cfg *config.Config) {
 			{Key: SourceBashrc, Title: "Load shell profile", About: "Load your usual shell startup files before commands run.",
 				Help: "Has no effect while Startup files holds any file.", Default: true},
 			{Key: InitFiles, Title: "Startup files", About: "Files loaded before commands run, in place of your usual ones.", Default: []string{},
-				Zero: "Usual startup files"},
+				Zero: "Usual startup files", Entry: &config.Entry{Noun: "file"}, Path: &config.Path{Kind: config.PathFile, Exists: true}},
 		},
 	}})
 }

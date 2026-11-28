@@ -5,13 +5,14 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 
 	auxiliaryconfig "github.com/nickheyer/icebath/internal/auxiliary/config"
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/hooks"
 	"github.com/nickheyer/icebath/internal/models"
 	"github.com/nickheyer/icebath/internal/provider"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Side job a feature runs on a model of its own rather than the session's, such as describing an image or titling a session. Its settings
@@ -89,6 +90,7 @@ func New(cfg *config.Config, providers *provider.Registry, catalog *models.Model
 	a := &Auxiliary{models: catalog, hooks: points}
 	a.Registry.host = a
 	auxiliaryconfig.Register(cfg, sections{tasks: &a.Registry, providers: providers})
+	cfg.Guard(auxiliaryconfig.Key, config.Guard{Write: writeExtra})
 	return a
 }
 
@@ -143,7 +145,7 @@ func (s sections) settings(values *config.Config, task Task) []config.Setting {
 	choice, timeout := auxiliaryconfig.Auto, cmp.Or(task.Timeout, 30)
 	first := config.Option{Value: auxiliaryconfig.Auto, Title: "Automatic", About: "The session's model first, then the fallback models"}
 	effort := config.Option{Title: "The model's default"}
-	format := config.Option{Title: "From the address", About: "Told from the Base URL"}
+	format := config.Option{Title: "From the address", About: "Told from the address of the server"}
 	// What each setting left empty comes to
 	model, address, limit, stalls, follows := "Automatic", "The provider's address", config.Span(time.Duration(timeout)*time.Second), config.Span(unsetStall), ""
 	if task.Inherit != "" {
@@ -161,19 +163,22 @@ func (s sections) settings(values *config.Config, task Task) []config.Setting {
 	options := s.providers.Options(values)
 	efforts := provider.EffortOptions(effort)
 	common := []config.Setting{
-		{Key: auxiliaryconfig.Provider, Title: "Provider", About: "Which provider runs this job.", Default: choice, Options: func() []config.Option {
-			return append([]config.Option{first,
-				{Value: auxiliaryconfig.Main, Title: "The session's provider", About: "The provider of the session the job is for"},
-				{Value: auxiliaryconfig.Custom, Title: "Your own server", About: "The server at Base URL, under Advanced"}}, options()...)
-		}},
-		{Key: auxiliaryconfig.Model, Title: "Model", About: "The model that does this job.", Default: "", Zero: model},
-		{Key: auxiliaryconfig.BaseURL, Title: "Base URL", About: "The address of a server of your own that does this job.",
-			Help: "When set, the job runs on this server whatever the provider says.", Default: "", Zero: address, Advanced: true},
-		{Key: auxiliaryconfig.APIKey, Title: "API key", About: "Your API key for the server at Base URL.", Help: "Left empty, the account of the provider is used.",
+		{Key: auxiliaryconfig.Provider, Title: "Provider", About: "Which provider runs this job.", Default: choice, Picks: providerconfig.PickProvider,
+			Options: func() []config.Option {
+				return append([]config.Option{first,
+					{Value: auxiliaryconfig.Main, Title: "The session's provider", About: "The provider of the session the job is for"},
+					{Value: auxiliaryconfig.Custom, Title: "Your own server", About: "The server at the address, under Advanced"}}, options()...)
+			}},
+		{Key: auxiliaryconfig.Model, Title: "Model", About: "The model that does this job.", Default: "", Zero: model, Picks: providerconfig.PickModel},
+		{Key: auxiliaryconfig.BaseURL, Title: "Address", About: "The address of a server of your own that does this job.",
+			Help: "When set, the job runs on this server whatever the model says, such as http://localhost:8080/v1.", Default: "", Zero: address,
+			Starts: []string{"http://", "https://"}, Advanced: true},
+		{Key: auxiliaryconfig.APIKey, Title: "API key", About: "Your API key for the server at the address.", Help: "Left empty, the account of the provider is used.",
 			Default: "", Secret: true, Advanced: true},
-		{Key: auxiliaryconfig.KeyEnv, Title: "Key variable", About: "The environment variable that holds the API key.", Help: "Read when no API key is kept here.",
+		{Key: auxiliaryconfig.KeyEnv, Title: "Key variable", About: "The environment variable that holds the API key.",
+			Help:    "Read when no API key is kept here, such as MY_SERVER_KEY.",
 			Default: "", Zero: follows, Advanced: true},
-		{Key: auxiliaryconfig.APIMode, Title: "Request format", About: "Which API the server at Base URL speaks.", Default: "", Advanced: true,
+		{Key: auxiliaryconfig.APIMode, Title: "Request format", About: "Which API the server at the address speaks.", Default: "", Advanced: true,
 			Options: config.Options(format,
 				config.Option{Value: string(provider.ModeChatCompletions), Title: "OpenAI chat completions"},
 				config.Option{Value: string(provider.ModeAnthropicMessages), Title: "Anthropic messages"},
@@ -184,11 +189,13 @@ func (s sections) settings(values *config.Config, task Task) []config.Setting {
 		{Key: auxiliaryconfig.NoProgressTimeout, Title: "Stall limit", About: "How long a reply may pause once it has started.", Default: time.Duration(0),
 			Zero: stalls, Advanced: true},
 		{Key: auxiliaryconfig.ReasoningEffort, Title: "Reasoning effort", About: "How much the model thinks before it answers.", Default: task.Effort,
-			Options: func() []config.Option { return efforts }, Advanced: true},
+			Options: func() []config.Option { return efforts }, Picks: auxiliaryconfig.PickEffort, Advanced: true},
 		{Key: auxiliaryconfig.ExtraBody, Title: "Extra request fields", About: "Fields added as they are to every request of this job.",
-			Default: map[string]any{}, Zero: follows, Entry: &config.Entry{Noun: "field", Name: "Field name"}, Advanced: true},
-		{Key: auxiliaryconfig.FallbackChain, Title: "Fallback models", About: "Models to try in order when this job fails.",
-			Help: "Write each as provider:model, with the name the provider has in this profile.", Default: []string{}, Zero: follows, Advanced: true},
+			Default: map[string]any{}, Zero: follows, Entry: &config.Entry{Noun: "field", Name: "Field name",
+				Fields: []config.Setting{auxiliaryconfig.RequestField}}, Advanced: true},
+		{Key: auxiliaryconfig.FallbackChain, Title: "Fallback models", About: "Models to try in order when this job fails.", Default: []string{},
+			Zero: cmp.Or(follows, "None"), Picks: providerconfig.PickModel, Ordered: true, Entry: &config.Entry{Noun: "model"},
+			Advanced: true},
 	}
 	var everyday, advanced []config.Setting
 	for _, setting := range task.Settings {
@@ -205,11 +212,17 @@ func (s sections) settings(values *config.Config, task Task) []config.Setting {
 	return settings
 }
 
+// Extra request fields of a task, the whole set, one field or a value inside one, kept with each value read as it is sent
+func writeExtra(cfg *config.Config, key string, value any) (bool, error) {
+	parts := strings.Split(key, ".")
+	if len(parts) < 3 || parts[2] != auxiliaryconfig.ExtraBody {
+		return false, nil
+	}
+	return auxiliaryconfig.WriteFields(strings.Join(parts[:3], "."))(cfg, key, value)
+}
+
 // Words for what a task takes from the task it follows, such as As image analysis: the title of that task, its first letter lower case
 // unless it begins a name in capitals
 func as(title string) string {
-	if len(title) > 1 && unicode.IsUpper(rune(title[1])) {
-		return "As " + title
-	}
-	return "As " + strings.ToLower(title[:1]) + title[1:]
+	return "As " + strs.Lower(title)
 }

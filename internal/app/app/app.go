@@ -27,18 +27,6 @@ func Register(host *app.App) {
 
 func (screens) Screens(conn *connect.Client) []tui.Screen {
 	settings := configv1connect.NewConfigServiceClient(conn)
-	wear := func(kit *tui.Kit, name string) tea.Cmd {
-		value := strconv.Quote(name)
-		return tui.Async(func() func() tea.Cmd {
-			_, err := settings.Set(kit.Env.Ctx, &configv1.SetRequest{Key: appconfig.Skin, Value: value})
-			return func() tea.Cmd {
-				if err != nil {
-					return kit.WM.Toast("The color theme was not saved: "+strings.TrimSuffix(tui.Reason(err), ".")+".", wm.Error, wm.DefaultToastTTL)
-				}
-				return tea.Batch(kit.Changed(appconfig.Skin, value), kit.WM.Toast("The color theme is now "+title(name)+".", wm.Success, wm.DefaultToastTTL))
-			}
-		})
-	}
 	return []tui.Screen{
 		{
 			ID:    "palette",
@@ -46,6 +34,7 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 			Slash: []string{"palette"},
 			Open:  func(kit *tui.Kit, _ string) tea.Cmd { return kit.WM.OpenPalette() },
 		},
+		generalPage(settings),
 		{
 			ID:    "skin",
 			Group: tui.GroupApp,
@@ -59,9 +48,9 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 					return kit.Open(configapp.Edit, appconfig.Skin)
 				}
 				if _, known := theme.Named(name); !known {
-					return kit.WM.Toast("There is no color theme named "+name+". /skin alone lists them all.", wm.Warn, wm.DefaultToastTTL)
+					return kit.WM.Toast("There is no color theme named "+name+". The color themes are "+strings.Join(theme.Names(), ", ")+".", wm.Warn, wm.DefaultToastTTL)
 				}
-				return wear(kit, name)
+				return keep(kit, settings, appconfig.Skin, strconv.Quote(name))
 			},
 			Follows: map[string]func(*tui.Kit, string) tea.Cmd{
 				appconfig.Skin: func(_ *tui.Kit, value string) tea.Cmd {
@@ -72,16 +61,15 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 			},
 		},
 		{
-			ID:    "keys",
-			Group: tui.GroupApp,
-			Order: 60,
-			Title: "Keys",
-			Short: "View and change keyboard shortcuts",
-			Slash: []string{"keys", "keybindings"},
-			Usage: "[words to search|reload|reset|option on|off]",
-			Open: func(kit *tui.Kit, argument string) tea.Cmd {
-				return (&bindings{kit: kit, settings: settings}).open(argument)
-			},
+			ID:      "keys",
+			Group:   tui.GroupApp,
+			Order:   60,
+			Title:   "Keyboard shortcuts",
+			Short:   "Change the keys that run each action",
+			Slash:   []string{"keys"},
+			Aliases: []string{"keybindings"},
+			Usage:   "[words to search|reload|reset|option on|off]",
+			Open:    func(kit *tui.Kit, argument string) tea.Cmd { return keysCommand(kit, settings, argument) },
 			Follows: map[string]func(*tui.Kit, string) tea.Cmd{
 				appconfig.Option: func(_ *tui.Kit, value string) tea.Cmd {
 					var on bool
@@ -106,10 +94,22 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 	}
 }
 
-// Name of a color theme as its choice is titled, with a capital first letter
-func title(name string) string {
-	if name == "" {
-		return ""
-	}
-	return strings.ToUpper(name[:1]) + name[1:]
+// Saves the value of a setting of the profile in use as its control in Settings does, saying in a toast what that control says
+func keep(kit *tui.Kit, settings configv1connect.ConfigServiceClient, key, value string) tea.Cmd {
+	return tui.Async(func() func() tea.Cmd {
+		_, err := settings.Set(kit.Env.Ctx, &configv1.SetRequest{Key: key, Value: value})
+		var now *configv1.Setting
+		if err == nil {
+			var response *configv1.GetResponse
+			if response, err = settings.Get(kit.Env.Ctx, &configv1.GetRequest{Key: key}); err == nil {
+				now = response.GetSetting()
+			}
+		}
+		return func() tea.Cmd {
+			if err != nil {
+				return kit.WM.Toast("The change was not saved. The error was: "+strings.TrimSuffix(tui.Reason(err), ".")+".", wm.Error, wm.DefaultToastTTL)
+			}
+			return tea.Batch(kit.Changed(key, now.GetValue()), kit.WM.Toast(now.GetTitle()+" is now "+now.GetShown()+".", wm.Success, wm.DefaultToastTTL))
+		}
+	})
 }

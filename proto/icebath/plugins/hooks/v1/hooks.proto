@@ -2,11 +2,12 @@ syntax = "proto3";
 
 package icebath.plugins.hooks.v1;
 
-// The user's shell hooks and outbound webhooks of a profile: what they are, whether each may run, and running them on sample events
+// The user's shell hooks and outbound webhooks of a profile: what they are, whether each may run, changing them and running them on sample
+// events. The page of Hooks, the hooks commands and the settings service end in the same functions
 service HooksService {
   // Every shell hook and outbound webhook of the profile, with the events a hook may be set on
   rpc List(ListRequest) returns (ListResponse);
-  // One change to the hooks: add, remove, allow or revoke; answered with the hooks after it
+  // One change to a hook: add, edit, remove, allow or revoke; answered with the hooks after it and what was done
   rpc Change(ChangeRequest) returns (ChangeResponse);
   // Runs hooks of an event once on its sample event: the one the command names, or every one of the event whose matcher names the tool
   rpc Test(TestRequest) returns (TestResponse);
@@ -14,6 +15,10 @@ service HooksService {
   rpc Check(CheckRequest) returns (CheckResponse);
   // Allows every hook the profile's settings set, as a launch with --accept-hooks does
   rpc Accept(AcceptRequest) returns (AcceptResponse);
+  // One change to a webhook: add, edit or remove; answered with the hooks after it and what was done
+  rpc ChangeWebhook(WebhookRequest) returns (ChangeResponse);
+  // Posts a sample event to a webhook now and says how its address answered
+  rpc TestWebhook(TestWebhookRequest) returns (TestWebhookResponse);
 }
 
 message ListRequest {
@@ -38,6 +43,14 @@ message Hook {
   bool changed = 8;
   string changed_was = 9;
   string changed_now = 10;
+  // How it stands in the words every page and command shows: Allowed, Not allowed, or Changed since you allowed it
+  string state = 11;
+  // Its event is fired for each tool call, so it may name the tools it runs for
+  bool tool = 12;
+  // What its event guards can be blocked, so a failure of its command may block it
+  bool blocking = 13;
+  // It runs though nobody allowed it, because Run without asking lets every hook run
+  bool unasked = 14;
 }
 
 // One address events are posted to
@@ -50,6 +63,18 @@ message Webhook {
   int32 timeout = 5;
   // Posts carry a signature made with its secret
   bool signed = 6;
+  // Its key among the webhooks the settings keep, which no person needs to see
+  string key = 7;
+  // The name it was given, empty for none
+  string name = 8;
+  // The environment variable that holds its secret, empty when none does
+  string secret_env = 9;
+  // How it stands in the words every page and command shows: Signed or Not signed
+  string state = 10;
+  // One of its events is fired for each tool call, so it may name the tools it posts for
+  bool tool = 11;
+  // Why its posts are not signed though a variable is named for its secret: that variable is not set
+  string unsigned = 12;
 }
 
 message ListResponse {
@@ -61,23 +86,36 @@ message ListResponse {
   repeated string points = 4;
   // The profile approves every hook without asking, by its auto accept setting or ICEBATH_ACCEPT_HOOKS
   bool accept_all = 5;
+  // Names the settings keep hooks under that no shell hook runs on, whose hooks are left out
+  repeated string ignored = 6;
 }
 
 message ChangeRequest {
   string profile = 1;
-  // add, remove, allow or revoke
+  // add, edit, remove, allow or revoke
   string verb = 2;
   string event = 3;
   string command = 4;
-  // Tools a new hook is for and the seconds it may take, both left to their defaults when empty
+  // add and edit: the tools it runs for, the seconds it may take, and whether its failure blocks; left to their defaults when empty
   string matcher = 5;
   int32 timeout = 6;
+  bool fail_closed = 7;
+  // edit: the fields it changes, by their names in the settings: command, matcher, timeout and fail_closed
+  repeated string fields = 8;
+  // edit: the command it runs from now on, when fields names command
+  string to = 9;
+  // add: allow it too, as the person who adds it agrees to it
+  bool allow = 10;
 }
 
 message ChangeResponse {
   ListResponse hooks = 1;
   // Entries a remove took out of the settings, or a revoke off the allowlist
   int32 removed = 2;
+  // What was done, in a sentence or two
+  string said = 3;
+  // Key of the webhook added or changed
+  string key = 4;
 }
 
 // How one run of a hook's command ended
@@ -152,4 +190,35 @@ message AcceptRequest {
   string profile = 1;
 }
 
-message AcceptResponse {}
+message AcceptResponse {
+  // Hooks it allowed now
+  int32 allowed = 1;
+}
+
+message WebhookRequest {
+  string profile = 1;
+  // add, edit or remove
+  string verb = 2;
+  // The webhook edited or removed, by its key
+  string key = 3;
+  // add: where it posts and the events it posts
+  string url = 4;
+  repeated string events = 5;
+  // edit: the field it changes, by its name in the settings, and the value as YAML, null putting the default back
+  string field = 6;
+  string value = 7;
+}
+
+message TestWebhookRequest {
+  string profile = 1;
+  string key = 2;
+}
+
+message TestWebhookResponse {
+  // The address took the sample
+  bool ok = 1;
+  // HTTP status it answered with, 0 when it could not be reached
+  int32 status = 2;
+  // How it went, in a sentence or two
+  string said = 3;
+}

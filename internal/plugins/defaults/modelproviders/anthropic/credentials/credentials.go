@@ -14,7 +14,7 @@ import (
 // How long before its expiry a sign-in of icebath's own is renewed
 const early = 5 * time.Minute
 
-// Program a borrowed sign-in comes from, as its source reads
+// Program a borrowed sign-in comes from, as its source reads and as an account that uses it names it
 const claudeCode = "Claude Code"
 
 type source struct{}
@@ -28,42 +28,103 @@ func Env(account credentials.Account) PoolEnv {
 	return PoolEnv{Account: account.Fields, Provider: account.Provider.Settings, Ignores: account.Ignores}
 }
 
+// Credential of an account: its own sign-in, a setup token, an API key, the key in the variable it reads, or the sign-in of Claude Code on
+// this computer for an account that uses that. Outside the accounts: a token or key in the variables Claude Code reads, else the sign-in
+// of Claude Code on this computer
 func (source) Credential(account credentials.Account) (credentials.Credential, bool) {
 	if account.Spec() != anthropicconfig.Name {
 		return credentials.Credential{}, false
 	}
+	if account.Name == "" {
+		return outside(account)
+	}
+	fields := account.Fields
+	if token := strings.TrimSpace(fields.GetString(anthropicconfig.Token)); credentials.Usable(token) {
+		credential := credentials.Credential{APIKey: token, Auth: provider.AuthOAuth, Origin: credentials.Saved}
+		if ms := int64(fields.GetInt(anthropicconfig.TokenExpires)); ms > 0 && fields.GetString(anthropicconfig.RefreshToken) != "" {
+			credential.Expires = time.UnixMilli(ms)
+		}
+		return credential, true
+	}
+	if token := strings.TrimSpace(fields.GetString(anthropicconfig.OAuthToken)); credentials.Usable(token) {
+		return credentials.Credential{APIKey: token, Auth: provider.AuthOAuth, Origin: credentials.Saved}, true
+	}
+	if found, ok := account.Lookup(anthropicconfig.APIKey); ok {
+		found.Auth = auth(found.APIKey)
+		return found, true
+	}
+	if account.Program() != claudeCode {
+		return credentials.Credential{}, false
+	}
+	return borrowedSignIn(Env(account))
+}
+
+// Credential outside the accounts: the token or key in the variables Claude Code reads, Claude Code's renewable sign-in over a static token
+// it holds too, else the sign-in of Claude Code on this computer
+func outside(account credentials.Account) (credentials.Credential, bool) {
 	env := Env(account)
 	token := ResolveAnthropicToken(env)
 	if token == "" {
 		return credentials.Credential{}, false
 	}
-	credential := credentials.Credential{APIKey: token, Auth: provider.AuthAPIKey, Origin: credentials.External, Source: claudeCode}
+	for _, variable := range []string{anthropicconfig.TokenEnv, anthropicconfig.OAuthTokenEnv, anthropicconfig.APIKeyEnv} {
+		if found, ok := account.Lookup("", variable); ok && strings.TrimSpace(found.APIKey) == token {
+			found.Auth = auth(token)
+			return found, true
+		}
+	}
+	return claudeCodeCredential(env, token), true
+}
+
+// The sign-in of Claude Code on this computer, renewed when it ran out
+func borrowedSignIn(env PoolEnv) (credentials.Credential, bool) {
+	token := resolveClaudeCodeTokenFromCredentials(env, nil)
+	if token == "" {
+		return credentials.Credential{}, false
+	}
+	return claudeCodeCredential(env, token), true
+}
+
+// Credential of a token of the sign-in of Claude Code, with when that sign-in runs out
+func claudeCodeCredential(env PoolEnv, token string) credentials.Credential {
+	credential := credentials.Credential{APIKey: token, Auth: auth(token), Origin: credentials.External, Source: claudeCode}
+	if creds := ReadClaudeCodeCredentials(env); creds != nil {
+		if ms, ok := anyFloat(creds["expiresAt"]); ok && ms > 0 {
+			credential.Expires = time.UnixMilli(int64(ms))
+		}
+	}
+	return credential
+}
+
+// How a token signs in: a sign-in or setup token, else an API key
+func auth(token string) provider.AuthKind {
 	if IsAnthropicOAuthToken(token) {
-		credential.Auth = provider.AuthOAuth
+		return provider.AuthOAuth
 	}
-	for _, bound := range [][2]string{
-		{anthropicconfig.Token, anthropicconfig.TokenEnv},
-		{anthropicconfig.OAuthToken, anthropicconfig.OAuthTokenEnv},
-		{anthropicconfig.APIKey, anthropicconfig.APIKeyEnv},
-	} {
-		if found, ok := account.Lookup(bound[0], bound[1]); ok && strings.TrimSpace(found.APIKey) == token {
-			credential.Origin, credential.Source = found.Origin, found.Source
-			break
-		}
+	return provider.AuthAPIKey
+}
+
+// Why an account that uses the sign-in of Claude Code has no credential, or the credential outside the accounts lacks it: the setting that
+// turns it off, the provider leaving it out, no sign-in where Claude Code keeps it, or one that ran out and could not be renewed. Nothing to
+// say outside the accounts while Claude Code was never signed in here, or is left out on purpose
+func (source) Why(account credentials.Account) (string, bool) {
+	if account.Spec() != anthropicconfig.Name || account.Name != "" && account.Program() != claudeCode {
+		return "", false
 	}
+	env := Env(account)
+	label := account.Provider.Label()
+	path := ClaudeCodeCredentialsPath(env)
 	switch {
-	case credential.Origin == credentials.Saved && token == strings.TrimSpace(account.Fields.GetString(anthropicconfig.Token)):
-		if ms := int64(account.Fields.GetInt(anthropicconfig.TokenExpires)); ms > 0 && account.Fields.GetString(anthropicconfig.RefreshToken) != "" {
-			credential.Expires = time.UnixMilli(ms)
-		}
-	case credential.Origin == credentials.External:
-		if creds := ReadClaudeCodeCredentials(env); creds != nil {
-			if ms, ok := anyFloat(creds["expiresAt"]); ok && ms > 0 {
-				credential.Expires = time.UnixMilli(int64(ms))
-			}
-		}
+	case account.Name == "" && account.Ignores(claudeCode):
+		return "", false
+	case account.Ignores(claudeCode):
+		return "It uses the sign-in of Claude Code, which " + label + " leaves out until you turn it on again.", true
+	case ReadClaudeCodeCredentials(env) != nil:
+		return "The sign-in of Claude Code in " + path + " ran out and could not be renewed. Sign in again with `claude`, then try again.", true
+	case account.Name == "":
+		return "", false
 	}
-	return credential, true
+	return "It uses the sign-in of Claude Code, and none was found in " + path + ". Sign in with `claude`, then try again.", true
 }
 
 // Whether the account's own sign-in expires within five minutes and keeps the refresh token that renews it
@@ -79,8 +140,8 @@ func (source) Rotates(account credentials.Account) bool {
 	return account.Spec() == anthropicconfig.Name && account.Name != "" && account.Fields.GetString(anthropicconfig.RefreshToken) != ""
 }
 
-// Renews the account's own sign-in with its refresh token, or the borrowed Claude Code sign-in it uses, writing that one back where
-// Claude Code keeps it
+// Renews the account's own sign-in with its refresh token, or the borrowed Claude Code sign-in it or the credential outside the accounts
+// uses, writing that one back where Claude Code keeps it. An account with neither has nothing to renew
 func (source) Renew(ctx context.Context, account credentials.Account) (bool, error) {
 	if account.Spec() != anthropicconfig.Name {
 		return false, nil
@@ -88,7 +149,7 @@ func (source) Renew(ctx context.Context, account credentials.Account) (bool, err
 	env := Env(account)
 	env.Ctx = ctx
 	refresh := account.Fields.GetString(anthropicconfig.RefreshToken)
-	if account.Name == "" || refresh == "" {
+	if account.Name == "" || account.Program() == claudeCode {
 		creds := ReadClaudeCodeCredentials(env)
 		if creds == nil || anyString(creds["refreshToken"]) == "" {
 			return false, nil
@@ -96,9 +157,12 @@ func (source) Renew(ctx context.Context, account credentials.Account) (bool, err
 		creds["expiresAt"] = float64(0)
 		if refreshClaudeCodeOAuthToken(env, creds) == "" {
 			return true, credentials.Failed(anthropicconfig.Name, "refresh_failed", "The Claude Code sign-in could not be renewed. Sign in to Claude Code again, "+
-				"or sign in to Anthropic from /providers.", false, nil)
+				"or add an account of your own to Anthropic.", false, nil)
 		}
 		return true, nil
+	}
+	if refresh == "" {
+		return false, nil
 	}
 	state, err := RefreshAnthropicOAuthPure(env, refresh, true)
 	if err != nil {

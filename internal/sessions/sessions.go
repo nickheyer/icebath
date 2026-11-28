@@ -298,6 +298,35 @@ type Registry struct {
 	parent *Registry
 	// Hook points of the host's own registry, which hear of the sessions taken out of the store
 	hooks *hooks.Hooks
+	// What the host's own registry has to tell the person, oldest first, until the app or the command line shows it
+	told    sync.Mutex
+	notices []string
+}
+
+// Tells the person something once, such as a session database set aside: the app shows it in the chat in front, the command line prints it
+// when its command ends
+func (r *Registry) Tell(text string) {
+	if r.parent != nil {
+		r.parent.Tell(text)
+		return
+	}
+	r.told.Lock()
+	defer r.told.Unlock()
+	if !slices.Contains(r.notices, text) {
+		r.notices = append(r.notices, text)
+	}
+}
+
+// What there is to tell the person, oldest first, each handed out once
+func (r *Registry) Notices() []string {
+	if r.parent != nil {
+		return r.parent.Notices()
+	}
+	r.told.Lock()
+	defer r.told.Unlock()
+	notices := r.notices
+	r.notices = nil
+	return notices
 }
 
 // Tells the session hooks of sessions taken out of the store by a delete, a prune, an archive or a sweep: the profile of the settings they
@@ -371,7 +400,7 @@ func (r *Registry) Stores() map[string]Store {
 func (r *Registry) Store(name string) (Store, error) {
 	store, ok := r.Stores()[name]
 	if !ok {
-		return nil, fmt.Errorf("There is no session storage named %s. Pick one in /settings under Sessions › Storage.", name)
+		return nil, fmt.Errorf("There is no session storage named %s. Storage, an option of Session storage, picks one.", name)
 	}
 	return store, nil
 }
@@ -432,6 +461,9 @@ func New(cfg *config.Config, points *hooks.Hooks) *Sessions {
 		}
 		return options
 	})
+	cfg.Guard(sessionsconfig.AutoPrune, config.Guard{Write: func(cfg *config.Config, _ string, value any) (bool, error) {
+		return true, SetAutoPrune(cfg, value)
+	}})
 	return s
 }
 
@@ -466,14 +498,14 @@ func (s *Sessions) Rename(old, renamed string) error {
 // Refusal to load a session back that holds more messages than the resume limit
 func TooLong(count, limit int64) error {
 	return fmt.Errorf("This session has %s messages, more than the %s that can be reopened safely. Start a new session and keep a copy with "+
-		"icebath sessions export --format md --session-id <id>, or raise Reopen limit in /settings under Sessions.", strs.Number(float64(count)),
+		"icebath sessions export --format md --session-id <id>, or raise Reopen limit, an option of Session storage.", strs.Number(float64(count)),
 		strs.Number(float64(limit)))
 }
 
 // Refusal to export a session in memory that holds more messages than the export limit
 func TooLarge(id string, limit int64) error {
 	return fmt.Errorf("The session %s has more than %s messages, the most a JSON export holds. Export it as Markdown with "+
-		"icebath sessions export --format md --session-id %s, or raise Export limit in /settings under Sessions.", id, strs.Number(float64(limit)), id)
+		"icebath sessions export --format md --session-id %s, or raise Export limit, an option of Session storage.", id, strs.Number(float64(limit)), id)
 }
 
 type resumeKey struct{}

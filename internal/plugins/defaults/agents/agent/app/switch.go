@@ -124,9 +124,10 @@ func (c *chat) switchTo(session *sessionsv1.Session) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// Looks at what the server's open sessions do, telling the window when one it left finishes its turn or waits on the user, and looks again
+// Looks at what the server's open sessions do, telling the window when one it left finishes its turn or waits on the user, and at what the
+// server has to tell the person, and looks again
 func (d *desk) poll() tea.Cmd {
-	return tui.Async(func() func() tea.Cmd {
+	return tea.Batch(d.hear(), tui.Async(func() func() tea.Cmd {
 		response, err := d.agents.Live(d.kit.Env.Ctx, &agentv1.LiveRequest{})
 		return func() tea.Cmd {
 			wait := pollIdle
@@ -150,6 +151,26 @@ func (d *desk) poll() tea.Cmd {
 					return d.poll()
 				}
 			})
+		}
+	}))
+}
+
+// Asks the server what it has to tell the person, such as a session database it set aside, and shows each once
+func (d *desk) hear() tea.Cmd {
+	return tui.Async(func() func() tea.Cmd {
+		response, err := d.sessions.Notices(d.kit.Env.Ctx, &sessionsv1.NoticesRequest{})
+		return func() tea.Cmd {
+			if err != nil {
+				return nil
+			}
+			var cmds []tea.Cmd
+			for _, text := range response.GetNotices() {
+				// With no chat open the person still reads it, in a toast
+				if !d.announce(text) {
+					cmds = append(cmds, wm.Notify(text, wm.Warn))
+				}
+			}
+			return tea.Batch(cmds...)
 		}
 	})
 }
@@ -203,8 +224,8 @@ func (d *desk) sessionsKey() string {
 	return "/sessions"
 }
 
-// Puts a line in the transcript the person looks at
-func (d *desk) announce(text string) {
+// Puts a line in the transcript the person looks at; false when no chat is open
+func (d *desk) announce(text string) bool {
 	target, _ := d.kit.Focused().(*chat)
 	if target == nil && len(d.chats) > 0 {
 		target = d.chats[len(d.chats)-1]
@@ -212,6 +233,7 @@ func (d *desk) announce(text string) {
 	if target != nil {
 		target.log.note(text)
 	}
+	return target != nil
 }
 
 // Dial on the bar counting the sessions the server holds open that no window here shows

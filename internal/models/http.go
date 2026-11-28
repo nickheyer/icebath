@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,8 +13,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/internal/provider"
@@ -65,9 +68,80 @@ func List(ctx context.Context, route provider.Route, modelsURL string) ([]string
 	if document, ok := data.(map[string]any); ok {
 		items = document["data"]
 	} else if _, ok := data.([]any); !ok {
+		noted(ctx, func(u *Unlisted) { u.URL, u.Shape = target, true })
 		return nil, false
 	}
 	return ChatCatalogIDs(items), true
+}
+
+// Why a provider gave no list of models of its own, as the requests of its listing met it: the address asked last, and the error status it
+// answered with, the failure to reach it or an answer that holds no list; an answer with no models when none of those
+type Unlisted struct {
+	URL    string
+	Status int
+	Err    error
+	Shape  bool
+}
+
+// Context key of the Unlisted a listing notes what its requests met in
+type unlistedKey struct{}
+
+// Context whose requests note what they meet in the Unlisted
+func noting(ctx context.Context, unlisted *Unlisted) context.Context {
+	return context.WithValue(ctx, unlistedKey{}, unlisted)
+}
+
+// Notes what a request of a listing met, when the context is one's
+func noted(ctx context.Context, note func(*Unlisted)) {
+	if unlisted, ok := ctx.Value(unlistedKey{}).(*Unlisted); ok {
+		note(unlisted)
+	}
+}
+
+// Why the provider with the name has no models of its own to pick, then what to do, in sentences a person reads
+func (u Unlisted) Reason(name string) string {
+	at := ""
+	if u.URL != "" {
+		at = " at " + u.URL
+	}
+	switch {
+	case u.Err != nil:
+		return fmt.Sprintf("icebath could not reach %s%s, because %s. Check its address and that the server runs, then try again.", name, at,
+			unreached(u.Err))
+	case u.Status == http.StatusUnauthorized || u.Status == http.StatusForbidden:
+		return fmt.Sprintf("%s refused to list its models%s, with HTTP status %d. Check its API key.", name, at, u.Status)
+	case u.Status == http.StatusNotFound:
+		return fmt.Sprintf("%s has no list of models%s, as it answered with HTTP status 404. Check its address.", name, at)
+	case u.Status != 0:
+		return fmt.Sprintf("%s answered with HTTP status %d when asked for its models%s. Try again later.", name, u.Status, at)
+	case u.Shape:
+		return fmt.Sprintf("%s answered%s with something other than a list of models. Check its address.", name, at)
+	}
+	return fmt.Sprintf("%s lists no models%s.", name, at)
+}
+
+// What reaching an address failed on, as the end of a sentence
+func unreached(err error) string {
+	var dns *net.DNSError
+	var certificate *tls.CertificateVerificationError
+	switch {
+	case errors.As(err, &dns):
+		return "its host name was not found"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "nothing answered there"
+	case errors.As(err, &certificate):
+		return "its certificate is not trusted"
+	case errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded):
+		return "it did not answer in time"
+	}
+	if failure, ok := errors.AsType[net.Error](err); ok && failure.Timeout() {
+		return "it did not answer in time"
+	}
+	text := err.Error()
+	if i := strings.LastIndex(text, ": "); i >= 0 {
+		text = text[i+2:]
+	}
+	return "of this error: " + text
 }
 
 // JSON a GET of the address answers with, an error for any status but success
@@ -79,7 +153,11 @@ func GetJSON(ctx context.Context, target string, timeout time.Duration, headers 
 	if !reply.ok() {
 		return nil, &StatusError{Status: reply.status, URL: target}
 	}
-	return reply.json()
+	data, err := reply.json()
+	if err != nil {
+		noted(ctx, func(u *Unlisted) { u.Shape = true })
+	}
+	return data, err
 }
 
 // Non success status of a request
@@ -176,9 +254,16 @@ func send(ctx context.Context, method, target string, headers map[string]string,
 	}}
 	response, err := client.Do(request)
 	if err != nil {
+		noted(ctx, func(u *Unlisted) { *u = Unlisted{URL: target, Err: err} })
 		return nil, err
 	}
 	defer response.Body.Close()
+	noted(ctx, func(u *Unlisted) {
+		*u = Unlisted{URL: target}
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			u.Status = response.StatusCode
+		}
+	})
 	stream := io.Reader(response.Body)
 	if strings.EqualFold(response.Header.Get("Content-Encoding"), "gzip") && !response.Uncompressed {
 		zipped, err := gzip.NewReader(response.Body)

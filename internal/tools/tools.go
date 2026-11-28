@@ -20,6 +20,7 @@ import (
 	toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
 	"github.com/nickheyer/icebath/internal/tools/redact"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type Handler func(ctx context.Context, call *Call) string
@@ -73,9 +74,11 @@ type Def struct {
 	Risks  []string
 	Schema map[string]any
 	// Schema for the session in place of Schema, such as one that depends on its main model; nil, or a nil result, keeps Schema
-	Dynamic        func(env *Env) map[string]any
-	Handler        Handler
-	Check          func(env *Env) bool
+	Dynamic func(env *Env) map[string]any
+	Handler Handler
+	Check   func(env *Env) bool
+	// What the tool lacks while Check says it can't run, in a person's words, such as "It needs a web search service that is ready."
+	Lacks          func(env *Env) string
 	MaxResultChars int
 	// What a call does to the world: a read only call may be stopped or repeated freely, a mutating one that succeeds is progress
 	Effect Effect
@@ -98,6 +101,60 @@ type Def struct {
 	// Most calls of a batch running at once while one of the tool's calls is in it, as a setting says, such as pictures drawn at the same
 	// time a service's rate limits allow; nil leaves the batch at its own limit
 	Workers func(env *Env) int
+	// Profile whose sessions alone get the tool, such as one of a server the profile set up; every profile when empty
+	Profile string
+}
+
+// Heading the app lists tools under, and where the options of its tools are: declared by the plugins whose tools or settings belong to it,
+// the declarations of one title making one group
+type Group struct {
+	Title string
+	// Keys of the settings sections that hold options of its tools: the options of the first are listed on its page, each other one is a
+	// row there that opens its own
+	Sections []string
+	// Key of the area of the settings menu its options are, for a group whose options are an area of their own, and the argument the page of
+	// that area is opened with
+	Area, Opens string
+	// Its tools are turned on and off on the page of its area, their one home, so the group lists none of them
+	Elsewhere bool
+	// Place among the groups, lowest first
+	Order int
+	// Profile the group is of, every profile when empty
+	Profile string
+}
+
+// Registrant that declares the groups its tools are listed under
+type Grouper interface {
+	Groups() []Group
+}
+
+// Every group the registrants declare, declarations of one title and profile joined: the sections of the one that gives the group its place
+// first, then the others in order, and the first area
+func (r *Registry) Groups() []Group {
+	var out []Group
+	for _, registrant := range r.registrants {
+		grouper, ok := registrant.(Grouper)
+		if !ok {
+			continue
+		}
+		for _, group := range grouper.Groups() {
+			at := slices.IndexFunc(out, func(g Group) bool { return g.Title == group.Title && g.Profile == group.Profile })
+			if at < 0 {
+				out = append(out, group)
+				continue
+			}
+			joined := &out[at]
+			// The plugin that owns the group gives it its place, and its own sections lead
+			if joined.Order == 0 && group.Order != 0 {
+				joined.Order, joined.Sections = group.Order, append(slices.Clone(group.Sections), joined.Sections...)
+			} else {
+				joined.Sections = append(joined.Sections, group.Sections...)
+			}
+			joined.Area, joined.Opens = cmp.Or(joined.Area, group.Area), cmp.Or(joined.Opens, group.Opens)
+			joined.Elsewhere = joined.Elsewhere || group.Elsewhere
+		}
+	}
+	return out
 }
 
 // Name shown in the app
@@ -113,7 +170,7 @@ func Groups(defs []Def) map[string]string {
 	}
 	for _, def := range defs {
 		if groups[def.Toolset] == "" {
-			groups[def.Toolset] = sentence(strings.NewReplacer("_", " ", "-", " ").Replace(def.Toolset))
+			groups[def.Toolset] = strs.Capital(strings.NewReplacer("_", " ", "-", " ").Replace(def.Toolset))
 		}
 	}
 	return groups
@@ -470,20 +527,11 @@ func (r *Registry) Risks() []config.Option {
 	for _, def := range r.Tools() {
 		for _, risk := range def.Risks {
 			if !slices.ContainsFunc(options, func(option config.Option) bool { return option.Value == risk }) {
-				options = append(options, config.Option{Value: risk, Title: sentence(risk), About: "Asked by the " + def.Label() + " tool"})
+				options = append(options, config.Option{Value: risk, Title: strs.Capital(risk), About: "Asked by the " + def.Label() + " tool"})
 			}
 		}
 	}
 	return options
-}
-
-// Text with a capital first letter, as a title of a choice starts
-func sentence(text string) string {
-	runes := []rune(text)
-	if len(runes) == 0 {
-		return text
-	}
-	return strings.ToUpper(string(runes[:1])) + string(runes[1:])
 }
 
 func (r *Registry) Definitions(env *Env) []map[string]any {
@@ -595,6 +643,7 @@ func New(cfg *config.Config, hk *hooks.Hooks) *Tools {
 	t := &Tools{hooks: hk}
 	t.Registry.host = t
 	t.Register(verifying{hooks: hk})
+	guardDisabled(cfg)
 	toolsconfig.Register(cfg, func() []config.Option {
 		var options []config.Option
 		for _, def := range t.Tools() {

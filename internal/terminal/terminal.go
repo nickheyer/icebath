@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -15,6 +16,8 @@ import (
 	"github.com/nickheyer/icebath/internal/hooks"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
 	"github.com/nickheyer/icebath/internal/tools"
+	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // How often unused environments are looked for
@@ -56,16 +59,11 @@ func (r *Registry) Backend(name string) (Backend, bool) {
 	return Backend{}, false
 }
 
-// Every backend as a value terminal.backend may take, one that can't run yet saying so. Why it can't, and what it needs, is what the
-// backends screen is for: the reason of its check is written for the model and runs past any row
-func (r *Registry) Options(cfg *config.Config) []config.Option {
+// Every backend as a value terminal.backend may take. How each stands is what its page in Sandbox says
+func (r *Registry) Options() []config.Option {
 	var options []config.Option
 	for _, backend := range r.Backends() {
-		about := backend.About
-		if backend.Check != nil && backend.Check(cfg) != nil {
-			about += " · Not ready"
-		}
-		options = append(options, config.Option{Value: backend.Name, Title: backend.Title, About: about})
+		options = append(options, config.Option{Value: backend.Name, Title: backend.Title, About: backend.About})
 	}
 	return options
 }
@@ -198,8 +196,44 @@ func New(cfg *config.Config, hk *hooks.Hooks) *Terminal {
 	t.live.cond = sync.NewCond(&t.live.mu)
 	t.live.procs = map[Proc]Runner{}
 	t.Jobs = newJobs(t)
-	terminalconfig.Register(cfg, func() []config.Option { return t.Options(cfg) })
+	terminalconfig.Register(cfg, t.Options)
+	// Every write of the place in use a person asks for chooses it as the page of Sandbox does
+	cfg.Guard(terminalconfig.Backend, config.Guard{Write: func(cfg *config.Config, _ string, value any) (bool, error) {
+		name, ok := value.(string)
+		if !ok || strings.TrimSpace(name) == "" {
+			return false, nil
+		}
+		_, _, err := t.Use(cfg, name)
+		return true, err
+	}})
+	cfg.Guard(terminalconfig.CredentialFiles, config.Guard{Check: checkProfileFiles})
 	return t
+}
+
+// Why files for sandboxes can't be kept: each names a file inside the profile's folder, by its path from there, which no path of this
+// computer is
+func checkProfileFiles(_ *config.Config, _ string, value any) error {
+	var names []string
+	switch held := value.(type) {
+	case []string:
+		names = held
+	case []any:
+		for _, item := range held {
+			if name, ok := item.(string); ok {
+				names = append(names, name)
+			}
+		}
+	}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if rel := filepath.Clean(name); filepath.IsAbs(name) || strings.HasPrefix(name, "~") || !filepath.IsLocal(rel) {
+			return fmt.Errorf("%s is not inside the profile's folder. Write the path of the file from there, such as auth.json.", name)
+		}
+	}
+	return nil
 }
 
 // Adds a registrant; a registry nested in the host reaches it through Host
@@ -216,8 +250,7 @@ func (t *Terminal) Configured(cfg *config.Config) (Backend, error) {
 	if backend, ok := t.Named(cfg, name); ok {
 		return backend, nil
 	}
-	return Backend{}, fmt.Errorf("icebath has no place to run commands named %q. Choose one of %s in /backends, or in /settings under Terminal › Where "+
-		"commands run.", name, t.titles())
+	return Backend{}, fmt.Errorf("icebath has no place to run commands named %q. Choose one of %s in /sandbox.", name, t.titles())
 }
 
 // Titles of every backend as one list, the last after "or"
@@ -226,13 +259,10 @@ func (r *Registry) titles() string {
 	for _, backend := range r.Backends() {
 		titles = append(titles, backend.Title)
 	}
-	switch len(titles) {
-	case 0:
+	if len(titles) == 0 {
 		return "the places that are installed"
-	case 1:
-		return titles[0]
 	}
-	return strings.Join(titles[:len(titles)-1], ", ") + " or " + titles[len(titles)-1]
+	return strs.Or(titles)
 }
 
 // Backend of the name as the profile's settings have it, not isolated when they hand its sandbox the folders of the host
@@ -454,14 +484,23 @@ func defaultCwd(backend Backend, dir string) string {
 	return cmp.Or(backend.Cwd, "/root")
 }
 
+// The working folder as the place the commands run in reads it, which is no path of this computer: a ~ stays for the home folder of a remote
+// place, and is written out only for a place on this computer
+func inPlace(cwd string, backend Backend) string {
+	if backend.Remote && strings.HasPrefix(cwd, "~") {
+		return cwd
+	}
+	return fsx.ExpandHome(cwd)
+}
+
 // Folder a new environment starts in and the host folder it mounts
 func (t *Terminal) plan(cfg *config.Config, backend Backend, session, dir string) (string, string) {
 	fallback := defaultCwd(backend, dir)
 	cwd := strings.TrimSpace(cfg.GetString(terminalconfig.Cwd))
 	if Placeholder(cwd) {
 		cwd = fallback
-	} else if !(backend.Remote && strings.HasPrefix(cwd, "~")) {
-		cwd = ExpandUser(cwd)
+	} else {
+		cwd = inPlace(cwd, backend)
 	}
 	host := ""
 	if backend.Mount != nil {

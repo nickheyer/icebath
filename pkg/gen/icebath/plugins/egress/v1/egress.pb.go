@@ -21,6 +21,67 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// How a step of a turn went, as a line is shown
+type Tone int32
+
+const (
+	Tone_TONE_UNSPECIFIED Tone = 0
+	// The heading of a step
+	Tone_TONE_STEP Tone = 1
+	Tone_TONE_GOOD Tone = 2
+	Tone_TONE_WARN Tone = 3
+	Tone_TONE_BAD  Tone = 4
+	// Said by the way, such as where a file is
+	Tone_TONE_DIM Tone = 5
+)
+
+// Enum value maps for Tone.
+var (
+	Tone_name = map[int32]string{
+		0: "TONE_UNSPECIFIED",
+		1: "TONE_STEP",
+		2: "TONE_GOOD",
+		3: "TONE_WARN",
+		4: "TONE_BAD",
+		5: "TONE_DIM",
+	}
+	Tone_value = map[string]int32{
+		"TONE_UNSPECIFIED": 0,
+		"TONE_STEP":        1,
+		"TONE_GOOD":        2,
+		"TONE_WARN":        3,
+		"TONE_BAD":         4,
+		"TONE_DIM":         5,
+	}
+)
+
+func (x Tone) Enum() *Tone {
+	p := new(Tone)
+	*p = x
+	return p
+}
+
+func (x Tone) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Tone) Descriptor() protoreflect.EnumDescriptor {
+	return file_icebath_plugins_egress_v1_egress_proto_enumTypes[0].Descriptor()
+}
+
+func (Tone) Type() protoreflect.EnumType {
+	return &file_icebath_plugins_egress_v1_egress_proto_enumTypes[0]
+}
+
+func (x Tone) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Tone.Descriptor instead.
+func (Tone) EnumDescriptor() ([]byte, []int) {
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{0}
+}
+
 type StatusRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Profile whose proxy is read, the one in use when empty
@@ -382,27 +443,40 @@ func (x *InstallResponse) GetVersion() string {
 	return ""
 }
 
-type AuthorityRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+type TurnRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Hide the keys, else stop hiding them
+	On bool `protobuf:"varint,2,opt,name=on,proto3" json:"on,omitempty"`
+	// Set the proxy up again though it is set up, making tokens for providers added since
+	Again bool `protobuf:"varint,3,opt,name=again,proto3" json:"again,omitempty"`
+	// Port given for the tunnel, 0 for the one the settings have
+	TunnelPort int32 `protobuf:"varint,4,opt,name=tunnel_port,json=tunnelPort,proto3" json:"tunnel_port,omitempty"`
+	// Names of the provider keys come from Bitwarden rather than the environment, or from the environment again after Bitwarden
+	FromBitwarden bool `protobuf:"varint,5,opt,name=from_bitwarden,json=fromBitwarden,proto3" json:"from_bitwarden,omitempty"`
+	NoBitwarden   bool `protobuf:"varint,6,opt,name=no_bitwarden,json=noBitwarden,proto3" json:"no_bitwarden,omitempty"`
+	// Makes a new token for every provider, so running sandboxes must restart
+	Rotate bool `protobuf:"varint,7,opt,name=rotate,proto3" json:"rotate,omitempty"`
+	// Leaves the proxy stopped once it is set up
+	Stopped       bool `protobuf:"varint,8,opt,name=stopped,proto3" json:"stopped,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AuthorityRequest) Reset() {
-	*x = AuthorityRequest{}
+func (x *TurnRequest) Reset() {
+	*x = TurnRequest{}
 	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AuthorityRequest) String() string {
+func (x *TurnRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AuthorityRequest) ProtoMessage() {}
+func (*TurnRequest) ProtoMessage() {}
 
-func (x *AuthorityRequest) ProtoReflect() protoreflect.Message {
+func (x *TurnRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -414,333 +488,90 @@ func (x *AuthorityRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AuthorityRequest.ProtoReflect.Descriptor instead.
-func (*AuthorityRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use TurnRequest.ProtoReflect.Descriptor instead.
+func (*TurnRequest) Descriptor() ([]byte, []int) {
 	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *AuthorityRequest) GetProfile() string {
+func (x *TurnRequest) GetProfile() string {
 	if x != nil {
 		return x.Profile
 	}
 	return ""
 }
 
-type AuthorityResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Certificate   string                 `protobuf:"bytes,1,opt,name=certificate,proto3" json:"certificate,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AuthorityResponse) Reset() {
-	*x = AuthorityResponse{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AuthorityResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AuthorityResponse) ProtoMessage() {}
-
-func (x *AuthorityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[6]
+func (x *TurnRequest) GetOn() bool {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AuthorityResponse.ProtoReflect.Descriptor instead.
-func (*AuthorityResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *AuthorityResponse) GetCertificate() string {
-	if x != nil {
-		return x.Certificate
-	}
-	return ""
-}
-
-type MintRequest struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	// Names of the provider keys come from Bitwarden rather than the environment
-	FromBitwarden bool `protobuf:"varint,2,opt,name=from_bitwarden,json=fromBitwarden,proto3" json:"from_bitwarden,omitempty"`
-	Rotate        bool `protobuf:"varint,3,opt,name=rotate,proto3" json:"rotate,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *MintRequest) Reset() {
-	*x = MintRequest{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MintRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MintRequest) ProtoMessage() {}
-
-func (x *MintRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MintRequest.ProtoReflect.Descriptor instead.
-func (*MintRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *MintRequest) GetProfile() string {
-	if x != nil {
-		return x.Profile
-	}
-	return ""
-}
-
-func (x *MintRequest) GetFromBitwarden() bool {
-	if x != nil {
-		return x.FromBitwarden
+		return x.On
 	}
 	return false
 }
 
-func (x *MintRequest) GetRotate() bool {
+func (x *TurnRequest) GetAgain() bool {
 	if x != nil {
-		return x.Rotate
+		return x.Again
 	}
 	return false
 }
 
-type MintResponse struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Mappings  []*Mapping             `protobuf:"bytes,1,rep,name=mappings,proto3" json:"mappings,omitempty"`
-	Uncovered []string               `protobuf:"bytes,2,rep,name=uncovered,proto3" json:"uncovered,omitempty"`
-	// Provider keys the .env adds to the names looked at
-	Loaded int32 `protobuf:"varint,3,opt,name=loaded,proto3" json:"loaded,omitempty"`
-	// Mappings there were, and the copy kept of them before a rotation, or why it could not be kept
-	Existing    int32  `protobuf:"varint,4,opt,name=existing,proto3" json:"existing,omitempty"`
-	Backup      string `protobuf:"bytes,5,opt,name=backup,proto3" json:"backup,omitempty"`
-	BackupError string `protobuf:"bytes,6,opt,name=backup_error,json=backupError,proto3" json:"backup_error,omitempty"`
-	// Names Bitwarden gave, or why it gave none, the setup ending then
-	Pulled        int32    `protobuf:"varint,7,opt,name=pulled,proto3" json:"pulled,omitempty"`
-	Refusal       []string `protobuf:"bytes,8,rep,name=refusal,proto3" json:"refusal,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *MintResponse) Reset() {
-	*x = MintResponse{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MintResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MintResponse) ProtoMessage() {}
-
-func (x *MintResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MintResponse.ProtoReflect.Descriptor instead.
-func (*MintResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *MintResponse) GetMappings() []*Mapping {
-	if x != nil {
-		return x.Mappings
-	}
-	return nil
-}
-
-func (x *MintResponse) GetUncovered() []string {
-	if x != nil {
-		return x.Uncovered
-	}
-	return nil
-}
-
-func (x *MintResponse) GetLoaded() int32 {
-	if x != nil {
-		return x.Loaded
-	}
-	return 0
-}
-
-func (x *MintResponse) GetExisting() int32 {
-	if x != nil {
-		return x.Existing
-	}
-	return 0
-}
-
-func (x *MintResponse) GetBackup() string {
-	if x != nil {
-		return x.Backup
-	}
-	return ""
-}
-
-func (x *MintResponse) GetBackupError() string {
-	if x != nil {
-		return x.BackupError
-	}
-	return ""
-}
-
-func (x *MintResponse) GetPulled() int32 {
-	if x != nil {
-		return x.Pulled
-	}
-	return 0
-}
-
-func (x *MintResponse) GetRefusal() []string {
-	if x != nil {
-		return x.Refusal
-	}
-	return nil
-}
-
-type WriteRequest struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Profile  string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	Mappings []*Mapping             `protobuf:"bytes,2,rep,name=mappings,proto3" json:"mappings,omitempty"`
-	// Port given for the tunnel, 0 for the one the settings have
-	TunnelPort    int32 `protobuf:"varint,3,opt,name=tunnel_port,json=tunnelPort,proto3" json:"tunnel_port,omitempty"`
-	FromBitwarden bool  `protobuf:"varint,4,opt,name=from_bitwarden,json=fromBitwarden,proto3" json:"from_bitwarden,omitempty"`
-	NoBitwarden   bool  `protobuf:"varint,5,opt,name=no_bitwarden,json=noBitwarden,proto3" json:"no_bitwarden,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WriteRequest) Reset() {
-	*x = WriteRequest{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WriteRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WriteRequest) ProtoMessage() {}
-
-func (x *WriteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WriteRequest.ProtoReflect.Descriptor instead.
-func (*WriteRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *WriteRequest) GetProfile() string {
-	if x != nil {
-		return x.Profile
-	}
-	return ""
-}
-
-func (x *WriteRequest) GetMappings() []*Mapping {
-	if x != nil {
-		return x.Mappings
-	}
-	return nil
-}
-
-func (x *WriteRequest) GetTunnelPort() int32 {
+func (x *TurnRequest) GetTunnelPort() int32 {
 	if x != nil {
 		return x.TunnelPort
 	}
 	return 0
 }
 
-func (x *WriteRequest) GetFromBitwarden() bool {
+func (x *TurnRequest) GetFromBitwarden() bool {
 	if x != nil {
 		return x.FromBitwarden
 	}
 	return false
 }
 
-func (x *WriteRequest) GetNoBitwarden() bool {
+func (x *TurnRequest) GetNoBitwarden() bool {
 	if x != nil {
 		return x.NoBitwarden
 	}
 	return false
 }
 
-type WriteResponse struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Config   string                 `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
-	Mappings string                 `protobuf:"bytes,2,opt,name=mappings,proto3" json:"mappings,omitempty"`
-	// Audit log made, or why it could not be
-	Audit      string `protobuf:"bytes,3,opt,name=audit,proto3" json:"audit,omitempty"`
-	AuditError string `protobuf:"bytes,4,opt,name=audit_error,json=auditError,proto3" json:"audit_error,omitempty"`
-	// Lines said of the key source
-	Notes []string `protobuf:"bytes,5,rep,name=notes,proto3" json:"notes,omitempty"`
-	// Port given was out of range, nothing being written
-	BadPort       bool `protobuf:"varint,6,opt,name=bad_port,json=badPort,proto3" json:"bad_port,omitempty"`
+func (x *TurnRequest) GetRotate() bool {
+	if x != nil {
+		return x.Rotate
+	}
+	return false
+}
+
+func (x *TurnRequest) GetStopped() bool {
+	if x != nil {
+		return x.Stopped
+	}
+	return false
+}
+
+type TurnLine struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	Tone          Tone                   `protobuf:"varint,2,opt,name=tone,proto3,enum=icebath.plugins.egress.v1.Tone" json:"tone,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *WriteResponse) Reset() {
-	*x = WriteResponse{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[10]
+func (x *TurnLine) Reset() {
+	*x = TurnLine{}
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *WriteResponse) String() string {
+func (x *TurnLine) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*WriteResponse) ProtoMessage() {}
+func (*TurnLine) ProtoMessage() {}
 
-func (x *WriteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[10]
+func (x *TurnLine) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -751,52 +582,262 @@ func (x *WriteResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use WriteResponse.ProtoReflect.Descriptor instead.
-func (*WriteResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{10}
+// Deprecated: Use TurnLine.ProtoReflect.Descriptor instead.
+func (*TurnLine) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *WriteResponse) GetConfig() string {
+func (x *TurnLine) GetText() string {
 	if x != nil {
-		return x.Config
+		return x.Text
 	}
 	return ""
 }
 
-func (x *WriteResponse) GetMappings() string {
+func (x *TurnLine) GetTone() Tone {
+	if x != nil {
+		return x.Tone
+	}
+	return Tone_TONE_UNSPECIFIED
+}
+
+// Tokens a setup made, and the provider variables the proxy can't cover
+type Minted struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mappings      []*Mapping             `protobuf:"bytes,1,rep,name=mappings,proto3" json:"mappings,omitempty"`
+	Uncovered     []string               `protobuf:"bytes,2,rep,name=uncovered,proto3" json:"uncovered,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Minted) Reset() {
+	*x = Minted{}
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Minted) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Minted) ProtoMessage() {}
+
+func (x *Minted) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Minted.ProtoReflect.Descriptor instead.
+func (*Minted) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Minted) GetMappings() []*Mapping {
 	if x != nil {
 		return x.Mappings
-	}
-	return ""
-}
-
-func (x *WriteResponse) GetAudit() string {
-	if x != nil {
-		return x.Audit
-	}
-	return ""
-}
-
-func (x *WriteResponse) GetAuditError() string {
-	if x != nil {
-		return x.AuditError
-	}
-	return ""
-}
-
-func (x *WriteResponse) GetNotes() []string {
-	if x != nil {
-		return x.Notes
 	}
 	return nil
 }
 
-func (x *WriteResponse) GetBadPort() bool {
+func (x *Minted) GetUncovered() []string {
 	if x != nil {
-		return x.BadPort
+		return x.Uncovered
+	}
+	return nil
+}
+
+type TurnDone struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Whether it did what was asked
+	Ok bool `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	// What happened, or why it could not, in one or two sentences
+	Note string `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
+	// Whether the keys are hidden now, and the proxy that hides them runs, as which process and on which port
+	On            bool  `protobuf:"varint,3,opt,name=on,proto3" json:"on,omitempty"`
+	Running       bool  `protobuf:"varint,4,opt,name=running,proto3" json:"running,omitempty"`
+	Pid           int32 `protobuf:"varint,5,opt,name=pid,proto3" json:"pid,omitempty"`
+	Port          int32 `protobuf:"varint,6,opt,name=port,proto3" json:"port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TurnDone) Reset() {
+	*x = TurnDone{}
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TurnDone) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TurnDone) ProtoMessage() {}
+
+func (x *TurnDone) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TurnDone.ProtoReflect.Descriptor instead.
+func (*TurnDone) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *TurnDone) GetOk() bool {
+	if x != nil {
+		return x.Ok
 	}
 	return false
 }
+
+func (x *TurnDone) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *TurnDone) GetOn() bool {
+	if x != nil {
+		return x.On
+	}
+	return false
+}
+
+func (x *TurnDone) GetRunning() bool {
+	if x != nil {
+		return x.Running
+	}
+	return false
+}
+
+func (x *TurnDone) GetPid() int32 {
+	if x != nil {
+		return x.Pid
+	}
+	return 0
+}
+
+func (x *TurnDone) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+type TurnEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*TurnEvent_Line
+	//	*TurnEvent_Minted
+	//	*TurnEvent_Done
+	Kind          isTurnEvent_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TurnEvent) Reset() {
+	*x = TurnEvent{}
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TurnEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TurnEvent) ProtoMessage() {}
+
+func (x *TurnEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TurnEvent.ProtoReflect.Descriptor instead.
+func (*TurnEvent) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *TurnEvent) GetKind() isTurnEvent_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *TurnEvent) GetLine() *TurnLine {
+	if x != nil {
+		if x, ok := x.Kind.(*TurnEvent_Line); ok {
+			return x.Line
+		}
+	}
+	return nil
+}
+
+func (x *TurnEvent) GetMinted() *Minted {
+	if x != nil {
+		if x, ok := x.Kind.(*TurnEvent_Minted); ok {
+			return x.Minted
+		}
+	}
+	return nil
+}
+
+func (x *TurnEvent) GetDone() *TurnDone {
+	if x != nil {
+		if x, ok := x.Kind.(*TurnEvent_Done); ok {
+			return x.Done
+		}
+	}
+	return nil
+}
+
+type isTurnEvent_Kind interface {
+	isTurnEvent_Kind()
+}
+
+type TurnEvent_Line struct {
+	Line *TurnLine `protobuf:"bytes,1,opt,name=line,proto3,oneof"`
+}
+
+type TurnEvent_Minted struct {
+	Minted *Minted `protobuf:"bytes,2,opt,name=minted,proto3,oneof"`
+}
+
+type TurnEvent_Done struct {
+	Done *TurnDone `protobuf:"bytes,3,opt,name=done,proto3,oneof"`
+}
+
+func (*TurnEvent_Line) isTurnEvent_Kind() {}
+
+func (*TurnEvent_Minted) isTurnEvent_Kind() {}
+
+func (*TurnEvent_Done) isTurnEvent_Kind() {}
 
 type StartRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
@@ -809,7 +850,7 @@ type StartRequest struct {
 
 func (x *StartRequest) Reset() {
 	*x = StartRequest{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[11]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -821,7 +862,7 @@ func (x *StartRequest) String() string {
 func (*StartRequest) ProtoMessage() {}
 
 func (x *StartRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[11]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -834,7 +875,7 @@ func (x *StartRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartRequest.ProtoReflect.Descriptor instead.
 func (*StartRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{11}
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StartRequest) GetProfile() string {
@@ -867,7 +908,7 @@ type StartResponse struct {
 
 func (x *StartResponse) Reset() {
 	*x = StartResponse{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[12]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -879,7 +920,7 @@ func (x *StartResponse) String() string {
 func (*StartResponse) ProtoMessage() {}
 
 func (x *StartResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[12]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -892,7 +933,7 @@ func (x *StartResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartResponse.ProtoReflect.Descriptor instead.
 func (*StartResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{12}
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *StartResponse) GetPid() int32 {
@@ -946,7 +987,7 @@ type StopRequest struct {
 
 func (x *StopRequest) Reset() {
 	*x = StopRequest{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[13]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -958,7 +999,7 @@ func (x *StopRequest) String() string {
 func (*StopRequest) ProtoMessage() {}
 
 func (x *StopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[13]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -971,7 +1012,7 @@ func (x *StopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
 func (*StopRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{13}
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *StopRequest) GetProfile() string {
@@ -991,7 +1032,7 @@ type StopResponse struct {
 
 func (x *StopResponse) Reset() {
 	*x = StopResponse{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[14]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1003,7 +1044,7 @@ func (x *StopResponse) String() string {
 func (*StopResponse) ProtoMessage() {}
 
 func (x *StopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[14]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1016,7 +1057,7 @@ func (x *StopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
 func (*StopResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{14}
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *StopResponse) GetStopped() bool {
@@ -1035,7 +1076,7 @@ type ReloadRequest struct {
 
 func (x *ReloadRequest) Reset() {
 	*x = ReloadRequest{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[15]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1047,7 +1088,7 @@ func (x *ReloadRequest) String() string {
 func (*ReloadRequest) ProtoMessage() {}
 
 func (x *ReloadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[15]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1060,7 +1101,7 @@ func (x *ReloadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReloadRequest.ProtoReflect.Descriptor instead.
 func (*ReloadRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{15}
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ReloadRequest) GetProfile() string {
@@ -1078,7 +1119,7 @@ type ReloadResponse struct {
 
 func (x *ReloadResponse) Reset() {
 	*x = ReloadResponse{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[16]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1090,7 +1131,7 @@ func (x *ReloadResponse) String() string {
 func (*ReloadResponse) ProtoMessage() {}
 
 func (x *ReloadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[16]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1103,104 +1144,7 @@ func (x *ReloadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReloadResponse.ProtoReflect.Descriptor instead.
 func (*ReloadResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{16}
-}
-
-type DisableRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DisableRequest) Reset() {
-	*x = DisableRequest{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DisableRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DisableRequest) ProtoMessage() {}
-
-func (x *DisableRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DisableRequest.ProtoReflect.Descriptor instead.
-func (*DisableRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *DisableRequest) GetProfile() string {
-	if x != nil {
-		return x.Profile
-	}
-	return ""
-}
-
-type DisableResponse struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	WasEnabled bool                   `protobuf:"varint,1,opt,name=was_enabled,json=wasEnabled,proto3" json:"was_enabled,omitempty"`
-	// The proxy still runs
-	Running       bool `protobuf:"varint,2,opt,name=running,proto3" json:"running,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DisableResponse) Reset() {
-	*x = DisableResponse{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DisableResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DisableResponse) ProtoMessage() {}
-
-func (x *DisableResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DisableResponse.ProtoReflect.Descriptor instead.
-func (*DisableResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{18}
-}
-
-func (x *DisableResponse) GetWasEnabled() bool {
-	if x != nil {
-		return x.WasEnabled
-	}
-	return false
-}
-
-func (x *DisableResponse) GetRunning() bool {
-	if x != nil {
-		return x.Running
-	}
-	return false
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{15}
 }
 
 type TextRequest struct {
@@ -1213,7 +1157,7 @@ type TextRequest struct {
 
 func (x *TextRequest) Reset() {
 	*x = TextRequest{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[19]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1225,7 +1169,7 @@ func (x *TextRequest) String() string {
 func (*TextRequest) ProtoMessage() {}
 
 func (x *TextRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[19]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1238,7 +1182,7 @@ func (x *TextRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TextRequest.ProtoReflect.Descriptor instead.
 func (*TextRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{19}
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TextRequest) GetProfile() string {
@@ -1264,7 +1208,7 @@ type TextResponse struct {
 
 func (x *TextResponse) Reset() {
 	*x = TextResponse{}
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[20]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1276,7 +1220,7 @@ func (x *TextResponse) String() string {
 func (*TextResponse) ProtoMessage() {}
 
 func (x *TextResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[20]
+	mi := &file_icebath_plugins_egress_v1_egress_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1289,7 +1233,7 @@ func (x *TextResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TextResponse.ProtoReflect.Descriptor instead.
 func (*TextResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{20}
+	return file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *TextResponse) GetText() string {
@@ -1331,39 +1275,35 @@ const file_icebath_plugins_egress_v1_egress_proto_rawDesc = "" +
 	"\x05force\x18\x02 \x01(\bR\x05force\"C\n" +
 	"\x0fInstallResponse\x12\x16\n" +
 	"\x06binary\x18\x01 \x01(\tR\x06binary\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\tR\aversion\",\n" +
-	"\x10AuthorityRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"5\n" +
-	"\x11AuthorityResponse\x12 \n" +
-	"\vcertificate\x18\x01 \x01(\tR\vcertificate\"f\n" +
-	"\vMintRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\x12%\n" +
-	"\x0efrom_bitwarden\x18\x02 \x01(\bR\rfromBitwarden\x12\x16\n" +
-	"\x06rotate\x18\x03 \x01(\bR\x06rotate\"\x8d\x02\n" +
-	"\fMintResponse\x12>\n" +
-	"\bmappings\x18\x01 \x03(\v2\".icebath.plugins.egress.v1.MappingR\bmappings\x12\x1c\n" +
-	"\tuncovered\x18\x02 \x03(\tR\tuncovered\x12\x16\n" +
-	"\x06loaded\x18\x03 \x01(\x05R\x06loaded\x12\x1a\n" +
-	"\bexisting\x18\x04 \x01(\x05R\bexisting\x12\x16\n" +
-	"\x06backup\x18\x05 \x01(\tR\x06backup\x12!\n" +
-	"\fbackup_error\x18\x06 \x01(\tR\vbackupError\x12\x16\n" +
-	"\x06pulled\x18\a \x01(\x05R\x06pulled\x12\x18\n" +
-	"\arefusal\x18\b \x03(\tR\arefusal\"\xd3\x01\n" +
-	"\fWriteRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\x12>\n" +
-	"\bmappings\x18\x02 \x03(\v2\".icebath.plugins.egress.v1.MappingR\bmappings\x12\x1f\n" +
-	"\vtunnel_port\x18\x03 \x01(\x05R\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\"\xea\x01\n" +
+	"\vTurnRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x0e\n" +
+	"\x02on\x18\x02 \x01(\bR\x02on\x12\x14\n" +
+	"\x05again\x18\x03 \x01(\bR\x05again\x12\x1f\n" +
+	"\vtunnel_port\x18\x04 \x01(\x05R\n" +
 	"tunnelPort\x12%\n" +
-	"\x0efrom_bitwarden\x18\x04 \x01(\bR\rfromBitwarden\x12!\n" +
-	"\fno_bitwarden\x18\x05 \x01(\bR\vnoBitwarden\"\xab\x01\n" +
-	"\rWriteResponse\x12\x16\n" +
-	"\x06config\x18\x01 \x01(\tR\x06config\x12\x1a\n" +
-	"\bmappings\x18\x02 \x01(\tR\bmappings\x12\x14\n" +
-	"\x05audit\x18\x03 \x01(\tR\x05audit\x12\x1f\n" +
-	"\vaudit_error\x18\x04 \x01(\tR\n" +
-	"auditError\x12\x14\n" +
-	"\x05notes\x18\x05 \x03(\tR\x05notes\x12\x19\n" +
-	"\bbad_port\x18\x06 \x01(\bR\abadPort\">\n" +
+	"\x0efrom_bitwarden\x18\x05 \x01(\bR\rfromBitwarden\x12!\n" +
+	"\fno_bitwarden\x18\x06 \x01(\bR\vnoBitwarden\x12\x16\n" +
+	"\x06rotate\x18\a \x01(\bR\x06rotate\x12\x18\n" +
+	"\astopped\x18\b \x01(\bR\astopped\"S\n" +
+	"\bTurnLine\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x123\n" +
+	"\x04tone\x18\x02 \x01(\x0e2\x1f.icebath.plugins.egress.v1.ToneR\x04tone\"f\n" +
+	"\x06Minted\x12>\n" +
+	"\bmappings\x18\x01 \x03(\v2\".icebath.plugins.egress.v1.MappingR\bmappings\x12\x1c\n" +
+	"\tuncovered\x18\x02 \x03(\tR\tuncovered\"~\n" +
+	"\bTurnDone\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x12\n" +
+	"\x04note\x18\x02 \x01(\tR\x04note\x12\x0e\n" +
+	"\x02on\x18\x03 \x01(\bR\x02on\x12\x18\n" +
+	"\arunning\x18\x04 \x01(\bR\arunning\x12\x10\n" +
+	"\x03pid\x18\x05 \x01(\x05R\x03pid\x12\x12\n" +
+	"\x04port\x18\x06 \x01(\x05R\x04port\"\xc6\x01\n" +
+	"\tTurnEvent\x129\n" +
+	"\x04line\x18\x01 \x01(\v2#.icebath.plugins.egress.v1.TurnLineH\x00R\x04line\x12;\n" +
+	"\x06minted\x18\x02 \x01(\v2!.icebath.plugins.egress.v1.MintedH\x00R\x06minted\x129\n" +
+	"\x04done\x18\x03 \x01(\v2#.icebath.plugins.egress.v1.TurnDoneH\x00R\x04doneB\x06\n" +
+	"\x04kind\">\n" +
 	"\fStartRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x14\n" +
 	"\x05setup\x18\x02 \x01(\bR\x05setup\"\x97\x01\n" +
@@ -1380,29 +1320,27 @@ const file_icebath_plugins_egress_v1_egress_proto_rawDesc = "" +
 	"\astopped\x18\x01 \x01(\bR\astopped\")\n" +
 	"\rReloadRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\"\x10\n" +
-	"\x0eReloadResponse\"*\n" +
-	"\x0eDisableRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"L\n" +
-	"\x0fDisableResponse\x12\x1f\n" +
-	"\vwas_enabled\x18\x01 \x01(\bR\n" +
-	"wasEnabled\x12\x18\n" +
-	"\arunning\x18\x02 \x01(\bR\arunning\"H\n" +
+	"\x0eReloadResponse\"H\n" +
 	"\vTextRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x1f\n" +
 	"\vshow_tokens\x18\x02 \x01(\bR\n" +
 	"showTokens\"\"\n" +
 	"\fTextResponse\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text2\xbc\a\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text*e\n" +
+	"\x04Tone\x12\x14\n" +
+	"\x10TONE_UNSPECIFIED\x10\x00\x12\r\n" +
+	"\tTONE_STEP\x10\x01\x12\r\n" +
+	"\tTONE_GOOD\x10\x02\x12\r\n" +
+	"\tTONE_WARN\x10\x03\x12\f\n" +
+	"\bTONE_BAD\x10\x04\x12\f\n" +
+	"\bTONE_DIM\x10\x052\x95\x05\n" +
 	"\rEgressService\x12]\n" +
 	"\x06Status\x12(.icebath.plugins.egress.v1.StatusRequest\x1a).icebath.plugins.egress.v1.StatusResponse\x12`\n" +
-	"\aInstall\x12).icebath.plugins.egress.v1.InstallRequest\x1a*.icebath.plugins.egress.v1.InstallResponse\x12f\n" +
-	"\tAuthority\x12+.icebath.plugins.egress.v1.AuthorityRequest\x1a,.icebath.plugins.egress.v1.AuthorityResponse\x12W\n" +
-	"\x04Mint\x12&.icebath.plugins.egress.v1.MintRequest\x1a'.icebath.plugins.egress.v1.MintResponse\x12Z\n" +
-	"\x05Write\x12'.icebath.plugins.egress.v1.WriteRequest\x1a(.icebath.plugins.egress.v1.WriteResponse\x12Z\n" +
+	"\aInstall\x12).icebath.plugins.egress.v1.InstallRequest\x1a*.icebath.plugins.egress.v1.InstallResponse\x12V\n" +
+	"\x04Turn\x12&.icebath.plugins.egress.v1.TurnRequest\x1a$.icebath.plugins.egress.v1.TurnEvent0\x01\x12Z\n" +
 	"\x05Start\x12'.icebath.plugins.egress.v1.StartRequest\x1a(.icebath.plugins.egress.v1.StartResponse\x12W\n" +
 	"\x04Stop\x12&.icebath.plugins.egress.v1.StopRequest\x1a'.icebath.plugins.egress.v1.StopResponse\x12]\n" +
-	"\x06Reload\x12(.icebath.plugins.egress.v1.ReloadRequest\x1a).icebath.plugins.egress.v1.ReloadResponse\x12`\n" +
-	"\aDisable\x12).icebath.plugins.egress.v1.DisableRequest\x1a*.icebath.plugins.egress.v1.DisableResponse\x12W\n" +
+	"\x06Reload\x12(.icebath.plugins.egress.v1.ReloadRequest\x1a).icebath.plugins.egress.v1.ReloadResponse\x12W\n" +
 	"\x04Text\x12&.icebath.plugins.egress.v1.TextRequest\x1a'.icebath.plugins.egress.v1.TextResponseB\xfc\x01\n" +
 	"\x1dcom.icebath.plugins.egress.v1B\vEgressProtoP\x01ZGgithub.com/nickheyer/icebath/pkg/gen/icebath/plugins/egress/v1;egressv1\xa2\x02\x03IPE\xaa\x02\x19Icebath.Plugins.Egress.V1\xca\x02\x19Icebath\\Plugins\\Egress\\V1\xe2\x02%Icebath\\Plugins\\Egress\\V1\\GPBMetadata\xea\x02\x1cIcebath::Plugins::Egress::V1b\x06proto3"
 
@@ -1418,59 +1356,55 @@ func file_icebath_plugins_egress_v1_egress_proto_rawDescGZIP() []byte {
 	return file_icebath_plugins_egress_v1_egress_proto_rawDescData
 }
 
-var file_icebath_plugins_egress_v1_egress_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_icebath_plugins_egress_v1_egress_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_icebath_plugins_egress_v1_egress_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_icebath_plugins_egress_v1_egress_proto_goTypes = []any{
-	(*StatusRequest)(nil),     // 0: icebath.plugins.egress.v1.StatusRequest
-	(*Mapping)(nil),           // 1: icebath.plugins.egress.v1.Mapping
-	(*StatusResponse)(nil),    // 2: icebath.plugins.egress.v1.StatusResponse
-	(*InstallRequest)(nil),    // 3: icebath.plugins.egress.v1.InstallRequest
-	(*InstallResponse)(nil),   // 4: icebath.plugins.egress.v1.InstallResponse
-	(*AuthorityRequest)(nil),  // 5: icebath.plugins.egress.v1.AuthorityRequest
-	(*AuthorityResponse)(nil), // 6: icebath.plugins.egress.v1.AuthorityResponse
-	(*MintRequest)(nil),       // 7: icebath.plugins.egress.v1.MintRequest
-	(*MintResponse)(nil),      // 8: icebath.plugins.egress.v1.MintResponse
-	(*WriteRequest)(nil),      // 9: icebath.plugins.egress.v1.WriteRequest
-	(*WriteResponse)(nil),     // 10: icebath.plugins.egress.v1.WriteResponse
-	(*StartRequest)(nil),      // 11: icebath.plugins.egress.v1.StartRequest
-	(*StartResponse)(nil),     // 12: icebath.plugins.egress.v1.StartResponse
-	(*StopRequest)(nil),       // 13: icebath.plugins.egress.v1.StopRequest
-	(*StopResponse)(nil),      // 14: icebath.plugins.egress.v1.StopResponse
-	(*ReloadRequest)(nil),     // 15: icebath.plugins.egress.v1.ReloadRequest
-	(*ReloadResponse)(nil),    // 16: icebath.plugins.egress.v1.ReloadResponse
-	(*DisableRequest)(nil),    // 17: icebath.plugins.egress.v1.DisableRequest
-	(*DisableResponse)(nil),   // 18: icebath.plugins.egress.v1.DisableResponse
-	(*TextRequest)(nil),       // 19: icebath.plugins.egress.v1.TextRequest
-	(*TextResponse)(nil),      // 20: icebath.plugins.egress.v1.TextResponse
+	(Tone)(0),               // 0: icebath.plugins.egress.v1.Tone
+	(*StatusRequest)(nil),   // 1: icebath.plugins.egress.v1.StatusRequest
+	(*Mapping)(nil),         // 2: icebath.plugins.egress.v1.Mapping
+	(*StatusResponse)(nil),  // 3: icebath.plugins.egress.v1.StatusResponse
+	(*InstallRequest)(nil),  // 4: icebath.plugins.egress.v1.InstallRequest
+	(*InstallResponse)(nil), // 5: icebath.plugins.egress.v1.InstallResponse
+	(*TurnRequest)(nil),     // 6: icebath.plugins.egress.v1.TurnRequest
+	(*TurnLine)(nil),        // 7: icebath.plugins.egress.v1.TurnLine
+	(*Minted)(nil),          // 8: icebath.plugins.egress.v1.Minted
+	(*TurnDone)(nil),        // 9: icebath.plugins.egress.v1.TurnDone
+	(*TurnEvent)(nil),       // 10: icebath.plugins.egress.v1.TurnEvent
+	(*StartRequest)(nil),    // 11: icebath.plugins.egress.v1.StartRequest
+	(*StartResponse)(nil),   // 12: icebath.plugins.egress.v1.StartResponse
+	(*StopRequest)(nil),     // 13: icebath.plugins.egress.v1.StopRequest
+	(*StopResponse)(nil),    // 14: icebath.plugins.egress.v1.StopResponse
+	(*ReloadRequest)(nil),   // 15: icebath.plugins.egress.v1.ReloadRequest
+	(*ReloadResponse)(nil),  // 16: icebath.plugins.egress.v1.ReloadResponse
+	(*TextRequest)(nil),     // 17: icebath.plugins.egress.v1.TextRequest
+	(*TextResponse)(nil),    // 18: icebath.plugins.egress.v1.TextResponse
 }
 var file_icebath_plugins_egress_v1_egress_proto_depIdxs = []int32{
-	1,  // 0: icebath.plugins.egress.v1.StatusResponse.mappings:type_name -> icebath.plugins.egress.v1.Mapping
-	1,  // 1: icebath.plugins.egress.v1.MintResponse.mappings:type_name -> icebath.plugins.egress.v1.Mapping
-	1,  // 2: icebath.plugins.egress.v1.WriteRequest.mappings:type_name -> icebath.plugins.egress.v1.Mapping
-	0,  // 3: icebath.plugins.egress.v1.EgressService.Status:input_type -> icebath.plugins.egress.v1.StatusRequest
-	3,  // 4: icebath.plugins.egress.v1.EgressService.Install:input_type -> icebath.plugins.egress.v1.InstallRequest
-	5,  // 5: icebath.plugins.egress.v1.EgressService.Authority:input_type -> icebath.plugins.egress.v1.AuthorityRequest
-	7,  // 6: icebath.plugins.egress.v1.EgressService.Mint:input_type -> icebath.plugins.egress.v1.MintRequest
-	9,  // 7: icebath.plugins.egress.v1.EgressService.Write:input_type -> icebath.plugins.egress.v1.WriteRequest
-	11, // 8: icebath.plugins.egress.v1.EgressService.Start:input_type -> icebath.plugins.egress.v1.StartRequest
-	13, // 9: icebath.plugins.egress.v1.EgressService.Stop:input_type -> icebath.plugins.egress.v1.StopRequest
-	15, // 10: icebath.plugins.egress.v1.EgressService.Reload:input_type -> icebath.plugins.egress.v1.ReloadRequest
-	17, // 11: icebath.plugins.egress.v1.EgressService.Disable:input_type -> icebath.plugins.egress.v1.DisableRequest
-	19, // 12: icebath.plugins.egress.v1.EgressService.Text:input_type -> icebath.plugins.egress.v1.TextRequest
-	2,  // 13: icebath.plugins.egress.v1.EgressService.Status:output_type -> icebath.plugins.egress.v1.StatusResponse
-	4,  // 14: icebath.plugins.egress.v1.EgressService.Install:output_type -> icebath.plugins.egress.v1.InstallResponse
-	6,  // 15: icebath.plugins.egress.v1.EgressService.Authority:output_type -> icebath.plugins.egress.v1.AuthorityResponse
-	8,  // 16: icebath.plugins.egress.v1.EgressService.Mint:output_type -> icebath.plugins.egress.v1.MintResponse
-	10, // 17: icebath.plugins.egress.v1.EgressService.Write:output_type -> icebath.plugins.egress.v1.WriteResponse
-	12, // 18: icebath.plugins.egress.v1.EgressService.Start:output_type -> icebath.plugins.egress.v1.StartResponse
-	14, // 19: icebath.plugins.egress.v1.EgressService.Stop:output_type -> icebath.plugins.egress.v1.StopResponse
-	16, // 20: icebath.plugins.egress.v1.EgressService.Reload:output_type -> icebath.plugins.egress.v1.ReloadResponse
-	18, // 21: icebath.plugins.egress.v1.EgressService.Disable:output_type -> icebath.plugins.egress.v1.DisableResponse
-	20, // 22: icebath.plugins.egress.v1.EgressService.Text:output_type -> icebath.plugins.egress.v1.TextResponse
-	13, // [13:23] is the sub-list for method output_type
-	3,  // [3:13] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	2,  // 0: icebath.plugins.egress.v1.StatusResponse.mappings:type_name -> icebath.plugins.egress.v1.Mapping
+	0,  // 1: icebath.plugins.egress.v1.TurnLine.tone:type_name -> icebath.plugins.egress.v1.Tone
+	2,  // 2: icebath.plugins.egress.v1.Minted.mappings:type_name -> icebath.plugins.egress.v1.Mapping
+	7,  // 3: icebath.plugins.egress.v1.TurnEvent.line:type_name -> icebath.plugins.egress.v1.TurnLine
+	8,  // 4: icebath.plugins.egress.v1.TurnEvent.minted:type_name -> icebath.plugins.egress.v1.Minted
+	9,  // 5: icebath.plugins.egress.v1.TurnEvent.done:type_name -> icebath.plugins.egress.v1.TurnDone
+	1,  // 6: icebath.plugins.egress.v1.EgressService.Status:input_type -> icebath.plugins.egress.v1.StatusRequest
+	4,  // 7: icebath.plugins.egress.v1.EgressService.Install:input_type -> icebath.plugins.egress.v1.InstallRequest
+	6,  // 8: icebath.plugins.egress.v1.EgressService.Turn:input_type -> icebath.plugins.egress.v1.TurnRequest
+	11, // 9: icebath.plugins.egress.v1.EgressService.Start:input_type -> icebath.plugins.egress.v1.StartRequest
+	13, // 10: icebath.plugins.egress.v1.EgressService.Stop:input_type -> icebath.plugins.egress.v1.StopRequest
+	15, // 11: icebath.plugins.egress.v1.EgressService.Reload:input_type -> icebath.plugins.egress.v1.ReloadRequest
+	17, // 12: icebath.plugins.egress.v1.EgressService.Text:input_type -> icebath.plugins.egress.v1.TextRequest
+	3,  // 13: icebath.plugins.egress.v1.EgressService.Status:output_type -> icebath.plugins.egress.v1.StatusResponse
+	5,  // 14: icebath.plugins.egress.v1.EgressService.Install:output_type -> icebath.plugins.egress.v1.InstallResponse
+	10, // 15: icebath.plugins.egress.v1.EgressService.Turn:output_type -> icebath.plugins.egress.v1.TurnEvent
+	12, // 16: icebath.plugins.egress.v1.EgressService.Start:output_type -> icebath.plugins.egress.v1.StartResponse
+	14, // 17: icebath.plugins.egress.v1.EgressService.Stop:output_type -> icebath.plugins.egress.v1.StopResponse
+	16, // 18: icebath.plugins.egress.v1.EgressService.Reload:output_type -> icebath.plugins.egress.v1.ReloadResponse
+	18, // 19: icebath.plugins.egress.v1.EgressService.Text:output_type -> icebath.plugins.egress.v1.TextResponse
+	13, // [13:20] is the sub-list for method output_type
+	6,  // [6:13] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_icebath_plugins_egress_v1_egress_proto_init() }
@@ -1478,18 +1412,24 @@ func file_icebath_plugins_egress_v1_egress_proto_init() {
 	if File_icebath_plugins_egress_v1_egress_proto != nil {
 		return
 	}
+	file_icebath_plugins_egress_v1_egress_proto_msgTypes[9].OneofWrappers = []any{
+		(*TurnEvent_Line)(nil),
+		(*TurnEvent_Minted)(nil),
+		(*TurnEvent_Done)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_plugins_egress_v1_egress_proto_rawDesc), len(file_icebath_plugins_egress_v1_egress_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   21,
+			NumEnums:      1,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_icebath_plugins_egress_v1_egress_proto_goTypes,
 		DependencyIndexes: file_icebath_plugins_egress_v1_egress_proto_depIdxs,
+		EnumInfos:         file_icebath_plugins_egress_v1_egress_proto_enumTypes,
 		MessageInfos:      file_icebath_plugins_egress_v1_egress_proto_msgTypes,
 	}.Build()
 	File_icebath_plugins_egress_v1_egress_proto = out.File

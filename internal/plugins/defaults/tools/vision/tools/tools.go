@@ -105,6 +105,9 @@ func (r *registrant) Tools() []tools.Def {
 			Check: func(env *tools.Env) bool {
 				return env.Aux == nil || env.Aux.NativeImages(context.Background()) || env.Aux.Resolves(context.Background(), visionconfig.Task)
 			},
+			Lacks: func(*tools.Env) string {
+				return "It needs a model that sees images, for the agent or for image analysis."
+			},
 		},
 		{
 			Name:    "video_analyze",
@@ -124,6 +127,12 @@ func (r *registrant) Tools() []tools.Def {
 			Handler: r.video,
 			Check: func(env *tools.Env) bool {
 				return env.Config.GetBool(visionconfig.Video) && (env.Aux == nil || env.Aux.Resolves(context.Background(), visionconfig.VideoTask))
+			},
+			Lacks: func(env *tools.Env) string {
+				if !env.Config.GetBool(visionconfig.Video) {
+					return "Watching videos is off."
+				}
+				return "It needs a model that watches videos."
 			},
 		},
 	}
@@ -529,4 +538,9 @@ func text(value any) string {
 	}
 	out, _ := json.Marshal(value)
 	return string(out)
+}
+
+// The group of the tools that look at images and videos, whose options are the vision section
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: "Vision", Sections: []string{visionconfig.Key}, Order: 50}}
 }

@@ -24,6 +24,7 @@ func (specs) Specs() []provider.Spec {
 	acpBase := githubcopilotconfig.ACPBaseURL
 	return []provider.Spec{{
 		Name:               githubcopilotconfig.CopilotName,
+		SignIn:             true,
 		Shape:              shape,
 		ReasoningPayload:   reasoningPayload,
 		RequestHeaders:     headers,

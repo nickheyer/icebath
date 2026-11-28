@@ -155,7 +155,7 @@ func (b *Bws) Pull(ctx context.Context, cfg *config.Config, p Pull) (map[string]
 			if found {
 				b.cache.Remember(key, stale)
 				return stale.Secrets, []string{fmt.Sprintf("Bitwarden could not be reached, so icebath used %s from %s ago. %s", label,
-					ago(time.Since(stale.Fetched)), secrets.Sentence(err.Error()))}, nil
+					ago(time.Since(stale.Fetched)), strs.Sentence(err.Error()))}, nil
 			}
 		}
 		return nil, nil, err
@@ -221,7 +221,7 @@ func (b *Bws) list(ctx context.Context, binary string, p Pull) (map[string]strin
 		if text == "" {
 			text = out.Stdout
 		}
-		return nil, nil, fmt.Errorf("bws stopped with exit code %d: %s", out.Code, secrets.Sentence(strs.Head(summarize(text), 200)))
+		return nil, nil, fmt.Errorf("bws stopped with exit code %d: %s", out.Code, strs.Sentence(strs.Head(summarize(text), 200)))
 	}
 	raw := strings.TrimSpace(out.Stdout)
 	if raw == "" {
@@ -300,7 +300,7 @@ func (b *Bws) Projects(ctx context.Context, binary, token, server string, env ma
 			text = strings.TrimSpace(out.Stdout)
 		}
 		text = strs.Head(text, 300)
-		return nil, &Refusal{Text: "Bitwarden refused to list the projects: " + secrets.Sentence(text), Cause: cause(text)}
+		return nil, &Refusal{Text: "Bitwarden refused to list the projects: " + strs.Sentence(text), Cause: cause(text)}
 	}
 	raw := strings.TrimSpace(out.Stdout)
 	if raw == "" {
@@ -312,7 +312,7 @@ func (b *Bws) Projects(ctx context.Context, binary, token, server string, env ma
 		if json.Unmarshal([]byte(raw), &other) == nil {
 			return []Project{}, nil
 		}
-		return nil, &Refusal{Text: "bws printed a list of projects icebath can't read: " + secrets.Sentence(err.Error())}
+		return nil, &Refusal{Text: "bws printed a list of projects icebath can't read: " + strs.Sentence(err.Error())}
 	}
 	projects := []Project{}
 	for _, item := range items {

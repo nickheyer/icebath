@@ -16,24 +16,53 @@ func pattern(expr string) *regexp2.Regexp { return regexp2.MustCompile(expr, reg
 
 func whole(expr string) *regexp2.Regexp { return regexp2.MustCompile(`^(?:`+expr+`)\z`, regexp2.None) }
 
+// Text inside one span of emphasis, which never runs past the end of a paragraph
+const span = `((?:(?!\n[ \t]*\n).)+?)`
+
+// Names of the HTML tags a reply may hold, which are markup and never read
+const htmlNames = `a|abbr|b|big|blockquote|br|center|cite|code|dd|del|details|div|dl|dt|em|font|h[1-6]|hr|i|img|ins|kbd|li|mark|ol|p|pre|q|s|` +
+	`samp|small|span|strike|strong|sub|summary|sup|table|tbody|td|tfoot|th|thead|tr|tt|u|ul|var`
+
 var (
-	codeBlock        = pattern("```[\\s\\S]*?```")
-	mdLink           = pattern(`\[([^\]]+)\]\((?:[^()]|\([^)]*\))*\)`)
-	mdImage          = pattern(`!\[([^\]]*)\]\((?:[^()]|\([^)]*\))*\)`)
-	inlineCode       = pattern("`([^`]+)`")
-	bold             = pattern(`(?s)\*\*(.+?)\*\*`)
-	underscoreBold   = pattern(`(?s)__(.+?)__`)
-	italic           = pattern(`(?s)(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)`)
-	underscoreItalic = pattern(`(?s)(?<!_)_(?!_)(.+?)(?<!_)_(?!_)`)
-	strike           = pattern(`(?s)~~(.+?)~~`)
-	headingLine      = pattern(`(?m)^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$`)
-	blockquote       = pattern(`(?m)^\s*>\s?`)
-	listItem         = pattern(`(?m)^\s*(?:[-*+]|\d+[.)])\s+`)
-	rule             = pattern(`(?m)^\s*[-*_]{3,}\s*$`)
-	tablePipe        = pattern(`\s*\|\s*`)
-	urlText          = pattern(`https?://\S+`)
-	mediaPath        = pattern(`MEDIA:\S+?(?=[.,;:!?)\]]*(?:\s|$))`)
-	emoji            = pattern("[\U0001F1E6-\U0001F1FF\U0001F300-\U0001F5FF\U0001F600-\U0001F64F\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F780-\U0001F7FF" +
+	codeBlock = pattern("```[\\s\\S]*?```")
+	// A fence nothing closes: what follows it is code, not read, as a closed block is not
+	openFence   = pattern("```[\\s\\S]*\\z")
+	mdLink      = pattern(`\[([^\]]+)\]\((?:[^()]|\([^)]*\))*\)`)
+	mdImage     = pattern(`!\[([^\]]*)\]\((?:[^()]|\([^)]*\))*\)`)
+	linkAddress = pattern(`\]\([^\s)]*\)?`)
+	inlineCode  = pattern("`((?:(?!\\n[ \\t]*\\n)[^`])+)`")
+	bold        = pattern(`(?s)\*\*` + span + `\*\*`)
+	// Emphasis of single markers opens before a character that is no space and closes after one; an underscore inside a word, as in
+	// snake_case, never does
+	underscoreBold   = pattern(`(?s)__` + span + `__`)
+	italic           = pattern(`(?s)(?<!\*)\*(?![\s*])` + span + `(?<![\s*])\*(?!\*)`)
+	underscoreItalic = pattern(`(?s)(?<![\w_])_(?![\s_])` + span + `(?<![\s_])_(?![\w_])`)
+	strike           = pattern(`(?s)~~` + span + `~~`)
+	// The one rule of a star that is no markup: a star or a times sign between two numbers, or standing apart with a word or number on
+	// each side, is multiplication and said as times; every other star is markup or a footnote mark and is dropped
+	arithmetic = pattern(`(?<=\d)[ \t]*[*\u00d7][ \t]*(?=\d)|(?<=[\w)])[ \t]+[*\u00d7][ \t]+(?=[\w(])`)
+	// A footnote's mark, where it is cited and where it is given
+	footnote    = pattern(`\[\^[^\]\s]+\]:?`)
+	headingLine = pattern(`(?m)^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$`)
+	blockquote  = pattern(`(?m)^[ \t]*(?:>[ \t]?)+`)
+	listItem    = pattern(`(?m)^[ \t]*(?:[-*+]|\d+[.)])[ \t]+`)
+	rule        = pattern(`(?m)^[ \t]*(?:[-*_][ \t]*){3,}$`)
+	tableRule   = pattern(`(?m)^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)*\|?[ \t]*$`)
+	// The pipes at the ends of a row of a table, then those between its cells, each cell read in turn
+	tableEdge = pattern(`(?m)^[ \t]*\|[ \t]*|[ \t]*\|[ \t]*$`)
+	tablePipe = pattern(`[ \t]*\|[ \t]*`)
+	// Tags of HTML a reply may hold, and one whose attributes a cut falls inside
+	htmlTag = pattern(`(?i)</?(?:` + htmlNames + `)(?:\s[^<>]*)?/?>`)
+	openTag = pattern(`(?i)<(?:` + htmlNames + `)\s[^<>]*\z`)
+	// Markers of markup left once every span that closes is taken out: a marker that never closes is dropped, never read
+	strayMark = pattern("\\*+|~~|`+|(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])")
+	// Brackets of a link or an image nothing closed, and any other
+	brackets = pattern(`!?\[|\]`)
+	// Markup an entity of HTML stands for, dropped once the entities are read as their characters
+	entityMarks = strings.NewReplacer("*", " ", "`", " ")
+	urlText     = pattern(`https?://\S+`)
+	mediaPath   = pattern(`MEDIA:\S+?(?=[.,;:!?)\]]*(?:\s|$))`)
+	emoji       = pattern("[\U0001F1E6-\U0001F1FF\U0001F300-\U0001F5FF\U0001F600-\U0001F64F\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F780-\U0001F7FF" +
 		"\U0001F800-\U0001F8FF\U0001F900-\U0001F9FF\U0001FA00-\U0001FAFF\u2600-\u27bf]+")
 	lineBreaks         = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\u2028", "\n", "\u2029", "\n")
 	spaceVariants      = strings.NewReplacer("\u00a0", " ", "\u2007", " ", "\u202f", " ")
@@ -50,8 +79,8 @@ var (
 	identifierToken = pattern(`[A-Za-z0-9_./~@-]+`)
 	dateToken       = whole(`\d{4}[-/]\d{1,2}(?:[-/]\d{1,2})?`)
 	digit           = pattern(`\d`)
-	thinkBlock      = pattern(`(?si)<think[\s>].*?</think>`)
-	thinkOpen       = pattern(`(?si)<think[\s>].*\Z`)
+	thinkBlock      = regexp2.MustCompile(`<(`+thinkNames()+`)[\s>].*?</\1>`, regexp2.Singleline|regexp2.IgnoreCase)
+	thinkOpen       = regexp2.MustCompile(`<(?:`+thinkNames()+`)(?=[\s>]|$).*\z`, regexp2.Singleline|regexp2.IgnoreCase)
 	verifierFooter  = pattern("(?m)^\\s*\u26a0\ufe0f?\\s*File-mutation verifier:.*(?:\\n[ \\t]+\u2022.*)*")
 	trailingColon   = pattern(`([^0-9])(?:[:;]\s*)+$`)
 	blankRun        = pattern(`\n{3,}`)
@@ -128,13 +157,20 @@ func nonspoken(text string) string {
 	return text
 }
 
-// Markdown and chat formatting taken out with the readable words kept and headings marked
+// Markdown and chat formatting taken out with the readable words kept and headings marked: code blocks, a fence that never closes with all
+// after it, tags, footnote marks, the addresses of links and images, addresses, the marks of lines (headings, rules, quotes, list items, the
+// rows of tables), multiplication said, the spans of code and emphasis, then every marker that never closed, then the entities read as
+// their characters. No markup character is left, whatever part of a reply the text is, and a part cut at a space reads as the start of
+// the whole
 func unmarked(text string) string {
 	if text == "" {
 		return ""
 	}
-	text = html.UnescapeString(text)
 	text = subText(codeBlock, text, " ")
+	text = subText(openFence, text, " ")
+	text = subText(htmlTag, text, " ")
+	text = subText(openTag, text, " ")
+	text = subText(footnote, text, "")
 	text = sub(mdImage, text, func(m regexp2.Match) string {
 		if alt := group(m, 1); alt != "" {
 			return " " + alt + " "
@@ -142,18 +178,24 @@ func unmarked(text string) string {
 		return " "
 	})
 	text = sub(mdLink, text, func(m regexp2.Match) string { return group(m, 1) })
+	text = subText(linkAddress, text, "")
 	text = subText(urlText, text, "")
 	text = subText(mediaPath, text, " ")
-	for _, re := range []*regexp2.Regexp{inlineCode, bold, underscoreBold, italic, underscoreItalic, strike} {
-		text = sub(re, text, func(m regexp2.Match) string { return group(m, 1) })
-	}
+	text = sub(inlineCode, text, func(m regexp2.Match) string { return group(m, 1) })
 	text = sub(headingLine, text, func(m regexp2.Match) string {
 		return strings.TrimRightFunc(group(m, 1), unicode.IsSpace) + headingMark
 	})
-	text = subText(blockquote, text, "")
-	text = subText(listItem, text, "")
-	text = subText(rule, text, "")
-	return subText(tablePipe, text, "; ")
+	for _, re := range []*regexp2.Regexp{rule, tableRule, blockquote, listItem, tableEdge} {
+		text = subText(re, text, "")
+	}
+	text = subText(arithmetic, text, " times ")
+	for _, re := range []*regexp2.Regexp{bold, underscoreBold, italic, underscoreItalic, strike} {
+		text = sub(re, text, func(m regexp2.Match) string { return group(m, 1) })
+	}
+	text = subText(strayMark, text, " ")
+	text = subText(brackets, text, " ")
+	text = entityMarks.Replace(html.UnescapeString(text))
+	return subText(tablePipe, text, ", ")
 }
 
 // Symbols, units, currencies and shorthand spelled out as words

@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/internal/tools"
 	"github.com/nickheyer/icebath/pkg/fsx"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 var roles = map[string]sessionsv1.Role{
@@ -106,9 +107,5 @@ func cause(err error, doing string) string {
 	if errors.As(err, &path) {
 		err = path.Err
 	}
-	text := strings.TrimSuffix(err.Error(), ".")
-	if text == "" {
-		return ""
-	}
-	return strings.ToUpper(text[:1]) + text[1:] + "."
+	return strs.Full(err.Error())
 }

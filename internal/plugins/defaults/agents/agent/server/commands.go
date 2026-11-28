@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
 	"github.com/nickheyer/icebath/internal/profile"
 	"github.com/nickheyer/icebath/internal/provider"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/internal/sessions"
 	"github.com/nickheyer/icebath/internal/skills"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
@@ -190,11 +190,7 @@ func (a *Agent) undoHint(r *run, since time.Time) string {
 	if len(files) == 0 {
 		return ""
 	}
-	named := strings.Join(files[:min(len(files), undoHintFiles)], ", ")
-	if len(files) > undoHintFiles {
-		named += " and " + strs.Number(float64(len(files)-undoHintFiles)) + " more"
-	}
-	return "Your files keep the changes those replies made: " + named + ". To undo them, type /rollback and restore a checkpoint."
+	return "Your files keep the changes those replies made: " + strs.AndMore(files, undoHintFiles+1) + ". To undo them, type /rollback and restore a checkpoint."
 }
 
 // Messages the user sent in the session that the model sees, oldest first, r.mu held
@@ -274,25 +270,22 @@ func (a *Agent) Deny(id string, answer approvals.Answer) (int, error) {
 	return count, nil
 }
 
-// Turns asking before risky commands off for the session, or on again, keeping it on the session's record; says which it did
+// Flips Skip approvals in this chat for the session, through the one function of that switch, with the note it gives
 func (a *Agent) Yolo(id string) (string, error) {
-	r, err := a.run(id)
-	if err != nil {
+	if _, err := a.run(id); err != nil {
 		return "", err
 	}
-	on := !a.approvals.Yolo(id)
-	a.setYolo(r, on)
-	return yoloText(on), nil
+	return a.approvals.Skip(id, !a.approvals.Skips(id))
 }
 
-func (a *Agent) setYolo(r *run, on bool) {
-	a.approvals.SetYolo(r.sessionID(), on)
-	if store, err := a.store(); err == nil {
-		if err := store.Update(a.ctx, r.sessionID(), sessions.Change{Yolo: &on}); err != nil {
-			slog.Warn("failed to persist session yolo", "enabled", on, "session", r.sessionID(), "error", err)
-		}
+// Tells the watchers of a session this process holds how it stands once whether it skips approvals changed, whichever way that was
+func (a *Agent) skipped(id string) {
+	a.mu.Lock()
+	r := a.runs[id]
+	a.mu.Unlock()
+	if r != nil {
+		a.changed(r)
 	}
-	a.changed(r)
 }
 
 // Asks before a slash command that deletes or resets something: whether to go ahead, and what to add to its reply
@@ -313,158 +306,45 @@ func (a *Agent) Confirm(ctx context.Context, id, command, detail string) (bool, 
 	return ok, note, nil
 }
 
-func (a *Agent) Reasoning(id, level string, global bool) (string, error) {
+// What /reasoning alone says outside this app: the effort of the session and what can be chosen
+func (a *Agent) EffortNow(id string) (string, error) {
 	r, err := a.run(id)
 	if err != nil {
 		return "", err
 	}
-	choices := efforts()
-	level = strings.ToLower(level)
-	if level != "" && level != "reset" && !slices.Contains(provider.Efforts, level) {
-		return "", fmt.Errorf("Reasoning effort must be %s.", choices)
-	}
-	if level != "" {
-		if global {
-			var stored any
-			if level != "reset" {
-				stored = level
-			}
-			if err := a.settings(r).Set(agentconfig.ReasoningEffort, stored); err != nil {
-				return "", err
-			}
-		}
-		r.mu.Lock()
-		if r.effort = level; level == "reset" || global {
-			r.effort = ""
-		}
-		r.mu.Unlock()
-		a.changed(r)
-	}
-	current := a.ownEffort(r)
-	switch {
-	case level == "" && current == "":
-		return "Reasoning effort is the model's default. You can choose " + choices + ".", nil
-	case level == "":
-		return "Reasoning effort is " + current + ". You can choose " + choices + ", or type /reasoning reset for the default.", nil
-	case current == "":
-		return "Reasoning effort is back to the model's default.", nil
-	case global:
-		return "Reasoning effort is now " + current + " for all sessions.", nil
-	case level == "reset":
-		return "Reasoning effort is back to " + current + ", the setting of all sessions.", nil
-	}
-	return "Reasoning effort is now " + current + " for this session.", nil
+	return "Reasoning effort is " + effortWords(a.ownEffort(r)) + " in this chat. You can choose " + efforts() + ", or reset for the effort of new chats.", nil
 }
 
-// Efforts a person may choose, as a list said in words
-func efforts() string {
-	return strings.Join(provider.Efforts[:len(provider.Efforts)-1], ", ") + " or " + provider.Efforts[len(provider.Efforts)-1]
-}
-
-func (a *Agent) Model(ctx context.Context, id, model, name, effort string, reset, global bool) (string, error) {
+// What /busy alone says outside this app: what enter does while the agent works in the session
+func (a *Agent) BusyNow(id string) (string, error) {
 	r, err := a.run(id)
 	if err != nil {
 		return "", err
 	}
-	if name != "" {
-		settings := a.settings(r)
-		instance, ok := a.provider(settings, name)
-		if !ok {
-			return "", noProvider(settings.Profile(), name)
-		}
-		name = instance.ID
+	return "Enter while busy is " + agentconfig.BusyTitle(a.settings(r).GetString(agentconfig.BusyInputMode)) + " in this chat.", nil
+}
+
+// What /model alone says outside this app: the model in effect for the session and the models its provider offers
+func (a *Agent) ModelNow(ctx context.Context, id string) (string, error) {
+	r, err := a.run(id)
+	if err != nil {
+		return "", err
 	}
-	if effort = strings.ToLower(effort); effort != "" && !slices.Contains(provider.Efforts, effort) {
-		return "", fmt.Errorf("Reasoning effort must be %s.", efforts())
-	}
-	note := ""
-	// A shortcut's name, or with no provider named one of their models, switches to the shortcut, which runs where it says
-	shortcut := false
-	if model != "" {
-		if found, ok := lookupAlias(a.settings(r), model); ok {
-			model, shortcut = found.name, true
-		} else if name == "" {
-			current, _, _ := a.route(r)
-			if found, ok := a.switchAlias(a.settings(r), current, model); ok {
-				model, shortcut = found.name, true
-			}
-		}
-	}
-	if model != "" && !shortcut {
-		verdict := a.checkModel(ctx, r, name, model)
-		if !verdict.Accepted {
-			return "", errors.New(verdict.Message)
-		}
-		note = verdict.Message
-	}
-	changed := reset || model != "" || name != "" || effort != ""
-	if global {
-		stored := map[string]any{}
-		if reset {
-			stored[agentconfig.Provider], stored[agentconfig.Model], stored[agentconfig.ReasoningEffort] = nil, nil, nil
-		}
-		if name != "" {
-			stored[agentconfig.Provider] = name
-			if model == "" {
-				stored[agentconfig.Model] = nil
-			}
-		}
-		if model != "" {
-			stored[agentconfig.Model] = model
-		}
-		if effort != "" {
-			stored[agentconfig.ReasoningEffort] = effort
-		}
-		for _, key := range []string{agentconfig.Provider, agentconfig.Model, agentconfig.ReasoningEffort} {
-			if value, ok := stored[key]; ok {
-				if err := a.settings(r).Set(key, value); err != nil {
-					return "", err
-				}
-			}
-		}
-	}
-	r.mu.Lock()
-	if reset {
-		r.provider, r.model, r.effort = "", "", ""
-	}
-	if name != "" {
-		r.provider, r.model = name, ""
-	}
-	if model != "" {
-		r.model = model
-	}
-	if shortcut && name == "" {
-		r.provider = ""
-	}
-	if effort != "" {
-		r.effort = effort
-	}
-	r.mu.Unlock()
-	a.changed(r)
 	_, route, err := a.route(r)
 	if err != nil {
 		return "", err
 	}
 	var out strings.Builder
-	level := a.ownEffort(r)
-	switch {
+	switch level := a.ownEffort(r); {
 	case route.Model == "":
-		fmt.Fprintf(&out, "No model is set for %s. Type /model and a model's name to pick one.", route.Provider)
-		if level != "" {
-			out.WriteString("\nReasoning effort: " + level)
-		}
+		fmt.Fprintf(&out, "No model is set for %s in this chat.", a.providerTitle(a.settings(r), route.Provider))
 	case level != "":
-		fmt.Fprintf(&out, "Using `%s` on %s with %s reasoning effort.", route.Model, route.Provider, level)
+		fmt.Fprintf(&out, "This chat uses `%s` · %s, with %s reasoning effort.", route.Model, a.providerTitle(a.settings(r), route.Provider),
+			strings.ToLower(effortWords(level)))
 	default:
-		fmt.Fprintf(&out, "Using `%s` on %s.", route.Model, route.Provider)
+		fmt.Fprintf(&out, "This chat uses `%s` · %s.", route.Model, a.providerTitle(a.settings(r), route.Provider))
 	}
-	if changed {
-		out.WriteString(a.modelInfo(a.settings(r), route))
-		if note != "" {
-			out.WriteString("\n\n" + note)
-		}
-		return out.String(), nil
-	}
+	out.WriteString(a.modelInfo(a.settings(r), route))
 	if ids := a.models.Host().Catalog(ctx, a.settings(r), route, false).IDs; len(ids) > 0 {
 		out.WriteString("\n\n**Models you can pick**\n\n")
 		for _, id := range ids {
@@ -521,28 +401,33 @@ func (a *Agent) Status(id string) (string, error) {
 	case routeErr != nil:
 		fmt.Fprintf(&out, "- **Model** %s\n", routeErr)
 	case route.Model == "":
-		fmt.Fprintf(&out, "- **Model** Not set for %s\n", route.Provider)
+		fmt.Fprintf(&out, "- **Model** Not set for %s\n", a.providerTitle(a.settings(r), route.Provider))
 	default:
-		fmt.Fprintf(&out, "- **Model** `%s` on %s\n", route.Model, route.Provider)
+		fmt.Fprintf(&out, "- **Model** `%s` · %s\n", route.Model, a.providerTitle(a.settings(r), route.Provider))
 	}
 	if effort := a.ownEffort(r); effort != "" {
-		fmt.Fprintf(&out, "- **Reasoning effort** %s\n", effort)
+		fmt.Fprintf(&out, "- **Reasoning effort** %s\n", effortWords(effort))
 	}
 	r.mu.Lock()
-	if f := r.failover; f != nil && f.active.Model != "" {
-		fmt.Fprintf(&out, "- **Fallback** `%s` on %s, while `%s` on %s can't be used\n", f.active.Model, f.active.Provider, f.primary.Model, f.primary.Provider)
+	var active, primary provider.Route
+	if f := r.failover; f != nil {
+		active, primary = f.active, f.primary
 	}
 	r.mu.Unlock()
+	if active.Model != "" {
+		settings := a.settings(r)
+		fmt.Fprintf(&out, "- **Fallback** `%s` · %s, while `%s` · %s can't be used\n", active.Model, a.providerTitle(settings, active.Provider),
+			primary.Model, a.providerTitle(settings, primary.Provider))
+	}
 	fmt.Fprintf(&out, "- **Messages** %s\n", strs.Number(float64(len(messages))))
 	out.WriteString(a.usageLines(r, session))
 	if a.contexts != nil {
 		out.WriteString(a.contextLines(r))
 	}
-	switch {
-	case a.approvals.Launched() || a.approvals.Yolo(id):
-		out.WriteString("- **Approvals** Never ask, in this session only\n")
-	default:
-		fmt.Fprintf(&out, "- **Approvals** %s\n", modeTitle(approvals.Mode(a.settings(r))))
+	settings := a.settings(r)
+	fmt.Fprintf(&out, "- **When to ask** %s\n", approvals.ModeTitle(settings, approvals.Mode(settings)))
+	if a.approvals.Skips(id) {
+		fmt.Fprintf(&out, "- **%s** On\n", approvalsconfig.SkipTitle)
 	}
 	if waiting := len(a.approvals.Pending(id)); waiting > 0 {
 		fmt.Fprintf(&out, "- **Waiting for approval** %s\n", strs.Count(waiting, "command"))
@@ -553,68 +438,46 @@ func (a *Agent) Status(id string) (string, error) {
 	return out.String(), nil
 }
 
-// Shows the approval mode of the profile the session runs on and whether the session skips it, sets the mode for good, or with --session
-// asks or skips for this session alone, the switch /yolo flips
+// /approvals as the server runs it, for chat apps and icebath chat: alone it says When to ask and how the session stands against it; a mode
+// is the shortcut to When to ask, and with --session, or --session alone, to Skip approvals in this chat. Each goes through the one function
+// of its control and answers with its note
 func (a *Agent) Approvals(id, argument string) (string, error) {
 	r, err := a.run(id)
 	if err != nil {
 		return "", err
 	}
-	mode, session := "", false
+	mode, chat := "", false
 	for _, word := range strings.Fields(strings.ToLower(argument)) {
 		switch word {
 		case "--session":
-			session = true
+			chat = true
 		case approvalsconfig.Manual, approvalsconfig.Smart, approvalsconfig.Off:
 			mode = word
 		default:
 			return "", errors.New("Usage: /approvals [manual|smart|off] [--session]")
 		}
 	}
-	settings := a.settings(r)
-	current := approvals.Mode(settings)
 	switch {
-	case mode == "" && (a.approvals.Launched() || a.approvals.Yolo(id)):
-		return fmt.Sprintf("Approvals are set to %s, but this session runs every command without asking. Type /yolo to have the agent ask again.",
-			modeTitle(current)), nil
+	case chat && mode == "":
+		return a.approvals.Skip(id, !a.approvals.Skips(id))
+	case chat:
+		return a.approvals.Skip(id, mode == approvalsconfig.Off)
 	case mode == "":
-		return fmt.Sprintf("Approvals are set to %s for every session of this profile.", modeTitle(current)), nil
-	case session:
-		on := mode == approvalsconfig.Off
-		a.setYolo(r, on)
-		return yoloText(on), nil
+		return a.approvals.Standing(a.settings(r), id), nil
 	}
-	if err := settings.Set(approvalsconfig.Mode, mode); err != nil {
+	note, err := a.approvals.SetMode(a.config.In(r.profileName()), mode)
+	if err != nil {
 		return "", err
 	}
-	if effective := approvals.Mode(settings); effective != mode {
-		return fmt.Sprintf("⚠ Approvals are still set to %s. Something outside this profile, such as an environment variable, wins over your choice.",
-			modeTitle(effective)), nil
+	// What the session was started with wins in it over the profile's mode
+	if own := approvals.Mode(a.settings(r)); own != mode && a.approvals.Winning(a.settings(r)) == "" {
+		note += " This session started with When to ask set to " + approvals.ModeTitle(a.settings(r), own) + ", which wins in it."
 	}
-	return fmt.Sprintf("✓ Approvals are now set to %s for every session of this profile.", modeTitle(mode)), nil
+	return note, nil
 }
 
-// Title of an approval mode as the settings screen shows it
-func modeTitle(mode string) string {
-	switch mode {
-	case approvalsconfig.Manual:
-		return "Always ask"
-	case approvalsconfig.Off:
-		return "Never ask"
-	}
-	return "Smart"
-}
-
-// What /yolo says it did
-func yoloText(on bool) string {
-	if on {
-		return "⚠ This session now runs every command without asking. Type /yolo again to have the agent ask first."
-	}
-	return "✓ The agent asks again before risky commands in this session."
-}
-
-// Shows the profile the session runs on, or runs it on another from now on. The provider, model and effort it picked are forgotten, since
-// they were those of the profile it ran on
+// Shows the profile the session runs on, or runs it on another from now on. The provider, model and effort it picked and the accounts it
+// was held to are forgotten, since they were those of the profile it ran on
 func (a *Agent) Profile(id, name string) (string, error) {
 	r, err := a.run(id)
 	if err != nil {
@@ -632,7 +495,7 @@ func (a *Agent) Profile(id, name string) (string, error) {
 	case name == current:
 		return "This session already runs on the profile " + name + ".", nil
 	case !a.config.Exists(name):
-		return "", fmt.Errorf("There is no profile named %s. Make one in /profiles.", name)
+		return "", a.noProfile(id, name, current)
 	case busy:
 		return "", errors.New("Wait for the reply to finish, or stop it, before switching profiles.")
 	}
@@ -646,6 +509,35 @@ func (a *Agent) Profile(id, name string) (string, error) {
 	r.mu.Lock()
 	r.profile, r.provider, r.model, r.effort = name, "", "", ""
 	r.mu.Unlock()
-	a.changed(r)
+	// What it held of its own named the providers of the profile it ran on, and the accounts of theirs it was held to
+	dropped := map[string]any{agentconfig.Provider: nil, agentconfig.Model: nil, agentconfig.ReasoningEffort: nil}
+	for key := range r.own() {
+		if strings.HasPrefix(key, providerconfig.Key+".") {
+			dropped[key] = nil
+		}
+	}
+	if err := a.keepOwn(a.ctx, r, dropped); err != nil {
+		return "", err
+	}
 	return "This session runs on the profile " + name + " from now on.", nil
+}
+
+// Refusal of /profile with a name no profile has, listing those the session can move to; with none other, outside this app it names the
+// command that makes one
+func (a *Agent) noProfile(id, name, current string) error {
+	names, err := profile.Names(a.config)
+	if err != nil {
+		return err
+	}
+	others := slices.DeleteFunc(names, func(other string) bool { return other == current })
+	if len(others) > 0 {
+		return fmt.Errorf("There is no profile named %s. You can choose %s.", name, strs.Or(others))
+	}
+	refusal := fmt.Sprintf("There is no profile named %s, and %s is the only one.", name, current)
+	if store, err := a.store(); err == nil {
+		if session, err := store.Get(a.ctx, id); err == nil && platformOf(session) != "tui" {
+			refusal += " icebath profile create " + name + " makes it."
+		}
+	}
+	return errors.New(refusal)
 }

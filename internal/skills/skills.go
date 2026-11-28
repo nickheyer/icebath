@@ -203,7 +203,8 @@ func New(cfg *config.Config, toolset *tools.Registry, pm *packages.Packages, poi
 			options = append(options, config.Option{Value: p.Qualified(), Title: p.Qualified(), About: phrase(p.Description)})
 		}
 		return options
-	})
+	}, SurfaceOptions)
+	s.Guard(cfg)
 	return s
 }
 

@@ -242,3 +242,38 @@ func find(ctx context.Context, job *speech.Job, query map[string]any) (map[strin
 	}
 	return result, nil
 }
+
+// Voices of the account, then the most used of the library, by voice id with the name a person knows each by; the reason when neither could
+// be read
+func listVoices(ctx context.Context, job *speech.Job) ([]speech.Pick, error) {
+	var picks []speech.Pick
+	seen := map[string]bool{}
+	var failure error
+	for _, source := range []string{"account", "library"} {
+		found, err := find(ctx, job, map[string]any{"source": source, "page_size": maxPageSize})
+		if err != nil {
+			failure = err
+			continue
+		}
+		listed, _ := found["voices"].([]any)
+		for _, v := range listed {
+			voice, _ := v.(map[string]any)
+			id := strings.TrimSpace(cast.ToString(voice["voice_id"]))
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			var about []string
+			for _, key := range []string{"gender", "age", "accent"} {
+				if value := strings.TrimSpace(cast.ToString(voice[key])); value != "" {
+					about = append(about, strings.ReplaceAll(value, "_", " "))
+				}
+			}
+			picks = append(picks, speech.Pick{Value: id, Title: cmpOr(strings.TrimSpace(cast.ToString(voice["name"])), id), About: strings.Join(about, ", ")})
+		}
+	}
+	if len(picks) > 0 {
+		return picks, nil
+	}
+	return nil, failure
+}

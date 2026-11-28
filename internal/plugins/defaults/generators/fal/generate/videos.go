@@ -160,12 +160,10 @@ func familyOf(name string) (family, bool) {
 	return best, best.id != ""
 }
 
-// Family the settings give: video_gen.fal.model, else the one asked for, else the default
-func chosenFamily(cfg *config.Config, model string) family {
-	for _, name := range []string{cfg.GetString(falconfig.VideoModel), model} {
-		if f, ok := familyOf(name); ok {
-			return f
-		}
+// Family of the model video_gen.fal.model names, the default for none or one FAL doesn't have
+func chosenFamily(model string) family {
+	if f, ok := familyOf(model); ok {
+		return f
 	}
 	f, _ := familyOf(defaultFamily)
 	return f
@@ -205,7 +203,7 @@ func videoModels(context.Context, *config.Config) []generation.Model {
 
 // What the family the settings give takes, so the arguments of video_generate follow the model in use
 func videoTakes(cfg *config.Config) generation.VideoTakes {
-	f := chosenFamily(cfg, generation.Named(cfg, generation.Video))
+	f := chosenFamily(cfg.GetString(falconfig.VideoModel))
 	lo, hi := f.bounds()
 	return generation.VideoTakes{Modalities: f.modalities(), Aspects: f.aspects, Resolutions: f.resolutions, MinDuration: lo, MaxDuration: hi,
 		Audio: f.audio, AudioAlways: f.always, Negative: f.negative, Seed: f.seed, Upscale: true}
@@ -304,12 +302,12 @@ func videoOf(result map[string]any) (map[string]any, string) {
 // Makes a video through the family's endpoint for what it is made from, with the SeedVR2 pass when asked, the native video when it fails
 func makeVideo(ctx context.Context, job *generation.Job, request generation.VideoRequest) generation.Result {
 	cfg := job.Config
-	f := chosenFamily(cfg, request.Model)
+	f := chosenFamily(request.Model)
 	prompt := strings.TrimSpace(request.Prompt)
 	call := generation.Call{Provider: falconfig.Name, Prompt: request.Prompt}
 	if why := missing(cfg, generation.Video); why != "" {
 		if generation.Chosen(cfg, generation.Video) == "" {
-			why = "No FAL backend available. Set FAL_KEY (or the FAL key with /videogen) to configure it."
+			why = "No FAL backend available. The user sets FAL_KEY, or the FAL API key with /videos, to configure it."
 		}
 		return call.Fail(why, "auth_required")
 	}
@@ -321,7 +319,7 @@ func makeVideo(ctx context.Context, job *generation.Job, request generation.Vide
 	}
 	if endpoint == "" {
 		if modality == "image" {
-			return call.Fail(fmt.Sprintf("FAL family %s has no image-to-video endpoint. Pick a family with image-to-video support with /videogen.", f.id), "modality_unsupported")
+			return call.Fail(fmt.Sprintf("FAL family %s has no image-to-video endpoint. The user picks a family with image-to-video support as the model of FAL with /videos.", f.id), "modality_unsupported")
 		}
 		return call.Fail(fmt.Sprintf("FAL family %s has no text-to-video endpoint. Pass an image_url to use its image-to-video endpoint, or pick a different family.", f.id),
 			"modality_unsupported")

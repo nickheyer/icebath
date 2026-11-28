@@ -4,6 +4,7 @@ package speech
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -115,6 +116,22 @@ func (r *Registry) Engine(name string) (Engine, bool) {
 	return Engine{}, false
 }
 
+// Names of the chat apps speech knows the upload limits of, with what a person calls each, and the entry that covers every other app
+func chatApps() []config.Option {
+	options := []config.Option{{Value: "default", Title: "Every other app", About: "The chat apps not named on their own"}}
+	for _, name := range slices.Sorted(maps.Keys(platformLimits)) {
+		if name != "default" {
+			options = append(options, config.Option{Value: name, Title: appTitles[name]})
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(bubblePlatforms)) {
+		if _, limited := platformLimits[name]; !limited {
+			options = append(options, config.Option{Value: name, Title: appTitles[name]})
+		}
+	}
+	return options
+}
+
 // Speech of every profile: the services the plugins registered, and what they run on
 type Speech struct {
 	Registry
@@ -138,7 +155,11 @@ func New(cfg *config.Config, pk *packages.Packages, tm *terminal.Terminal, p *pr
 	s := &Speech{config: cfg, packages: pk, terminal: tm, providers: p, credentials: cr, transports: t, tasks: &ax.Registry, learned: auxiliary.NewState(),
 		hooks: hk, guard: tl}
 	s.Registry.host = s
-	speechconfig.Register(cfg, s.voiceOptions, s.recognizerOptions, s.engineOptions)
+	speechconfig.Register(cfg, s.voiceOptions, s.streamerOptions, s.recognizerOptions, s.engineOptions, chatApps)
+	// No write keeps a program of yours that can't run, whichever way it comes
+	for _, programs := range []Programs{s.SpeechPrograms(), s.RecognitionPrograms()} {
+		cfg.Guard(programs.Table, programs.Guard())
+	}
 	speechpackages.Register(pk, cfg)
 	ax.Register(tasks{})
 	return s
@@ -160,9 +181,20 @@ func (s *Speech) voiceOptions() []config.Option {
 	return options
 }
 
-// Recognizers in the order of their rank, those of no rank after in the order registered
-func (s *Speech) recognizerOptions() []config.Option {
+// Voices that speak while a reply is still being written, in the order Any that can tries them
+func (s *Speech) streamerOptions() []config.Option {
+	voices := slices.DeleteFunc(s.Voices(s.config), func(v Voice) bool { return v.Stream == nil })
+	slices.SortStableFunc(voices, func(a, b Voice) int { return a.Stream.Rank - b.Stream.Rank })
 	var options []config.Option
+	for _, voice := range voices {
+		options = append(options, config.Option{Value: voice.Name, Title: voice.Title, About: voice.About})
+	}
+	return options
+}
+
+// Automatic, then the recognizers in the order of their rank, those of no rank after in the order registered
+func (s *Speech) recognizerOptions() []config.Option {
+	options := []config.Option{{Value: "", Title: "Automatic", About: "The first service that is ready, those on this computer first"}}
 	recognizers := s.Recognizers(s.config)
 	slices.SortStableFunc(recognizers, func(a, b Recognizer) int {
 		switch {

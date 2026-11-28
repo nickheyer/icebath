@@ -61,7 +61,7 @@ def main():
     try:
         from neutts import NeuTTS
     except ImportError:
-        print("Error: neutts not installed. Run '` + "icebath pm install --extra neutts" + `', or start icebath, type /voice setup and choose NeuTTS.", file=sys.stderr)
+        print("Error: neutts not installed. Run '` + "icebath pm install --extra neutts" + `', or install it in Settings › Voice › Text to speech › NeuTTS.", file=sys.stderr)
         sys.exit(1)
     if os.environ.get("ESPEAK_DATA_PATH"):
         os.environ["ESPEAK_DATA_PATH"] = short_espeak_data(os.environ["ESPEAK_DATA_PATH"])
@@ -133,8 +133,8 @@ func sampleDir(job *speech.Job) (string, error) {
 
 func synthesize(ctx context.Context, job *speech.Job, request speech.Request) (string, error) {
 	if !job.Provisioned(config.Extra) {
-		return "", speech.Absent("NeuTTS provider selected but neutts is not installed. Start icebath, type /voice setup and choose NeuTTS, or run `" +
-			packages.InstallHint(config.Extra) + "`; espeak-ng is also required.")
+		return "", speech.Absent("NeuTTS is not installed. Install it in Settings › Voice › Text to speech › NeuTTS, or run `" +
+			packages.InstallHint(config.Extra) + "`. It needs espeak-ng too.")
 	}
 	dir, err := sampleDir(job)
 	if err != nil {

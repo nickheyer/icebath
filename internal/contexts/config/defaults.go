@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/internal/config"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 )
 
 func Register(cfg *config.Config, engines func() []config.Option) {
@@ -24,16 +25,17 @@ func Register(cfg *config.Config, engines func() []config.Option) {
 		Title:  "Summaries",
 		About:  "When older messages are summarized and what is kept",
 		Order:  10,
+		Into:   Key,
 		Settings: []config.Setting{
 			{Key: Enabled, Title: "Shorten long sessions", About: "Summarize older messages when a session nears the limit of the model.", Default: true,
 				Env: []string{"CONTEXT_COMPRESSION_ENABLED"}},
 			{Key: Threshold, Title: "Start at", About: "How full the context window gets before older messages are summarized.", Default: 0.5,
 				Counts: config.Share, Env: []string{"CONTEXT_COMPRESSION_THRESHOLD"}},
 			{Key: IdleCompact, Title: "After idle time", About: "How long a session sits idle before it is summarized.", Default: time.Duration(0),
-				Zero: "Off", Min: config.Bound(0)},
-			{Key: ModelThresholds, Title: "Start at by model", About: "The point to summarize at for the models you name.",
-				Help: "A model name, or provider:model to name one at a single provider.", Default: map[string]any{}, Advanced: true,
-				Entry: &config.Entry{Noun: "model", Name: "Model name", Fields: []config.Setting{
+				Zero: "Never", Min: config.Bound(0)},
+			{Key: ModelThresholds, Title: "Start at by model", About: "The point to summarize at for the models you pick.",
+				Default: map[string]any{}, Advanced: true, Picks: providerconfig.PickModel,
+				Entry: &config.Entry{Noun: "model", Name: "Model", Fields: []config.Setting{
 					{Title: "Start at", About: "How full the context window gets before older messages are summarized.", Default: 0.0,
 						Counts: config.Share}}}},
 			{Key: ThresholdTokens, Title: "Token cap", About: "The session size that starts a summary whatever share of the window it fills.",

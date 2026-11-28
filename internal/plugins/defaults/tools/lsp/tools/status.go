@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/internal/config"
-	"github.com/nickheyer/icebath/internal/terminal"
+	lspconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/lsp/config"
 	"github.com/nickheyer/icebath/internal/tools"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // One client of the service
@@ -23,84 +24,81 @@ type ClientStatus struct {
 	Running bool
 }
 
-// How the service of a profile stands
-type ServiceStatus struct {
-	Enabled         bool
-	WaitMode        string
-	WaitTimeout     float64
-	InstallStrategy string
-	Clients         []ClientStatus
-	// Server and root pairs that failed and are not tried again yet
-	Broken          [][2]string
-	Disabled        []string
-	RetrySeconds    float64
-	WarmupTimeout   float64
+// How one server stands for a profile, the same whether code is checked or not
+type ServerState struct {
+	ID          string
+	Description string
+	Extensions  []string
+	// One of the state words
+	State string
+	// Where its program is, empty when it is not there
+	Path string
+	// What the pane says about installing it: that icebath installs it the first time a file needs it, or how to install it yourself; empty
+	// once it is there
+	Install string
+	// Enter installs it: it is not there, and icebath has a way to install it
+	Installable bool
+	// A server a person added, and the command it runs as a shell line
+	Added   bool
+	Command string
+	// Starts in a folder the person has not trusted
+	UntrustedSafe bool
+	// Folders it runs in, failed in, and was kept out of for not being trusted
+	Running, Failed, Skipped []string
+	// When a failed server is tried again, in words; empty for not until icebath restarts
+	Retry string
+}
+
+// How the language servers of a profile stand: whether code is checked and how, every server it knows, the folders servers were kept out
+// of and the companion tools missing
+type Report struct {
+	Checking      bool
+	Auto          bool
+	WaitMode      string
+	WaitTimeout   float64
+	WarmupTimeout float64
+	RetrySeconds  float64
+	Servers       []ServerState
+	// Folders servers were kept out of for not being trusted, each once
+	Skipped         []string
 	Excludes        []string
 	ExcludesInvalid bool
 	Trusted         []string
-	// Server and root pairs kept out of a workspace the user has not trusted
-	Untrusted [][2]string
+	Clients         []ClientStatus
+	// Server and root pairs that failed and are not tried again yet, and those kept out of a folder the person has not trusted
+	Broken, Untrusted [][2]string
+	Disabled          []string
+	Warnings          []string
 }
 
-// One server the service knows
-type ServerStatus struct {
-	ID          string
-	Extensions  []string
-	Description string
-	// installed, missing or manual-only
-	Status string
-	// Where its program is, empty when it is not there
-	Path string
-	// Starts in a workspace the user has not trusted
-	UntrustedSafe bool
-	Custom        bool
-	// Key of its install recipe, empty for a server without one, and whether the recipe installs by itself
-	Recipe    string
-	Automatic bool
-}
-
-// The service of a profile, nil when language servers are off, every server it knows and the companion tools missing
-type Report struct {
-	Service  *ServiceStatus
-	Servers  []ServerStatus
-	Warnings []string
-}
-
-func (s *service) status() *ServiceStatus {
-	folders, _ := tools.TrustedFolders(s.cfg)
-	st := &ServiceStatus{Enabled: s.settings.enabled, WaitMode: s.settings.waitMode, WaitTimeout: s.settings.wait, InstallStrategy: s.settings.strategy,
-		RetrySeconds: s.settings.retry, WarmupTimeout: s.settings.warmup, ExcludesInvalid: s.settings.excludeInvalid,
-		Excludes: slices.Clone(s.settings.excludes), Trusted: folders, Clients: []ClientStatus{}, Broken: [][2]string{}, Untrusted: [][2]string{},
-		Disabled: slices.Sorted(maps.Keys(s.settings.disabled))}
-	if st.Disabled == nil {
-		st.Disabled = []string{}
-	}
+// Clients of the service, failures not tried again yet, and servers kept out of folders not trusted
+func (s *service) snapshot() (clients []ClientStatus, broken, untrusted [][2]string) {
 	s.mu.Lock()
-	clients := slices.Collect(maps.Values(s.clients))
-	var broken, untrusted []key
+	live := slices.Collect(maps.Values(s.clients))
+	var failed, kept []key
 	for k, f := range s.broken {
 		if f.forever || time.Now().Before(f.until) {
-			broken = append(broken, k)
+			failed = append(failed, k)
 		}
 	}
 	for k := range s.untrusted {
-		untrusted = append(untrusted, k)
+		kept = append(kept, k)
 	}
 	s.mu.Unlock()
-	for _, c := range clients {
+	for _, c := range live {
 		state, folders, isRunning := c.snapshot()
-		st.Clients = append(st.Clients, ClientStatus{Server: c.server, Root: c.root, Folders: folders, State: state, Running: isRunning})
+		clients = append(clients, ClientStatus{Server: c.server, Root: c.root, Folders: folders, State: state, Running: isRunning})
 	}
-	slices.SortFunc(st.Clients, func(a, b ClientStatus) int { return strings.Compare(a.Server+"\x00"+a.Root, b.Server+"\x00"+b.Root) })
-	for _, k := range sortedKeys(broken) {
-		st.Broken = append(st.Broken, [2]string{k.server, k.root})
+	slices.SortFunc(clients, func(a, b ClientStatus) int { return strings.Compare(a.Server+"\x00"+a.Root, b.Server+"\x00"+b.Root) })
+	for _, k := range sortedKeys(failed) {
+		broken = append(broken, [2]string{k.server, k.root})
 	}
-	for _, k := range sortedKeys(untrusted) {
+	for _, k := range sortedKeys(kept) {
 		if !s.trusted(k.root) {
-			st.Untrusted = append(st.Untrusted, [2]string{k.server, k.root})
+			untrusted = append(untrusted, [2]string{k.server, k.root})
 		}
 	}
-	return st
+	return clients, broken, untrusted
 }
 
 func sortedKeys(keys []key) []key {
@@ -117,7 +115,7 @@ func (s *service) known() []*server {
 // staged, in a Python environment or on PATH, then the names it goes by on PATH
 func (m *Manager) locate(s *service, srv *server) (string, error) {
 	if srv.custom {
-		return which(terminal.ExpandUser(srv.program)), nil
+		return which(fsx.ExpandHome(srv.program)), nil
 	}
 	if command := s.settings.commands[srv.id]; len(command) > 0 && command[0] != "" && fsx.Exists(command[0]) {
 		return command[0], nil
@@ -129,42 +127,112 @@ func (m *Manager) locate(s *service, srv *server) (string, error) {
 	return which(srv.names...), nil
 }
 
-// How a server stands: installed, missing, or one that installs only by hand
-func (m *Manager) state(s *service, srv *server) (string, string, error) {
-	path, err := m.locate(s, srv)
-	if err != nil {
-		return "", "", err
-	}
-	if path != "" {
-		return installed, path, nil
-	}
-	if srv.custom {
-		return manualOnly, "", nil
-	}
-	if r, ok := recipes[recipeKey(srv.id)]; ok && r.strategy == manualInstall {
-		return manualOnly, "", nil
-	}
-	return missing, "", nil
+// Whether icebath installs the server by itself: a built in one whose recipe is not one to install by hand
+func automatic(srv *server) bool {
+	r, ok := recipes[recipeKey(srv.id)]
+	return ok && !srv.custom && r.strategy != manualInstall
 }
 
-// The service of the profile and every server it knows
+// How the server gets installed, for one that is not there: icebath does it the first time a file needs it, or does it when asked, or the
+// person does it as the server's own entry says, which names the program to install
+func (s *service) advice(srv *server) string {
+	switch {
+	case srv.custom && srv.program == "":
+		return "It has no command yet. Give it the command that starts it."
+	case srv.custom:
+		return "Install " + srv.program + " yourself, since icebath can't install a server you added."
+	case automatic(srv) && s.settings.auto:
+		return "icebath installs it the first time a file needs it."
+	case automatic(srv):
+		return "icebath installs it with " + installers[recipes[recipeKey(srv.id)].strategy] + "."
+	case srv.install != "":
+		return srv.install
+	}
+	return "Install " + srv.names[0] + " yourself, so that icebath finds it on your PATH."
+}
+
+// Words of the tool each way of installing runs
+var installers = map[string]string{npmInstall: "npm", goInstall: "Go", pipInstall: "pip"}
+
+// How one server stands, from what the service holds of it now
+func (m *Manager) stand(s *service, srv *server, clients []ClientStatus, broken, untrusted [][2]string) (ServerState, error) {
+	path, err := m.locate(s, srv)
+	if err != nil {
+		return ServerState{}, err
+	}
+	st := ServerState{ID: srv.id, Description: srv.about, Extensions: slices.Clone(srv.extensions), Path: path, Added: srv.custom,
+		UntrustedSafe: untrustedSafe[srv.id]}
+	if srv.custom {
+		st.Command = strs.Quote(s.settings.commands[srv.id])
+	}
+	errored := false
+	for _, c := range clients {
+		if c.Server != srv.id {
+			continue
+		}
+		switch {
+		case c.Running || c.State == starting:
+			folders := c.Folders
+			if len(folders) == 0 {
+				folders = []string{c.Root}
+			}
+			st.Running = append(st.Running, folders...)
+		case c.State == failed:
+			errored = true
+			st.Failed = append(st.Failed, c.Root)
+		}
+	}
+	for _, pair := range broken {
+		if pair[0] == srv.id && !slices.Contains(st.Failed, pair[1]) {
+			st.Failed = append(st.Failed, pair[1])
+		}
+	}
+	for _, pair := range untrusted {
+		if pair[0] == srv.id {
+			st.Skipped = append(st.Skipped, pair[1])
+		}
+	}
+	if len(st.Failed) > 0 && s.settings.retry > 0 {
+		st.Retry = strs.Span(duration(s.settings.retry))
+	}
+	switch {
+	case s.settings.disabled[srv.id]:
+		st.State = lspconfig.Off
+	case len(st.Failed) > 0 || errored:
+		st.State = lspconfig.Failed
+	case len(st.Running) > 0:
+		st.State = lspconfig.Running
+	case path != "":
+		st.State = lspconfig.Installed
+	default:
+		st.State = lspconfig.NotInstalled
+	}
+	if path == "" {
+		st.Install, st.Installable = s.advice(srv), automatic(srv)
+	}
+	return st, nil
+}
+
+// The one answer to how the language servers of a profile stand, whether code is checked or not: every server it knows, the folders they
+// were kept out of, and the companion tools missing
 func (m *Manager) Report(cfg *config.Config) (Report, error) {
 	s := m.service(cfg)
-	report := Report{}
-	if s.settings.enabled {
-		report.Service = s.status()
+	trusted, _ := tools.TrustedFolders(s.cfg)
+	report := Report{Checking: s.settings.enabled, Auto: s.settings.auto, WaitMode: s.settings.waitMode, WaitTimeout: s.settings.wait,
+		WarmupTimeout: s.settings.warmup, RetrySeconds: s.settings.retry, Excludes: slices.Clone(s.settings.excludes),
+		ExcludesInvalid: s.settings.excludeInvalid, Trusted: trusted, Disabled: slices.Sorted(maps.Keys(s.settings.disabled))}
+	report.Clients, report.Broken, report.Untrusted = s.snapshot()
+	for _, pair := range report.Untrusted {
+		if !slices.Contains(report.Skipped, pair[1]) {
+			report.Skipped = append(report.Skipped, pair[1])
+		}
 	}
 	for _, srv := range s.known() {
-		state, path, err := m.state(s, srv)
+		st, err := m.stand(s, srv, report.Clients, report.Broken, report.Untrusted)
 		if err != nil {
 			return Report{}, err
 		}
-		row := ServerStatus{ID: srv.id, Extensions: slices.Clone(srv.extensions), Description: srv.about, Status: state, Path: path,
-			UntrustedSafe: untrustedSafe[srv.id], Custom: srv.custom}
-		if r, ok := recipes[recipeKey(srv.id)]; ok && !srv.custom {
-			row.Recipe, row.Automatic = recipeKey(srv.id), r.strategy != manualInstall
-		}
-		report.Servers = append(report.Servers, row)
+		report.Servers = append(report.Servers, st)
 	}
 	warnings, err := m.warnings(s.cfg)
 	if err != nil {
@@ -196,77 +264,141 @@ func (m *Manager) Which(cfg *config.Config, id string) (string, error) {
 	return "", fmt.Errorf("No language server is called “%s”. Run icebath lsp list to see their names.", id)
 }
 
-// Installs a server a person asked for, its lines handed to out and errs; the exit status
-func (m *Manager) Install(ctx context.Context, cfg *config.Config, id string, out, errs func(text string)) int {
+// Installs a server a person asked for, the lines of the install handed to out as they come; what it came to, or why no server of the id
+// can be installed
+func (m *Manager) Install(ctx context.Context, cfg *config.Config, id string, out func(text string)) (Outcome, error) {
 	s := m.service(cfg)
 	srv := s.byID(id)
-	key := recipeKey(id)
-	if _, ok := recipes[key]; srv == nil && !ok {
-		errs("✗ No language server is called “" + id + "”. Run icebath lsp list to see their names.")
-		return 2
+	if srv == nil {
+		return Outcome{}, fmt.Errorf("No language server is called “%s”. Run icebath lsp list to see their names.", id)
 	}
-	if srv != nil {
-		state, _, err := m.state(s, srv)
-		if err != nil {
-			errs(err.Error())
-			return 1
-		}
-		if state == installed {
-			out("✓ " + id + " is already installed.\n")
-			return 0
-		}
-		if srv.custom {
-			errs("✗ " + id + " is a server you declared in the settings, which runs the command you gave. Install " + srv.program + " yourself.")
-			return 1
-		}
-	}
-	out("Installing " + id + "…\n")
-	path, err := m.install(withSay(ctx, errs), s.cfg, key, "auto", true)
-	if err != nil {
-		errs(err.Error())
-		return 1
-	}
-	if path != "" {
-		out("✓ Installed " + id + " at " + path + ".\n")
-		return 0
-	}
-	if r, ok := recipes[key]; ok && r.strategy == manualInstall {
-		errs("✗ " + id + " is not one that icebath can install. Install it yourself.")
-	} else {
-		errs("✗ Could not install " + id + ". The lines above or the log of icebath say why.")
-	}
-	return 1
+	return gather([]attempt{m.installOne(ctx, s, srv, out)}), nil
 }
 
-// Installs every built in server whose recipe installs by itself, the manual ones too when asked; the exit status
-func (m *Manager) InstallAll(ctx context.Context, cfg *config.Config, manual bool, out, errs func(text string)) int {
+// Installs each server of the profile not installed that icebath can install, the lines of the installs handed to out as they come; what
+// they came to, with what every other server not installed needs
+func (m *Manager) InstallAll(ctx context.Context, cfg *config.Config, out func(text string)) Outcome {
 	s := m.service(cfg)
-	code := 0
-	for _, srv := range recipeServers(manual) {
-		state, _, err := m.state(s, srv)
-		if err != nil {
-			errs(err.Error())
-			return 1
+	var results []attempt
+	for _, srv := range s.known() {
+		if ctx.Err() != nil {
+			break
 		}
-		if state == installed {
-			out("✓ " + srv.id + " is already installed.\n")
+		if path, err := m.locate(s, srv); err == nil && path != "" {
 			continue
 		}
-		key := recipeKey(srv.id)
-		out("Installing " + srv.id + "…\n")
-		path, err := m.install(withSay(ctx, errs), s.cfg, key, "auto", true)
-		if err != nil {
-			out("✗ Could not install " + srv.id + ".\n")
-			errs(err.Error())
-			code = 1
+		results = append(results, m.installOne(ctx, s, srv, out))
+	}
+	return gather(results)
+}
+
+// What an install of servers came to: those installed and the sentence that names them, then each thing the others need, said once with
+// the servers it holds back
+type Outcome struct {
+	Installed []Installed
+	// The servers installed by name, those that were there already, or that every server is; empty when none was
+	Done  string
+	Needs []Need
+}
+
+// A server an install left installed, where its program is, and whether it was there before
+type Installed struct {
+	Server, Path string
+	Already      bool
+}
+
+// One thing servers that could not be installed need, said once
+type Need struct {
+	// Servers it holds back, in the order they were tried
+	Servers []string
+	// What they need and what to do, as one sentence that names them
+	Text string
+	// Setting that gives it another way and the value that does, empty for none
+	Setting, Value string
+	// The one server it holds back is installed by hand, as the text says
+	ByHand bool
+}
+
+// What trying to install one server came to: installed with where and whether it was there before, or what stopped it
+type attempt struct {
+	server  string
+	path    string
+	already bool
+	lack    *lack
+}
+
+// The one grouping of what an install came to, which the page and the command line both show: the servers installed, then each distinct
+// thing the others need with the servers it holds back, in the order they were tried
+func gather(results []attempt) Outcome {
+	var outcome Outcome
+	var lacks []lack
+	held := map[lack][]string{}
+	for _, r := range results {
+		if r.lack == nil {
+			outcome.Installed = append(outcome.Installed, Installed{Server: r.server, Path: r.path, Already: r.already})
 			continue
 		}
-		if path != "" {
-			out("✓ Installed " + srv.id + " at " + path + ".\n")
+		if _, seen := held[*r.lack]; !seen {
+			lacks = append(lacks, *r.lack)
+		}
+		held[*r.lack] = append(held[*r.lack], r.server)
+	}
+	for _, l := range lacks {
+		outcome.Needs = append(outcome.Needs, Need{Servers: held[l], Text: l.text(held[l]), Setting: l.setting, Value: l.value, ByHand: l.named})
+	}
+	var installed, there []string
+	for _, done := range outcome.Installed {
+		if done.Already {
+			there = append(there, done.Server)
 		} else {
-			out("✗ Could not install " + srv.id + ". The lines above or the log of icebath say why.\n")
-			code = 1
+			installed = append(installed, done.Server)
 		}
 	}
-	return code
+	var said []string
+	if len(installed) > 0 {
+		said = append(said, "Installed "+strs.And(installed)+".")
+	}
+	switch {
+	case len(there) == 1:
+		said = append(said, there[0]+" is installed already.")
+	case len(there) > 1:
+		said = append(said, strs.And(there)+" are installed already.")
+	case len(results) == 0:
+		said = append(said, "Every language server is installed already.")
+	}
+	outcome.Done = strings.Join(said, " ")
+	return outcome
+}
+
+// Installs one server when icebath can, the lines of the install handed to out as they come, saying what it came to
+func (m *Manager) installOne(ctx context.Context, s *service, srv *server, out func(text string)) attempt {
+	done := attempt{server: srv.id}
+	path, err := m.locate(s, srv)
+	switch {
+	case err != nil:
+		done.lack = &lack{say: strs.Full(err.Error())}
+		return done
+	case path != "":
+		done.path, done.already = path, true
+		return done
+	case !automatic(srv):
+		done.lack = &lack{say: s.advice(srv), named: true}
+		return done
+	}
+	out("Installing " + srv.id + "…\n")
+	// What stopped the install, told once the result says it, while the steps it took scroll as they come
+	var stopped *lack
+	ctx = withSay(withLack(ctx, func(l lack) { stopped = &l }), func(text string) { out(text + "\n") })
+	path, err = m.install(ctx, s.cfg, recipeKey(srv.id), true, true)
+	switch {
+	case err != nil:
+		done.lack = &lack{say: strs.Full(err.Error())}
+	case path == "" && stopped != nil:
+		done.lack = stopped
+	case path == "":
+		done.lack = &lack{say: "The installer said nothing about why."}
+	default:
+		done.path = path
+	}
+	return done
 }

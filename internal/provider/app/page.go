@@ -1,584 +1,608 @@
 package app
 
 import (
-	"cmp"
 	"slices"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/internal/config"
+	"github.com/nickheyer/icebath/internal/credentials"
 	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
+	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
+	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Page of one provider: its accounts, then its address, models, usage, rotation and settings
-type page struct {
-	provider *providerv1.Provider
-	list     *cards.List
-}
-
-// Row of a page: an account, a credential the provider takes from outside its accounts or leaves out, the row that connects the first
-// account, or one of the views of the provider
-type entry struct {
+// Row of a provider's page: an account, a credential found outside the accounts, the row that adds an account, an option of the provider
+// by name, or a setting of its kind as Settings draws it
+type pageRow struct {
 	account *providerv1.Account
-	// Variable or program the credential comes from, said as the provider names it
+	// Variable or program of a credential found outside the accounts, and whether the provider leaves it out
 	outside string
-	// The provider leaves the outside credential out
-	ignored bool
-	connect bool
-	view    string
+	off     bool
+	adds    bool
+	option  string
+	setting *configv1.Setting
 }
 
+// Options of a provider's page, and the rows after them that open a page or act
 const (
-	viewAddress  = "address"
-	viewModels   = "models"
-	viewUsage    = "usage"
-	viewRotation = "rotation"
-	viewSettings = "settings"
+	optionName      = "name"
+	optionDefault   = "default"
+	optionModels    = "models"
+	optionOffered   = "offered"
+	optionAddress   = "address"
+	optionUsed      = "used"
+	optionOrder     = "order"
+	optionExhausted = "exhausted"
+	optionUsage     = "usage"
+	optionAdvanced  = "advanced"
+	optionRemove    = "remove"
 )
 
-// Most buttons a row shows, what enter does first
-const mostHints = 5
+// Settings of a provider the options stand for, by option
+var optionKeys = map[string]string{optionName: providerconfig.Title, optionDefault: providerconfig.DefaultModel, optionModels: providerconfig.Models,
+	optionAddress: providerconfig.BaseURL, optionUsed: providerconfig.Account, optionOrder: providerconfig.Strategy,
+	optionExhausted: providerconfig.OnExhausted}
 
-// Rows of the page: the accounts, a credential from outside them while there are none, the places the provider leaves out, the row that
-// connects the first account while nothing does, then the views
-func (p *providers) entries(provider *providerv1.Provider) []entry {
-	var rows []entry
-	for _, account := range provider.GetAccounts() {
-		rows = append(rows, entry{account: account})
+// Whether the row is one of the things the page manages
+func (e pageRow) thing() bool { return e.account != nil || e.outside != "" || e.adds }
+
+// Whether the row opens a page inside this one
+func (e pageRow) opens() bool { return e.option == optionUsage || e.option == optionAdvanced }
+
+// Setting of the provider the option stands for, nil for an option that stands for none
+func (p *providers) settingOf(entry *providerv1.Provider, option string) *configv1.Setting {
+	if name := optionKeys[option]; name != "" {
+		return p.options.Setting(entry.GetSection() + "." + name)
 	}
-	origin := provider.GetCredentialOrigin()
-	if len(provider.GetAccounts()) == 0 && (origin == providerv1.Origin_ORIGIN_ENVIRONMENT || origin == providerv1.Origin_ORIGIN_EXTERNAL) {
-		rows = append(rows, entry{outside: provider.GetCredentialSource()})
-	}
-	for _, source := range provider.GetIgnored() {
-		rows = append(rows, entry{outside: source, ignored: true})
-	}
-	if len(provider.GetAccounts()) == 0 && !connected(origin) && provider.GetUsable() && len(p.ways(provider)) > 0 {
-		rows = append(rows, entry{connect: true})
-	}
-	if provider.GetLocal() || provider.GetBaseUrl() == "" {
-		rows = append(rows, entry{view: viewAddress})
-	}
-	rows = append(rows, entry{view: viewModels})
-	if provider.GetUsage() {
-		rows = append(rows, entry{view: viewUsage})
-	}
-	if len(provider.GetAccounts()) > 1 {
-		rows = append(rows, entry{view: viewRotation})
-	}
-	return append(rows, entry{view: viewSettings})
+	return nil
 }
 
-// Variable a credential from outside the accounts comes from, without the store that supplied it
-func variable(source string) string {
-	name, _, _ := strings.Cut(source, " (from ")
-	return strings.TrimSpace(name)
+// Rows of the page: the accounts, the credentials found outside them, the row that adds an account; then the options, those of two
+// accounts or more only with two, the kind's own settings; then usage, advanced and remove
+func (p *providers) entries(entry *providerv1.Provider) []pageRow {
+	var rows []pageRow
+	for _, account := range entry.GetAccounts() {
+		rows = append(rows, pageRow{account: account})
+	}
+	if source := entry.GetOutsideSource(); source != "" {
+		rows = append(rows, pageRow{outside: source})
+	}
+	for _, source := range entry.GetIgnored() {
+		rows = append(rows, pageRow{outside: source, off: true})
+	}
+	if len(p.ways(entry)) > 0 {
+		rows = append(rows, pageRow{adds: true})
+	}
+	options := []string{optionName, optionDefault, optionModels, optionOffered}
+	if entry.GetOwn() {
+		options = append(options, optionAddress)
+	}
+	// How the accounts are chosen matters with two or more, or one and a credential found outside it; their order only with two or more
+	switch n := len(entry.GetAccounts()); {
+	case n > 1:
+		options = append(options, optionUsed, optionOrder, optionExhausted)
+	case n == 1 && entry.GetOutsideSource() != "":
+		options = append(options, optionUsed, optionExhausted)
+	}
+	for _, option := range options {
+		rows = append(rows, pageRow{option: option})
+	}
+	everyday, _ := p.options.Section(entry.GetSection())
+	for _, setting := range everyday {
+		rows = append(rows, pageRow{setting: setting})
+	}
+	if entry.GetUsage() {
+		rows = append(rows, pageRow{option: optionUsage})
+	}
+	return append(rows, pageRow{option: optionAdvanced}, pageRow{option: optionRemove})
 }
 
 // Whether a credential from outside the accounts is a variable rather than another program
 func isVariable(source string) bool {
-	return config.EnvName(variable(source))
+	return config.EnvName(credentials.SourceName(source))
 }
 
 // Name of a row of a credential from outside the accounts
 func outsideName(source string) string {
 	if isVariable(source) {
-		return "Key in " + variable(source)
+		return "Key in " + credentials.SourceName(source)
 	}
-	return source
+	return source + " on this computer"
 }
 
 // A credential from outside the accounts as a sentence names it
 func outsideWords(source string) string {
 	if isVariable(source) {
-		return "the key in " + variable(source)
+		return "the API key in " + credentials.SourceName(source)
 	}
-	return "the sign-in of " + source
+	return "the sign-in of " + source + " on this computer"
 }
 
-// Opens the page of the provider over the list
-func (p *providers) show(provider *providerv1.Provider) tea.Cmd {
+// Opens the page of the provider over the list: who it is connected as or what it needs, its accounts, its options, then what opens and
+// removing it
+func (p *providers) show(name string) tea.Cmd {
 	t := p.kit.Env.Theme
-	pg := &page{provider: provider}
-	var rows []entry
-	pg.list = cards.NewList(p.kit.Env, cards.ListSpec{
-		Title:   provider.GetDisplayName(),
+	current := func() *providerv1.Provider { return p.find(name) }
+	if current() == nil {
+		return nil
+	}
+	var rows []pageRow
+	list := cards.NewList(p.kit.Env, cards.ListSpec{
+		Title:   current().GetDisplayName(),
 		Glyph:   t.Glyphs.Models,
-		Key:     "providers:" + provider.GetName(),
+		Key:     "providers:" + name,
 		Context: loginsContext,
 		Shared:  []string{cards.HubContext},
 		Primary: "hub.use",
-		Intro:   func() []string { return []string{p.standing(pg.provider)} },
-		Columns: []render.Column{{}, {}, {Flex: 1}},
+		Intro: func() []string {
+			entry := current()
+			switch {
+			case entry == nil:
+				return nil
+			case Ready(entry):
+				return []string{entry.GetStanding()}
+			}
+			return []string{render.Warm(entry.GetStanding(), t)}
+		},
+		Columns: pageColumns,
 		Rows: func() [][]string {
-			rows = p.entries(pg.provider)
+			entry := current()
+			if entry == nil {
+				rows = nil
+				return nil
+			}
+			rows = p.entries(entry)
 			cells := make([][]string, len(rows))
 			for i, row := range rows {
-				cells[i] = p.cells(pg.provider, row)
+				cells[i] = p.cells(entry, row)
 			}
 			return cells
 		},
 		Group: func(i int) string {
-			if rows[i].view != "" {
-				return "More"
+			switch row := rows[i]; {
+			case row.thing():
+				return "Accounts"
+			case row.setting != nil, row.option != "" && !row.opens() && row.option != optionRemove:
+				return "Options"
 			}
-			return "Accounts"
+			return ""
 		},
 		Detail: func(i int) []string {
-			if i < 0 || i >= len(rows) {
+			if entry := current(); entry != nil && i >= 0 && i < len(rows) {
+				return p.entryDetail(entry, rows[i])
+			}
+			return nil
+		},
+		Empty: func() string { return "This provider is no longer in this profile." },
+		Free:  map[string]bool{"hub.add": true, "hub.refresh": true},
+		Hints: func(_ *cards.List, i int) []wm.Hint {
+			entry := current()
+			if entry == nil || i < 0 || i >= len(rows) {
 				return nil
 			}
-			return p.entryDetail(pg.provider, rows[i])
-		},
-		Free: map[string]bool{"hub.add": true, "hub.refresh": true},
-		Hints: func(_ *cards.List, i int) []wm.Hint {
-			if i < 0 || i >= len(rows) {
-				return p.adding(pg.provider, nil)
-			}
-			return p.entryHints(pg.provider, rows[i])
+			return p.entryHints(entry, rows[i])
 		},
 		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"hub.use": func(_ *cards.List, i int) tea.Cmd {
-				row := rows[i]
-				switch {
-				case row.account != nil:
-					return p.accountActions(pg, row.account.GetName())
-				case row.outside != "" && row.ignored:
-					return p.unignore(pg, row.outside)
-				case row.outside != "" && isVariable(row.outside):
-					return p.keepOutside(pg, row.outside)
-				case row.outside != "":
-					return p.ignore(pg, row.outside)
-				case row.connect:
-					return p.connect(p.first(pg.provider))
-				}
-				return p.openView(pg, row.view)
-			},
-			"hub.edit": func(_ *cards.List, i int) tea.Cmd {
-				if account := rows[i].account; account != nil {
-					return p.connect(p.target(pg, account))
-				}
-				return nil
-			},
-			"hub.rename": func(_ *cards.List, i int) tea.Cmd {
-				if account := rows[i].account; account != nil {
-					return p.rename(pg, account)
+			"hub.use": func(l *cards.List, i int) tea.Cmd {
+				if entry := current(); entry != nil {
+					return p.use(l, entry, rows[i])
 				}
 				return nil
 			},
 			"hub.remove": func(l *cards.List, i int) tea.Cmd {
+				entry := current()
+				if entry == nil {
+					return nil
+				}
 				switch row := rows[i]; {
 				case row.account != nil:
-					return p.remove(pg, row.account)
-				case row.outside != "" && !row.ignored:
-					return p.ignore(pg, row.outside)
+					return p.removeAccount(l, entry, row.account)
+				case row.outside != "" && !row.off:
+					return p.turnOutside(entry, row.outside, false)
+				case row.setting != nil:
+					return p.options.Reset(l, row.setting)
+				case row.option == optionName:
+					return p.unname(l, entry)
+				default:
+					if setting := p.settingOf(entry, row.option); setting != nil {
+						return p.options.Reset(l, setting)
+					}
 				}
 				return nil
 			},
-			"providers.logins.rotate": func(_ *cards.List, i int) tea.Cmd { return p.toggle(pg, rows[i].account) },
-			"providers.logins.reset":  func(_ *cards.List, i int) tea.Cmd { return p.reset(pg, rows[i].account) },
-			"hub.add":                 func(*cards.List, int) tea.Cmd { return p.newAccount(pg) },
-			"hub.refresh":             func(*cards.List, int) tea.Cmd { return p.load(pg.provider.GetName()) },
-		},
-	})
-	pg.list.ToggleDetail()
-	pg.list.Refresh()
-	p.page = pg
-	p.views = append(p.views, pg.list)
-	return p.hub.Push(pg.list)
-}
-
-// Adds an account: the first one without asking a name, any other once its name is given
-func (p *providers) newAccount(pg *page) tea.Cmd {
-	if len(p.ways(pg.provider)) == 0 {
-		return nil
-	}
-	if len(pg.provider.GetAccounts()) == 0 {
-		return p.connect(p.first(pg.provider))
-	}
-	return p.account(pg.provider)
-}
-
-// Target of an account of the page's provider
-func (p *providers) target(pg *page, account *providerv1.Account) Target {
-	return Target{Profile: p.profile, Provider: pg.provider, Account: account}
-}
-
-// Cells of a row of a page: its name, the mark of a row that opens a view, and its state
-func (p *providers) cells(provider *providerv1.Provider, row entry) []string {
-	t := p.kit.Env.Theme
-	opens := render.Dim(t.Glyphs.Forward, t)
-	switch {
-	case row.account != nil:
-		return []string{row.account.GetTitle(), "", p.accountState(provider, row.account)}
-	case row.outside != "" && row.ignored:
-		return []string{outsideName(row.outside), "", render.Dim("Not used", t)}
-	case row.outside != "":
-		return []string{outsideName(row.outside), "", render.Good("Connected", t) + render.Dim(", in use", t)}
-	case row.connect:
-		return []string{"Connect your account", opens, render.Dim(p.waysWords(provider), t)}
-	}
-	switch row.view {
-	case viewAddress:
-		if base := provider.GetBaseUrl(); base != "" {
-			return []string{"Address", opens, render.Dim(base, t)}
-		}
-		return []string{"Address", opens, render.Warm("Not set", t)}
-	case viewModels:
-		about := "Every model listed"
-		if n := len(provider.GetModels()); n > 0 {
-			about = render.Count(n, "model") + " turned on"
-		}
-		return []string{"Models", opens, render.Dim(about, t)}
-	case viewUsage:
-		return []string{"Usage", opens, render.Dim(cmp.Or(glance(provider.GetAccountUsage()), "What the account may still spend"), t)}
-	case viewRotation:
-		return []string{"Rotation", opens, render.Dim(choice(provider), t)}
-	}
-	return []string{"Settings", opens, render.Dim("Name, default model, address and more", t)}
-}
-
-// The ways to connect an account of the provider in a few words
-func (p *providers) waysWords(provider *providerv1.Provider) string {
-	ways := p.ways(provider)
-	titles := make([]string, 0, len(ways))
-	for _, w := range ways {
-		titles = append(titles, w.Title)
-	}
-	switch len(titles) {
-	case 0:
-		return ""
-	case 1:
-		return titles[0]
-	case 2:
-		return titles[0] + " or " + titles[1]
-	}
-	return titles[0] + ", " + titles[1] + " and more"
-}
-
-// Lines under the list about a row of a page: what it is, then the facts a person acts on
-func (p *providers) entryDetail(provider *providerv1.Provider, row entry) []string {
-	t := p.kit.Env.Theme
-	name := provider.GetDisplayName()
-	switch {
-	case row.account != nil:
-		return p.detail(provider, row.account)
-	case row.outside != "" && row.ignored && isVariable(row.outside):
-		return []string{name + " takes no key from " + variable(row.outside) + ".", render.Dim("Use again lets it read the key there once more.", t)}
-	case row.outside != "" && row.ignored:
-		return []string{name + " takes nothing from " + row.outside + ".", render.Dim("Use again lets it take the sign-in there once more.", t)}
-	case row.outside != "" && isVariable(row.outside):
-		return []string{"The agent uses the API key in " + row.outside + ", which you set outside icebath.",
-			render.Dim("Keep key copies it into an account of "+name+". Stop using leaves the variable out from now on.", t)}
-	case row.outside != "":
-		return []string{"The agent uses the sign-in that " + row.outside + " keeps on this computer.",
-			render.Dim("Stop using leaves it out from now on. Its own files stay as they are.", t)}
-	case row.connect:
-		return []string{"Sign in or give an API key, and the agent can use " + name + "."}
-	}
-	switch row.view {
-	case viewAddress:
-		lines := []string{"Where requests to " + name + " go. The server's own documentation calls it the Base URL."}
-		if base := provider.GetBaseUrl(); base != "" {
-			lines = append(lines, render.Dim("Now: "+base, t))
-		}
-		return lines
-	case viewModels:
-		return []string{"The models that /model offers for " + name + "."}
-	case viewUsage:
-		return []string{"What " + name + " says the account in use may still spend."}
-	case viewRotation:
-		return []string{"How " + name + " picks among its accounts.", render.Dim(choice(provider), t)}
-	}
-	return []string{"Every setting of " + name + ", on the settings screen."}
-}
-
-// Buttons for a row of a page: what enter does, then the other keys that apply to it, most used first
-func (p *providers) entryHints(provider *providerv1.Provider, row entry) []wm.Hint {
-	var hints []wm.Hint
-	switch {
-	case row.account != nil:
-		account := row.account
-		hints = append(hints, wm.Hint{Action: "hub.use", Label: "open"}, wm.Hint{Action: "hub.edit", Label: connectVerb(account)})
-		if limited(account) {
-			hints = append(hints, wm.Hint{Action: "providers.logins.reset"})
-		}
-		if len(provider.GetAccounts()) > 1 {
-			label := "rotate"
-			if account.GetRotate() {
-				label = "stop rotating"
-			}
-			hints = append(hints, wm.Hint{Action: "providers.logins.rotate", Label: label})
-		}
-		hints = append(hints, wm.Hint{Action: "hub.remove"})
-	case row.outside != "" && row.ignored:
-		hints = append(hints, wm.Hint{Action: "hub.use", Label: "use again"})
-	case row.outside != "" && isVariable(row.outside):
-		hints = append(hints, wm.Hint{Action: "hub.use", Label: "keep key"}, wm.Hint{Action: "hub.remove", Label: "stop using"})
-	case row.outside != "":
-		hints = append(hints, wm.Hint{Action: "hub.use", Label: "stop using"})
-	case row.connect:
-		hints = append(hints, wm.Hint{Action: "hub.use", Label: "connect"})
-	case row.view == viewAddress:
-		hints = append(hints, wm.Hint{Action: "hub.use", Label: "change"})
-	case row.view == viewRotation:
-		hints = append(hints, wm.Hint{Action: "hub.use", Label: "change"})
-	default:
-		hints = append(hints, wm.Hint{Action: "hub.use", Label: "open"})
-	}
-	return p.adding(provider, hints)
-}
-
-// Buttons with the one that adds an account after them, when the provider takes accounts and there is room
-func (p *providers) adding(provider *providerv1.Provider, hints []wm.Hint) []wm.Hint {
-	if len(hints) < mostHints && len(p.ways(provider)) > 0 {
-		hints = append(hints, wm.Hint{Action: "hub.add", Label: "add account"})
-	}
-	return hints[:min(len(hints), mostHints)]
-}
-
-// Opens a view of the provider: its address, models, usage, rotation or settings
-func (p *providers) openView(pg *page, view string) tea.Cmd {
-	switch view {
-	case viewAddress:
-		return p.address(pg.provider, false)
-	case viewModels:
-		return p.models(pg)
-	case viewUsage:
-		return p.usage(pg)
-	case viewRotation:
-		return p.rotation(pg)
-	}
-	return p.configure(pg.provider)
-}
-
-// Something a list of actions offers: its name, what it does, the word on its button and the run of it
-type action struct {
-	title, about, verb string
-	run                func() tea.Cmd
-	// Closes the list before it runs, for an action that leads somewhere else or ends what the list is about
-	closes bool
-}
-
-// Opens a list of actions over the hub, each with what it does beside it or under the list, and the lines of detail after it. The actions
-// are read again whenever the providers are
-func (p *providers) actions(title string, intro []string, detail func() []string, acts func() []action) tea.Cmd {
-	t := p.kit.Env.Theme
-	var shown []action
-	var list *cards.List
-	list = cards.NewList(p.kit.Env, cards.ListSpec{
-		Title:   title,
-		Glyph:   t.Glyphs.Models,
-		Key:     "providers:actions:" + title,
-		Context: cards.HubContext,
-		Primary: "hub.use",
-		Intro:   func() []string { return intro },
-		Columns: []render.Column{{}, {Flex: 1, Whole: true}},
-		Rows: func() [][]string {
-			shown = acts()
-			cells := make([][]string, len(shown))
-			for i, act := range shown {
-				cells[i] = []string{act.title, render.Dim(act.about, t)}
-			}
-			return cells
-		},
-		Detail: func(i int) []string {
-			var lines []string
-			if i >= 0 && i < len(shown) && !list.Shows(1) && shown[i].about != "" {
-				lines = append(lines, shown[i].about)
-			}
-			if detail != nil {
-				if more := detail(); len(more) > 0 {
-					if len(lines) > 0 {
-						lines = append(lines, "")
-					}
-					lines = append(lines, more...)
+			"hub.add": func(*cards.List, int) tea.Cmd {
+				if entry := current(); entry != nil {
+					return p.addAccount(entry)
 				}
-			}
-			return lines
-		},
-		Empty: func() string { return "There is nothing to do here now." },
-		Hints: func(_ *cards.List, i int) []wm.Hint {
-			if i < 0 || i >= len(shown) {
 				return nil
-			}
-			return []wm.Hint{{Action: "hub.use", Label: shown[i].verb}}
-		},
-		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"hub.use": func(_ *cards.List, i int) tea.Cmd {
-				act := shown[i]
-				if act.closes {
-					return tea.Batch(p.hub.Close(list), act.run())
+			},
+			"hub.refresh": func(*cards.List, int) tea.Cmd { return tea.Batch(p.load(name), p.options.Load(nil)) },
+			"providers.logins.rotate": func(l *cards.List, i int) tea.Cmd {
+				if entry := current(); entry != nil && rows[i].account != nil && len(entry.GetAccounts()) > 1 {
+					return p.doAct(l, entry, rows[i].account, act{name: actTurns})
 				}
-				return act.run()
+				return nil
+			},
+			"providers.logins.reset": func(l *cards.List, i int) tea.Cmd {
+				if entry := current(); entry != nil && rows[i].account != nil && limited(rows[i].account) {
+					return p.doAct(l, entry, rows[i].account, act{name: actForget})
+				}
+				return nil
 			},
 		},
 	})
 	list.ToggleDetail()
-	p.views = append(p.views, list)
+	list.Refresh()
+	p.views.Add(list)
+	p.options.Watch(list)
 	return p.hub.Push(list)
 }
 
-// Everything an account can do, on a list of its own: whether it is always used, connecting it again, its place in the rotation and the
-// order, forgetting its limit, renewing its sign-in, keeping its key, renaming and removing it
-func (p *providers) accountActions(pg *page, name string) tea.Cmd {
-	current := func() *providerv1.Account {
-		for _, account := range pg.provider.GetAccounts() {
-			if account.GetName() == name {
-				return account
-			}
+// Keymap context of the accounts on a provider's page
+const loginsContext = "providers.logins"
+
+// Keys of an account on a provider's page, beside opening its page
+var loginKeys = []keys.Action{
+	{ID: "providers.logins.rotate", Context: loginsContext, Label: "take turns", Doc: "Make the highlighted account take turns, or stop", Default: []string{"t"}},
+	{ID: "providers.logins.reset", Context: loginsContext, Label: "forget limit", Doc: "Forget the limit that the highlighted account ran into",
+		Default: []string{"R"}},
+}
+
+// Columns of a page's rows, those Settings draws its options in: the name, the mark, the value or state
+var pageColumns = []render.Column{{}, {}, {Flex: 1}}
+
+// Cells of a row of a provider's page: its name, the mark of a changed value or of a row that opens, and its state or value
+func (p *providers) cells(entry *providerv1.Provider, row pageRow) []string {
+	t := p.kit.Env.Theme
+	opens := render.Dim(t.Glyphs.Forward, t)
+	switch {
+	case row.account != nil:
+		return []string{row.account.GetTitle(), "", p.accountWords(row.account)}
+	case row.outside != "" && row.off:
+		return []string{outsideName(row.outside), "", render.Dim("Off", t)}
+	case row.outside != "" && entry.GetOutsideUsed():
+		return []string{outsideName(row.outside), "", render.Good("In use", t)}
+	case row.outside != "":
+		return []string{outsideName(row.outside), "", "On"}
+	case row.adds:
+		return []string{"Add an account", opens, ""}
+	case row.setting != nil:
+		return p.options.Cells(row.setting)
+	}
+	switch row.option {
+	case optionOffered:
+		if entry.GetHidden() {
+			return []string{"Offered in the model list", "", "Off"}
 		}
+		return []string{"Offered in the model list", "", "On"}
+	case optionModels:
+		return []string{"Models offered", opens, render.Dim(offeredWords(entry), t)}
+	case optionUsage:
+		return []string{"Usage", opens, render.Dim(glance(entry.GetAccountUsage()), t)}
+	case optionAdvanced:
+		return []string{"Advanced", opens, render.Dim(render.Count(p.rare(entry), "setting"), t)}
+	case optionRemove:
+		return []string{"Remove", "", ""}
+	}
+	if setting := p.settingOf(entry, row.option); setting != nil {
+		return p.options.Cells(setting)
+	}
+	return []string{row.option, "", ""}
+}
+
+// The models a provider offers in the model list, in words
+func offeredWords(entry *providerv1.Provider) string {
+	switch n := len(entry.GetModels()); n {
+	case 0:
+		return "All"
+	case 1:
+		return entry.GetModels()[0]
+	default:
+		return render.Count(n, "model")
+	}
+}
+
+// State of an account as its row says it, by the one function of the server, warm while it can't be used
+func (p *providers) accountWords(account *providerv1.Account) string {
+	t := p.kit.Env.Theme
+	if account.GetStatus() == "ready" {
+		return render.Good(account.GetState(), t)
+	}
+	return render.Warm(account.GetState(), t)
+}
+
+// Lines under the list about a row of a provider's page, never what the row or the first line says
+func (p *providers) entryDetail(entry *providerv1.Provider, row pageRow) []string {
+	name := entry.GetDisplayName()
+	switch {
+	case row.account != nil:
+		return p.accountFacts(entry, row.account)
+	case row.outside != "" && row.off:
+		return []string{name + " leaves out " + outsideWords(row.outside) + "."}
+	case row.outside != "" && !entry.GetOutsideUsed():
+		return []string{unusedOutside(entry, row.outside)}
+	case row.outside != "":
+		return []string{"The agent uses " + outsideWords(row.outside) + ", which you keep outside icebath."}
+	case row.adds:
+		return []string{"Sign in to another account, or add another API key."}
+	case row.setting != nil:
+		return p.options.Detail(row.setting, false)
+	}
+	switch row.option {
+	case optionOffered:
+		return []string{"Whether the model list, and so the model picker, offers the models of " + name + "."}
+	case optionUsage:
+		return []string{"What " + name + " says the account in use may still spend."}
+	case optionAdvanced:
+		return []string{"Settings of " + name + " that few people change."}
+	case optionRemove:
+		return []string{"Take " + name + " out of icebath, with its accounts."}
+	}
+	setting := p.settingOf(entry, row.option)
+	if setting == nil {
 		return nil
 	}
-	account := current()
-	if account == nil {
-		return nil
+	lines := p.options.Detail(setting, false)
+	// The other way out than the one the first line of the page names, under what the option is
+	if instead := entry.GetInstead(); instead != "" && optionKeys[row.option] == entry.GetInsteadOf() && len(lines) > 0 {
+		lines = slices.Insert(lines, 1, render.Warm(instead, p.kit.Env.Theme))
 	}
-	detail := func() []string {
-		if now := current(); now != nil {
-			return p.detail(pg.provider, now)
-		}
-		return nil
+	return lines
+}
+
+// Why the provider leaves the credential found outside its accounts unused now
+func unusedOutside(entry *providerv1.Provider, source string) string {
+	name, found := entry.GetDisplayName(), outsideWords(source)
+	switch {
+	case entry.GetPinned():
+		return name + " finds " + found + ", but uses the account " + accountTitle(entry, entry.GetAccount()) + " alone."
+	case entry.GetRotate():
+		return name + " finds " + found + ", but its accounts take turns."
+	case !Ready(entry):
+		return name + " finds " + found + ", but can't send requests yet."
 	}
-	return p.actions(account.GetTitle(), nil, detail, func() []action {
-		account := current()
-		if account == nil {
-			return nil
+	return name + " finds " + found + ", and takes it once none of its accounts can sign in."
+}
+
+// Buttons for a row of a provider's page: what enter does, then the other keys that apply to it
+func (p *providers) entryHints(entry *providerv1.Provider, row pageRow) []wm.Hint {
+	switch {
+	case row.account != nil:
+		hints := []wm.Hint{{Action: "hub.use", Label: "open"}}
+		if len(entry.GetAccounts()) > 1 {
+			hints = append(hints, wm.Hint{Action: "providers.logins.rotate", Label: map[bool]string{true: "stop taking turns", false: "take turns"}[row.account.GetRotate()]})
 		}
-		provider := pg.provider
-		title := account.GetTitle()
-		var acts []action
-		if provider.GetPinned() && provider.GetAccount() == name {
-			acts = append(acts, action{title: "Stop always using it", about: "Go back to trying every account in order", verb: "stop",
-				run: func() tea.Cmd { return p.use(pg, nil) }})
-		} else {
-			acts = append(acts, action{title: "Always use it", about: "Make every request with this account, even when others take turns", verb: "always use",
-				run: func() tea.Cmd { return p.use(pg, account) }})
+		if limited(row.account) {
+			hints = append(hints, wm.Hint{Action: "providers.logins.reset"})
 		}
-		connect := action{title: "Connect", about: "Sign in or give an API key", verb: "connect", closes: true,
-			run: func() tea.Cmd { return p.connect(p.target(pg, account)) }}
-		if connected(account.GetCredentialOrigin()) {
-			connect.title, connect.about, connect.verb = "Connect again", "Sign in once more or give a new API key", connectVerb(account)
-		}
-		acts = append(acts, connect)
-		if limited(account) {
-			acts = append(acts, action{title: "Forget the limit", about: "Try this account again now, before the limit lifts", verb: "forget",
-				run: func() tea.Cmd { return p.reset(pg, account) }})
-		}
-		if account.GetRenewable() {
-			acts = append(acts, action{title: "Renew the sign-in", about: "Get a fresh sign-in from " + provider.GetDisplayName() + " now", verb: "renew",
-				run: func() tea.Cmd { return p.renew(pg, account) }})
-		}
-		if all := provider.GetAccounts(); len(all) > 1 {
-			if account.GetRotate() {
-				acts = append(acts, action{title: "Take out of the rotation", about: "Stop taking turns with the other accounts", verb: "stop rotating",
-					run: func() tea.Cmd { return p.toggle(pg, account) }})
-			} else {
-				acts = append(acts, action{title: "Put in the rotation", about: "Take turns with the other accounts in the rotation", verb: "rotate",
-					run: func() tea.Cmd { return p.toggle(pg, account) }})
-			}
-			place := slices.IndexFunc(all, func(other *providerv1.Account) bool { return other.GetName() == name })
-			if place > 0 {
-				acts = append(acts, action{title: "Try it earlier", about: "Try this account before " + all[place-1].GetTitle(), verb: "move up",
-					run: func() tea.Cmd { return p.move(pg, account, -1) }})
-			}
-			if place >= 0 && place < len(all)-1 {
-				acts = append(acts, action{title: "Try it later", about: "Try this account after " + all[place+1].GetTitle(), verb: "move down",
-					run: func() tea.Cmd { return p.move(pg, account, 1) }})
-			}
-		}
-		if account.GetKeyEnv() != "" {
-			acts = append(acts, action{title: "Keep the key in icebath", about: "Copy the key from " + account.GetKeyEnv() + " and stop reading the variable",
-				verb: "keep key", run: func() tea.Cmd { return p.keep(pg, account) }})
-		}
-		return append(acts,
-			action{title: "Rename", about: "Give " + title + " another name", verb: "rename", closes: true, run: func() tea.Cmd { return p.rename(pg, account) }},
-			action{title: "Remove", about: "Delete " + title + " and what icebath keeps for it", verb: "remove", closes: true,
-				run: func() tea.Cmd { return p.remove(pg, account) }})
+		return append(hints, wm.Hint{Action: "hub.remove", Label: "remove"}, wm.Hint{Action: "hub.add", Label: "add account"})
+	case row.outside != "" && row.off:
+		return []wm.Hint{{Action: "hub.use", Label: "turn on"}}
+	case row.outside != "":
+		return []wm.Hint{{Action: "hub.use", Label: "turn off"}}
+	case row.adds:
+		return []wm.Hint{{Action: "hub.use", Label: "add"}}
+	case row.setting != nil:
+		return p.options.Hints(row.setting)
+	case row.opens():
+		return []wm.Hint{{Action: "hub.use", Label: "open"}}
+	case row.option == optionRemove:
+		return []wm.Hint{{Action: "hub.use", Label: "remove"}}
+	case row.option == optionOffered && entry.GetHidden():
+		return []wm.Hint{{Action: "hub.use", Label: "turn on"}}
+	case row.option == optionOffered:
+		return []wm.Hint{{Action: "hub.use", Label: "turn off"}}
+	}
+	hints := []wm.Hint{{Action: "hub.use", Label: "change"}}
+	if setting := p.settingOf(entry, row.option); setting != nil && setting.GetSource() == configv1.Source_SOURCE_FILE {
+		hints = append(hints, wm.Hint{Action: "hub.remove", Label: "reset"})
+	}
+	return hints
+}
+
+// Does what enter does on a row of a provider's page
+func (p *providers) use(l *cards.List, entry *providerv1.Provider, row pageRow) tea.Cmd {
+	switch {
+	case row.account != nil:
+		return p.accountPage(entry.GetName(), row.account.GetName())
+	case row.outside != "":
+		return p.turnOutside(entry, row.outside, row.off)
+	case row.adds:
+		return p.addAccount(entry)
+	case row.setting != nil:
+		return p.options.Change(row.setting)
+	}
+	switch row.option {
+	case optionName:
+		return p.renameProvider(entry)
+	case optionDefault:
+		return p.pickDefault(entry)
+	case optionModels:
+		return p.models(entry.GetName())
+	case optionOffered:
+		return tui.Call(p.hub, func() (*providerv1.SetOfferedResponse, error) {
+			return p.service.SetOffered(p.kit.Env.Ctx, &providerv1.SetOfferedRequest{Profile: p.profile, Provider: entry.GetName(), On: entry.GetHidden()})
+		}, func(offered *providerv1.SetOfferedResponse) tea.Cmd {
+			return tea.Batch(p.hub.Done(offered.GetSaid()), p.load(entry.GetName()))
+		})
+	case optionAddress:
+		return p.address(entry)
+	case optionUsed:
+		return p.pickUsed(entry)
+	case optionOrder, optionExhausted:
+		return p.pickChoice(entry, p.settingOf(entry, row.option))
+	case optionUsage:
+		return p.usage(entry.GetName())
+	case optionAdvanced:
+		return p.advanced(entry.GetName())
+	case optionRemove:
+		return p.remove(l, entry)
+	}
+	return nil
+}
+
+// Turns the use of a credential found outside the accounts on or off, the one control of that choice
+func (p *providers) turnOutside(entry *providerv1.Provider, source string, on bool) tea.Cmd {
+	return tui.Call(p.hub, func() (*providerv1.SetOutsideResponse, error) {
+		return p.service.SetOutside(p.kit.Env.Ctx, &providerv1.SetOutsideRequest{Profile: p.profile, Provider: entry.GetName(), Source: credentials.SourceName(source), On: on})
+	}, func(turned *providerv1.SetOutsideResponse) tea.Cmd {
+		return tea.Batch(p.hub.Done(turned.GetSaid()), p.load(entry.GetName()))
 	})
 }
 
-// Asks before an account is removed, then removes it and says which variables were cleared with it
-func (p *providers) remove(pg *page, account *providerv1.Account) tea.Cmd {
-	if account == nil {
+// Asks the name the provider is shown by, which the key it is kept under follows; the page opens again under its new key
+func (p *providers) renameProvider(entry *providerv1.Provider) tea.Cmd {
+	field := cards.Field{Label: "Name", Value: entry.GetDisplayName(), Select: true, Help: "The name this provider is shown by, such as Work Claude."}
+	return p.kit.Ask(p.hub, "Rename", field, "Rename", func(title string) tea.Cmd { return p.rename(entry, title) })
+}
+
+// Gives the provider the name it is shown by, the name of its kind for none, and opens its page again under the key that followed it
+func (p *providers) rename(entry *providerv1.Provider, title string) tea.Cmd {
+	return tui.Call(p.hub, func() (*providerv1.RenameResponse, error) {
+		return p.service.Rename(p.kit.Env.Ctx, &providerv1.RenameRequest{Profile: p.profile, Provider: entry.GetName(), Title: title})
+	}, func(renamed *providerv1.RenameResponse) tea.Cmd {
+		moved := renamed.GetProvider()
+		p.focus = moved.GetName()
+		return tea.Batch(p.hub.PopTo(p.list), p.hub.Done("Renamed "+entry.GetDisplayName()+" to "+moved.GetDisplayName()+"."), p.options.Load(nil),
+			p.load(moved.GetName()))
+	})
+}
+
+// Asks before a provider that was given a name takes the name of its kind again, as resetting any other option puts its default back
+func (p *providers) unname(l *cards.List, entry *providerv1.Provider) tea.Cmd {
+	setting := p.settingOf(entry, optionName)
+	if setting == nil || setting.GetSource() != configv1.Source_SOURCE_FILE {
 		return nil
 	}
-	question := "Remove the account " + account.GetTitle() + "? What icebath keeps for it is deleted."
-	if len(pg.provider.GetAccounts()) == 1 {
-		question = "Remove the account " + account.GetTitle() + "? " + pg.provider.GetDisplayName() + " has no other account to use."
+	l.Confirm(cards.Question{Text: "Reset " + setting.GetTitle() + " to " + setting.GetDefaultShown() + "?", Verb: "Reset"},
+		func() tea.Cmd { return p.rename(entry, "") })
+	return nil
+}
+
+// Picks the default model of the provider from its own models
+func (p *providers) pickDefault(entry *providerv1.Provider) tea.Cmd {
+	key := entry.GetSection() + "." + providerconfig.DefaultModel
+	ask := tui.Ask{Title: "Default model", Intro: []string{"The model " + entry.GetDisplayName() + " uses when no other is picked."}, Key: key,
+		Values: map[string]string{key: p.options.Setting(key).GetValue()}, Profile: p.profile}
+	ask.Done = func(values map[string]string) tea.Cmd { return p.save(entry, key, values[key]) }
+	cmd, _ := p.kit.Choose(p.hub, providerconfig.PickModel, ask)
+	return cmd
+}
+
+// Saves one setting of the provider, as YAML, through the one function the server has for it, and says what it is now
+func (p *providers) save(entry *providerv1.Provider, key, value string) tea.Cmd {
+	return tui.Call(p.hub, func() (*configv1.SetResponse, error) {
+		return p.settings.Set(p.kit.Env.Ctx, &configv1.SetRequest{Profile: p.profile, Key: key, Value: value})
+	}, func(*configv1.SetResponse) tea.Cmd {
+		return p.options.Load(func() tea.Cmd {
+			said := ""
+			if setting := p.options.Setting(key); setting != nil {
+				said = setting.GetTitle() + " is now " + ansi.Strip(p.options.Cells(setting)[2]) + "."
+			}
+			return tea.Batch(p.hub.Done(said), p.load(entry.GetName()))
+		})
+	})
+}
+
+// Saves one value under a key of the provider, as YAML, through the server, and says what came of it in the words given
+func (p *providers) store(entry *providerv1.Provider, key, value, said string) tea.Cmd {
+	return tui.Call(p.hub, func() (*configv1.SetResponse, error) {
+		return p.settings.Set(p.kit.Env.Ctx, &configv1.SetRequest{Profile: p.profile, Key: key, Value: value})
+	}, func(*configv1.SetResponse) tea.Cmd {
+		return tea.Batch(p.hub.Done(said), p.options.Load(nil), p.load(entry.GetName()))
+	})
+}
+
+// Asks the address of the provider's server
+func (p *providers) address(entry *providerv1.Provider) tea.Cmd {
+	field := cards.Field{Label: "Address", Value: entry.GetBaseUrl(), Select: true, Check: checkAddress,
+		Help: "Where requests to " + entry.GetDisplayName() + " go, such as http://localhost:8080/v1. It starts with http:// or https://."}
+	return p.kit.Ask(p.hub, "Address", field, "Save", func(address string) tea.Cmd {
+		return p.save(entry, entry.GetSection()+"."+providerconfig.BaseURL, strconv.Quote(strings.TrimRight(address, "/")))
+	})
+}
+
+// Picks how the provider chooses among its accounts: every account in order, taking turns, or one account by name
+func (p *providers) pickUsed(entry *providerv1.Provider) tea.Cmd {
+	current := ""
+	switch {
+	case entry.GetRotate():
+		current = providerconfig.Rotation
+	case entry.GetPinned():
+		current = entry.GetAccount()
 	}
-	pg.list.Confirm(question, func() tea.Cmd {
+	choices := []tui.Choice{{ID: "", Title: "Every account in order", Detail: "The first that works, then the next when one runs out"},
+		{ID: providerconfig.Rotation, Title: "Take turns", Detail: "The accounts that take turns, in the rotation order"}}
+	for _, account := range entry.GetAccounts() {
+		choices = append(choices, tui.Choice{ID: account.GetName(), Title: account.GetTitle(), Detail: "Every request goes to this account"})
+	}
+	return p.kit.PickFrom(p.hub, "Account used", []string{"Which account requests to " + entry.GetDisplayName() + " are made with."}, "choose", choices,
+		current, func(choice tui.Choice) tea.Cmd {
+			return tui.Call(p.hub, func() (*providerv1.UseAccountResponse, error) {
+				return p.service.UseAccount(p.kit.Env.Ctx, &providerv1.UseAccountRequest{Profile: p.profile, Provider: entry.GetName(), Account: choice.ID})
+			}, func(*providerv1.UseAccountResponse) tea.Cmd {
+				return tea.Batch(p.hub.Done("Account used is now "+choice.Title+"."), p.load(entry.GetName()), p.options.Load(nil))
+			})
+		})
+}
+
+// Picks one of the values of a choice of the provider, saved through the server
+func (p *providers) pickChoice(entry *providerv1.Provider, setting *configv1.Setting) tea.Cmd {
+	if setting == nil {
+		return nil
+	}
+	var choices []tui.Choice
+	for _, option := range setting.GetOptions() {
+		choices = append(choices, tui.Choice{ID: option.GetValue(), Title: option.GetTitle(), Detail: option.GetDescription()})
+	}
+	current := strings.Trim(setting.GetValue(), `"'`)
+	return p.kit.PickFrom(p.hub, setting.GetTitle(), []string{setting.GetDescription()}, "choose", choices, current, func(choice tui.Choice) tea.Cmd {
+		return p.save(entry, setting.GetKey(), strconv.Quote(choice.ID))
+	})
+}
+
+// Asks before an account is removed, then removes it and says what was cleared with it
+func (p *providers) removeAccount(l *cards.List, entry *providerv1.Provider, account *providerv1.Account) tea.Cmd {
+	text := "Remove the account " + account.GetTitle() + "? Every setting and session that names it is cleared."
+	if len(entry.GetAccounts()) == 1 {
+		text = "Remove the account " + account.GetTitle() + "? " + entry.GetDisplayName() + " then has no account of its own."
+	}
+	l.Confirm(cards.Question{Text: text, Verb: "Remove", Deletes: true}, func() tea.Cmd {
 		return tui.Call(p.hub, func() (*providerv1.RemoveAccountResponse, error) {
-			return p.service.RemoveAccount(p.kit.Env.Ctx, &providerv1.RemoveAccountRequest{Profile: p.profile, Provider: pg.provider.GetName(), Account: account.GetName()})
+			return p.service.RemoveAccount(p.kit.Env.Ctx, &providerv1.RemoveAccountRequest{Profile: p.profile, Provider: entry.GetName(), Account: account.GetName()})
 		}, func(removed *providerv1.RemoveAccountResponse) tea.Cmd {
-			done := "Removed " + account.GetTitle() + "."
-			if cleared := removed.GetCleared(); len(cleared) > 0 {
-				done = "Removed " + account.GetTitle() + " and cleared " + strings.Join(cleared, " and ") + " from your keys file."
-			}
-			return tea.Batch(p.hub.Done(done), p.load(pg.provider.GetName()))
+			return tea.Batch(p.closeView("providers:account:"+account.GetName()), p.hub.Done(removed.GetSaid()), p.load(entry.GetName()),
+				p.options.Load(nil))
 		})
 	})
 	return nil
 }
 
-// Asks before the provider leaves a credential from outside its accounts out, then leaves it out from now on
-func (p *providers) ignore(pg *page, source string) tea.Cmd {
-	name := pg.provider.GetDisplayName()
-	question := "Stop using the sign-in of " + source + " for " + name + "? Its own files stay as they are."
-	if isVariable(source) {
-		question = "Stop using the key in " + variable(source) + " for " + name + "? If your keys file holds it, it is cleared there too."
+// Closes the view with the key when the hub holds it
+func (p *providers) closeView(key string) tea.Cmd {
+	for _, view := range slices.Backward(p.views.Lists()) {
+		if view.Key() == key && p.hub.Holds(view) {
+			return p.hub.Close(view)
+		}
 	}
-	pg.list.Confirm(question, func() tea.Cmd {
-		return tui.Call(p.hub, func() (*providerv1.RemoveAccountResponse, error) {
-			return p.service.RemoveAccount(p.kit.Env.Ctx, &providerv1.RemoveAccountRequest{Profile: p.profile, Provider: pg.provider.GetName(), Source: variable(source)})
-		}, func(left *providerv1.RemoveAccountResponse) tea.Cmd {
-			done := name + " no longer uses " + outsideWords(source) + "."
-			if isVariable(source) && !slices.Contains(left.GetCleared(), variable(source)) {
-				done += " The variable is still set in your shell, but " + name + " leaves it out."
-			}
-			return tea.Batch(p.hub.Done(done), p.load(pg.provider.GetName()))
-		})
-	})
 	return nil
 }
 
-// Lets the provider take a credential from a place it left out once more
-func (p *providers) unignore(pg *page, source string) tea.Cmd {
-	kept := slices.DeleteFunc(slices.Clone(pg.provider.GetIgnored()), func(have string) bool { return have == source })
-	value, err := encodeList(kept)
-	if err != nil {
-		return p.hub.Fail(err.Error())
+// Name an account of a listed provider is shown by
+func accountTitle(entry *providerv1.Provider, name string) string {
+	for _, account := range entry.GetAccounts() {
+		if account.GetName() == name {
+			return account.GetTitle()
+		}
 	}
-	return tui.Call(p.hub, func() (struct{}, error) {
-		return struct{}{}, p.set(pg.provider.GetSection()+"."+providerconfig.Ignored, value)
-	}, func(struct{}) tea.Cmd {
-		return tea.Batch(p.hub.Done(pg.provider.GetDisplayName()+" uses "+outsideWords(source)+" again when it is there."), p.load(pg.provider.GetName()))
-	})
-}
-
-// Copies the key a provider reads from a variable outside its accounts into an account of its own, which stops reading the variable
-func (p *providers) keepOutside(pg *page, source string) tea.Cmd {
-	name := variable(source)
-	pg.list.Confirm("Keep the key in "+name+" in an account of "+pg.provider.GetDisplayName()+"? The account stops reading the variable.", func() tea.Cmd {
-		target := p.first(pg.provider)
-		return tui.Call(p.hub, func() (*providerv1.KeepKeyResponse, error) {
-			ready, err := target.Ready(p.kit.Env.Ctx)
-			if err != nil {
-				return nil, err
-			}
-			if err := Store(p.kit.Env.Ctx, p.settings, ready, map[string]any{providerconfig.KeyEnv: name}); err != nil {
-				return nil, err
-			}
-			return p.service.KeepKey(p.kit.Env.Ctx, &providerv1.KeepKeyRequest{Profile: p.profile, Provider: pg.provider.GetName(), Account: ready.Account.GetName()})
-		}, func(kept *providerv1.KeepKeyResponse) tea.Cmd {
-			return tea.Batch(p.hub.Done("The account "+kept.GetAccount().GetTitle()+" now keeps the key from "+name+"."), p.load(pg.provider.GetName()))
-		})
-	})
-	return nil
+	return name
 }

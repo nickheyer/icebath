@@ -803,7 +803,7 @@ func (x *SetupRequest) GetProjectId() string {
 	return ""
 }
 
-// What the next fetch does with one secret: export, override, skip_set or skip_token; exported or overrode once a sync set it
+// What the next fetch does with one secret: export, override, skip_set or skip_token
 type Row struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -857,11 +857,9 @@ func (x *Row) GetAction() string {
 }
 
 type Preview struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Rows     []*Row                 `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
-	Warnings []string               `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
-	// Variables a sync set for the profile
-	Exported      int32 `protobuf:"varint,3,opt,name=exported,proto3" json:"exported,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rows          []*Row                 `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
+	Warnings      []string               `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -908,13 +906,6 @@ func (x *Preview) GetWarnings() []string {
 		return x.Warnings
 	}
 	return nil
-}
-
-func (x *Preview) GetExported() int32 {
-	if x != nil {
-		return x.Exported
-	}
-	return 0
 }
 
 type TokenRequest struct {
@@ -1082,138 +1073,6 @@ func (x *TokenResponse) GetBinaryMissing() bool {
 	return false
 }
 
-type SyncRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	Apply         bool                   `protobuf:"varint,2,opt,name=apply,proto3" json:"apply,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SyncRequest) Reset() {
-	*x = SyncRequest{}
-	mi := &file_icebath_plugins_bitwarden_v1_bitwarden_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SyncRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SyncRequest) ProtoMessage() {}
-
-func (x *SyncRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_bitwarden_v1_bitwarden_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SyncRequest.ProtoReflect.Descriptor instead.
-func (*SyncRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_bitwarden_v1_bitwarden_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *SyncRequest) GetProfile() string {
-	if x != nil {
-		return x.Profile
-	}
-	return ""
-}
-
-func (x *SyncRequest) GetApply() bool {
-	if x != nil {
-		return x.Apply
-	}
-	return false
-}
-
-type DisableRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DisableRequest) Reset() {
-	*x = DisableRequest{}
-	mi := &file_icebath_plugins_bitwarden_v1_bitwarden_proto_msgTypes[18]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DisableRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DisableRequest) ProtoMessage() {}
-
-func (x *DisableRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_bitwarden_v1_bitwarden_proto_msgTypes[18]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DisableRequest.ProtoReflect.Descriptor instead.
-func (*DisableRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_bitwarden_v1_bitwarden_proto_rawDescGZIP(), []int{18}
-}
-
-func (x *DisableRequest) GetProfile() string {
-	if x != nil {
-		return x.Profile
-	}
-	return ""
-}
-
-type DisableResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DisableResponse) Reset() {
-	*x = DisableResponse{}
-	mi := &file_icebath_plugins_bitwarden_v1_bitwarden_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DisableResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DisableResponse) ProtoMessage() {}
-
-func (x *DisableResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_bitwarden_v1_bitwarden_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DisableResponse.ProtoReflect.Descriptor instead.
-func (*DisableResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_bitwarden_v1_bitwarden_proto_rawDescGZIP(), []int{19}
-}
-
 var File_icebath_plugins_bitwarden_v1_bitwarden_proto protoreflect.FileDescriptor
 
 const file_icebath_plugins_bitwarden_v1_bitwarden_proto_rawDesc = "" +
@@ -1278,11 +1137,10 @@ const file_icebath_plugins_bitwarden_v1_bitwarden_proto_rawDesc = "" +
 	"project_id\x18\x04 \x01(\tR\tprojectId\"1\n" +
 	"\x03Row\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
-	"\x06action\x18\x02 \x01(\tR\x06action\"x\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\"\\\n" +
 	"\aPreview\x125\n" +
 	"\x04rows\x18\x01 \x03(\v2!.icebath.plugins.bitwarden.v1.RowR\x04rows\x12\x1a\n" +
-	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x1a\n" +
-	"\bexported\x18\x03 \x01(\x05R\bexported\"V\n" +
+	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"V\n" +
 	"\fTokenRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x16\n" +
@@ -1295,13 +1153,7 @@ const file_icebath_plugins_bitwarden_v1_bitwarden_proto_rawDesc = "" +
 	"\bdisabled\x18\x05 \x01(\bR\bdisabled\x12?\n" +
 	"\afailure\x18\x06 \x01(\v2%.icebath.plugins.bitwarden.v1.FailureR\afailure\x12\x1b\n" +
 	"\todd_token\x18\a \x01(\bR\boddToken\x12%\n" +
-	"\x0ebinary_missing\x18\b \x01(\bR\rbinaryMissing\"=\n" +
-	"\vSyncRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x14\n" +
-	"\x05apply\x18\x02 \x01(\bR\x05apply\"*\n" +
-	"\x0eDisableRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"\x11\n" +
-	"\x0fDisableResponse2\xa0\a\n" +
+	"\x0ebinary_missing\x18\b \x01(\bR\rbinaryMissing2\xde\x05\n" +
 	"\x10BitwardenService\x12`\n" +
 	"\x05State\x12*.icebath.plugins.bitwarden.v1.StateRequest\x1a+.icebath.plugins.bitwarden.v1.StateResponse\x12i\n" +
 	"\bValidate\x12-.icebath.plugins.bitwarden.v1.ValidateRequest\x1a..icebath.plugins.bitwarden.v1.ValidateResponse\x12f\n" +
@@ -1309,9 +1161,7 @@ const file_icebath_plugins_bitwarden_v1_bitwarden_proto_rawDesc = "" +
 	"\tSaveToken\x12..icebath.plugins.bitwarden.v1.SaveTokenRequest\x1a/.icebath.plugins.bitwarden.v1.SaveTokenResponse\x12i\n" +
 	"\bProjects\x12-.icebath.plugins.bitwarden.v1.ProjectsRequest\x1a..icebath.plugins.bitwarden.v1.ProjectsResponse\x12Z\n" +
 	"\x05Setup\x12*.icebath.plugins.bitwarden.v1.SetupRequest\x1a%.icebath.plugins.bitwarden.v1.Preview\x12`\n" +
-	"\x05Token\x12*.icebath.plugins.bitwarden.v1.TokenRequest\x1a+.icebath.plugins.bitwarden.v1.TokenResponse\x12X\n" +
-	"\x04Sync\x12).icebath.plugins.bitwarden.v1.SyncRequest\x1a%.icebath.plugins.bitwarden.v1.Preview\x12f\n" +
-	"\aDisable\x12,.icebath.plugins.bitwarden.v1.DisableRequest\x1a-.icebath.plugins.bitwarden.v1.DisableResponseB\x94\x02\n" +
+	"\x05Token\x12*.icebath.plugins.bitwarden.v1.TokenRequest\x1a+.icebath.plugins.bitwarden.v1.TokenResponseB\x94\x02\n" +
 	" com.icebath.plugins.bitwarden.v1B\x0eBitwardenProtoP\x01ZMgithub.com/nickheyer/icebath/pkg/gen/icebath/plugins/bitwarden/v1;bitwardenv1\xa2\x02\x03IPB\xaa\x02\x1cIcebath.Plugins.Bitwarden.V1\xca\x02\x1cIcebath\\Plugins\\Bitwarden\\V1\xe2\x02(Icebath\\Plugins\\Bitwarden\\V1\\GPBMetadata\xea\x02\x1fIcebath::Plugins::Bitwarden::V1b\x06proto3"
 
 var (
@@ -1326,7 +1176,7 @@ func file_icebath_plugins_bitwarden_v1_bitwarden_proto_rawDescGZIP() []byte {
 	return file_icebath_plugins_bitwarden_v1_bitwarden_proto_rawDescData
 }
 
-var file_icebath_plugins_bitwarden_v1_bitwarden_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_icebath_plugins_bitwarden_v1_bitwarden_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_icebath_plugins_bitwarden_v1_bitwarden_proto_goTypes = []any{
 	(*StateRequest)(nil),      // 0: icebath.plugins.bitwarden.v1.StateRequest
 	(*StateResponse)(nil),     // 1: icebath.plugins.bitwarden.v1.StateResponse
@@ -1345,9 +1195,6 @@ var file_icebath_plugins_bitwarden_v1_bitwarden_proto_goTypes = []any{
 	(*Preview)(nil),           // 14: icebath.plugins.bitwarden.v1.Preview
 	(*TokenRequest)(nil),      // 15: icebath.plugins.bitwarden.v1.TokenRequest
 	(*TokenResponse)(nil),     // 16: icebath.plugins.bitwarden.v1.TokenResponse
-	(*SyncRequest)(nil),       // 17: icebath.plugins.bitwarden.v1.SyncRequest
-	(*DisableRequest)(nil),    // 18: icebath.plugins.bitwarden.v1.DisableRequest
-	(*DisableResponse)(nil),   // 19: icebath.plugins.bitwarden.v1.DisableResponse
 }
 var file_icebath_plugins_bitwarden_v1_bitwarden_proto_depIdxs = []int32{
 	2,  // 0: icebath.plugins.bitwarden.v1.ValidateResponse.failure:type_name -> icebath.plugins.bitwarden.v1.Failure
@@ -1362,19 +1209,15 @@ var file_icebath_plugins_bitwarden_v1_bitwarden_proto_depIdxs = []int32{
 	9,  // 9: icebath.plugins.bitwarden.v1.BitwardenService.Projects:input_type -> icebath.plugins.bitwarden.v1.ProjectsRequest
 	12, // 10: icebath.plugins.bitwarden.v1.BitwardenService.Setup:input_type -> icebath.plugins.bitwarden.v1.SetupRequest
 	15, // 11: icebath.plugins.bitwarden.v1.BitwardenService.Token:input_type -> icebath.plugins.bitwarden.v1.TokenRequest
-	17, // 12: icebath.plugins.bitwarden.v1.BitwardenService.Sync:input_type -> icebath.plugins.bitwarden.v1.SyncRequest
-	18, // 13: icebath.plugins.bitwarden.v1.BitwardenService.Disable:input_type -> icebath.plugins.bitwarden.v1.DisableRequest
-	1,  // 14: icebath.plugins.bitwarden.v1.BitwardenService.State:output_type -> icebath.plugins.bitwarden.v1.StateResponse
-	4,  // 15: icebath.plugins.bitwarden.v1.BitwardenService.Validate:output_type -> icebath.plugins.bitwarden.v1.ValidateResponse
-	6,  // 16: icebath.plugins.bitwarden.v1.BitwardenService.Install:output_type -> icebath.plugins.bitwarden.v1.InstallResponse
-	8,  // 17: icebath.plugins.bitwarden.v1.BitwardenService.SaveToken:output_type -> icebath.plugins.bitwarden.v1.SaveTokenResponse
-	11, // 18: icebath.plugins.bitwarden.v1.BitwardenService.Projects:output_type -> icebath.plugins.bitwarden.v1.ProjectsResponse
-	14, // 19: icebath.plugins.bitwarden.v1.BitwardenService.Setup:output_type -> icebath.plugins.bitwarden.v1.Preview
-	16, // 20: icebath.plugins.bitwarden.v1.BitwardenService.Token:output_type -> icebath.plugins.bitwarden.v1.TokenResponse
-	14, // 21: icebath.plugins.bitwarden.v1.BitwardenService.Sync:output_type -> icebath.plugins.bitwarden.v1.Preview
-	19, // 22: icebath.plugins.bitwarden.v1.BitwardenService.Disable:output_type -> icebath.plugins.bitwarden.v1.DisableResponse
-	14, // [14:23] is the sub-list for method output_type
-	5,  // [5:14] is the sub-list for method input_type
+	1,  // 12: icebath.plugins.bitwarden.v1.BitwardenService.State:output_type -> icebath.plugins.bitwarden.v1.StateResponse
+	4,  // 13: icebath.plugins.bitwarden.v1.BitwardenService.Validate:output_type -> icebath.plugins.bitwarden.v1.ValidateResponse
+	6,  // 14: icebath.plugins.bitwarden.v1.BitwardenService.Install:output_type -> icebath.plugins.bitwarden.v1.InstallResponse
+	8,  // 15: icebath.plugins.bitwarden.v1.BitwardenService.SaveToken:output_type -> icebath.plugins.bitwarden.v1.SaveTokenResponse
+	11, // 16: icebath.plugins.bitwarden.v1.BitwardenService.Projects:output_type -> icebath.plugins.bitwarden.v1.ProjectsResponse
+	14, // 17: icebath.plugins.bitwarden.v1.BitwardenService.Setup:output_type -> icebath.plugins.bitwarden.v1.Preview
+	16, // 18: icebath.plugins.bitwarden.v1.BitwardenService.Token:output_type -> icebath.plugins.bitwarden.v1.TokenResponse
+	12, // [12:19] is the sub-list for method output_type
+	5,  // [5:12] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -1391,7 +1234,7 @@ func file_icebath_plugins_bitwarden_v1_bitwarden_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_plugins_bitwarden_v1_bitwarden_proto_rawDesc), len(file_icebath_plugins_bitwarden_v1_bitwarden_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

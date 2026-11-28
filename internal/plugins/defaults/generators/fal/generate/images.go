@@ -222,7 +222,7 @@ func imageModels(context.Context, *config.Config) []generation.Model {
 
 // What the picture model the settings name takes: edits when it has an edit endpoint, the upscale pass always
 func imageTakes(cfg *config.Config) generation.ImageTakes {
-	p := chosenPicture(generation.Named(cfg, generation.Image), false)
+	p := chosenPicture(strings.TrimSpace(cfg.GetString(falconfig.Model)), false)
 	if p.edit == "" {
 		return generation.ImageTakes{Upscale: true}
 	}
@@ -239,12 +239,12 @@ func missing(cfg *config.Config, kind generation.Kind) string {
 		if kind == generation.Video {
 			section = "video_gen"
 		}
-		return section + " is configured to use " + chosen + ", but FAL_KEY is not set. Set the FAL key with /" + strings.ReplaceAll(section, "_", "") +
-			" or pick another service there."
+		return section + " is configured to use " + chosen + ", but FAL_KEY is not set. The user sets the FAL API key with /" +
+			map[string]string{"image_gen": "images", "video_gen": "videos"}[section] + " or picks another service there."
 	}
 	return strings.Join([]string{"Image generation is unavailable in this environment.", "", "Missing requirements:", "  - FAL_KEY environment variable is not set",
-		"", "To enable image generation, do one of:", "  1. Get a free API key at https://fal.ai and set FAL_KEY=<your-key>, or the FAL key with /imagegen",
-		"  2. Pick another image service with /imagegen"}, "\n")
+		"", "To enable image generation, the user does one of:", "  1. Gets an API key at https://fal.ai and sets FAL_KEY=<your-key>, or the FAL API key with /images",
+		"  2. Picks another image service with /images"}, "\n")
 }
 
 // Draws or edits through FAL's queue, keeping the picture in the cache with its FAL address beside it
@@ -266,8 +266,8 @@ func drawImage(ctx context.Context, job *generation.Job, request generation.Imag
 	}
 	sources := request.Sources(-1)
 	if len(sources) > 0 && p.edit == "" {
-		return call.Fail(fmt.Sprintf("Model '%s' (%s) is not capable of image-to-image / editing. Provide a text-only prompt (omit image_url), or switch to an "+
-			"edit-capable model with /imagegen.", p.title, p.id), "modality_unsupported")
+		return call.Fail(fmt.Sprintf("Model '%s' (%s) is not capable of image-to-image / editing. Provide a text-only prompt (omit image_url), or the user picks an "+
+			"edit-capable model as the model of FAL with /images.", p.title, p.id), "modality_unsupported")
 	}
 	endpoint, modality := p.id, "text"
 	var arguments map[string]any

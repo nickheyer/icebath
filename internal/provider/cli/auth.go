@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,7 +18,10 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/internal/cli"
+	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/credentials"
+	picked "github.com/nickheyer/icebath/internal/profile"
+	"github.com/nickheyer/icebath/internal/provider"
 	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/internal/tools/diff"
 	"github.com/nickheyer/icebath/pkg/browser"
@@ -36,12 +38,6 @@ var aliases = map[string]string{"or": "openrouter", "open-router": "openrouter",
 
 // Kinds that sign in with OAuth through a sibling kind, which stores the account
 var siblings = map[string]string{"xai": "xai-oauth", "minimax": "minimax-oauth", "minimax-cn": "minimax-oauth", "openai-api": "openai-codex"}
-
-// Kinds that sign in rather than take a key when auth add is told neither
-var signsIn = map[string]bool{"anthropic": true, "openai-codex": true, "xai-oauth": true, "qwen-oauth": true, "minimax-oauth": true}
-
-// Kinds whose sign-ins of other programs icebath may adopt
-var adopting = map[string]bool{"anthropic": true, "openai-codex": true, "qwen-oauth": true}
 
 // Strategies of a rotation as the interactive menu offers them: the value, its title and what it does
 var strategies = func() [][3]string {
@@ -62,10 +58,6 @@ func strategyTitle(value string) string {
 	return value
 }
 
-// Programs whose sign-in a kind can use, and the setting of the kind that allows it
-var adoptWords = map[string][2]string{"anthropic": {"Claude Code", "Use Claude Code sign-in"}, "qwen-oauth": {"Qwen CLI", "Use Qwen CLI sign-in"},
-	"openai-codex": {"Codex CLI", "Use Codex CLI sign-in"}}
-
 // One auth command: its terminal and the services it works through
 type auth struct {
 	ctx      context.Context
@@ -77,6 +69,8 @@ type auth struct {
 	signins  []credentials.SignIn
 	// Settings that keep the profile's choice of provider
 	choices []string
+	// Profile -p picked for the command, which every request names; the server's profile in use when it picked none
+	profile string
 }
 
 // Prints the reason on the error stream, marked as a failure, and ends the command with status 1
@@ -87,7 +81,7 @@ func (a *auth) fail(format string, args ...any) error {
 
 // Provider the setting that keeps the profile's choice names, empty for none
 func (a *auth) chosen(key string) (string, error) {
-	selected, err := a.settings.Get(a.ctx, &configv1.GetRequest{Key: key})
+	selected, err := a.settings.Get(a.ctx, &configv1.GetRequest{Profile: a.profile, Key: key})
 	if err != nil {
 		return "", err
 	}
@@ -103,7 +97,7 @@ func authCommands(conn *connect.Client, signins *SignIns) []*cobra.Command {
 	with := func(cmd *cobra.Command) *auth {
 		return &auth{ctx: cmd.Context(), console: cli.NewConsole(cmd), out: cmd.OutOrStdout(), errw: cmd.ErrOrStderr(),
 			service: providerv1connect.NewProviderServiceClient(conn), settings: configv1connect.NewConfigServiceClient(conn), signins: signins.SignIns(),
-			choices: signins.Choices()}
+			choices: signins.Choices(), profile: picked.Picked(cmd.Context())}
 	}
 	run := func(do func(a *auth, args []string) error) func(*cobra.Command, []string) error {
 		return func(cmd *cobra.Command, args []string) error { return do(with(cmd), args) }
@@ -116,8 +110,9 @@ func authCommands(conn *connect.Client, signins *SignIns) []*cobra.Command {
 	var add adding
 	addCmd := &cobra.Command{Use: "add <provider>", Short: "Add an account at a provider",
 		Long: "Adds an account by signing in or with an API key, asking for what the flags do not give. Without --name, the account is " +
-			"named after the account it signs in as or its label. --priority places it in the order accounts are tried with the fill_first " +
-			"rotation order, and without it the account goes last.\n\n" +
+			"named after the account it signs in as, or API key for a first key. --name of an account the provider has signs that account in " +
+			"again. --priority places it in the order accounts are tried with the fill_first rotation order, and without it the account goes " +
+			"last.\n\n" +
 			"For openai-codex, --browser signs in through the browser on http://localhost:1455/auth/callback instead of with a device code. " +
 			"The sign-in falls back to the device code when that port is busy. The setting providers.<name>.login_flow does the same.",
 		Example: "  icebath auth add anthropic\n  icebath auth add openrouter --type api-key --name work",
@@ -125,10 +120,9 @@ func authCommands(conn *connect.Client, signins *SignIns) []*cobra.Command {
 		RunE:    run(func(a *auth, args []string) error { return a.add(args[0], add) })}
 	flags := addCmd.Flags()
 	flags.StringVar(&add.kind, "type", "", "How the account signs in: oauth or api-key")
-	flags.StringVar(&add.name, "name", "", "Name of the account, in lower case and unique at the provider")
-	flags.BoolVar(&add.rotate, "rotate", false, "Add the new account to the provider's rotation")
+	flags.StringVar(&add.name, "name", "", "Name of the account, or of an account the provider has to sign in again")
+	flags.BoolVar(&add.rotate, "rotate", false, "Make the new account take turns with the others")
 	flags.BoolVar(&add.makeDefault, "default", false, "Make the new account the one the provider uses")
-	flags.StringVar(&add.label, "label", "", "Label to show for the account")
 	flags.IntVar(&add.priority, "priority", -1, "Place in the order accounts are tried, 0 for first")
 	flags.StringVar(&add.key, "api-key", "", "API key to keep, instead of typing it")
 	flags.BoolVar(&add.noBrowser, "no-browser", false, "Do not open a browser to sign in")
@@ -136,18 +130,19 @@ func authCommands(conn *connect.Client, signins *SignIns) []*cobra.Command {
 	flags.Float64Var(&add.timeout, "timeout", 0, "Time limit in seconds to sign in")
 
 	var onExhausted string
-	rotation := &cobra.Command{Use: "rotation <provider> [mode] [logins...]", Short: "Show or change which accounts take turns",
-		Long: "Shows which accounts of the provider take turns, or changes it. mode on adds the accounts you name to the rotation and off " +
-			"takes them out. A rotation order as mode sets which account is used next: fill_first, round_robin, least_used or random. " +
-			"--on-exhausted applies outside this app.",
+	rotation := &cobra.Command{Use: "rotation <provider> [mode] [accounts...]", Short: "Show or change which accounts take turns",
+		Long: "Shows which accounts of the provider take turns, or changes it. mode on makes the accounts you name take turns, every account " +
+			"when you name none, and the provider takes turns between them. off stops the ones you name, or with none makes the provider use " +
+			"the account in use alone. A rotation order as mode sets which account is used next: fill_first, round_robin, least_used or " +
+			"random. --on-exhausted sets what happens when the account in use reaches its limit.",
 		Example: "  icebath auth rotation anthropic on work home\n  icebath auth rotation anthropic round_robin",
 		Args:    cobra.MinimumNArgs(1), RunE: run(func(a *auth, args []string) error { return a.rotation(args[0], args[1:], onExhausted) })}
 	rotation.Flags().StringVar(&onExhausted, "on-exhausted", "", "What happens when the account in use reaches its limit: fail or rotate")
 
 	var all bool
 	logout := &cobra.Command{Use: "logout <provider>", Short: "Remove a provider's default account, or all with --all",
-		Long: "Removes the account that the provider uses by default. With --all, logout removes every account and saved API key of the " +
-			"provider.",
+		Long: "Removes the account that the provider uses by default. With --all, logout removes every account of the provider and leaves " +
+			"out every key or sign-in it would find outside them.",
 		Args: cobra.ExactArgs(1),
 		RunE: run(func(a *auth, args []string) error { return a.logout(args[0], all) })}
 	logout.Flags().BoolVar(&all, "all", false, "Remove every account and saved API key of the provider")
@@ -158,7 +153,8 @@ func authCommands(conn *connect.Client, signins *SignIns) []*cobra.Command {
 			Args: cobra.MaximumNArgs(1),
 			RunE: run(func(a *auth, args []string) error { return a.list(strs.First(args)) })},
 		&cobra.Command{Use: "remove <provider> <target>", Short: "Remove one account",
-			Long: "Removes one account of the provider. target is the account's name, its number in auth list, its id or its label.",
+			Long: "Removes one account of the provider, and clears every setting and session that named it. target is the account's name or " +
+				"its number in auth list. For a key or sign-in found outside the accounts, remove leaves it out, as auth outside does.",
 			Args: cobra.ExactArgs(2),
 			RunE: run(func(a *auth, args []string) error { return a.remove(args[0], args[1]) })},
 		&cobra.Command{Use: "use <provider> <target>", Short: "Make an account the one a provider uses",
@@ -168,10 +164,17 @@ func authCommands(conn *connect.Client, signins *SignIns) []*cobra.Command {
 			Args:    cobra.ExactArgs(2),
 			RunE:    run(func(a *auth, args []string) error { return a.use(args[0], args[1]) })},
 		&cobra.Command{Use: "rename <provider> <target> <name>", Short: "Rename an account",
-			Long: "Gives the account a new name. target is the account's name, its number in auth list, its id or its label.",
+			Long: "Gives the account a new name, which every setting and session that named it follows. target is the account's name or its " +
+				"number in auth list.",
 			Args: cobra.ExactArgs(3),
 			RunE: run(func(a *auth, args []string) error { return a.rename(args[0], args[1], args[2]) })},
 		rotation,
+		&cobra.Command{Use: "outside <provider> [source] [on|off]", Short: "Use a key or sign-in found outside icebath, or not",
+			Long: "Lists the keys in variables and the sign-ins of other programs that the provider finds outside its accounts, each on or " +
+				"off. Name one with on or off to turn its use on or off.",
+			Example: "  icebath auth outside anthropic\n  icebath auth outside anthropic claude-code off",
+			Args:    cobra.RangeArgs(1, 3),
+			RunE:    run(func(a *auth, args []string) error { return a.outside(args[0], second(args), third(args)) })},
 		&cobra.Command{Use: "reset <provider> [target]", Short: "Forget the limits that accounts ran into",
 			Long: "Clears the mark that an account reached its limit, so the provider tries it again. With no target, reset clears every " +
 				"account of the provider.",
@@ -195,10 +198,9 @@ func authCommands(conn *connect.Client, signins *SignIns) []*cobra.Command {
 
 	var ignored string
 	login := &cobra.Command{Use: "login", GroupID: cli.GroupModels, Hidden: true, Args: cobra.NoArgs, Short: "Use icebath auth instead",
-		Long: "This command was removed. Use icebath auth to manage your accounts, or start icebath and open /providers.",
+		Long: "This command was removed. Use icebath auth to manage your accounts.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), "icebath login no longer exists. Use `icebath auth` to manage your accounts, or start icebath and open "+
-				"/providers to connect a provider and /model to pick its model.")
+			fmt.Fprintln(cmd.OutOrStdout(), "icebath login no longer exists. Add an account with `icebath auth add <provider>`.")
 			return nil
 		}}
 	login.Flags().StringVar(&ignored, "provider", "", "Ignored, use icebath auth add instead")
@@ -222,23 +224,30 @@ func second(args []string) string {
 	return ""
 }
 
+func third(args []string) string {
+	if len(args) > 2 {
+		return args[2]
+	}
+	return ""
+}
+
 // What auth add was asked for
 type adding struct {
-	kind, name, label, key string
-	rotate, makeDefault    bool
-	priority               int
-	noBrowser, browser     bool
-	timeout                float64
-	region                 string
+	kind, name, key     string
+	rotate, makeDefault bool
+	priority            int
+	noBrowser, browser  bool
+	timeout             float64
+	region              string
 }
 
 // Every provider of the profile and every kind it can add
 func (a *auth) state() ([]*providerv1.Provider, []*providerv1.Spec, error) {
-	listed, err := a.service.List(a.ctx, &providerv1.ListRequest{})
+	listed, err := a.service.List(a.ctx, &providerv1.ListRequest{Profile: a.profile})
 	if err != nil {
 		return nil, nil, err
 	}
-	specs, err := a.service.Specs(a.ctx, &providerv1.SpecsRequest{})
+	specs, err := a.service.Specs(a.ctx, &providerv1.SpecsRequest{Profile: a.profile})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -302,7 +311,7 @@ func (a *auth) unknown(name string, specs []*providerv1.Spec) error {
 	if close := diff.Close(name, known, 3, 0.5); len(close) > 0 {
 		hint = " Did you mean " + strings.Join(close, ", ") + "?"
 	}
-	return a.fail("There is no provider named %s.%s\nRun `icebath auth list` to see yours, or `icebath providers kinds` to see every kind you can add.",
+	return a.fail("There is no provider named %s.%s Run `icebath auth list` to see yours, or `icebath providers kinds` to see every kind you can add.",
 		name, hint)
 }
 
@@ -330,39 +339,35 @@ type login struct {
 	outside string
 }
 
-// Name a login goes by
+// Name a login goes by: an account's key, else a key made from the variable or program
 func (l login) name() string {
 	if l.account != nil {
 		return l.account.GetName()
 	}
-	return slug(l.outside)
+	return providerconfig.KeyOf(credentials.SourceName(l.outside), "outside", func(string) bool { return false })
 }
 
-// Logins of the provider in the order they are tried
+// Name a login is shown by: an account's own, else the variable or program
+func (l login) title() string {
+	if l.account != nil {
+		return l.account.GetTitle()
+	}
+	return l.outside
+}
+
+// Logins of the provider in the order they are tried: its accounts, then the credential found outside them
 func logins(p *providerv1.Provider) []login {
 	var out []login
 	for _, account := range p.GetAccounts() {
 		out = append(out, login{account: account})
 	}
-	origin := p.GetCredentialOrigin()
-	if len(out) == 0 && (origin == providerv1.Origin_ORIGIN_ENVIRONMENT || origin == providerv1.Origin_ORIGIN_EXTERNAL) {
-		out = append(out, login{outside: p.GetCredentialSource()})
+	if p.GetOutsideOrigin() != providerv1.Origin_ORIGIN_UNSPECIFIED {
+		out = append(out, login{outside: p.GetOutsideSource()})
 	}
 	return out
 }
 
-var slugOut = regexp.MustCompile(`[^a-z0-9]+`)
-
-// Lowercase name made of the text, at most 40 characters
-func slug(text string) string {
-	name := strings.Trim(slugOut.ReplaceAllString(strings.ToLower(strings.TrimSpace(text)), "-"), "-")
-	if len(name) > 40 {
-		name = strings.TrimRight(name[:40], "-")
-	}
-	return name
-}
-
-// Login the target names: by its name, its number from 1, or a label no other login shares; the index and the refusal when none
+// Login the target names: by its key, its number from 1, or a name no other login shares; the index and the refusal when none
 func target(p *providerv1.Provider, raw string) (int, login, string) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -374,18 +379,19 @@ func target(p *providerv1.Provider, raw string) (int, login, string) {
 			return i + 1, row, ""
 		}
 	}
-	var labelled []int
+	// A key or sign-in from outside the accounts also answers to its variable or program alone, whichever store supplied the variable
+	var titled []int
 	for i, row := range rows {
-		if row.account != nil && strings.EqualFold(strings.TrimSpace(row.account.GetTitle()), raw) {
-			labelled = append(labelled, i)
+		if strings.EqualFold(strings.TrimSpace(row.title()), raw) || row.account == nil && strings.EqualFold(credentials.SourceName(row.outside), raw) {
+			titled = append(titled, i)
 		}
 	}
-	switch len(labelled) {
+	switch len(titled) {
 	case 1:
-		return labelled[0] + 1, rows[labelled[0]], ""
+		return titled[0] + 1, rows[titled[0]], ""
 	case 0:
 	default:
-		return 0, login{}, fmt.Sprintf("More than one account of %s has the label “%s”. Name it by its number or its name instead.", p.GetName(), raw)
+		return 0, login{}, fmt.Sprintf("More than one account of %s is named “%s”. Name it by its number instead.", p.GetName(), raw)
 	}
 	if n, err := strconv.Atoi(raw); err == nil {
 		if n >= 1 && n <= len(rows) {
@@ -393,7 +399,7 @@ func target(p *providerv1.Provider, raw string) (int, login, string) {
 		}
 		return 0, login{}, fmt.Sprintf("%s has no account number %d. Run `icebath auth list %s` to see them.", p.GetName(), n, p.GetName())
 	}
-	return 0, login{}, fmt.Sprintf("%s has no account named or labeled “%s”. Run `icebath auth list %s` to see them.", p.GetName(), raw, p.GetName())
+	return 0, login{}, fmt.Sprintf("%s has no account named “%s”. Run `icebath auth list %s` to see them.", p.GetName(), raw, p.GetName())
 }
 
 // Sets one setting of the profile to a value, nil putting its default back
@@ -406,14 +412,14 @@ func (a *auth) set(key string, value any) error {
 		}
 		text = strings.TrimSuffix(string(encoded), "\n")
 	}
-	_, err := a.settings.Set(a.ctx, &configv1.SetRequest{Key: key, Value: text})
+	_, err := a.settings.Set(a.ctx, &configv1.SetRequest{Profile: a.profile, Key: key, Value: text})
 	return err
 }
 
 // Values of the provider's own settings by their names below it, as the profile has them
 func (a *auth) values(p *providerv1.Provider) map[string]string {
 	values := map[string]string{}
-	listed, err := a.settings.List(a.ctx, &configv1.ListRequest{})
+	listed, err := a.settings.List(a.ctx, &configv1.ListRequest{Profile: a.profile})
 	if err != nil {
 		return values
 	}
@@ -428,7 +434,8 @@ func (a *auth) values(p *providerv1.Provider) map[string]string {
 
 // ---- add ----
 
-// Signs a new login of the provider in, or an account already there again when --name names one
+// Signs a new account of the provider in, or an account already there again when --name names one; the server names a new one as the app
+// does, after the name given, who signed in, or the way it signs in
 func (a *auth) add(name string, opts adding) error {
 	found, spec, specs, err := a.find(name)
 	if err != nil {
@@ -450,7 +457,7 @@ func (a *auth) add(name string, opts adding) error {
 	way := a.way(spec.GetName(), credentials.OAuth)
 	if asked == "" {
 		asked = credentials.APIKey
-		if strings.TrimSpace(opts.key) == "" && way != nil && (signsIn[spec.GetName()] || spec.GetName() == "copilot" && a.console.Interactive()) {
+		if strings.TrimSpace(opts.key) == "" && way != nil && spec.GetSignsIn() && (spec.GetName() != "copilot" || a.console.Interactive()) {
 			asked = credentials.OAuth
 		}
 		if !spec.GetKeyed() && way != nil {
@@ -469,34 +476,25 @@ func (a *auth) add(name string, opts adding) error {
 		return a.add(sibling, opts)
 	}
 	if found == nil {
-		added, err := a.service.Add(a.ctx, &providerv1.AddRequest{Spec: spec.GetName()})
+		added, err := a.service.Add(a.ctx, &providerv1.AddRequest{Profile: a.profile, Spec: spec.GetName()})
 		if err != nil {
-			return err
+			return a.fail("%s", tui.Reason(err))
 		}
 		found = added.GetProvider()
 	}
-	requested := strings.TrimSpace(opts.name)
+	title := strings.TrimSpace(opts.name)
 	var again *providerv1.Account
-	if requested != "" {
-		for _, account := range found.GetAccounts() {
-			if account.GetName() == requested {
-				again = account
-			}
-		}
-		if again == nil && !validName(requested) {
-			return a.fail("%s", badName(requested))
+	if title != "" {
+		if index, row, _ := target(found, title); index > 0 && row.account != nil {
+			again, title = row.account, ""
 		}
 	}
 	previous := found.GetAccount()
-	if err := a.set(found.GetSection()+"."+providerconfig.Ignored, nil); err != nil {
-		return err
-	}
 	var signed credentials.Signed
-	label := strings.TrimSpace(opts.label)
 	if chosen := a.way(spec.GetName(), asked); chosen != nil {
 		signed, err = a.signIn(found, chosen, opts)
 	} else {
-		signed, label, err = a.key(found, opts, label)
+		signed, title, err = a.key(found, opts, title, again != nil)
 	}
 	if err != nil {
 		if _, printed := errors.AsType[cli.Exit](err); printed {
@@ -512,44 +510,37 @@ func (a *auth) add(name string, opts adding) error {
 		return cli.Exit(1)
 	}
 	if again != nil {
-		if err := a.store(found, again.GetName(), signed); err != nil {
-			return err
+		if _, err := a.store(found, again.GetName(), "", signed); err != nil {
+			return a.fail("%s", tui.Reason(err))
 		}
-		a.say("✓ Signed in again to the %s account %s.", found.GetName(), again.GetName())
+		a.say("✓ Signed in again to the %s account %s.", found.GetDisplayName(), again.GetTitle())
 		return a.place(found, again.GetName(), opts, previous)
 	}
-	accountName := requested
-	if accountName == "" {
-		accountName = free(found, cmp.Or(slug(signed.Identity), slug(label), found.GetName()+map[bool]string{true: "-oauth", false: "-key"}[asked == credentials.OAuth]))
-	}
-	title := cmp.Or(label, signed.Identity, accountName)
-	account, err := a.service.AddAccount(a.ctx, &providerv1.AddAccountRequest{Provider: found.GetName(), Name: accountName, Title: title})
+	account, err := a.store(found, "", title, signed)
 	if err != nil {
-		return err
+		return a.fail("%s", tui.Reason(err))
 	}
-	if err := a.store(found, account.GetAccount().GetName(), signed); err != nil {
-		return err
-	}
-	a.warnSame(found, account.GetAccount().GetName(), signed)
-	a.say("✓ Added the %s account %s.", found.GetName(), account.GetAccount().GetName())
-	return a.place(found, account.GetAccount().GetName(), opts, previous)
+	a.warnSame(found, account.GetName(), signed)
+	a.say("✓ Added the %s account %s.", found.GetDisplayName(), account.GetTitle())
+	return a.place(found, account.GetName(), opts, previous)
 }
 
-// Applies --rotate, --default and --priority to a login just signed in, and says how to use it
+// Applies --rotate, --default and --priority to an account just signed in, and says how to use it
 func (a *auth) place(p *providerv1.Provider, name string, opts adding, previous string) error {
-	section := p.GetSection() + "." + providerconfig.Accounts + "." + name
 	if opts.rotate {
-		if err := a.set(section+"."+providerconfig.InRotation, true); err != nil {
-			return err
+		turned, err := a.service.SetTurns(a.ctx, &providerv1.SetTurnsRequest{Profile: a.profile, Provider: p.GetName(), Account: name, On: true})
+		if err != nil {
+			return a.fail("%s", tui.Reason(err))
 		}
+		a.say("%s", turned.GetSaid())
 	}
 	switch {
 	case opts.makeDefault:
-		if _, err := a.service.UseAccount(a.ctx, &providerv1.UseAccountRequest{Provider: p.GetName(), Account: name}); err != nil {
-			return err
+		if _, err := a.service.UseAccount(a.ctx, &providerv1.UseAccountRequest{Profile: a.profile, Provider: p.GetName(), Account: name}); err != nil {
+			return a.fail("%s", tui.Reason(err))
 		}
-		a.say("%s now uses the account %s.", p.GetName(), name)
-	case previous != "" && previous != name:
+		a.say("%s now uses the account %s.", p.GetDisplayName(), a.title(p.GetName(), name))
+	case previous != "" && previous != name && !opts.rotate:
 		a.say("The account in use is unchanged. Use this one with `icebath auth use %s %s`.", p.GetName(), name)
 	}
 	if opts.priority < 0 {
@@ -558,14 +549,26 @@ func (a *auth) place(p *providerv1.Provider, name string, opts adding, previous 
 	return a.move(p.GetName(), name, opts.priority)
 }
 
-// Moves a login to the priority and says where it landed, and why when not where asked
+// Name an account of the provider is shown by, read now; its key when it can't be read
+func (a *auth) title(provider, name string) string {
+	if p, err := a.provider(provider); err == nil {
+		for _, account := range p.GetAccounts() {
+			if account.GetName() == name {
+				return account.GetTitle()
+			}
+		}
+	}
+	return name
+}
+
+// Moves an account to the priority and says where it landed, and why when not where asked
 func (a *auth) move(provider, name string, priority int) error {
-	moved, err := a.service.MoveAccount(a.ctx, &providerv1.MoveAccountRequest{Provider: provider, Account: name, Priority: int32(priority)})
+	moved, err := a.service.MoveAccount(a.ctx, &providerv1.MoveAccountRequest{Profile: a.profile, Provider: provider, Account: name, Priority: int32(priority)})
 	if err != nil {
 		return a.fail("%s", tui.Reason(err))
 	}
 	at := int(moved.GetPriority())
-	a.say("✓ The %s account %s now has priority %d, number %d in `icebath auth list %s`.", provider, name, at, at+1, provider)
+	a.say("✓ The %s account %s now has priority %d, number %d in `icebath auth list %s`.", provider, a.title(provider, name), at, at+1, provider)
 	refreshed, _ := a.provider(provider)
 	if at != priority {
 		fmt.Fprintf(a.errw, "⚠ You asked for priority %d, but it is %d, because %s has only %s.\n", priority, at, provider,
@@ -575,28 +578,6 @@ func (a *auth) move(provider, name string, priority int) error {
 		fmt.Fprintf(a.errw, "⚠ %s takes turns in the order %s, so priority matters only with Fill first.\n", provider, strategyTitle(strategy))
 	}
 	return nil
-}
-
-// Free name for a new login of the provider from the base, numbered from 2 when taken
-func free(p *providerv1.Provider, base string) string {
-	base = cmp.Or(slug(base), "account")
-	taken := func(name string) bool {
-		return slices.ContainsFunc(p.GetAccounts(), func(account *providerv1.Account) bool { return account.GetName() == name })
-	}
-	for n, name := 2, base; ; n, name = n+1, base+"-"+strconv.Itoa(n) {
-		if !taken(name) {
-			return name
-		}
-	}
-}
-
-var loginName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
-
-func validName(name string) bool { return loginName.MatchString(name) }
-
-// Refusal of a name an account can't take
-func badName(name string) string {
-	return fmt.Sprintf("The account name %q can't be used. Use up to 40 lower case letters, digits and dashes, starting with a letter or digit.", name)
 }
 
 // Sign-in of the kind with the --type, nil when its plugin adds none
@@ -635,28 +616,29 @@ func noSignIn(kind string, oauth []string) string {
 		"have a sign-in: %s.", kind, kind, strings.Join(oauth, ", "))
 }
 
-// Asks for an API key and a label the way auth add does when no plugin adds its own key prompt
-func (a *auth) key(p *providerv1.Provider, opts adding, label string) (credentials.Signed, string, error) {
+// Asks for an API key the way auth add does when no plugin adds its own key prompt; a second key of the provider asks its name too, as
+// the app does, unless the name was given or the key signs an account in again. The fields and the name
+func (a *auth) key(p *providerv1.Provider, opts adding, title string, again bool) (credentials.Signed, string, error) {
 	key := strings.TrimSpace(opts.key)
 	if key == "" {
 		typed, ok := a.console.Secret("Paste your API key: ")
 		if !ok {
-			return credentials.Signed{}, label, credentials.ErrCancelled
+			return credentials.Signed{}, title, credentials.ErrCancelled
 		}
 		key = strings.TrimSpace(typed)
 	}
 	if key == "" {
-		return credentials.Signed{}, label, a.fail("No API key was given, so nothing was added.")
+		return credentials.Signed{}, title, a.fail("No API key was given, so nothing was added.")
 	}
-	if label == "" && a.console.Interactive() {
-		fallback := fmt.Sprintf("api-key-%d", len(p.GetAccounts())+1)
-		typed, ok := a.console.Input(fmt.Sprintf("Label, or empty for %s: ", fallback))
+	second := slices.ContainsFunc(p.GetAccounts(), func(account *providerv1.Account) bool { return strings.EqualFold(account.GetTitle(), "API key") })
+	if title == "" && !again && second && a.console.Interactive() {
+		typed, ok := a.console.Input("Name of this account, such as Work: ")
 		if !ok {
-			return credentials.Signed{}, label, credentials.ErrCancelled
+			return credentials.Signed{}, title, credentials.ErrCancelled
 		}
-		label = cmp.Or(strings.TrimSpace(typed), fallback)
+		title = strings.TrimSpace(typed)
 	}
-	return credentials.Signed{Fields: map[string]any{providerconfig.APIKeyField: key}}, label, nil
+	return credentials.Signed{Fields: map[string]any{providerconfig.APIKeyField: key}}, title, nil
 }
 
 // Runs a plugin's sign-in in this terminal
@@ -687,18 +669,26 @@ func (a *auth) signIn(p *providerv1.Provider, way *credentials.SignIn, opts addi
 	return way.Run(prompter)
 }
 
-// Keeps the fields a sign-in gave in the account
-func (a *auth) store(p *providerv1.Provider, name string, signed credentials.Signed) error {
-	section := p.GetSection() + "." + providerconfig.Accounts + "." + name
-	if err := a.set(section+"."+providerconfig.Status, nil); err != nil {
-		return err
-	}
+// Keeps what a sign-in gave in the account of the name, or in a new account named by the server when none is named, in one write that
+// replaces what the account kept to sign in and the limits it ran into; the account as kept
+func (a *auth) store(p *providerv1.Provider, name, title string, signed credentials.Signed) (*providerv1.Account, error) {
+	fields := map[string]string{}
 	for field, value := range signed.Fields {
-		if err := a.set(section+"."+field, value); err != nil {
-			return err
+		if value == nil {
+			continue
 		}
+		encoded, err := yaml.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		fields[field] = strings.TrimSuffix(string(encoded), "\n")
 	}
-	return nil
+	kept, err := a.service.Connect(a.ctx, &providerv1.ConnectRequest{Profile: a.profile, Provider: p.GetName(), Account: name, Title: title, Identity: signed.Identity,
+		Fields: fields})
+	if err != nil {
+		return nil, err
+	}
+	return kept.GetAccount(), nil
 }
 
 // Warns when a new login signs in as an account another login of the provider already is
@@ -727,7 +717,7 @@ func (a *auth) list(name string) error {
 		}
 		providers = append(providers, p)
 	} else {
-		listed, err := a.service.List(a.ctx, &providerv1.ListRequest{})
+		listed, err := a.service.List(a.ctx, &providerv1.ListRequest{Profile: a.profile})
 		if err != nil {
 			return err
 		}
@@ -741,22 +731,28 @@ func (a *auth) list(name string) error {
 		if len(logins(p)) > 0 {
 			shown++
 		}
-		a.adoption(p)
+		a.leftOut(p)
 	}
 	if shown == 0 {
-		a.say("No accounts yet. Add one with `icebath auth add <provider>`, or open /providers in icebath.")
+		a.say("No accounts yet. Add one with `icebath auth add <provider>`.")
 	}
 	return nil
 }
 
-// Says that the provider leaves the sign-in of another program on this computer unused, and which setting changes that
-func (a *auth) adoption(p *providerv1.Provider) {
-	words, ok := adoptWords[p.GetSpec()]
-	if !ok || !adopting[p.GetSpec()] || a.values(p)["adopt_external_logins"] != "false" {
-		return
+// Says which keys and sign-ins found outside its accounts the provider leaves out, and how to use one again
+func (a *auth) leftOut(p *providerv1.Provider) {
+	for _, source := range p.GetIgnored() {
+		a.say("%s leaves out %s. Use it again with `icebath auth outside %s %s on`.", p.GetDisplayName(), outsideWords(source), p.GetName(),
+			login{outside: source}.name())
 	}
-	a.say("%s does not use your %s sign-in, because %s is off. Turn it on for %s in /providers to use it.", p.GetName(), words[0], words[1],
-		p.GetName())
+}
+
+// A key or sign-in found outside the accounts as a sentence names it
+func outsideWords(source string) string {
+	if config.EnvName(source) {
+		return "the API key in " + source
+	}
+	return "the sign-in of " + source
 }
 
 // Header of a provider's logins: how many, the one it uses or how it takes turns, and what it does when one runs out
@@ -766,7 +762,7 @@ func header(p *providerv1.Provider, n int) string {
 	case p.GetRotate():
 		uses = "takes turns in the order " + strategyTitle(p.GetStrategy())
 	case p.GetPinned():
-		uses = "uses " + p.GetAccount()
+		uses = "uses " + provider.AccountTitle(p, p.GetAccount())
 	}
 	head := fmt.Sprintf("%s · %s · %s", p.GetName(), strs.Count(n, "account"), uses)
 	if p.GetOnExhausted() == providerconfig.Rotate {
@@ -786,7 +782,7 @@ func (a *auth) group(p *providerv1.Provider) {
 	for i, row := range rows {
 		cells[i] = line(p, i+1, row)
 	}
-	a.console.Table([]string{"#", "Account", "Sign-in", "Key from", "Signed in as", "Priority", "State"}, cells)
+	a.console.Table([]string{"#", "Account", "Key", "Sign-in", "Key from", "Signed in as", "Priority", "State"}, cells)
 	a.say("")
 }
 
@@ -805,10 +801,12 @@ func origin(row login) string {
 	return "icebath"
 }
 
-// How a login signs in, in words
+// How a login signs in, in words; nothing yet for no credential
 func signInWords(auth string) string {
 	switch auth {
-	case "", "api_key":
+	case "":
+		return "Nothing yet"
+	case "api_key":
 		return "API key"
 	case "oauth":
 		return "Signed in"
@@ -822,42 +820,27 @@ func signInWords(auth string) string {
 	return strings.ReplaceAll(auth, "_", " ")
 }
 
-// One row of auth list: its number, name, how it signs in, where its key comes from, who it is, its priority and its state
+// One row of auth list: its number, name, key, how it signs in, where its key comes from, who it is, its priority and its state, by the one
+// function the app's pages use
 func line(p *providerv1.Provider, index int, row login) []string {
-	signedAs, priority, auth := "", "", ""
-	status, until := "ready", ""
-	var state []string
-	active := row.account == nil
-	if row.account != nil {
-		a := row.account
-		auth = a.GetAuth()
-		signedAs = a.GetIdentity()
-		priority = strconv.Itoa(int(a.GetPriority()))
-		status = a.GetStatus()
-		if resets := a.GetResets(); resets != nil {
-			until = " until " + resets.AsTime().Local().Format("15:04") + ", " + left(resets.AsTime())
-		}
-		active = a.GetActive()
-		if a.GetRotate() {
-			state = append(state, "In rotation")
-		}
-		if title := a.GetTitle(); title != a.GetName() {
-			state = append(state, "Label “"+title+"”")
-		}
+	signedAs, priority, auth, state := "", "", "api_key", ""
+	switch {
+	case row.account != nil:
+		account := row.account
+		auth, signedAs, priority, state = account.GetAuth(), account.GetIdentity(), strconv.Itoa(int(account.GetPriority())), account.GetState()
+	case p.GetOutsideUsed():
+		state = "In use"
+	default:
+		state = "On"
+	}
+	if row.account == nil && p.GetOutsideOrigin() == providerv1.Origin_ORIGIN_EXTERNAL {
+		auth = "oauth"
 	}
 	source := origin(row)
-	if active {
-		state = append([]string{"In use"}, state...)
-	}
-	if status != "" && status != "ready" {
-		words := strings.ReplaceAll(status, "_", " ")
-		state = append(state, strings.ToUpper(words[:1])+words[1:]+until)
-	}
 	if source == "GITHUB_TOKEN" || source == "GH_TOKEN" {
-		state = append(state, "Also used by git")
+		state += ", also used by git"
 	}
-	return []string{strconv.Itoa(index), row.name(), signInWords(auth), source, cmp.Or(signedAs, "Not known"), cmp.Or(priority, "None"),
-		strings.Join(state, ", ")}
+	return []string{strconv.Itoa(index), row.title(), row.name(), signInWords(auth), source, cmp.Or(signedAs, "Not known"), cmp.Or(priority, "None"), state}
 }
 
 // ---- remove, use, rename, rotation, reset, priority, refresh ----
@@ -872,55 +855,85 @@ func (a *auth) remove(name, raw string) error {
 		return a.fail("%s", refused)
 	}
 	if row.account == nil {
-		return a.ignore(p, row.outside)
+		return a.turnOutside(p, row.outside, false)
 	}
-	removed, err := a.service.RemoveAccount(a.ctx, &providerv1.RemoveAccountRequest{Provider: p.GetName(), Account: row.account.GetName()})
+	removed, err := a.service.RemoveAccount(a.ctx, &providerv1.RemoveAccountRequest{Profile: a.profile, Provider: p.GetName(), Account: row.account.GetName()})
 	if err != nil {
 		return a.fail("%s", tui.Reason(err))
 	}
-	a.say("✓ Removed the %s account %s, number %d.", p.GetName(), row.account.GetTitle(), index)
-	for _, variable := range removed.GetCleared() {
-		a.say("Cleared %s from your keys file.", variable)
-	}
+	a.say("✓ %s", removed.GetSaid())
 	if p.GetPinned() && p.GetAccount() == row.account.GetName() {
 		after, err := a.provider(p.GetName())
 		if err != nil {
 			return err
 		}
 		if after.GetPinned() {
-			a.say("%s now uses the account %s.", p.GetName(), after.GetAccount())
+			a.say("%s now uses the account %s.", p.GetDisplayName(), provider.AccountTitle(after, after.GetAccount()))
 		} else {
-			a.say("%s now tries each of its accounts in order.", p.GetName())
+			a.say("%s now tries each of its accounts in order.", p.GetDisplayName())
 		}
 	}
 	return nil
 }
 
-// Leaves a variable or program out of the places the provider takes its credential from, saying what that means
-func (a *auth) ignore(p *providerv1.Provider, source string) error {
-	left, err := a.service.RemoveAccount(a.ctx, &providerv1.RemoveAccountRequest{Provider: p.GetName(), Source: source})
+// Lists the keys and sign-ins the provider finds outside its accounts, each on or off, or turns the use of one on or off
+func (a *auth) outside(name, raw, mode string) error {
+	p, err := a.provider(name)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(raw) == "" {
+		var rows [][]string
+		if source := p.GetOutsideSource(); source != "" {
+			state := "On"
+			if p.GetOutsideUsed() {
+				state = "In use"
+			}
+			rows = append(rows, []string{login{outside: source}.name(), source, state})
+		}
+		for _, source := range p.GetIgnored() {
+			rows = append(rows, []string{login{outside: source}.name(), source, "Off"})
+		}
+		if len(rows) == 0 {
+			a.say("%s finds no key or sign-in outside its accounts.", p.GetDisplayName())
+			return nil
+		}
+		a.console.Table([]string{"Name", "From", "State"}, rows)
+		return nil
+	}
+	// One is named by its variable or program, whichever store supplied the variable, or by the name the list gives it
+	source := ""
+	for _, have := range append([]string{p.GetOutsideSource()}, p.GetIgnored()...) {
+		named := credentials.SourceName(have)
+		if named != "" && (strings.EqualFold(named, strings.TrimSpace(raw)) || login{outside: have}.name() == strings.ToLower(strings.TrimSpace(raw))) {
+			source = named
+		}
+	}
+	if source == "" {
+		return a.fail("%s finds no key or sign-in named “%s” outside its accounts. Run `icebath auth outside %s` to see them.", p.GetName(), raw,
+			p.GetName())
+	}
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "on":
+		return a.turnOutside(p, source, true)
+	case "off":
+		return a.turnOutside(p, source, false)
+	case "":
+		return a.fail("Say on or off after %s.", raw)
+	}
+	return a.fail("%q is neither on nor off.", mode)
+}
+
+// Turns the use of a key or sign-in found outside the accounts on or off, by the one control of that choice
+func (a *auth) turnOutside(p *providerv1.Provider, source string, on bool) error {
+	source = credentials.SourceName(source)
+	turned, err := a.service.SetOutside(a.ctx, &providerv1.SetOutsideRequest{Profile: a.profile, Provider: p.GetName(), Source: source, On: on})
 	if err != nil {
 		return a.fail("%s", tui.Reason(err))
 	}
-	cleared := slices.Contains(left.GetCleared(), source)
-	if cleared {
-		a.say("Cleared %s from your keys file.", source)
-	}
-	switch source {
-	case "Claude Code":
-		a.say("✓ icebath no longer uses your Claude Code sign-in. Claude Code keeps it in ~/.claude/.credentials.json.\n" +
-			"Run `icebath auth add anthropic` to use it again.")
-	case "Qwen CLI":
-		a.say("✓ icebath no longer uses your Qwen CLI sign-in. Qwen CLI keeps it in ~/.qwen/oauth_creds.json.\n" +
-			"Run `icebath auth add qwen-oauth` to use it again.")
-	default:
-		a.say("✓ icebath now ignores %s, even if it is set again later, until you run `icebath auth add %s`.", source, p.GetName())
-		if os.Getenv(source) != "" && !cleared {
-			a.say("⚠ %s is still set in your shell. Unset it in your shell profile or service settings if you no longer need it.", source)
-		}
-	}
-	if after, err := a.provider(p.GetName()); err == nil && after.GetCredentialSource() != "" && after.GetCredentialSource() != source && len(after.GetAccounts()) == 0 {
-		a.say("%s now takes its API key from %s.", p.GetName(), after.GetCredentialSource())
+	a.say("✓ %s", turned.GetSaid())
+	if !on && config.EnvName(source) && os.Getenv(source) != "" {
+		a.say("%s is still set in your shell, but %s leaves it out.", source, p.GetDisplayName())
 	}
 	return nil
 }
@@ -940,18 +953,19 @@ func (a *auth) use(name, raw string) error {
 		case index == 0:
 			return a.fail("%s", refused)
 		case row.account == nil:
-			return a.fail("%s comes from %s and is the provider's only account, so it is already in use.", row.name(), row.outside)
+			return a.fail("%s comes from %s outside the accounts, so it can't be the one always used. %s takes it after its accounts while it "+
+				"tries every account in order.", row.name(), row.outside, p.GetDisplayName())
 		}
 		account = row.account.GetName()
 	}
-	if _, err := a.service.UseAccount(a.ctx, &providerv1.UseAccountRequest{Provider: p.GetName(), Account: account}); err != nil {
+	if _, err := a.service.UseAccount(a.ctx, &providerv1.UseAccountRequest{Profile: a.profile, Provider: p.GetName(), Account: account}); err != nil {
 		return a.fail("%s", tui.Reason(err))
 	}
 	if account == providerconfig.Rotation {
-		a.say("✓ %s now takes turns between the accounts in its rotation, in the order %s.", p.GetName(), strategyTitle(p.GetStrategy()))
+		a.say("✓ %s now takes turns between the accounts that take turns, in the order %s.", p.GetDisplayName(), strategyTitle(p.GetStrategy()))
 		return nil
 	}
-	a.say("✓ %s now uses the account %s. Sessions held to another account keep theirs.", p.GetName(), account)
+	a.say("✓ %s now uses the account %s. Sessions held to another account keep theirs.", p.GetDisplayName(), provider.AccountTitle(p, account))
 	return nil
 }
 
@@ -966,14 +980,12 @@ func (a *auth) rename(name, raw, to string) error {
 		return a.fail("%s", refused)
 	case row.account == nil:
 		return a.fail("%s comes from %s, not from icebath, so it has no name to change.", row.name(), row.outside)
-	case !validName(strings.TrimSpace(to)):
-		return a.fail("%s", badName(to))
 	}
-	renamed, err := a.service.RenameAccount(a.ctx, &providerv1.RenameAccountRequest{Provider: p.GetName(), Account: row.account.GetName(), Name: to})
+	renamed, err := a.service.RenameAccount(a.ctx, &providerv1.RenameAccountRequest{Profile: a.profile, Provider: p.GetName(), Account: row.account.GetName(), Name: to})
 	if err != nil {
 		return a.fail("%s", tui.Reason(err))
 	}
-	a.say("✓ Renamed the %s account %s to %s.", p.GetName(), row.account.GetName(), renamed.GetAccount().GetName())
+	a.say("✓ Renamed the %s account %s to %s.", p.GetDisplayName(), row.account.GetTitle(), renamed.GetAccount().GetTitle())
 	return nil
 }
 
@@ -987,19 +999,18 @@ func (a *auth) rotation(name string, args []string, onExhausted string) error {
 			return a.fail("--on-exhausted takes fail or rotate, not %q.", onExhausted)
 		}
 		if err := a.set(p.GetSection()+"."+providerconfig.OnExhausted, onExhausted); err != nil {
-			return err
+			return a.fail("%s", tui.Reason(err))
 		}
-		a.say("✓ When accounts run out is now %s for %s.", map[string]string{providerconfig.Fail: "Stop", providerconfig.Rotate: "Move on"}[onExhausted],
-			p.GetName())
+		a.say("✓ When an account runs out is now %s for %s.", map[string]string{providerconfig.Fail: "Stop", providerconfig.Rotate: "Move on"}[onExhausted],
+			p.GetDisplayName())
 	}
 	mode := strings.ToLower(strings.TrimSpace(strs.First(args)))
 	targets := args[min(len(args), 1):]
 	isStrategy := slices.ContainsFunc(strategies, func(s [3]string) bool { return s[0] == mode })
 	switch {
+	case mode == "" && onExhausted != "":
+		return nil
 	case mode == "":
-		if p, err = a.provider(name); err != nil {
-			return err
-		}
 		a.say("%s", a.console.Paint(header(p, len(p.GetAccounts())), cli.Bold))
 		var rows [][]string
 		for _, account := range p.GetAccounts() {
@@ -1007,19 +1018,19 @@ func (a *auth) rotation(name string, args []string, onExhausted string) error {
 			if account.GetRotate() {
 				state = "On"
 			}
-			rows = append(rows, []string{account.GetName(), state})
+			rows = append(rows, []string{account.GetTitle(), account.GetName(), state})
 		}
 		if len(rows) == 0 {
-			a.say("%s has no accounts yet. Add one with `icebath auth add %s`.", p.GetName(), p.GetName())
+			a.say("%s has no accounts yet. Add one with `icebath auth add %s`.", p.GetDisplayName(), p.GetName())
 			return nil
 		}
-		a.console.Table([]string{"Account", "In rotation"}, rows)
+		a.console.Table([]string{"Account", "Key", "Takes turns"}, rows)
 		return nil
 	case isStrategy:
 		if err := a.set(p.GetSection()+"."+providerconfig.Strategy, mode); err != nil {
-			return err
+			return a.fail("%s", tui.Reason(err))
 		}
-		a.say("✓ %s now takes turns in the order %s.", p.GetName(), strategyTitle(mode))
+		a.say("✓ %s now takes turns in the order %s.", p.GetDisplayName(), strategyTitle(mode))
 		return nil
 	case mode != "on" && mode != "off":
 		return a.fail("%q is not a rotation mode. Use on, off, fill_first, round_robin, least_used or random.", mode)
@@ -1027,17 +1038,18 @@ func (a *auth) rotation(name string, args []string, onExhausted string) error {
 	on := mode == "on"
 	if len(targets) == 0 && !on {
 		if !p.GetRotate() {
-			a.say("%s does not take turns between accounts.", p.GetName())
+			a.say("%s does not take turns between accounts.", p.GetDisplayName())
 			return nil
 		}
-		keep := p.GetAccount()
+		keep := p.GetUsing()
 		if keep == "" {
-			return a.fail("No %s account is ready to keep. Pick one with `icebath auth use %s <target>`.", p.GetName(), p.GetName())
+			return a.fail("No %s account is ready to keep. Pick one with `icebath auth use %s <account>`.", p.GetName(), p.GetName())
 		}
-		if _, err := a.service.UseAccount(a.ctx, &providerv1.UseAccountRequest{Provider: p.GetName(), Account: keep}); err != nil {
+		if _, err := a.service.UseAccount(a.ctx, &providerv1.UseAccountRequest{Profile: a.profile, Provider: p.GetName(), Account: keep}); err != nil {
 			return a.fail("%s", tui.Reason(err))
 		}
-		a.say("✓ %s no longer takes turns and uses %s. The accounts stay marked for the rotation for next time.", p.GetName(), keep)
+		a.say("✓ %s no longer takes turns and uses %s. The accounts still take turns once it takes turns again.", p.GetDisplayName(),
+			provider.AccountTitle(p, keep))
 		return nil
 	}
 	if len(targets) == 0 {
@@ -1048,18 +1060,13 @@ func (a *auth) rotation(name string, args []string, onExhausted string) error {
 	for _, raw := range targets {
 		index, row, refused := target(p, raw)
 		if index == 0 || row.account == nil {
-			return a.fail("%s", cmp.Or(refused, "Only accounts kept by icebath can take part in a rotation."))
+			return a.fail("%s", cmp.Or(refused, "Only accounts kept by icebath can take turns."))
 		}
-		if err := a.set(p.GetSection()+"."+providerconfig.Accounts+"."+row.account.GetName()+"."+providerconfig.InRotation, on); err != nil {
-			return err
-		}
-		a.say("The %s account %s is now %s the rotation.", p.GetName(), row.account.GetName(), map[bool]string{true: "in", false: "out of"}[on])
-	}
-	if on {
-		if _, err := a.service.UseAccount(a.ctx, &providerv1.UseAccountRequest{Provider: p.GetName(), Account: providerconfig.Rotation}); err != nil {
+		turned, err := a.service.SetTurns(a.ctx, &providerv1.SetTurnsRequest{Profile: a.profile, Provider: p.GetName(), Account: row.account.GetName(), On: on})
+		if err != nil {
 			return a.fail("%s", tui.Reason(err))
 		}
-		a.say("✓ %s now takes turns between the accounts in its rotation, in the order %s.", p.GetName(), strategyTitle(p.GetStrategy()))
+		a.say("✓ %s", turned.GetSaid())
 	}
 	return nil
 }
@@ -1070,7 +1077,7 @@ func (a *auth) reset(name, raw string) error {
 		return err
 	}
 	if strings.TrimSpace(raw) == "" {
-		cleared, err := a.service.Reset(a.ctx, &providerv1.ResetRequest{Provider: p.GetName()})
+		cleared, err := a.service.Reset(a.ctx, &providerv1.ResetRequest{Profile: a.profile, Provider: p.GetName()})
 		if err != nil {
 			return a.fail("%s", tui.Reason(err))
 		}
@@ -1081,7 +1088,7 @@ func (a *auth) reset(name, raw string) error {
 	if index == 0 || row.account == nil {
 		return a.fail("%s", cmp.Or(refused, "Only accounts kept by icebath have limits to clear."))
 	}
-	if _, err := a.service.Reset(a.ctx, &providerv1.ResetRequest{Provider: p.GetName(), Account: row.account.GetName()}); err != nil {
+	if _, err := a.service.Reset(a.ctx, &providerv1.ResetRequest{Profile: a.profile, Provider: p.GetName(), Account: row.account.GetName()}); err != nil {
 		return a.fail("%s", tui.Reason(err))
 	}
 	a.say("✓ Cleared the limits of the %s account %s.", p.GetName(), row.account.GetTitle())
@@ -1116,7 +1123,7 @@ func (a *auth) refresh(name, raw string) error {
 	case len(rows) == 0:
 		return a.fail("%s has no accounts. Add one with `icebath auth add %s`.", p.GetName(), p.GetName())
 	case strings.TrimSpace(raw) == "" && len(rows) != 1:
-		return a.fail("%s has %s, so name the one to renew by its number, name or label. Run `icebath auth list %s` to see them.", p.GetName(),
+		return a.fail("%s has %s, so name the one to renew by its number or name. Run `icebath auth list %s` to see them.", p.GetName(),
 			strs.Count(len(rows), "account"), p.GetName())
 	case strings.TrimSpace(raw) == "":
 		index, row = 1, rows[0]
@@ -1127,10 +1134,13 @@ func (a *auth) refresh(name, raw string) error {
 		}
 	}
 	account, label := "", row.name()
-	if row.account != nil {
+	switch {
+	case row.account != nil:
 		account, label = row.account.GetName(), row.account.GetTitle()
+	case !p.GetOutsideUsed():
+		return a.fail("%s is not what %s uses now, so there is nothing of it to renew.", row.outside, p.GetName())
 	}
-	renewed, err := a.service.Renew(a.ctx, &providerv1.RenewRequest{Provider: p.GetName(), Account: account})
+	renewed, err := a.service.Renew(a.ctx, &providerv1.RenewRequest{Profile: a.profile, Provider: p.GetName(), Account: account})
 	if err != nil {
 		if failure, ok := errors.AsType[*connect.Error](err); ok && failure.Code() == connect.CodeUnimplemented {
 			return a.fail("The %s account %s can't be renewed, because it is not a sign-in that renews.", p.GetName(), label)
@@ -1157,7 +1167,7 @@ func (a *auth) status(name string) error {
 	if err != nil {
 		return err
 	}
-	status, err := a.service.Status(a.ctx, &providerv1.StatusRequest{Provider: p.GetName()})
+	status, err := a.service.Status(a.ctx, &providerv1.StatusRequest{Profile: a.profile, Provider: p.GetName()})
 	if err != nil {
 		return a.fail("%s", tui.Reason(err))
 	}
@@ -1170,10 +1180,13 @@ func (a *auth) status(name string) error {
 		a.say("  %s: %s", detail.GetName(), detail.GetValue())
 	}
 	if !status.GetLoggedIn() {
-		a.adoption(p)
+		a.leftOut(p)
 	}
 	return nil
 }
+
+// Most sign-ins of other programs a provider is asked to leave out one after another, beside its variables
+const outsidePrograms = 8
 
 // Removes the provider's default login, or every login with all, and its saved keys; the profile's provider of sessions goes back to
 // none when it named this one and nothing of it is left
@@ -1213,17 +1226,18 @@ func (a *auth) logout(name string, all bool) error {
 				label, p.GetName(), p.GetName())
 			return nil
 		case p.GetAccount() != "":
-			if _, err := a.service.RemoveAccount(a.ctx, &providerv1.RemoveAccountRequest{Provider: p.GetName(), Account: p.GetAccount()}); err != nil {
+			gone, err := a.service.RemoveAccount(a.ctx, &providerv1.RemoveAccountRequest{Profile: a.profile, Provider: p.GetName(), Account: p.GetAccount()})
+			if err != nil {
 				return a.fail("%s", tui.Reason(err))
 			}
-			a.say("✓ Removed the %s account %s.", p.GetName(), p.GetAccount())
+			a.say("✓ %s", gone.GetSaid())
 			after, err := a.provider(p.GetName())
 			if err != nil {
 				return err
 			}
 			if left := len(after.GetAccounts()); left > 0 {
 				if after.GetPinned() {
-					a.say("%s now uses the account %s.", p.GetName(), after.GetAccount())
+					a.say("%s now uses the account %s.", label, provider.AccountTitle(after, after.GetAccount()))
 				}
 				a.say("%s still has %s. The provider that new sessions use is unchanged.", label, strs.Count(left, "account"))
 				return nil
@@ -1232,7 +1246,7 @@ func (a *auth) logout(name string, all bool) error {
 		}
 	} else {
 		for _, account := range p.GetAccounts() {
-			if _, err := a.service.RemoveAccount(a.ctx, &providerv1.RemoveAccountRequest{Provider: p.GetName(), Account: account.GetName()}); err != nil {
+			if _, err := a.service.RemoveAccount(a.ctx, &providerv1.RemoveAccountRequest{Profile: a.profile, Provider: p.GetName(), Account: account.GetName()}); err != nil {
 				return a.fail("%s", tui.Reason(err))
 			}
 			removed = true
@@ -1241,38 +1255,40 @@ func (a *auth) logout(name string, all bool) error {
 		if err != nil {
 			return err
 		}
-		ignored := slices.Clone(after.GetIgnored())
+		var leave []string
 		for _, variable := range after.GetKeyEnv() {
-			if os.Getenv(variable) != "" && !slices.Contains(ignored, variable) {
-				ignored = append(ignored, variable)
+			if os.Getenv(variable) != "" {
+				leave = append(leave, variable)
 			}
 		}
-		if source := after.GetCredentialSource(); after.GetCredentialOrigin() == providerv1.Origin_ORIGIN_EXTERNAL && !slices.Contains(ignored, source) {
-			ignored = append(ignored, source)
-		}
-		if len(ignored) > len(after.GetIgnored()) {
-			if err := a.set(p.GetSection()+"."+providerconfig.Ignored, ignored); err != nil {
-				return err
+		// One the provider leaves out already changes nothing, so it is no sign-out
+		for _, source := range leave {
+			if source == "" || slices.Contains(after.GetIgnored(), source) {
+				continue
+			}
+			if _, err := a.service.SetOutside(a.ctx, &providerv1.SetOutsideRequest{Profile: a.profile, Provider: p.GetName(), Source: source}); err != nil {
+				return a.fail("%s", tui.Reason(err))
 			}
 			removed = true
 		}
-		// Variables the profile's .env or a secret store supplies are left out too, one at a time as each stops being the one in use
-		for range len(after.GetKeyEnv()) + 1 {
+		// Whatever the provider still finds outside its accounts is left out too, one at a time as each stops being the one it finds: a
+		// variable the profile's .env or a secret store supplies, or the sign-in of another program, whether it is ready to use it or not
+		for range len(after.GetKeyEnv()) + outsidePrograms {
 			now, err := a.provider(p.GetName())
 			if err != nil {
 				return err
 			}
-			variable, _, _ := strings.Cut(now.GetCredentialSource(), " (from ")
-			if now.GetCredentialOrigin() != providerv1.Origin_ORIGIN_ENVIRONMENT || variable == "" || slices.Contains(now.GetIgnored(), variable) {
+			source := credentials.SourceName(now.GetOutsideSource())
+			if source == "" || slices.Contains(now.GetIgnored(), source) {
 				break
 			}
-			if err := a.set(p.GetSection()+"."+providerconfig.Ignored, append(slices.Clone(now.GetIgnored()), variable)); err != nil {
-				return err
+			if _, err := a.service.SetOutside(a.ctx, &providerv1.SetOutsideRequest{Profile: a.profile, Provider: p.GetName(), Source: source}); err != nil {
+				return a.fail("%s", tui.Reason(err))
 			}
 			removed = true
 		}
-		if err := a.set(p.GetSection()+"."+providerconfig.Account, nil); err != nil {
-			return err
+		if _, err := a.service.UseAccount(a.ctx, &providerv1.UseAccountRequest{Profile: a.profile, Provider: p.GetName()}); err != nil {
+			return a.fail("%s", tui.Reason(err))
 		}
 	}
 	reset := false
@@ -1300,7 +1316,7 @@ func (a *auth) logout(name string, all bool) error {
 	case os.Getenv("OPENROUTER_API_KEY") != "":
 		a.say("icebath now uses OpenRouter, because OPENROUTER_API_KEY is set.")
 	default:
-		a.say("Connect another provider with `icebath auth add <provider>`, or open /providers in icebath.")
+		a.say("Connect another provider with `icebath auth add <provider>`.")
 	}
 	return nil
 }
@@ -1337,7 +1353,7 @@ func (a *auth) interactive() error {
 
 // Status of the providers a cloud's own credential chain signs in, which keep no login of icebath
 func (a *auth) clouds() {
-	listed, err := a.service.List(a.ctx, &providerv1.ListRequest{})
+	listed, err := a.service.List(a.ctx, &providerv1.ListRequest{Profile: a.profile})
 	if err != nil {
 		return
 	}
@@ -1345,7 +1361,7 @@ func (a *auth) clouds() {
 		if len(p.GetAccounts()) > 0 || p.GetCredentialOrigin() != providerv1.Origin_ORIGIN_EXTERNAL {
 			continue
 		}
-		status, err := a.service.Status(a.ctx, &providerv1.StatusRequest{Provider: p.GetName()})
+		status, err := a.service.Status(a.ctx, &providerv1.StatusRequest{Profile: a.profile, Provider: p.GetName()})
 		if err != nil || len(status.GetDetails()) == 0 {
 			continue
 		}
@@ -1408,11 +1424,6 @@ func (a *auth) interactiveAdd() error {
 			}
 		}
 	}
-	label, ok := a.console.Input("Label, or empty for none: ")
-	if !ok {
-		return nil
-	}
-	opts.label = strings.TrimSpace(label)
 	return a.add(name, opts)
 }
 
@@ -1431,7 +1442,7 @@ func (a *auth) interactiveRemove() error {
 		return nil
 	}
 	a.group(p)
-	typed, ok := a.console.Input("Account to remove, by number, name or label, or empty to cancel: ")
+	typed, ok := a.console.Input("Account to remove, by its number or name, or empty to cancel: ")
 	if !ok || strings.TrimSpace(typed) == "" {
 		return nil
 	}

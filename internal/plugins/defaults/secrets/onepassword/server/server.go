@@ -1,7 +1,6 @@
 package server
 
 import (
-	"cmp"
 	"context"
 	"maps"
 	"slices"
@@ -65,6 +64,26 @@ func (s *service) State(ctx context.Context, request *onepasswordv1.StateRequest
 	return state, nil
 }
 
+func (s *service) Accounts(ctx context.Context, request *onepasswordv1.AccountsRequest) (*onepasswordv1.AccountsResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	binary := onepasswordsecrets.Find(pinned(cfg))
+	if binary == "" {
+		return &onepasswordv1.AccountsResponse{BinaryMissing: true}, nil
+	}
+	accounts, err := onepasswordsecrets.Accounts(ctx, binary, s.store.Host().Existing(cfg))
+	if err != nil {
+		return &onepasswordv1.AccountsResponse{Error: err.Error()}, nil
+	}
+	response := &onepasswordv1.AccountsResponse{}
+	for _, account := range accounts {
+		response.Accounts = append(response.Accounts, &onepasswordv1.Account{Address: account.Address, Email: account.Email})
+	}
+	return response, nil
+}
+
 func (s *service) Setup(ctx context.Context, request *onepasswordv1.SetupRequest) (*onepasswordv1.SetupResponse, error) {
 	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
@@ -78,39 +97,53 @@ func (s *service) Setup(ctx context.Context, request *onepasswordv1.SetupRequest
 	if binary == "" {
 		return &onepasswordv1.SetupResponse{BinaryMissing: true, BinaryPath: path}, nil
 	}
-	changes := map[string]any{onepasswordconfig.Enabled: true}
-	if path != "" {
-		changes[onepasswordconfig.Binary] = path
-	}
-	if given := strings.TrimSpace(request.GetAccount()); given != "" {
-		changes[onepasswordconfig.Account] = given
-	}
 	tokenEnv := strings.TrimSpace(request.GetTokenEnv())
 	if tokenEnv == "" {
 		tokenEnv = s.store.TokenEnv(cfg)
 	}
-	changes[onepasswordconfig.TokenEnv] = tokenEnv
-	response := &onepasswordv1.SetupResponse{Binary: binary, Version: secrets.Version(ctx, binary, nil), TokenEnv: tokenEnv, EnvPath: cfg.EnvPath()}
-	// The token goes into the .env before the store is turned on, so a token that could not be kept leaves the settings as they were
-	if token := strings.TrimSpace(request.GetToken()); token != "" {
+	env := s.store.Host().Existing(cfg)
+	token, given := strings.TrimSpace(request.GetToken()), strings.TrimSpace(request.GetToken()) != ""
+	if !given {
+		token = strings.TrimSpace(env[tokenEnv])
+	}
+	// A token signs in to its own account, so an account is kept only for the sign-in of op
+	account := strings.TrimSpace(request.GetAccount())
+	if token != "" {
+		account = ""
+	}
+	response := &onepasswordv1.SetupResponse{Binary: binary, Version: secrets.Version(ctx, binary, nil), TokenEnv: tokenEnv, EnvPath: cfg.EnvPath(),
+		EnvToken: !given && token != ""}
+	identity, ok := onepasswordsecrets.Whoami(ctx, binary, account, token, env)
+	if !ok {
+		response.NotSignedIn = true
+		return response, nil
+	}
+	response.Identity = identity
+	// Kept only once op signed in, the token before the store is turned on so a token that could not be kept leaves the settings as they were
+	if given {
 		if err := cfg.SaveEnv(tokenEnv, token); err != nil {
 			return nil, err
 		}
 		response.SavedToken = true
+		s.store.Clear(cfg.ProfileDir(cfg.Profile()))
 	}
-	env := s.store.Host().Existing(cfg)
-	response.EnvToken = !response.SavedToken && env[tokenEnv] != ""
-	// Only with no token at all is the op session asked who it is, with the account the setup leaves set
-	who := cmp.Or(strings.TrimSpace(request.GetAccount()), account(cfg))
-	if !response.SavedToken && !response.EnvToken {
-		response.Identity, _ = onepasswordsecrets.Whoami(ctx, binary, who, "", env)
+	var kept any
+	if account != "" {
+		kept = account
+	}
+	changes := map[string]any{onepasswordconfig.Enabled: true, onepasswordconfig.Account: kept}
+	if strings.TrimSpace(request.GetTokenEnv()) != "" {
+		changes[onepasswordconfig.TokenEnv] = tokenEnv
+	}
+	if strings.TrimSpace(request.GetBinaryPath()) != "" {
+		changes[onepasswordconfig.Binary] = path
 	}
 	for key, value := range changes {
 		if err := cfg.Set(key, value); err != nil {
 			return nil, err
 		}
 	}
-	response.Account = account(cfg)
+	response.Account = account
 	s.store.Host().Reset(cfg)
 	return response, nil
 }
@@ -145,118 +178,4 @@ func (s *service) Token(ctx context.Context, request *onepasswordv1.TokenRequest
 	s.store.Clear(cfg.ProfileDir(cfg.Profile()))
 	s.store.Host().Reset(cfg)
 	return response, nil
-}
-
-func (s *service) Map(_ context.Context, request *onepasswordv1.MapRequest) (*onepasswordv1.MapResponse, error) {
-	cfg, err := server.Profile(s.config, request.GetProfile())
-	if err != nil {
-		return nil, err
-	}
-	name := strings.TrimSpace(request.GetEnv())
-	valid, warnings := onepasswordsecrets.Validate(map[string]string{name: request.GetReference()})
-	response := &onepasswordv1.MapResponse{Warnings: warnings, Enabled: cfg.GetBool(onepasswordconfig.Enabled)}
-	reference, ok := valid[name]
-	if !ok {
-		return response, nil
-	}
-	if err := cfg.Set(onepasswordconfig.References+"."+name, reference); err != nil {
-		return nil, err
-	}
-	response.Reference = reference
-	s.store.Host().Reset(cfg)
-	return response, nil
-}
-
-func (s *service) Unmap(_ context.Context, request *onepasswordv1.UnmapRequest) (*onepasswordv1.UnmapResponse, error) {
-	cfg, err := server.Profile(s.config, request.GetProfile())
-	if err != nil {
-		return nil, err
-	}
-	name := strings.TrimSpace(request.GetEnv())
-	if _, mapped := onepasswordsecrets.References(cfg)[strings.ToUpper(name)]; !mapped {
-		return &onepasswordv1.UnmapResponse{}, nil
-	}
-	if err := cfg.Set(onepasswordconfig.References+"."+name, nil); err != nil {
-		return nil, err
-	}
-	s.store.Host().Reset(cfg)
-	return &onepasswordv1.UnmapResponse{Mapped: true}, nil
-}
-
-func (s *service) Sync(ctx context.Context, request *onepasswordv1.SyncRequest) (*onepasswordv1.SyncResponse, error) {
-	cfg, err := server.Profile(s.config, request.GetProfile())
-	if err != nil {
-		return nil, err
-	}
-	if !cfg.GetBool(onepasswordconfig.Enabled) {
-		return nil, refuse("1Password is off. Run icebath secrets onepassword setup to turn it on.")
-	}
-	references := onepasswordsecrets.References(cfg)
-	if len(references) == 0 {
-		return &onepasswordv1.SyncResponse{}, nil
-	}
-	tokenEnv, existing, override := s.store.TokenEnv(cfg), s.store.Host().Existing(cfg), cfg.GetBool(onepasswordconfig.Override)
-	pull := onepasswordsecrets.Pull{Account: account(cfg), TokenEnv: tokenEnv, Pinned: pinned(cfg), Dir: cfg.ProfileDir(cfg.Profile()), Env: existing}
-	response := &onepasswordv1.SyncResponse{}
-	if request.GetApply() {
-		valid, warnings := onepasswordsecrets.Validate(references)
-		response.Warnings = warnings
-		wanted := map[string]string{}
-		var skipped []string
-		for _, name := range slices.Sorted(maps.Keys(valid)) {
-			if name == tokenEnv || (!override && existing[name] != "") {
-				skipped = append(skipped, name)
-				continue
-			}
-			wanted[name] = valid[name]
-		}
-		exported := map[string]string{}
-		if len(wanted) > 0 {
-			if onepasswordsecrets.Find(pinned(cfg)) == "" {
-				return nil, refuse(onepasswordsecrets.Missing(pinned(cfg)) + " " + onepasswordsecrets.InstallHint)
-			}
-			pull.References = wanted
-			got, more, err := s.store.Pull(ctx, pull)
-			if err != nil {
-				return nil, refuse(err.Error())
-			}
-			response.Warnings = append(response.Warnings, more...)
-			exported = got
-		}
-		for _, name := range slices.Sorted(maps.Keys(exported)) {
-			response.Rows = append(response.Rows, &onepasswordv1.Row{Name: name, Action: "exported"})
-		}
-		for _, name := range skipped {
-			response.Rows = append(response.Rows, &onepasswordv1.Row{Name: name, Action: "skipped"})
-		}
-		s.store.Host().Export(cfg, onepasswordconfig.Name, exported)
-		response.Exported = int32(len(exported))
-		return response, nil
-	}
-	pull.References = references
-	got, warnings, err := s.store.Pull(ctx, pull)
-	if err != nil {
-		return nil, refuse(err.Error())
-	}
-	response.Warnings = warnings
-	for _, name := range slices.Sorted(maps.Keys(references)) {
-		action := secrets.Action(name, tokenEnv, existing, override)
-		if _, resolved := got[name]; !resolved && action != "skip_token" {
-			action = "unresolved"
-		}
-		response.Rows = append(response.Rows, &onepasswordv1.Row{Name: name, Action: action})
-	}
-	return response, nil
-}
-
-func (s *service) Disable(_ context.Context, request *onepasswordv1.DisableRequest) (*onepasswordv1.DisableResponse, error) {
-	cfg, err := server.Profile(s.config, request.GetProfile())
-	if err != nil {
-		return nil, err
-	}
-	if err := cfg.Set(onepasswordconfig.Enabled, false); err != nil {
-		return nil, err
-	}
-	s.store.Host().Reset(cfg)
-	return &onepasswordv1.DisableResponse{}, nil
 }

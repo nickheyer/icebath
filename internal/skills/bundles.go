@@ -126,9 +126,14 @@ func readBundle(path string) (Bundle, bool, error) {
 	}
 	description := strings.TrimSpace(text(m["description"]))
 	if description == "" {
-		description = "Loads " + strs.Count(len(members), "skill") + " at once"
+		description = plainDescription(len(members))
 	}
 	return Bundle{Name: name, Slug: slug, Skills: members, Path: path, Description: description, Instruction: strings.TrimSpace(text(m["instruction"]))}, true, nil
+}
+
+// What a bundle that loads so many skills is said to do while its file gives it no description
+func plainDescription(skills int) string {
+	return "Loads " + strs.Count(skills, "skill") + " at once"
 }
 
 // Every bundle of the profile by slug, the alphabetically first file keeping a slug two share
@@ -184,11 +189,17 @@ type marked struct {
 func (m marked) Error() string        { return m.text }
 func (m marked) Is(target error) bool { return target == m.target }
 
-// File a bundle of the name is kept in
+// File a bundle of the name is kept in: the file the bundle of its slash command was read from, which a person may have named as they
+// liked, else one named after the slash command
 func (s *Scope) bundlePath(name string) (string, error) {
 	slug := Slug(name)
 	if slug == "" {
 		return "", fmt.Errorf("%q can't be the name of a bundle, because it has no letters or digits.", name)
+	}
+	if bundles, err := s.Bundles(); err == nil {
+		if have, ok := bundles[slug]; ok {
+			return have.Path, nil
+		}
 	}
 	return filepath.Join(s.BundlesDir(), slug+".yaml"), nil
 }
@@ -213,6 +224,10 @@ func (s *Scope) SaveBundle(name string, skills []string, description, instructio
 	}
 	if fsx.Exists(path) && !overwrite {
 		return "", marked{fmt.Sprintf("A bundle of that name exists already, in %s.", path), fs.ErrExist}
+	}
+	// The description a bundle is read with while its file gives none is not one to keep: it counts the skills, which change
+	if have, ok, _ := s.Bundle(name); description == plainDescription(len(members)) || ok && description == plainDescription(len(have.Skills)) {
+		description = ""
 	}
 	content := struct {
 		Name        string   `yaml:"name"`

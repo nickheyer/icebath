@@ -54,11 +54,11 @@ type StallError struct {
 
 func (e *StallError) Error() string {
 	if e.Limit > 0 {
-		return fmt.Sprintf("The provider sent nothing for %s, past the silence limit of %s, so the request was stopped. Raise Silent request limit "+
-			"in /settings under Connections if it needs longer.", strs.Span(seconds(e.Silence)), strs.Span(seconds(e.Limit)))
+		return fmt.Sprintf("The provider sent nothing for %s, past the silence limit of %s, so the request was stopped. Silent request limit, an "+
+			"option of Connections, gives it longer.", strs.Span(seconds(e.Silence)), strs.Span(seconds(e.Limit)))
 	}
-	return fmt.Sprintf("%s sent nothing for %s, so icebath closed the connection. Raise Model silence limit in /settings under Connections if "+
-		"it needs longer.", cmp.Or(e.Model, "The model"), strs.Span(seconds(e.Silence)))
+	return fmt.Sprintf("%s sent nothing for %s, so icebath closed the connection. Model silence limit, an option of Connections, gives it "+
+		"longer.", cmp.Or(e.Model, "The model"), strs.Span(seconds(e.Silence)))
 }
 
 func (e *StallError) Timeout() bool { return true }
@@ -70,8 +70,8 @@ type LifetimeError struct {
 }
 
 func (e *LifetimeError) Error() string {
-	return fmt.Sprintf("The reply was still coming after %s, past the stream time limit of %s, so it was cut. If this model needs that long, "+
-		"raise Stream time limit in /settings under Connections, or set it to 0 for no limit.", strs.Span(seconds(e.Elapsed)), strs.Span(seconds(e.Cap)))
+	return fmt.Sprintf("The reply was still coming after %s, past the stream time limit of %s, so it was cut. Stream time limit, an option of "+
+		"Connections, gives this model longer.", strs.Span(seconds(e.Elapsed)), strs.Span(seconds(e.Cap)))
 }
 
 func (e *LifetimeError) Timeout() bool { return true }

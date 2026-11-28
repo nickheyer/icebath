@@ -25,7 +25,7 @@ func timestamp(env *prompt.Env) string {
 	now := time.Now().Local()
 	location, err := env.Config.Zone()
 	if err != nil {
-		env.Notify("⚠ " + strings.TrimPrefix(err.Error(), "⚠ ") + " This computer's time zone is used instead.")
+		env.Notify("⚠ " + err.Error())
 	} else if location != nil {
 		now = now.In(location)
 	}

@@ -129,7 +129,7 @@ func resetAt(value any) *time.Time {
 func resetUsage(ctx context.Context, route provider.Route, force bool) string {
 	token := strings.TrimSpace(route.APIKey)
 	if token == "" {
-		return "No ChatGPT account is signed in. Sign in with your ChatGPT account in /providers."
+		return "No ChatGPT account is signed in. Add your ChatGPT account to see what it may spend."
 	}
 	route, payload, err := renewed(ctx, route, func(route provider.Route) (map[string]any, error) {
 		address, _, _ := backend(route.BaseURL)
@@ -191,7 +191,7 @@ func failure(err error) string {
 	switch status := models.Status(err); {
 	case status == 401 || status == 403:
 		return fmt.Sprintf("OpenAI refused the request with HTTP status %d. Resets need a ChatGPT account sign-in, so sign in with your "+
-			"ChatGPT account in /providers.", status)
+			"ChatGPT account again.", status)
 	case status != 0:
 		return fmt.Sprintf("OpenAI failed with HTTP status %d. Try again shortly.", status)
 	}

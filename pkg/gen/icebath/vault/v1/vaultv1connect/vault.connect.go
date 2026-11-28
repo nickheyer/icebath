@@ -28,6 +28,10 @@ const (
 	VaultServiceListProcedure = "/icebath.vault.v1.VaultService/List"
 	// VaultServiceAddProcedure is the procedure name of the VaultService's Add RPC.
 	VaultServiceAddProcedure = "/icebath.vault.v1.VaultService/Add"
+	// VaultServiceItemProcedure is the procedure name of the VaultService's Item RPC.
+	VaultServiceItemProcedure = "/icebath.vault.v1.VaultService/Item"
+	// VaultServiceChangeProcedure is the procedure name of the VaultService's Change RPC.
+	VaultServiceChangeProcedure = "/icebath.vault.v1.VaultService/Change"
 	// VaultServiceRemoveProcedure is the procedure name of the VaultService's Remove RPC.
 	VaultServiceRemoveProcedure = "/icebath.vault.v1.VaultService/Remove"
 	// VaultServiceSetSourceProcedure is the procedure name of the VaultService's SetSource RPC.
@@ -53,6 +57,20 @@ var (
 			StreamType: connect.StreamTypeUnary,
 			Schema:     v1.File_icebath_vault_v1_vault_proto.Services().ByName("VaultService").Methods().ByName("Add"),
 			Procedure:  VaultServiceAddProcedure,
+		}
+	})
+	vaultServiceItemSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_vault_v1_vault_proto.Services().ByName("VaultService").Methods().ByName("Item"),
+			Procedure:  VaultServiceItemProcedure,
+		}
+	})
+	vaultServiceChangeSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_vault_v1_vault_proto.Services().ByName("VaultService").Methods().ByName("Change"),
+			Procedure:  VaultServiceChangeProcedure,
 		}
 	})
 	vaultServiceRemoveSpec = sync.OnceValue(func() connect.Spec {
@@ -98,6 +116,10 @@ type VaultServiceClient interface {
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	// Saves an item in the profile's own vault
 	Add(context.Context, *v1.AddRequest) (*v1.AddResponse, error)
+	// One item with the fields its page shows, the secret ones never with their values
+	Item(context.Context, *v1.ItemRequest) (*v1.ItemResponse, error)
+	// Changes one field of an item of the profile's own vault
+	Change(context.Context, *v1.ChangeRequest) (*v1.AddResponse, error)
 	// Removes an item of the profile's own vault
 	Remove(context.Context, *v1.RemoveRequest) (*v1.RemoveResponse, error)
 	// Starts or stops using a password manager
@@ -122,6 +144,10 @@ type VaultServiceHandler interface {
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	// Saves an item in the profile's own vault
 	Add(context.Context, *v1.AddRequest) (*v1.AddResponse, error)
+	// One item with the fields its page shows, the secret ones never with their values
+	Item(context.Context, *v1.ItemRequest) (*v1.ItemResponse, error)
+	// Changes one field of an item of the profile's own vault
+	Change(context.Context, *v1.ChangeRequest) (*v1.AddResponse, error)
 	// Removes an item of the profile's own vault
 	Remove(context.Context, *v1.RemoveRequest) (*v1.RemoveResponse, error)
 	// Starts or stops using a password manager
@@ -141,6 +167,8 @@ func RegisterVaultServiceHandler(server *connect.Server, svc VaultServiceHandler
 	server.Register(
 		connect.Method{Spec: vaultServiceListSpec(), Handler: adapter.list},
 		connect.Method{Spec: vaultServiceAddSpec(), Handler: adapter.add},
+		connect.Method{Spec: vaultServiceItemSpec(), Handler: adapter.item},
+		connect.Method{Spec: vaultServiceChangeSpec(), Handler: adapter.change},
 		connect.Method{Spec: vaultServiceRemoveSpec(), Handler: adapter.remove},
 		connect.Method{Spec: vaultServiceSetSourceSpec(), Handler: adapter.setSource},
 		connect.Method{Spec: vaultServiceMoveKeySpec(), Handler: adapter.moveKey},
@@ -158,6 +186,14 @@ func (UnimplementedVaultServiceHandler) List(context.Context, *v1.ListRequest) (
 
 func (UnimplementedVaultServiceHandler) Add(context.Context, *v1.AddRequest) (*v1.AddResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.vault.v1.VaultService.Add is not implemented")
+}
+
+func (UnimplementedVaultServiceHandler) Item(context.Context, *v1.ItemRequest) (*v1.ItemResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.vault.v1.VaultService.Item is not implemented")
+}
+
+func (UnimplementedVaultServiceHandler) Change(context.Context, *v1.ChangeRequest) (*v1.AddResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.vault.v1.VaultService.Change is not implemented")
 }
 
 func (UnimplementedVaultServiceHandler) Remove(context.Context, *v1.RemoveRequest) (*v1.RemoveResponse, error) {
@@ -195,6 +231,22 @@ func (c *vaultServiceClient) List(ctx context.Context, req *v1.ListRequest) (*v1
 func (c *vaultServiceClient) Add(ctx context.Context, req *v1.AddRequest) (*v1.AddResponse, error) {
 	var res v1.AddResponse
 	if err := c.client.CallUnary(ctx, vaultServiceAddSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *vaultServiceClient) Item(ctx context.Context, req *v1.ItemRequest) (*v1.ItemResponse, error) {
+	var res v1.ItemResponse
+	if err := c.client.CallUnary(ctx, vaultServiceItemSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *vaultServiceClient) Change(ctx context.Context, req *v1.ChangeRequest) (*v1.AddResponse, error) {
+	var res v1.AddResponse
+	if err := c.client.CallUnary(ctx, vaultServiceChangeSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -260,6 +312,30 @@ func (h vaultServiceHandler) add(ctx context.Context, _ connect.Spec, stream con
 		return err
 	}
 	res, err := h.svc.Add(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h vaultServiceHandler) item(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ItemRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Item(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h vaultServiceHandler) change(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ChangeRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Change(ctx, &req)
 	if err != nil {
 		return err
 	}

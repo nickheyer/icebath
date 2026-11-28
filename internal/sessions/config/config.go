@@ -6,6 +6,8 @@ const (
 	// Deletes old sessions when the server starts, and how old they must be
 	AutoPrune     = Key + ".auto_prune"
 	RetentionDays = Key + ".retention_days"
+	// When the question about a low disk may be asked again, after a person put it off
+	PruneAsk = Key + ".auto_prune_ask_after"
 	// Least time between automatic archive or cleanup runs
 	MinIntervalHours = Key + ".min_interval_hours"
 	VacuumAfterPrune = Key + ".vacuum_after_prune"

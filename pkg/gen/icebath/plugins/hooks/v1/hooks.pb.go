@@ -81,9 +81,17 @@ type Hook struct {
 	// When it was allowed, empty when not known
 	ApprovedAt string `protobuf:"bytes,7,opt,name=approved_at,json=approvedAt,proto3" json:"approved_at,omitempty"`
 	// Its script changed since it was allowed, with its time then and now
-	Changed       bool   `protobuf:"varint,8,opt,name=changed,proto3" json:"changed,omitempty"`
-	ChangedWas    string `protobuf:"bytes,9,opt,name=changed_was,json=changedWas,proto3" json:"changed_was,omitempty"`
-	ChangedNow    string `protobuf:"bytes,10,opt,name=changed_now,json=changedNow,proto3" json:"changed_now,omitempty"`
+	Changed    bool   `protobuf:"varint,8,opt,name=changed,proto3" json:"changed,omitempty"`
+	ChangedWas string `protobuf:"bytes,9,opt,name=changed_was,json=changedWas,proto3" json:"changed_was,omitempty"`
+	ChangedNow string `protobuf:"bytes,10,opt,name=changed_now,json=changedNow,proto3" json:"changed_now,omitempty"`
+	// How it stands in the words every page and command shows: Allowed, Not allowed, or Changed since you allowed it
+	State string `protobuf:"bytes,11,opt,name=state,proto3" json:"state,omitempty"`
+	// Its event is fired for each tool call, so it may name the tools it runs for
+	Tool bool `protobuf:"varint,12,opt,name=tool,proto3" json:"tool,omitempty"`
+	// What its event guards can be blocked, so a failure of its command may block it
+	Blocking bool `protobuf:"varint,13,opt,name=blocking,proto3" json:"blocking,omitempty"`
+	// It runs though nobody allowed it, because Run without asking lets every hook run
+	Unasked       bool `protobuf:"varint,14,opt,name=unasked,proto3" json:"unasked,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -188,6 +196,34 @@ func (x *Hook) GetChangedNow() string {
 	return ""
 }
 
+func (x *Hook) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Hook) GetTool() bool {
+	if x != nil {
+		return x.Tool
+	}
+	return false
+}
+
+func (x *Hook) GetBlocking() bool {
+	if x != nil {
+		return x.Blocking
+	}
+	return false
+}
+
+func (x *Hook) GetUnasked() bool {
+	if x != nil {
+		return x.Unasked
+	}
+	return false
+}
+
 // One address events are posted to
 type Webhook struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -198,7 +234,19 @@ type Webhook struct {
 	Matcher string   `protobuf:"bytes,4,opt,name=matcher,proto3" json:"matcher,omitempty"`
 	Timeout int32    `protobuf:"varint,5,opt,name=timeout,proto3" json:"timeout,omitempty"`
 	// Posts carry a signature made with its secret
-	Signed        bool `protobuf:"varint,6,opt,name=signed,proto3" json:"signed,omitempty"`
+	Signed bool `protobuf:"varint,6,opt,name=signed,proto3" json:"signed,omitempty"`
+	// Its key among the webhooks the settings keep, which no person needs to see
+	Key string `protobuf:"bytes,7,opt,name=key,proto3" json:"key,omitempty"`
+	// The name it was given, empty for none
+	Name string `protobuf:"bytes,8,opt,name=name,proto3" json:"name,omitempty"`
+	// The environment variable that holds its secret, empty when none does
+	SecretEnv string `protobuf:"bytes,9,opt,name=secret_env,json=secretEnv,proto3" json:"secret_env,omitempty"`
+	// How it stands in the words every page and command shows: Signed or Not signed
+	State string `protobuf:"bytes,10,opt,name=state,proto3" json:"state,omitempty"`
+	// One of its events is fired for each tool call, so it may name the tools it posts for
+	Tool bool `protobuf:"varint,11,opt,name=tool,proto3" json:"tool,omitempty"`
+	// Why its posts are not signed though a variable is named for its secret: that variable is not set
+	Unsigned      string `protobuf:"bytes,12,opt,name=unsigned,proto3" json:"unsigned,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -275,6 +323,48 @@ func (x *Webhook) GetSigned() bool {
 	return false
 }
 
+func (x *Webhook) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *Webhook) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Webhook) GetSecretEnv() string {
+	if x != nil {
+		return x.SecretEnv
+	}
+	return ""
+}
+
+func (x *Webhook) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Webhook) GetTool() bool {
+	if x != nil {
+		return x.Tool
+	}
+	return false
+}
+
+func (x *Webhook) GetUnsigned() string {
+	if x != nil {
+		return x.Unsigned
+	}
+	return ""
+}
+
 type ListResponse struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Hooks    []*Hook                `protobuf:"bytes,1,rep,name=hooks,proto3" json:"hooks,omitempty"`
@@ -284,7 +374,9 @@ type ListResponse struct {
 	// Every hook point
 	Points []string `protobuf:"bytes,4,rep,name=points,proto3" json:"points,omitempty"`
 	// The profile approves every hook without asking, by its auto accept setting or ICEBATH_ACCEPT_HOOKS
-	AcceptAll     bool `protobuf:"varint,5,opt,name=accept_all,json=acceptAll,proto3" json:"accept_all,omitempty"`
+	AcceptAll bool `protobuf:"varint,5,opt,name=accept_all,json=acceptAll,proto3" json:"accept_all,omitempty"`
+	// Names the settings keep hooks under that no shell hook runs on, whose hooks are left out
+	Ignored       []string `protobuf:"bytes,6,rep,name=ignored,proto3" json:"ignored,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -354,16 +446,30 @@ func (x *ListResponse) GetAcceptAll() bool {
 	return false
 }
 
+func (x *ListResponse) GetIgnored() []string {
+	if x != nil {
+		return x.Ignored
+	}
+	return nil
+}
+
 type ChangeRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	// add, remove, allow or revoke
+	// add, edit, remove, allow or revoke
 	Verb    string `protobuf:"bytes,2,opt,name=verb,proto3" json:"verb,omitempty"`
 	Event   string `protobuf:"bytes,3,opt,name=event,proto3" json:"event,omitempty"`
 	Command string `protobuf:"bytes,4,opt,name=command,proto3" json:"command,omitempty"`
-	// Tools a new hook is for and the seconds it may take, both left to their defaults when empty
-	Matcher       string `protobuf:"bytes,5,opt,name=matcher,proto3" json:"matcher,omitempty"`
-	Timeout       int32  `protobuf:"varint,6,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	// add and edit: the tools it runs for, the seconds it may take, and whether its failure blocks; left to their defaults when empty
+	Matcher    string `protobuf:"bytes,5,opt,name=matcher,proto3" json:"matcher,omitempty"`
+	Timeout    int32  `protobuf:"varint,6,opt,name=timeout,proto3" json:"timeout,omitempty"`
+	FailClosed bool   `protobuf:"varint,7,opt,name=fail_closed,json=failClosed,proto3" json:"fail_closed,omitempty"`
+	// edit: the fields it changes, by their names in the settings: command, matcher, timeout and fail_closed
+	Fields []string `protobuf:"bytes,8,rep,name=fields,proto3" json:"fields,omitempty"`
+	// edit: the command it runs from now on, when fields names command
+	To string `protobuf:"bytes,9,opt,name=to,proto3" json:"to,omitempty"`
+	// add: allow it too, as the person who adds it agrees to it
+	Allow         bool `protobuf:"varint,10,opt,name=allow,proto3" json:"allow,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -440,11 +546,43 @@ func (x *ChangeRequest) GetTimeout() int32 {
 	return 0
 }
 
+func (x *ChangeRequest) GetFailClosed() bool {
+	if x != nil {
+		return x.FailClosed
+	}
+	return false
+}
+
+func (x *ChangeRequest) GetFields() []string {
+	if x != nil {
+		return x.Fields
+	}
+	return nil
+}
+
+func (x *ChangeRequest) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
+func (x *ChangeRequest) GetAllow() bool {
+	if x != nil {
+		return x.Allow
+	}
+	return false
+}
+
 type ChangeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Hooks *ListResponse          `protobuf:"bytes,1,opt,name=hooks,proto3" json:"hooks,omitempty"`
 	// Entries a remove took out of the settings, or a revoke off the allowlist
-	Removed       int32 `protobuf:"varint,2,opt,name=removed,proto3" json:"removed,omitempty"`
+	Removed int32 `protobuf:"varint,2,opt,name=removed,proto3" json:"removed,omitempty"`
+	// What was done, in a sentence or two
+	Said string `protobuf:"bytes,3,opt,name=said,proto3" json:"said,omitempty"`
+	// Key of the webhook added or changed
+	Key           string `protobuf:"bytes,4,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -491,6 +629,20 @@ func (x *ChangeResponse) GetRemoved() int32 {
 		return x.Removed
 	}
 	return 0
+}
+
+func (x *ChangeResponse) GetSaid() string {
+	if x != nil {
+		return x.Said
+	}
+	return ""
+}
+
+func (x *ChangeResponse) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
 }
 
 // How one run of a hook's command ended
@@ -1068,7 +1220,9 @@ func (x *AcceptRequest) GetProfile() string {
 }
 
 type AcceptResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Hooks it allowed now
+	Allowed       int32 `protobuf:"varint,1,opt,name=allowed,proto3" json:"allowed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1103,13 +1257,231 @@ func (*AcceptResponse) Descriptor() ([]byte, []int) {
 	return file_icebath_plugins_hooks_v1_hooks_proto_rawDescGZIP(), []int{14}
 }
 
+func (x *AcceptResponse) GetAllowed() int32 {
+	if x != nil {
+		return x.Allowed
+	}
+	return 0
+}
+
+type WebhookRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// add, edit or remove
+	Verb string `protobuf:"bytes,2,opt,name=verb,proto3" json:"verb,omitempty"`
+	// The webhook edited or removed, by its key
+	Key string `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
+	// add: where it posts and the events it posts
+	Url    string   `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
+	Events []string `protobuf:"bytes,5,rep,name=events,proto3" json:"events,omitempty"`
+	// edit: the field it changes, by its name in the settings, and the value as YAML, null putting the default back
+	Field         string `protobuf:"bytes,6,opt,name=field,proto3" json:"field,omitempty"`
+	Value         string `protobuf:"bytes,7,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WebhookRequest) Reset() {
+	*x = WebhookRequest{}
+	mi := &file_icebath_plugins_hooks_v1_hooks_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WebhookRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WebhookRequest) ProtoMessage() {}
+
+func (x *WebhookRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_hooks_v1_hooks_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WebhookRequest.ProtoReflect.Descriptor instead.
+func (*WebhookRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_hooks_v1_hooks_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *WebhookRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *WebhookRequest) GetVerb() string {
+	if x != nil {
+		return x.Verb
+	}
+	return ""
+}
+
+func (x *WebhookRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *WebhookRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *WebhookRequest) GetEvents() []string {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *WebhookRequest) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+func (x *WebhookRequest) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+type TestWebhookRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Key           string                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestWebhookRequest) Reset() {
+	*x = TestWebhookRequest{}
+	mi := &file_icebath_plugins_hooks_v1_hooks_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestWebhookRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestWebhookRequest) ProtoMessage() {}
+
+func (x *TestWebhookRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_hooks_v1_hooks_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestWebhookRequest.ProtoReflect.Descriptor instead.
+func (*TestWebhookRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_hooks_v1_hooks_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *TestWebhookRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *TestWebhookRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+type TestWebhookResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The address took the sample
+	Ok bool `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	// HTTP status it answered with, 0 when it could not be reached
+	Status int32 `protobuf:"varint,2,opt,name=status,proto3" json:"status,omitempty"`
+	// How it went, in a sentence or two
+	Said          string `protobuf:"bytes,3,opt,name=said,proto3" json:"said,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestWebhookResponse) Reset() {
+	*x = TestWebhookResponse{}
+	mi := &file_icebath_plugins_hooks_v1_hooks_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestWebhookResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestWebhookResponse) ProtoMessage() {}
+
+func (x *TestWebhookResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_hooks_v1_hooks_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestWebhookResponse.ProtoReflect.Descriptor instead.
+func (*TestWebhookResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_hooks_v1_hooks_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *TestWebhookResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *TestWebhookResponse) GetStatus() int32 {
+	if x != nil {
+		return x.Status
+	}
+	return 0
+}
+
+func (x *TestWebhookResponse) GetSaid() string {
+	if x != nil {
+		return x.Said
+	}
+	return ""
+}
+
 var File_icebath_plugins_hooks_v1_hooks_proto protoreflect.FileDescriptor
 
 const file_icebath_plugins_hooks_v1_hooks_proto_rawDesc = "" +
 	"\n" +
 	"$icebath/plugins/hooks/v1/hooks.proto\x12\x18icebath.plugins.hooks.v1\"'\n" +
 	"\vListRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"\xa2\x02\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"\x82\x03\n" +
 	"\x04Hook\x12\x14\n" +
 	"\x05event\x18\x01 \x01(\tR\x05event\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12\x18\n" +
@@ -1125,31 +1497,52 @@ const file_icebath_plugins_hooks_v1_hooks_proto_rawDesc = "" +
 	"changedWas\x12\x1f\n" +
 	"\vchanged_now\x18\n" +
 	" \x01(\tR\n" +
-	"changedNow\"\x95\x01\n" +
+	"changedNow\x12\x14\n" +
+	"\x05state\x18\v \x01(\tR\x05state\x12\x12\n" +
+	"\x04tool\x18\f \x01(\bR\x04tool\x12\x1a\n" +
+	"\bblocking\x18\r \x01(\bR\bblocking\x12\x18\n" +
+	"\aunasked\x18\x0e \x01(\bR\aunasked\"\xa0\x02\n" +
 	"\aWebhook\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12\x16\n" +
 	"\x06events\x18\x03 \x03(\tR\x06events\x12\x18\n" +
 	"\amatcher\x18\x04 \x01(\tR\amatcher\x12\x18\n" +
 	"\atimeout\x18\x05 \x01(\x05R\atimeout\x12\x16\n" +
-	"\x06signed\x18\x06 \x01(\bR\x06signed\"\xd2\x01\n" +
+	"\x06signed\x18\x06 \x01(\bR\x06signed\x12\x10\n" +
+	"\x03key\x18\a \x01(\tR\x03key\x12\x12\n" +
+	"\x04name\x18\b \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"secret_env\x18\t \x01(\tR\tsecretEnv\x12\x14\n" +
+	"\x05state\x18\n" +
+	" \x01(\tR\x05state\x12\x12\n" +
+	"\x04tool\x18\v \x01(\bR\x04tool\x12\x1a\n" +
+	"\bunsigned\x18\f \x01(\tR\bunsigned\"\xec\x01\n" +
 	"\fListResponse\x124\n" +
 	"\x05hooks\x18\x01 \x03(\v2\x1e.icebath.plugins.hooks.v1.HookR\x05hooks\x12=\n" +
 	"\bwebhooks\x18\x02 \x03(\v2!.icebath.plugins.hooks.v1.WebhookR\bwebhooks\x12\x16\n" +
 	"\x06events\x18\x03 \x03(\tR\x06events\x12\x16\n" +
 	"\x06points\x18\x04 \x03(\tR\x06points\x12\x1d\n" +
 	"\n" +
-	"accept_all\x18\x05 \x01(\bR\tacceptAll\"\xa1\x01\n" +
+	"accept_all\x18\x05 \x01(\bR\tacceptAll\x12\x18\n" +
+	"\aignored\x18\x06 \x03(\tR\aignored\"\x80\x02\n" +
 	"\rChangeRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
 	"\x04verb\x18\x02 \x01(\tR\x04verb\x12\x14\n" +
 	"\x05event\x18\x03 \x01(\tR\x05event\x12\x18\n" +
 	"\acommand\x18\x04 \x01(\tR\acommand\x12\x18\n" +
 	"\amatcher\x18\x05 \x01(\tR\amatcher\x12\x18\n" +
-	"\atimeout\x18\x06 \x01(\x05R\atimeout\"h\n" +
+	"\atimeout\x18\x06 \x01(\x05R\atimeout\x12\x1f\n" +
+	"\vfail_closed\x18\a \x01(\bR\n" +
+	"failClosed\x12\x16\n" +
+	"\x06fields\x18\b \x03(\tR\x06fields\x12\x0e\n" +
+	"\x02to\x18\t \x01(\tR\x02to\x12\x14\n" +
+	"\x05allow\x18\n" +
+	" \x01(\bR\x05allow\"\x8e\x01\n" +
 	"\x0eChangeResponse\x12<\n" +
 	"\x05hooks\x18\x01 \x01(\v2&.icebath.plugins.hooks.v1.ListResponseR\x05hooks\x12\x18\n" +
-	"\aremoved\x18\x02 \x01(\x05R\aremoved\"\xd5\x01\n" +
+	"\aremoved\x18\x02 \x01(\x05R\aremoved\x12\x12\n" +
+	"\x04said\x18\x03 \x01(\tR\x04said\x12\x10\n" +
+	"\x03key\x18\x04 \x01(\tR\x03key\"\xd5\x01\n" +
 	"\x03Run\x12\x14\n" +
 	"\x05error\x18\x01 \x01(\tR\x05error\x12\x1b\n" +
 	"\ttimed_out\x18\x02 \x01(\bR\btimedOut\x12\x16\n" +
@@ -1195,14 +1588,32 @@ const file_icebath_plugins_hooks_v1_hooks_proto_rawDesc = "" +
 	"\rCheckResponse\x129\n" +
 	"\x06checks\x18\x01 \x03(\v2!.icebath.plugins.hooks.v1.CheckedR\x06checks\")\n" +
 	"\rAcceptRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"\x10\n" +
-	"\x0eAcceptResponse2\xd0\x03\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"*\n" +
+	"\x0eAcceptResponse\x12\x18\n" +
+	"\aallowed\x18\x01 \x01(\x05R\aallowed\"\xa6\x01\n" +
+	"\x0eWebhookRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04verb\x18\x02 \x01(\tR\x04verb\x12\x10\n" +
+	"\x03key\x18\x03 \x01(\tR\x03key\x12\x10\n" +
+	"\x03url\x18\x04 \x01(\tR\x03url\x12\x16\n" +
+	"\x06events\x18\x05 \x03(\tR\x06events\x12\x14\n" +
+	"\x05field\x18\x06 \x01(\tR\x05field\x12\x14\n" +
+	"\x05value\x18\a \x01(\tR\x05value\"@\n" +
+	"\x12TestWebhookRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\"Q\n" +
+	"\x13TestWebhookResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\x05R\x06status\x12\x12\n" +
+	"\x04said\x18\x03 \x01(\tR\x04said2\xa1\x05\n" +
 	"\fHooksService\x12U\n" +
 	"\x04List\x12%.icebath.plugins.hooks.v1.ListRequest\x1a&.icebath.plugins.hooks.v1.ListResponse\x12[\n" +
 	"\x06Change\x12'.icebath.plugins.hooks.v1.ChangeRequest\x1a(.icebath.plugins.hooks.v1.ChangeResponse\x12U\n" +
 	"\x04Test\x12%.icebath.plugins.hooks.v1.TestRequest\x1a&.icebath.plugins.hooks.v1.TestResponse\x12X\n" +
 	"\x05Check\x12&.icebath.plugins.hooks.v1.CheckRequest\x1a'.icebath.plugins.hooks.v1.CheckResponse\x12[\n" +
-	"\x06Accept\x12'.icebath.plugins.hooks.v1.AcceptRequest\x1a(.icebath.plugins.hooks.v1.AcceptResponseB\xf4\x01\n" +
+	"\x06Accept\x12'.icebath.plugins.hooks.v1.AcceptRequest\x1a(.icebath.plugins.hooks.v1.AcceptResponse\x12c\n" +
+	"\rChangeWebhook\x12(.icebath.plugins.hooks.v1.WebhookRequest\x1a(.icebath.plugins.hooks.v1.ChangeResponse\x12j\n" +
+	"\vTestWebhook\x12,.icebath.plugins.hooks.v1.TestWebhookRequest\x1a-.icebath.plugins.hooks.v1.TestWebhookResponseB\xf4\x01\n" +
 	"\x1ccom.icebath.plugins.hooks.v1B\n" +
 	"HooksProtoP\x01ZEgithub.com/nickheyer/icebath/pkg/gen/icebath/plugins/hooks/v1;hooksv1\xa2\x02\x03IPH\xaa\x02\x18Icebath.Plugins.Hooks.V1\xca\x02\x18Icebath\\Plugins\\Hooks\\V1\xe2\x02$Icebath\\Plugins\\Hooks\\V1\\GPBMetadata\xea\x02\x1bIcebath::Plugins::Hooks::V1b\x06proto3"
 
@@ -1218,23 +1629,26 @@ func file_icebath_plugins_hooks_v1_hooks_proto_rawDescGZIP() []byte {
 	return file_icebath_plugins_hooks_v1_hooks_proto_rawDescData
 }
 
-var file_icebath_plugins_hooks_v1_hooks_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_icebath_plugins_hooks_v1_hooks_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_icebath_plugins_hooks_v1_hooks_proto_goTypes = []any{
-	(*ListRequest)(nil),    // 0: icebath.plugins.hooks.v1.ListRequest
-	(*Hook)(nil),           // 1: icebath.plugins.hooks.v1.Hook
-	(*Webhook)(nil),        // 2: icebath.plugins.hooks.v1.Webhook
-	(*ListResponse)(nil),   // 3: icebath.plugins.hooks.v1.ListResponse
-	(*ChangeRequest)(nil),  // 4: icebath.plugins.hooks.v1.ChangeRequest
-	(*ChangeResponse)(nil), // 5: icebath.plugins.hooks.v1.ChangeResponse
-	(*Run)(nil),            // 6: icebath.plugins.hooks.v1.Run
-	(*TestRequest)(nil),    // 7: icebath.plugins.hooks.v1.TestRequest
-	(*Tested)(nil),         // 8: icebath.plugins.hooks.v1.Tested
-	(*TestResponse)(nil),   // 9: icebath.plugins.hooks.v1.TestResponse
-	(*CheckRequest)(nil),   // 10: icebath.plugins.hooks.v1.CheckRequest
-	(*Checked)(nil),        // 11: icebath.plugins.hooks.v1.Checked
-	(*CheckResponse)(nil),  // 12: icebath.plugins.hooks.v1.CheckResponse
-	(*AcceptRequest)(nil),  // 13: icebath.plugins.hooks.v1.AcceptRequest
-	(*AcceptResponse)(nil), // 14: icebath.plugins.hooks.v1.AcceptResponse
+	(*ListRequest)(nil),         // 0: icebath.plugins.hooks.v1.ListRequest
+	(*Hook)(nil),                // 1: icebath.plugins.hooks.v1.Hook
+	(*Webhook)(nil),             // 2: icebath.plugins.hooks.v1.Webhook
+	(*ListResponse)(nil),        // 3: icebath.plugins.hooks.v1.ListResponse
+	(*ChangeRequest)(nil),       // 4: icebath.plugins.hooks.v1.ChangeRequest
+	(*ChangeResponse)(nil),      // 5: icebath.plugins.hooks.v1.ChangeResponse
+	(*Run)(nil),                 // 6: icebath.plugins.hooks.v1.Run
+	(*TestRequest)(nil),         // 7: icebath.plugins.hooks.v1.TestRequest
+	(*Tested)(nil),              // 8: icebath.plugins.hooks.v1.Tested
+	(*TestResponse)(nil),        // 9: icebath.plugins.hooks.v1.TestResponse
+	(*CheckRequest)(nil),        // 10: icebath.plugins.hooks.v1.CheckRequest
+	(*Checked)(nil),             // 11: icebath.plugins.hooks.v1.Checked
+	(*CheckResponse)(nil),       // 12: icebath.plugins.hooks.v1.CheckResponse
+	(*AcceptRequest)(nil),       // 13: icebath.plugins.hooks.v1.AcceptRequest
+	(*AcceptResponse)(nil),      // 14: icebath.plugins.hooks.v1.AcceptResponse
+	(*WebhookRequest)(nil),      // 15: icebath.plugins.hooks.v1.WebhookRequest
+	(*TestWebhookRequest)(nil),  // 16: icebath.plugins.hooks.v1.TestWebhookRequest
+	(*TestWebhookResponse)(nil), // 17: icebath.plugins.hooks.v1.TestWebhookResponse
 }
 var file_icebath_plugins_hooks_v1_hooks_proto_depIdxs = []int32{
 	1,  // 0: icebath.plugins.hooks.v1.ListResponse.hooks:type_name -> icebath.plugins.hooks.v1.Hook
@@ -1249,13 +1663,17 @@ var file_icebath_plugins_hooks_v1_hooks_proto_depIdxs = []int32{
 	7,  // 9: icebath.plugins.hooks.v1.HooksService.Test:input_type -> icebath.plugins.hooks.v1.TestRequest
 	10, // 10: icebath.plugins.hooks.v1.HooksService.Check:input_type -> icebath.plugins.hooks.v1.CheckRequest
 	13, // 11: icebath.plugins.hooks.v1.HooksService.Accept:input_type -> icebath.plugins.hooks.v1.AcceptRequest
-	3,  // 12: icebath.plugins.hooks.v1.HooksService.List:output_type -> icebath.plugins.hooks.v1.ListResponse
-	5,  // 13: icebath.plugins.hooks.v1.HooksService.Change:output_type -> icebath.plugins.hooks.v1.ChangeResponse
-	9,  // 14: icebath.plugins.hooks.v1.HooksService.Test:output_type -> icebath.plugins.hooks.v1.TestResponse
-	12, // 15: icebath.plugins.hooks.v1.HooksService.Check:output_type -> icebath.plugins.hooks.v1.CheckResponse
-	14, // 16: icebath.plugins.hooks.v1.HooksService.Accept:output_type -> icebath.plugins.hooks.v1.AcceptResponse
-	12, // [12:17] is the sub-list for method output_type
-	7,  // [7:12] is the sub-list for method input_type
+	15, // 12: icebath.plugins.hooks.v1.HooksService.ChangeWebhook:input_type -> icebath.plugins.hooks.v1.WebhookRequest
+	16, // 13: icebath.plugins.hooks.v1.HooksService.TestWebhook:input_type -> icebath.plugins.hooks.v1.TestWebhookRequest
+	3,  // 14: icebath.plugins.hooks.v1.HooksService.List:output_type -> icebath.plugins.hooks.v1.ListResponse
+	5,  // 15: icebath.plugins.hooks.v1.HooksService.Change:output_type -> icebath.plugins.hooks.v1.ChangeResponse
+	9,  // 16: icebath.plugins.hooks.v1.HooksService.Test:output_type -> icebath.plugins.hooks.v1.TestResponse
+	12, // 17: icebath.plugins.hooks.v1.HooksService.Check:output_type -> icebath.plugins.hooks.v1.CheckResponse
+	14, // 18: icebath.plugins.hooks.v1.HooksService.Accept:output_type -> icebath.plugins.hooks.v1.AcceptResponse
+	5,  // 19: icebath.plugins.hooks.v1.HooksService.ChangeWebhook:output_type -> icebath.plugins.hooks.v1.ChangeResponse
+	17, // 20: icebath.plugins.hooks.v1.HooksService.TestWebhook:output_type -> icebath.plugins.hooks.v1.TestWebhookResponse
+	14, // [14:21] is the sub-list for method output_type
+	7,  // [7:14] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
 	7,  // [7:7] is the sub-list for extension extendee
 	0,  // [0:7] is the sub-list for field type_name
@@ -1272,7 +1690,7 @@ func file_icebath_plugins_hooks_v1_hooks_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_plugins_hooks_v1_hooks_proto_rawDesc), len(file_icebath_plugins_hooks_v1_hooks_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

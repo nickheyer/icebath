@@ -137,6 +137,19 @@ func (c *CLI) Serve(serve func(ctx context.Context) error) {
 	c.serve = serve
 }
 
+type ownServerKey struct{}
+
+// Context of a command that runs against the server of its own process, which ends with the command, rather than one icebath connect set
+func WithOwnServer(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ownServerKey{}, true)
+}
+
+// Whether the command runs against the server of its own process, so nothing it leaves in that server's memory outlives the command
+func OwnServer(ctx context.Context) bool {
+	own, _ := ctx.Value(ownServerKey{}).(bool)
+	return own
+}
+
 // Whether the words ask for help: -h or --help before any --
 func Helped(words []string) bool {
 	for _, word := range words {
@@ -285,11 +298,7 @@ func refusal(command *cobra.Command, err error) error {
 		for i, flagName := range names {
 			names[i] = "--" + flagName
 		}
-		joined := names[len(names)-1]
-		if len(names) > 1 {
-			joined = strings.Join(names[:len(names)-1], ", ") + " and " + joined
-		}
-		return fmt.Errorf("%s needs %s.%s", path, joined, usageLine)
+		return fmt.Errorf("%s needs %s.%s", path, strs.And(names), usageLine)
 	}
 	return err
 }

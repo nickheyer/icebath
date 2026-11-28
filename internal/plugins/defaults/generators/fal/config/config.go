@@ -10,6 +10,8 @@ const (
 	KeySecret = Key + ".key_secret"
 	// Host of FAL's queue, fal.run when empty
 	RunHost = Key + ".run_host"
+	// Picture model FAL draws with
+	Model = Key + ".model"
 
 	VideoKey   = generationconfig.VideoKey + ".fal"
 	VideoModel = VideoKey + ".model"

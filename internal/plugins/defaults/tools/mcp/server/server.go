@@ -132,9 +132,9 @@ func (s *service) List(_ context.Context, request *mcpv1.ListRequest) (*mcpv1.Li
 		_, included := filter["include"].([]any)
 		server := &mcpv1.Server{Name: status.Name, Transport: status.Transport, State: status.State, Error: status.Error, Tools: int32(status.Tools),
 			Enabled: status.Enabled, Plugin: status.Plugin, Oauth: status.OAuth, SignedIn: status.SignedIn, Url: toString(raw["url"]),
-			Command: toString(raw["command"]), Args: stringList(raw["args"]), Missing: status.Missing, Included: included, Include: stringList(filter["include"]),
+			Command: toString(raw["command"]), Args: mcptools.Args(raw["args"]), Missing: status.Missing, Included: included, Include: stringList(filter["include"]),
 			Exclude: stringList(filter["exclude"]), Auth: toString(raw["auth"]), Settings: encode(raw), Sampling: counts(status.Sampling),
-			Elicitation: counts(status.Elicitation)}
+			Elicitation: counts(status.Elicitation), Shown: status.Words(), Values: status.Reads}
 		switch env := raw["env"].(type) {
 		case []any:
 			for _, item := range env {
@@ -143,7 +143,7 @@ func (s *service) List(_ context.Context, request *mcpv1.ListRequest) (*mcpv1.Li
 			}
 		case map[string]any:
 			for name := range env {
-				server.Env = append(server.Env, strings.ToUpper(name))
+				server.Env = append(server.Env, name)
 			}
 		}
 		slices.Sort(server.Env)

@@ -150,7 +150,7 @@ var registry = func() []Action {
 		quiet(act("search.prev", Search, "previous", "Move to the previous match or row", "up", "ctrl+p")),
 
 		act("confirm.yes", Confirm, "yes", "Confirm", "y"),
-		act("confirm.no", Confirm, "no", "Cancel", "n", "esc"),
+		act("confirm.no", Confirm, "cancel", "Cancel", "esc", "n"),
 
 		act("edit.apply", Edit, "apply", "Save the cell", "enter"),
 		act("edit.cancel", Edit, "cancel", "Discard changes to the cell", "esc"),

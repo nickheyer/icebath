@@ -47,17 +47,23 @@ func Register(registry *tools.Registry, stores *sessions.Registry, cfg *config.C
 
 func (r *registrant) Tools() []tools.Def {
 	return []tools.Def{{
-		Name:           "execute_code",
-		Toolset:        "code_execution",
-		Title:          "Python",
-		About:          "Run a Python script that can use the other tools",
-		Group:          "Code execution",
-		Icon:           tools.IconShell,
-		Subject:        "code",
-		Schema:         r.schema(nil),
-		Dynamic:        r.schema,
-		Handler:        r.execute,
-		Check:          func(env *tools.Env) bool { return r.host.Check(env.Config) == nil },
+		Name:    "execute_code",
+		Toolset: "code_execution",
+		Title:   "Python",
+		About:   "Run a Python script that can use the other tools",
+		Group:   "Code execution",
+		Icon:    tools.IconShell,
+		Subject: "code",
+		Schema:  r.schema(nil),
+		Dynamic: r.schema,
+		Handler: r.execute,
+		Check:   func(env *tools.Env) bool { return r.host.Check(env.Config) == nil },
+		Lacks: func(env *tools.Env) string {
+			if err := r.host.Check(env.Config); err != nil {
+				return err.Error()
+			}
+			return ""
+		},
 		MaxResultChars: 100_000,
 		Effect:         tools.Mutates,
 		Fallible:       true,
@@ -240,4 +246,9 @@ func kind(v any) string {
 		return "an object"
 	}
 	return fmt.Sprintf("%T", v)
+}
+
+// The group of the tool that runs the agent's scripts, whose options are the code execution section
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: "Code execution", Sections: []string{codeconfig.Key}, Order: 60}}
 }

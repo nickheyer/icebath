@@ -13,9 +13,11 @@ import (
 
 	"github.com/nickheyer/icebath/internal/cli"
 	bitwardenconfig "github.com/nickheyer/icebath/internal/plugins/defaults/secrets/bitwarden/config"
-	"github.com/nickheyer/icebath/internal/secrets"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	bitwardenv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/bitwarden/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/bitwarden/v1/bitwardenv1connect"
+	secretsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/secrets/v1"
+	"github.com/nickheyer/icebath/pkg/gen/icebath/secrets/v1/secretsv1connect"
 	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 )
@@ -33,9 +35,8 @@ var regions = [][3]string{
 
 // Follow up of each cause of a failed project list
 var hints = map[string]string{
-	"region": "  This usually means the token is for another Bitwarden region. Run icebath secrets bitwarden setup and pick your region, or set " +
-		"Server address in /settings under Secret stores › Bitwarden.",
-	"token": "  This usually means the access token is wrong or was revoked. Check it in the Bitwarden web app.",
+	"region": "  This usually means the token is for another Bitwarden region. Run icebath secrets bitwarden setup and pick your region.",
+	"token":  "  This usually means the access token is wrong or was revoked. Check it in the Bitwarden web app.",
 }
 
 // Says where bws is and which version it is
@@ -54,17 +55,19 @@ func Register(registry *cli.Registry) {
 }
 
 func (commands) Commands(conn *connect.Client) []*cobra.Command {
-	b := bitwarden{service: bitwardenv1connect.NewBitwardenServiceClient(conn)}
+	b := bitwarden{service: bitwardenv1connect.NewBitwardenServiceClient(conn), stores: secretsv1connect.NewSecretServiceClient(conn)}
 	root := &cobra.Command{Use: bitwardenconfig.Name, Aliases: []string{"bw"}, Short: "Load API keys from Bitwarden Secrets Manager",
 		Long: "Loads the secrets of one Bitwarden Secrets Manager project as environment variables each time icebath starts. icebath reads them with bws, the " +
-			"Bitwarden Secrets Manager command line tool, with the access token of a machine account.",
+			"Bitwarden Secrets Manager command line tool, with the access token of a machine account. icebath secrets on and off turn it on and off.",
 		Args: cobra.NoArgs}
-	root.AddCommand(b.setup(), b.status(), b.token(), b.sync(), b.disable(), b.install())
+	root.AddCommand(b.setup(), b.status(), b.token(), b.sync(), b.install())
 	return []*cobra.Command{root}
 }
 
 type bitwarden struct {
 	service bitwardenv1connect.BitwardenServiceClient
+	// The service every store shares, which fetches now and turns stores on and off
+	stores secretsv1connect.SecretServiceClient
 }
 
 func (b bitwarden) setup() *cobra.Command {
@@ -84,16 +87,16 @@ func (b bitwarden) setup() *cobra.Command {
 				"Secrets Manager › Machine accounts › your account › Access tokens,", "then choose Create access token.", "",
 				"Copy the token now. It starts with “"+c.Paint("0.", cli.Cyan)+"”, and Bitwarden shows it only once.")
 			c.Step(1, "Install bws")
-			state, err := b.service.State(ctx, &bitwardenv1.StateRequest{})
+			state, err := b.service.State(ctx, &bitwardenv1.StateRequest{Profile: picked.Picked(ctx)})
 			if err != nil {
 				return err
 			}
 			binary, version := state.GetBinary(), state.GetVersion()
 			if binary == "" {
 				c.Info("bws is not installed, so icebath downloads it now…")
-				done, err := b.service.Install(ctx, &bitwardenv1.InstallRequest{})
+				done, err := b.service.Install(ctx, &bitwardenv1.InstallRequest{Profile: picked.Picked(ctx)})
 				if err != nil {
-					c.Failure(secrets.Sentence(tui.Reason(err)))
+					c.Failure(strs.Sentence(tui.Reason(err)))
 					c.Info("To install bws yourself, download it from https://github.com/bitwarden/sdk-sm/releases.")
 					return cli.Exit(1)
 				}
@@ -130,7 +133,7 @@ func (b bitwarden) setup() *cobra.Command {
 			if !strings.HasPrefix(token, "0.") {
 				c.Warning(oddToken + " Setup goes on with it.")
 			}
-			saved, err := b.service.SaveToken(ctx, &bitwardenv1.SaveTokenRequest{Token: token})
+			saved, err := b.service.SaveToken(ctx, &bitwardenv1.SaveTokenRequest{Profile: picked.Picked(ctx), Token: token})
 			if err != nil {
 				return err
 			}
@@ -155,9 +158,9 @@ func (b bitwarden) setup() *cobra.Command {
 				}
 			}
 			c.Step(test, "Load the secrets once")
-			preview, err := b.service.Setup(ctx, &bitwardenv1.SetupRequest{Token: token, ServerUrl: url, ProjectId: project})
+			preview, err := b.service.Setup(ctx, &bitwardenv1.SetupRequest{Profile: picked.Picked(ctx), Token: token, ServerUrl: url, ProjectId: project})
 			if err != nil {
-				return c.Fail("  ✗ The secrets could not be loaded. " + secrets.Sentence(tui.Reason(err)))
+				return c.Fail("  ✗ The secrets could not be loaded. " + strs.Sentence(tui.Reason(err)))
 			}
 			if len(preview.GetRows()) == 0 {
 				c.Warning("Bitwarden answered, but the project has no secrets.")
@@ -169,12 +172,12 @@ func (b bitwarden) setup() *cobra.Command {
 				c.Table([]string{"Variable", "What happens"}, rows)
 			}
 			for _, warning := range preview.GetWarnings() {
-				c.Warning(secrets.Sentence(warning))
+				c.Warning(strs.Sentence(warning))
 			}
 			c.Blank()
 			c.Say(c.Paint("✓ Bitwarden Secrets Manager is on.", cli.Green) + " icebath loaded its secrets now and loads them each time it starts.")
 			c.Say("  See how it is set up:  " + c.Paint("icebath secrets bitwarden status", cli.Cyan) + "\n  Load the secrets again: " +
-				c.Paint("icebath secrets bitwarden sync", cli.Cyan) + "\n  Turn it off:            " + c.Paint("icebath secrets bitwarden disable", cli.Cyan))
+				c.Paint("icebath secrets bitwarden sync", cli.Cyan) + "\n  Turn it off:            " + c.Paint("icebath secrets off bitwarden", cli.Cyan))
 			return nil
 		}}
 	command.Flags().StringVar(&project, "project-id", "", "Project to use, by id, instead of picking one")
@@ -242,7 +245,7 @@ func (b bitwarden) region(c *cli.Console, given, existing string) (string, bool)
 
 // Says why a project list failed and what that usually means
 func refused(c *cli.Console, failure *bitwardenv1.Failure) {
-	c.Failure(secrets.Sentence(failure.GetText()))
+	c.Failure(strs.Sentence(failure.GetText()))
 	if hint := hints[failure.GetCause()]; hint != "" {
 		c.Say(hint, cli.Yellow)
 	}
@@ -250,9 +253,9 @@ func refused(c *cli.Console, failure *bitwardenv1.Failure) {
 
 // Project picked from those the token sees, empty after saying why there is none to pick
 func (b bitwarden) project(c *cli.Console, cmd *cobra.Command, token, server string) (string, error) {
-	listed, err := b.service.Projects(cmd.Context(), &bitwardenv1.ProjectsRequest{Token: token, ServerUrl: server})
+	listed, err := b.service.Projects(cmd.Context(), &bitwardenv1.ProjectsRequest{Profile: picked.Picked(cmd.Context()), Token: token, ServerUrl: server})
 	if err != nil {
-		c.Failure(secrets.Sentence(tui.Reason(err)))
+		c.Failure(strs.Sentence(tui.Reason(err)))
 		return "", nil
 	}
 	if listed.GetFailure() != nil {
@@ -283,11 +286,11 @@ func (b bitwarden) status() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
-			state, err := b.service.State(cmd.Context(), &bitwardenv1.StateRequest{})
+			state, err := b.service.State(cmd.Context(), &bitwardenv1.StateRequest{Profile: picked.Picked(cmd.Context())})
 			if err != nil {
 				return err
 			}
-			check, err := b.service.Validate(cmd.Context(), &bitwardenv1.ValidateRequest{})
+			check, err := b.service.Validate(cmd.Context(), &bitwardenv1.ValidateRequest{Profile: picked.Picked(cmd.Context())})
 			if err != nil {
 				return err
 			}
@@ -333,7 +336,8 @@ func (b bitwarden) status() *cobra.Command {
 				refused(c, check.GetFailure())
 			}
 			if !state.GetEnabled() {
-				c.Say("\n  Run " + c.Paint("icebath secrets bitwarden setup", cli.Cyan) + " to turn Bitwarden on.")
+				c.Say("\n  Run " + c.Paint("icebath secrets on bitwarden", cli.Cyan) + " to turn Bitwarden on, or " +
+					c.Paint("icebath secrets bitwarden setup", cli.Cyan) + " to set it up.")
 				return nil
 			}
 			if !state.GetTokenSet() {
@@ -358,7 +362,7 @@ func (b bitwarden) token() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
 			ctx := cmd.Context()
-			state, err := b.service.State(ctx, &bitwardenv1.StateRequest{})
+			state, err := b.service.State(ctx, &bitwardenv1.StateRequest{Profile: picked.Picked(ctx)})
 			if err != nil {
 				return err
 			}
@@ -384,7 +388,7 @@ func (b bitwarden) token() *cobra.Command {
 			if !noVerify {
 				c.Say("Checking the token with Bitwarden…")
 			}
-			rotated, err := b.service.Token(ctx, &bitwardenv1.TokenRequest{Token: token, Verify: !noVerify})
+			rotated, err := b.service.Token(ctx, &bitwardenv1.TokenRequest{Profile: picked.Picked(ctx), Token: token, Verify: !noVerify})
 			if err != nil {
 				return err
 			}
@@ -404,8 +408,7 @@ func (b bitwarden) token() *cobra.Command {
 			}
 			c.Success("The token is kept in " + rotated.GetEnvPath() + " as " + rotated.GetTokenEnv() + ", and icebath uses it from now on.")
 			if rotated.GetDisabled() {
-				c.Warning("Bitwarden is off. To turn it on, run icebath secrets bitwarden setup, or turn on Load from Bitwarden in /settings under " +
-					"Secret stores › Bitwarden.")
+				c.Warning("Bitwarden is off. Run icebath secrets on bitwarden to turn it on.")
 			}
 			return nil
 		}}
@@ -418,33 +421,37 @@ func (b bitwarden) sync() *cobra.Command {
 	apply := false
 	command := &cobra.Command{Use: "sync", Short: "Load the secrets now and show what would change",
 		Long: "Loads the project's secrets now and shows what each one would do. Nothing changes unless you pass --apply, which sets them in " +
-			"the running icebath of this profile.",
+			"the running icebath of this profile as the next start would.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
-			preview, err := b.service.Sync(cmd.Context(), &bitwardenv1.SyncRequest{Apply: apply})
+			preview, err := b.stores.Preview(cmd.Context(), &secretsv1.PreviewRequest{Profile: picked.Picked(cmd.Context()), Name: bitwardenconfig.Name, Apply: apply})
 			if err != nil {
-				return c.Fail("✗ " + secrets.Sentence(tui.Reason(err)))
+				return c.Fail("✗ " + strs.Sentence(tui.Reason(err)))
 			}
-			if len(preview.GetRows()) == 0 {
+			if len(preview.GetOutcomes()) == 0 {
 				c.Warning("The Bitwarden project has no secrets.")
 				return nil
 			}
 			var rows [][]string
-			for _, row := range preview.GetRows() {
+			set := 0
+			for _, row := range preview.GetOutcomes() {
 				rows = append(rows, []string{c.Paint(row.GetName(), cli.Cyan), action(c, row.GetAction())})
+				if row.GetAction() == "exported" || row.GetAction() == "overrode" {
+					set++
+				}
 			}
 			c.Table([]string{"Variable", "What happens"}, rows)
 			for _, warning := range preview.GetWarnings() {
-				c.Warning(secrets.Sentence(warning))
+				c.Warning(strs.Sentence(warning))
 			}
 			if !apply {
 				c.Say("\n  Nothing changed, and icebath loads these secrets by itself each time it starts. To set them now in the running icebath " +
-					"of this profile, over values you set already, add " + c.Paint("--apply", cli.Cyan) + ".")
+					"of this profile, add " + c.Paint("--apply", cli.Cyan) + ".")
 				return nil
 			}
 			c.Blank()
-			c.Success("Set " + strs.Count(int(preview.GetExported()), "secret") + " in the running icebath of this profile.")
+			c.Success("Set " + strs.Count(set, "secret") + " in the running icebath of this profile.")
 			return nil
 		}}
 	command.Flags().BoolVar(&apply, "apply", false, "Set the secrets in the running icebath of this profile")
@@ -468,26 +475,6 @@ func action(c *cli.Console, kind string) string {
 	return c.Paint("Would be set", cli.Green)
 }
 
-func (b bitwarden) disable() *cobra.Command {
-	return &cobra.Command{Use: "disable", Short: "Turn Bitwarden off",
-		Long: "Stops loading secrets from Bitwarden. Your access token stays in the keys file until you remove it.",
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			c := cli.NewConsole(cmd)
-			state, err := b.service.State(cmd.Context(), &bitwardenv1.StateRequest{})
-			if err != nil {
-				return err
-			}
-			if _, err := b.service.Disable(cmd.Context(), &bitwardenv1.DisableRequest{}); err != nil {
-				return err
-			}
-			c.Success("Bitwarden is off. icebath no longer loads its secrets, now or when it starts.")
-			c.Info("Your access token stays in " + state.GetEnvPath() + ". Remove it from that file, and revoke it in the Bitwarden web app, if " +
-				"you want it gone.")
-			return nil
-		}}
-}
-
 func (b bitwarden) install() *cobra.Command {
 	force := false
 	command := &cobra.Command{Use: "install", Short: "Install the pinned version of bws",
@@ -496,9 +483,9 @@ func (b bitwarden) install() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
-			done, err := b.service.Install(cmd.Context(), &bitwardenv1.InstallRequest{Force: force})
+			done, err := b.service.Install(cmd.Context(), &bitwardenv1.InstallRequest{Profile: picked.Picked(cmd.Context()), Force: force})
 			if err != nil {
-				return c.Fail("✗ bws could not be installed. " + secrets.Sentence(tui.Reason(err)))
+				return c.Fail("✗ bws could not be installed. " + strs.Sentence(tui.Reason(err)))
 			}
 			installed(c, done.GetBinary(), done.GetVersion())
 			return nil

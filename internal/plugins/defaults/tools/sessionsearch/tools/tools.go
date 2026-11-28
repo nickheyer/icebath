@@ -118,7 +118,13 @@ func (r registrant) Tools() []tools.Def {
 					"`@session:<profile>/<id>` link: pass the profile segment here with session_id as the id segment. Omit to use the current profile."),
 			},
 		),
-		Check:    func(*tools.Env) bool { _, err := r.store(); return err == nil },
+		Check: func(*tools.Env) bool { _, err := r.store(); return err == nil },
+		Lacks: func(*tools.Env) string {
+			if _, err := r.store(); err != nil {
+				return "The sessions can't be read. " + err.Error()
+			}
+			return ""
+		},
 		Handler:  r.handle,
 		Effect:   tools.ReadOnly,
 		Parallel: true,

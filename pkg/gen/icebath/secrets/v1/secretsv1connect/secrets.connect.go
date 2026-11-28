@@ -28,8 +28,18 @@ const (
 	SecretServiceSourcesProcedure = "/icebath.secrets.v1.SecretService/Sources"
 	// SecretServiceReloadProcedure is the procedure name of the SecretService's Reload RPC.
 	SecretServiceReloadProcedure = "/icebath.secrets.v1.SecretService/Reload"
-	// SecretServiceEnableProcedure is the procedure name of the SecretService's Enable RPC.
-	SecretServiceEnableProcedure = "/icebath.secrets.v1.SecretService/Enable"
+	// SecretServiceSwitchProcedure is the procedure name of the SecretService's Switch RPC.
+	SecretServiceSwitchProcedure = "/icebath.secrets.v1.SecretService/Switch"
+	// SecretServiceBindProcedure is the procedure name of the SecretService's Bind RPC.
+	SecretServiceBindProcedure = "/icebath.secrets.v1.SecretService/Bind"
+	// SecretServiceUnbindProcedure is the procedure name of the SecretService's Unbind RPC.
+	SecretServiceUnbindProcedure = "/icebath.secrets.v1.SecretService/Unbind"
+	// SecretServiceReorderProcedure is the procedure name of the SecretService's Reorder RPC.
+	SecretServiceReorderProcedure = "/icebath.secrets.v1.SecretService/Reorder"
+	// SecretServiceForgetProcedure is the procedure name of the SecretService's Forget RPC.
+	SecretServiceForgetProcedure = "/icebath.secrets.v1.SecretService/Forget"
+	// SecretServicePreviewProcedure is the procedure name of the SecretService's Preview RPC.
+	SecretServicePreviewProcedure = "/icebath.secrets.v1.SecretService/Preview"
 )
 
 var (
@@ -47,23 +57,68 @@ var (
 			Procedure:  SecretServiceReloadProcedure,
 		}
 	})
-	secretServiceEnableSpec = sync.OnceValue(func() connect.Spec {
+	secretServiceSwitchSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
 			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_secrets_v1_secrets_proto.Services().ByName("SecretService").Methods().ByName("Enable"),
-			Procedure:  SecretServiceEnableProcedure,
+			Schema:     v1.File_icebath_secrets_v1_secrets_proto.Services().ByName("SecretService").Methods().ByName("Switch"),
+			Procedure:  SecretServiceSwitchProcedure,
+		}
+	})
+	secretServiceBindSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_secrets_v1_secrets_proto.Services().ByName("SecretService").Methods().ByName("Bind"),
+			Procedure:  SecretServiceBindProcedure,
+		}
+	})
+	secretServiceUnbindSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_secrets_v1_secrets_proto.Services().ByName("SecretService").Methods().ByName("Unbind"),
+			Procedure:  SecretServiceUnbindProcedure,
+		}
+	})
+	secretServiceReorderSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_secrets_v1_secrets_proto.Services().ByName("SecretService").Methods().ByName("Reorder"),
+			Procedure:  SecretServiceReorderProcedure,
+		}
+	})
+	secretServiceForgetSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_secrets_v1_secrets_proto.Services().ByName("SecretService").Methods().ByName("Forget"),
+			Procedure:  SecretServiceForgetProcedure,
+		}
+	})
+	secretServicePreviewSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_secrets_v1_secrets_proto.Services().ByName("SecretService").Methods().ByName("Preview"),
+			Procedure:  SecretServicePreviewProcedure,
 		}
 	})
 )
 
 // SecretServiceClient is a client for the icebath.secrets.v1.SecretService service.
 type SecretServiceClient interface {
-	// Every store, whether the profile turned it on and what its last fetch did
+	// Every store in the order they are asked, how each stands for the profile and what its last fetch did
 	Sources(context.Context, *v1.SourcesRequest) (*v1.SourcesResponse, error)
 	// Fetches every store of the profile again, the profile in use carrying what they supply from then on
 	Reload(context.Context, *v1.ReloadRequest) (*v1.SourcesResponse, error)
-	// Turns a store on or off for the profile
-	Enable(context.Context, *v1.EnableRequest) (*v1.SourcesResponse, error)
+	// Turns a store on or off for the profile, the stores fetched again
+	Switch(context.Context, *v1.SwitchRequest) (*v1.ChangeResponse, error)
+	// Fills a variable from a reference in a store that fills named variables, the reference checked before it is kept
+	Bind(context.Context, *v1.BindRequest) (*v1.ChangeResponse, error)
+	// Stops filling a variable from a store that fills named variables
+	Unbind(context.Context, *v1.UnbindRequest) (*v1.ChangeResponse, error)
+	// Asks the stores in the order given, those not named after them
+	Reorder(context.Context, *v1.ReorderRequest) (*v1.ChangeResponse, error)
+	// Removes the token a store signs in with from the keys file, the stores fetched again
+	Forget(context.Context, *v1.ForgetRequest) (*v1.ChangeResponse, error)
+	// Fetches one store now and says what the next start does with each variable it holds, setting them for the profile when asked
+	Preview(context.Context, *v1.PreviewRequest) (*v1.PreviewResponse, error)
 }
 
 // NewSecretServiceClient constructs a client for the icebath.secrets.v1.SecretService service.
@@ -74,12 +129,22 @@ func NewSecretServiceClient(client *connect.Client) SecretServiceClient {
 
 // SecretServiceHandler is an implementation of the icebath.secrets.v1.SecretService service.
 type SecretServiceHandler interface {
-	// Every store, whether the profile turned it on and what its last fetch did
+	// Every store in the order they are asked, how each stands for the profile and what its last fetch did
 	Sources(context.Context, *v1.SourcesRequest) (*v1.SourcesResponse, error)
 	// Fetches every store of the profile again, the profile in use carrying what they supply from then on
 	Reload(context.Context, *v1.ReloadRequest) (*v1.SourcesResponse, error)
-	// Turns a store on or off for the profile
-	Enable(context.Context, *v1.EnableRequest) (*v1.SourcesResponse, error)
+	// Turns a store on or off for the profile, the stores fetched again
+	Switch(context.Context, *v1.SwitchRequest) (*v1.ChangeResponse, error)
+	// Fills a variable from a reference in a store that fills named variables, the reference checked before it is kept
+	Bind(context.Context, *v1.BindRequest) (*v1.ChangeResponse, error)
+	// Stops filling a variable from a store that fills named variables
+	Unbind(context.Context, *v1.UnbindRequest) (*v1.ChangeResponse, error)
+	// Asks the stores in the order given, those not named after them
+	Reorder(context.Context, *v1.ReorderRequest) (*v1.ChangeResponse, error)
+	// Removes the token a store signs in with from the keys file, the stores fetched again
+	Forget(context.Context, *v1.ForgetRequest) (*v1.ChangeResponse, error)
+	// Fetches one store now and says what the next start does with each variable it holds, setting them for the profile when asked
+	Preview(context.Context, *v1.PreviewRequest) (*v1.PreviewResponse, error)
 }
 
 // RegisterSecretServiceHandler registers svc as the icebath.secrets.v1.SecretService implementation
@@ -89,7 +154,12 @@ func RegisterSecretServiceHandler(server *connect.Server, svc SecretServiceHandl
 	server.Register(
 		connect.Method{Spec: secretServiceSourcesSpec(), Handler: adapter.sources},
 		connect.Method{Spec: secretServiceReloadSpec(), Handler: adapter.reload},
-		connect.Method{Spec: secretServiceEnableSpec(), Handler: adapter.enable},
+		connect.Method{Spec: secretServiceSwitchSpec(), Handler: adapter._switch},
+		connect.Method{Spec: secretServiceBindSpec(), Handler: adapter.bind},
+		connect.Method{Spec: secretServiceUnbindSpec(), Handler: adapter.unbind},
+		connect.Method{Spec: secretServiceReorderSpec(), Handler: adapter.reorder},
+		connect.Method{Spec: secretServiceForgetSpec(), Handler: adapter.forget},
+		connect.Method{Spec: secretServicePreviewSpec(), Handler: adapter.preview},
 	)
 }
 
@@ -104,8 +174,28 @@ func (UnimplementedSecretServiceHandler) Reload(context.Context, *v1.ReloadReque
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.secrets.v1.SecretService.Reload is not implemented")
 }
 
-func (UnimplementedSecretServiceHandler) Enable(context.Context, *v1.EnableRequest) (*v1.SourcesResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.secrets.v1.SecretService.Enable is not implemented")
+func (UnimplementedSecretServiceHandler) Switch(context.Context, *v1.SwitchRequest) (*v1.ChangeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.secrets.v1.SecretService.Switch is not implemented")
+}
+
+func (UnimplementedSecretServiceHandler) Bind(context.Context, *v1.BindRequest) (*v1.ChangeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.secrets.v1.SecretService.Bind is not implemented")
+}
+
+func (UnimplementedSecretServiceHandler) Unbind(context.Context, *v1.UnbindRequest) (*v1.ChangeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.secrets.v1.SecretService.Unbind is not implemented")
+}
+
+func (UnimplementedSecretServiceHandler) Reorder(context.Context, *v1.ReorderRequest) (*v1.ChangeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.secrets.v1.SecretService.Reorder is not implemented")
+}
+
+func (UnimplementedSecretServiceHandler) Forget(context.Context, *v1.ForgetRequest) (*v1.ChangeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.secrets.v1.SecretService.Forget is not implemented")
+}
+
+func (UnimplementedSecretServiceHandler) Preview(context.Context, *v1.PreviewRequest) (*v1.PreviewResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.secrets.v1.SecretService.Preview is not implemented")
 }
 
 type secretServiceClient struct {
@@ -128,9 +218,49 @@ func (c *secretServiceClient) Reload(ctx context.Context, req *v1.ReloadRequest)
 	return &res, nil
 }
 
-func (c *secretServiceClient) Enable(ctx context.Context, req *v1.EnableRequest) (*v1.SourcesResponse, error) {
-	var res v1.SourcesResponse
-	if err := c.client.CallUnary(ctx, secretServiceEnableSpec(), req, &res); err != nil {
+func (c *secretServiceClient) Switch(ctx context.Context, req *v1.SwitchRequest) (*v1.ChangeResponse, error) {
+	var res v1.ChangeResponse
+	if err := c.client.CallUnary(ctx, secretServiceSwitchSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *secretServiceClient) Bind(ctx context.Context, req *v1.BindRequest) (*v1.ChangeResponse, error) {
+	var res v1.ChangeResponse
+	if err := c.client.CallUnary(ctx, secretServiceBindSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *secretServiceClient) Unbind(ctx context.Context, req *v1.UnbindRequest) (*v1.ChangeResponse, error) {
+	var res v1.ChangeResponse
+	if err := c.client.CallUnary(ctx, secretServiceUnbindSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *secretServiceClient) Reorder(ctx context.Context, req *v1.ReorderRequest) (*v1.ChangeResponse, error) {
+	var res v1.ChangeResponse
+	if err := c.client.CallUnary(ctx, secretServiceReorderSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *secretServiceClient) Forget(ctx context.Context, req *v1.ForgetRequest) (*v1.ChangeResponse, error) {
+	var res v1.ChangeResponse
+	if err := c.client.CallUnary(ctx, secretServiceForgetSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *secretServiceClient) Preview(ctx context.Context, req *v1.PreviewRequest) (*v1.PreviewResponse, error) {
+	var res v1.PreviewResponse
+	if err := c.client.CallUnary(ctx, secretServicePreviewSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -162,12 +292,72 @@ func (h secretServiceHandler) reload(ctx context.Context, _ connect.Spec, stream
 	return stream.Send(res)
 }
 
-func (h secretServiceHandler) enable(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.EnableRequest
+func (h secretServiceHandler) _switch(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SwitchRequest
 	if err := stream.Receive(&req); err != nil {
 		return err
 	}
-	res, err := h.svc.Enable(ctx, &req)
+	res, err := h.svc.Switch(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h secretServiceHandler) bind(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.BindRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Bind(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h secretServiceHandler) unbind(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.UnbindRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Unbind(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h secretServiceHandler) reorder(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ReorderRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Reorder(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h secretServiceHandler) forget(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ForgetRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Forget(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h secretServiceHandler) preview(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.PreviewRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Preview(ctx, &req)
 	if err != nil {
 		return err
 	}

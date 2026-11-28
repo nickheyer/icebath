@@ -460,7 +460,7 @@ func report(result Result) string {
 		sorted := slices.Clone(result.Findings)
 		slices.SortStableFunc(sorted, func(a, b Finding) int { return severityRank(a.Severity) - severityRank(b.Severity) })
 		for _, f := range sorted {
-			lines = append(lines, fmt.Sprintf("  %s risk, %s, at %s:%d: “%s”", capital(f.Severity), f.Category, f.File, f.Line, clipRunes(f.Match, 60)))
+			lines = append(lines, fmt.Sprintf("  %s risk, %s, at %s:%d: “%s”", strs.Capital(f.Severity), f.Category, f.File, f.Line, clipRunes(f.Match, 60)))
 		}
 		lines = append(lines, "")
 	}
@@ -478,15 +478,7 @@ func verdictWord(verdict string) string {
 	case "dangerous":
 		return "Dangerous"
 	}
-	return capital(verdict)
-}
-
-// Text with its first letter in upper case
-func capital(text string) string {
-	if text == "" {
-		return text
-	}
-	return strings.ToUpper(text[:1]) + text[1:]
+	return strs.Capital(verdict)
 }
 
 // Structural problems of a skill's folder: links that break or leave it, too many or too large files, binaries, unexpected executables

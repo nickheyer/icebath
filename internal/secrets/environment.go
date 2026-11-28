@@ -380,15 +380,15 @@ func (h *Secrets) say(cfg *config.Config, report Report) bool {
 			lines = append(lines, fmt.Sprintf("  ✓ %s set %s.", source.Label, strs.Count(n, "variable")))
 		}
 		if source.Result.Error != "" {
-			lines = append(lines, fmt.Sprintf("  ⚠ %s: %s", source.Label, Sentence(source.Result.Error)))
+			lines = append(lines, fmt.Sprintf("  ⚠ %s: %s", source.Label, strs.Sentence(source.Result.Error)))
 			if found, ok := h.Source(source.Name); ok {
 				if hint := h.Remedy(cfg, found.Spec(), source.Result.Kind); hint != "" {
-					lines = append(lines, "    "+Sentence(hint))
+					lines = append(lines, "    "+strs.Sentence(hint))
 				}
 			}
 		}
 		for _, warning := range source.Result.Warnings {
-			lines = append(lines, fmt.Sprintf("  ⚠ %s: %s", source.Label, Sentence(warning)))
+			lines = append(lines, fmt.Sprintf("  ⚠ %s: %s", source.Label, strs.Sentence(warning)))
 		}
 	}
 	for _, conflict := range report.Conflicts {

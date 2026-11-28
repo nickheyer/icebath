@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -98,7 +99,7 @@ func (a *Agent) SetLogin(ctx context.Context, id, name, login, onExhausted strin
 			}
 		}
 		if found == "" {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Sprintf("%s has no account named %s. Add one in /providers.", instance.Label(), login))
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Sprintf("%s has no account named %s. /providers adds one.", instance.Label(), login))
 		}
 		values[loginKey(instance.ID)] = found
 	}
@@ -109,29 +110,33 @@ func (a *Agent) SetLogin(ctx context.Context, id, name, login, onExhausted strin
 			values[exhaustedKey(instance.ID)] = onExhausted
 		}
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument, "When accounts run out must be Stop or Move on.")
+		return nil, connect.NewError(connect.CodeInvalidArgument, "When an account runs out must be Stop or Move on.")
 	}
 	if len(values) > 0 {
-		store, err := a.store()
-		if err != nil {
-			return nil, err
-		}
 		r.mu.Lock()
-		merged := r.overrides.Merge(values, nil)
-		r.mu.Unlock()
-		if err := store.Update(ctx, id, merged.Change()); err != nil {
-			return nil, err
-		}
-		r.mu.Lock()
-		r.overrides = merged
 		r.exhausted = ""
 		r.mu.Unlock()
-		a.changed(r)
+		if err := a.keepOwn(ctx, r, values); err != nil {
+			return nil, err
+		}
 	}
 	settings := a.settings(r)
 	current, _, _ := a.current(r)
 	out := &agentv1.SetLoginResponse{Login: settings.GetString(loginKey(instance.ID)), OnExhausted: settings.GetString(exhaustedKey(instance.ID)),
 		Current: current.ID == instance.ID}
+	switch {
+	case clear:
+		out.Said = "Account is back to the one " + instance.Label() + " chooses, in this chat."
+	case login != "":
+		out.Said = "Account is now " + accountWords(instance, out.Login) + " in this chat."
+	case onExhausted == providerconfig.Rotate:
+		out.Said = "This chat now moves on to the next account that takes turns when one runs out."
+	case onExhausted == providerconfig.Fail:
+		out.Said = "This chat now stops when its account runs out."
+	}
+	if !out.Current && out.Said != "" {
+		out.Said += " It applies once the chat uses " + instance.Label() + "."
+	}
 	if retry {
 		switch err := a.Retry(id); {
 		case err == nil:
@@ -141,18 +146,6 @@ func (a *Agent) SetLogin(ctx context.Context, id, name, login, onExhausted strin
 		}
 	}
 	return out, nil
-}
-
-// Holds the session to the login of the name of its current provider, as /model --login asks; what the user is told
-func (a *Agent) Login(ctx context.Context, id, name, login string) (string, error) {
-	response, err := a.SetLogin(ctx, id, name, login, "", false, false)
-	if err != nil {
-		return "", err
-	}
-	if response.GetLogin() == providerconfig.Rotation {
-		return "From your next message on, this session takes turns between the accounts that the provider rotates through.", nil
-	}
-	return "From your next message on, this session uses the account " + response.GetLogin() + ".", nil
 }
 
 // Tells the session's windows once that the login it is held to ran out, when the turn failed on it: when it resets, why, and the
@@ -176,7 +169,7 @@ func (a *Agent) exhaustedLogin(r *run) {
 	if told {
 		return
 	}
-	event := &agentv1.LoginExhausted{SessionId: r.sessionID(), Provider: instance.ID, Kind: instance.Spec.Name,
+	event := &agentv1.LoginExhausted{SessionId: r.sessionID(), Provider: instance.ID, ProviderTitle: instance.Label(), Kind: instance.Spec.Name,
 		Login: &agentv1.Login{Id: instance.Account, Name: loginName(instance, instance.Account)}, Reason: cmp.Or(status.Reason, status.Message),
 		OnExhausted: cmp.Or(instance.Settings.GetString(providerconfig.OnExhausted), providerconfig.Fail)}
 	if !resets.IsZero() {
@@ -195,9 +188,9 @@ func (a *Agent) exhaustedLogin(r *run) {
 	if !resets.IsZero() {
 		when = " until " + resets.Local().Format("15:04")
 	}
-	text := fmt.Sprintf("The %s account %s can't be used%s.", instance.ID, event.Login.Name, when)
+	text := fmt.Sprintf("Your account %s at %s can't be used%s.", event.Login.Name, instance.Label(), when)
 	if len(event.Ready) > 0 {
-		text += fmt.Sprintf(" Switch to another with /model --login %s.", event.Ready[0].Name)
+		text += fmt.Sprintf(" Type /model --login %s to switch to %s.", quotedWord(event.Ready[0].Name), event.Ready[0].Name)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -318,7 +311,7 @@ func (a *Agent) WaitLogin(ctx context.Context, id, name string, now, cancel bool
 		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 	}
 	if !instance.Pinned {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Sprintf("This session uses no single %s account, so there is none to wait for.", instance.ID))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Sprintf("This session uses no single %s account, so there is none to wait for.", instance.Label()))
 	}
 	out.Login = &agentv1.Login{Id: instance.Account, Name: loginName(instance, instance.Account)}
 	_, until := a.credentials.State(credentials.Of(instance, instance.Account))
@@ -356,4 +349,13 @@ func (s *service) SetLogin(ctx context.Context, request *agentv1.SetLoginRequest
 
 func (s *service) WaitLogin(ctx context.Context, request *agentv1.WaitLoginRequest) (*agentv1.WaitLoginResponse, error) {
 	return s.agent.WaitLogin(ctx, request.GetSessionId(), request.GetProvider(), request.GetNow(), request.GetCancel())
+}
+
+// A word of a command as it is typed back: in quotes when it holds a space, which would split it, or a quote or a backslash, which the
+// command reads as its own
+func quotedWord(word string) string {
+	if strings.ContainsAny(word, " \t\"\\") {
+		return strconv.Quote(word)
+	}
+	return word
 }

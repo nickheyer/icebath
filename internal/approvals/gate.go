@@ -335,7 +335,7 @@ func (a *Approvals) Command(ctx context.Context, c Context, command string, isol
 		return tools.Verdict{Refusal: blocked}
 	}
 	mode := Mode(cfg)
-	if a.skips(c.Session) || mode == approvalsconfig.Off || allowlisted(cfg, command) {
+	if a.Skips(c.Session) || mode == approvalsconfig.Off || allowlisted(cfg, command) {
 		return tools.Verdict{}
 	}
 	if !a.present(c) {
@@ -386,7 +386,7 @@ func (a *Approvals) Gate(ctx context.Context, c Context, g tools.Gate) error {
 		}
 		return nil
 	}
-	if a.skips(c.Session) || Mode(cfg) == approvalsconfig.Off || a.approved(cfg, c.Session, key) {
+	if a.Skips(c.Session) || Mode(cfg) == approvalsconfig.Off || a.approved(cfg, c.Session, key) {
 		return nil
 	}
 	if !a.present(c) {
@@ -428,7 +428,7 @@ var codeSpec = spec{noun: "code", user: true,
 // trusts it and on the user's own window; refused in one that does not trust it; else asked, the smart reviewer first
 func (a *Approvals) code(ctx context.Context, c Context, g tools.Gate, key, description, noHuman string) error {
 	cfg := c.Config
-	if a.skips(c.Session) || Mode(cfg) == approvalsconfig.Off {
+	if a.Skips(c.Session) || Mode(cfg) == approvalsconfig.Off {
 		return nil
 	}
 	if contexts := c.unattended(); len(contexts) > 0 {
@@ -470,11 +470,11 @@ func (a *Approvals) Confirm(ctx context.Context, c Context, command, detail stri
 		if err := c.Config.Set(approvalsconfig.DestructiveConfirm, false); err != nil {
 			slog.Warn("Could not persist destructive_slash_confirm=false", "session", c.Session, "error", err)
 			return true, "\n\n⚠ That choice could not be saved, so /" + command + " and the other commands that delete or reset things ask again next " +
-				"time. To stop the questions, turn off Confirm before deleting in /settings under Approvals."
+				"time. Confirm before deleting, an option of Approvals, stops the questions."
 		}
 		slog.Info("User opted out of destructive slash confirm", "session", c.Session)
-		return true, "\n\n/" + command + " and the other commands that delete or reset things now run without asking. To be asked again, turn on " +
-			"Confirm before deleting in /settings under Approvals."
+		return true, "\n\n/" + command + " and the other commands that delete or reset things now run without asking. Confirm before deleting, " +
+			"an option of Approvals, asks again."
 	}
 	return false, "Cancelled /" + command + ", so nothing changed."
 }
@@ -561,12 +561,12 @@ func (a *Approvals) Evaluate(cfg *config.Config, session, command, backend strin
 	if pattern := r.userDeny(cfg, command); pattern != "" {
 		return result(UserDeny, pattern, "It matches one of your Blocked commands, which stay blocked even with --yolo or when When to ask is Never ask.")
 	}
-	if a.skips(session) || Mode(cfg) == approvalsconfig.Off {
+	if a.Skips(session) || Mode(cfg) == approvalsconfig.Off {
 		return result(Allowed, "", "Asking is off, by --yolo or by When to ask set to Never ask, so only the always-blocked commands and your Blocked "+
 			"commands would stop it.")
 	}
 	if allowlisted(cfg, command) {
-		return result(Allowed, "", "It matches one of your Allowed commands, so it runs without asking.")
+		return result(Allowed, "", "It matches what you let run without asking.")
 	}
 	if description := r.dangerous(command); description != "" {
 		return result(Asks, description, fmt.Sprintf("It looks risky, as %s, so the agent would ask you first.", description))

@@ -23,6 +23,9 @@ var (
 	EncryptedStale = Encrypted + ".max_stale_seconds"
 )
 
+// Title of the encrypted copy of the secrets, its section and its page
+const EncryptedTitle = "Offline copy"
+
 // Setting naming the variable of the access token, and that variable unless it names another
 const (
 	TokenSetting    = "access_token_env"

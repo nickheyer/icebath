@@ -23,6 +23,7 @@ import (
 	speechconfig "github.com/nickheyer/icebath/internal/speech/config"
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/internal/tools"
+	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -40,6 +41,10 @@ var platformLimits = map[string]Delivery{
 	"telegram": {Platform: "telegram", MaxFileBytes: 50 << 20, SafetyRatio: 0.85},
 	"default":  {Platform: "default", MaxFileBytes: 10 << 20, SafetyRatio: 0.85},
 }
+
+// What a person calls each chat app speech knows
+var appTitles = map[string]string{"telegram": "Telegram", "discord": "Discord", "matrix": "Matrix", "feishu": "Feishu", "whatsapp": "WhatsApp",
+	"signal": "Signal"}
 
 var mediaDirective = regexp.MustCompile("(?i)media:\\s*[`'\"*_]*(?:[`'\"]|[a-z]:[/\\\\]|~?/)")
 
@@ -60,6 +65,8 @@ type Call struct {
 	Instructions string
 	// Voice of the call, for a voice that lets the model pick
 	Voice string
+	// The text is speech text already, as Spoken gives it, and is read as it is
+	Speech bool
 }
 
 // Result of a speech synthesis, as the model reads it when it succeeded
@@ -113,10 +120,32 @@ func (j *Job) speaker() (Voice, string) {
 	return voice, name
 }
 
+// The voice the profile reads replies aloud with, and whether it can now
+type Speaking struct {
+	// As tts.provider names it, Edge when it names none
+	Name string
+	// The voice of Name, its zero value for a name no voice has
+	Voice    Voice
+	Standing Standing
+	// What keeps replies from being read aloud, nil while nothing does
+	Hindrance *Hindrance
+}
+
+// The one answer to which voice reads the profile's replies aloud and what keeps it from it: a name no voice has, or what the voice lacks
+func (j *Job) Speaking() Speaking {
+	name := j.voiceName()
+	voice, ok := j.Speech.Voice(j.Config, name)
+	if !ok {
+		return Speaking{Name: name, Standing: Standing{State: CantRun}, Hindrance: &Hindrance{Cause: "no text to speech service is called " + name,
+			Lack: LacksService, Service: name}}
+	}
+	standing := j.VoiceStanding(voice)
+	return Speaking{Name: name, Voice: voice, Standing: standing, Hindrance: standing.Hindrance}
+}
+
 // Whether the voice the profile speaks with can run now, never installing anything; a name no voice has can't
 func (j *Job) CanSpeak() bool {
-	voice, ok := j.Speech.Voice(j.Config, j.voiceName())
-	return ok && voice.ready(j)
+	return j.Speaking().Hindrance == nil
 }
 
 // Voice the profile speaks with, for the tool's schema
@@ -189,8 +218,11 @@ func (j *Job) TextToSpeech(ctx context.Context, call Call) Outcome {
 	if strings.TrimSpace(call.Text) == "" {
 		return failed("Text is required")
 	}
-	text := Spoken(call.Text, 0)
-	if text == "" {
+	text := call.Text
+	if !call.Speech {
+		text = Spoken(text, 0)
+	}
+	if strings.TrimSpace(text) == "" {
 		return failed("Text is empty after TTS cleanup")
 	}
 	voice, name := j.speaker()
@@ -340,7 +372,7 @@ func (j *Job) outputPath(given string, voice Voice, bubbles bool) (string, strin
 		case traversal(given):
 			return "", fmt.Sprintf("output_path contains '..' traversal component: %s. Use an absolute path or one relative to the current directory without '..'.", given), nil
 		}
-		path = terminal.ExpandUser(given)
+		path = fsx.ExpandHome(given)
 		if voice.Format != "" {
 			path = strings.TrimSuffix(path, filepath.Ext(path)) + "." + voice.Format
 		}

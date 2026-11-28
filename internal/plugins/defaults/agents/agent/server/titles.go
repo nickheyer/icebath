@@ -107,7 +107,7 @@ func (a *Agent) upgradeTitle(ctx context.Context, r *run, store sessions.Store, 
 		}
 		r.mu.Lock()
 		a.notify(r, "⚠ The helper model could not name this session: "+strings.TrimSuffix(cmp.Or(detail, "no reason given"), ".")+
-			". Check Session titles in /settings under Helper models.")
+			". Check its model with /settings session titles.")
 		r.mu.Unlock()
 	}
 	if title == "" {

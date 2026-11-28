@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	approvalsconfig "github.com/nickheyer/icebath/internal/approvals/config"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -359,7 +360,7 @@ func (c *chat) confirm(command, detail string, then func() tea.Cmd) tea.Cmd {
 // Turns asking before risky commands off for the session, or on again, as /yolo does
 func (c *chat) yolo() tea.Cmd {
 	if c.id == "" {
-		c.log.note("This chat has no session yet. Send a message first, then " + c.kit.WM.Keys().Display("agent.yolo") + " skips approvals in it.")
+		c.log.note(approvalsconfig.NoSession)
 		return nil
 	}
 	return c.send("/yolo")

@@ -402,8 +402,10 @@ func (x *SuggestResponse) GetAllowed() int32 {
 }
 
 type ListRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Session asked whether it skips asking, none when empty
+	Session       string `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -441,6 +443,13 @@ func (*ListRequest) Descriptor() ([]byte, []int) {
 func (x *ListRequest) GetProfile() string {
 	if x != nil {
 		return x.Profile
+	}
+	return ""
+}
+
+func (x *ListRequest) GetSession() string {
+	if x != nil {
+		return x.Session
 	}
 	return ""
 }
@@ -498,17 +507,106 @@ func (x *Kind) GetAbout() string {
 	return ""
 }
 
+// One entry of the allowlist as every page shows it
+type Entry struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Value string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	// kind for a kind of risky action, pattern for a pattern of commands, command for one command exactly
+	Kind string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	// How a person reads it
+	Title string `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	// What it lets through, in a few words
+	Through string `protobuf:"bytes,4,opt,name=through,proto3" json:"through,omitempty"`
+	// What asks about it, for a kind of risky action
+	About         string `protobuf:"bytes,5,opt,name=about,proto3" json:"about,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Entry) Reset() {
+	*x = Entry{}
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Entry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Entry) ProtoMessage() {}
+
+func (x *Entry) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Entry.ProtoReflect.Descriptor instead.
+func (*Entry) Descriptor() ([]byte, []int) {
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Entry) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *Entry) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *Entry) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Entry) GetThrough() string {
+	if x != nil {
+		return x.Through
+	}
+	return ""
+}
+
+func (x *Entry) GetAbout() string {
+	if x != nil {
+		return x.About
+	}
+	return ""
+}
+
 type ListResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Allowed       []string               `protobuf:"bytes,1,rep,name=allowed,proto3" json:"allowed,omitempty"`
-	Kinds         []*Kind                `protobuf:"bytes,2,rep,name=kinds,proto3" json:"kinds,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Entries in the order the allowlist keeps them: kinds of risky action, then patterns, then commands
+	Allowed []string `protobuf:"bytes,1,rep,name=allowed,proto3" json:"allowed,omitempty"`
+	Kinds   []*Kind  `protobuf:"bytes,2,rep,name=kinds,proto3" json:"kinds,omitempty"`
+	Entries []*Entry `protobuf:"bytes,3,rep,name=entries,proto3" json:"entries,omitempty"`
+	// The session asked about skips asking
+	Skipped bool `protobuf:"varint,4,opt,name=skipped,proto3" json:"skipped,omitempty"`
+	// What wins over When to ask now, as a sentence, empty while nothing does
+	Winning string `protobuf:"bytes,5,opt,name=winning,proto3" json:"winning,omitempty"`
+	// Every session runs without asking since icebath started with ICEBATH_YOLO_MODE set
+	Launched      bool `protobuf:"varint,6,opt,name=launched,proto3" json:"launched,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListResponse) Reset() {
 	*x = ListResponse{}
-	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[7]
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -520,7 +618,7 @@ func (x *ListResponse) String() string {
 func (*ListResponse) ProtoMessage() {}
 
 func (x *ListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[7]
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -533,7 +631,7 @@ func (x *ListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
 func (*ListResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{7}
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListResponse) GetAllowed() []string {
@@ -550,6 +648,34 @@ func (x *ListResponse) GetKinds() []*Kind {
 	return nil
 }
 
+func (x *ListResponse) GetEntries() []*Entry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *ListResponse) GetSkipped() bool {
+	if x != nil {
+		return x.Skipped
+	}
+	return false
+}
+
+func (x *ListResponse) GetWinning() string {
+	if x != nil {
+		return x.Winning
+	}
+	return ""
+}
+
+func (x *ListResponse) GetLaunched() bool {
+	if x != nil {
+		return x.Launched
+	}
+	return false
+}
+
 type AllowRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
@@ -560,7 +686,7 @@ type AllowRequest struct {
 
 func (x *AllowRequest) Reset() {
 	*x = AllowRequest{}
-	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[8]
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -572,7 +698,7 @@ func (x *AllowRequest) String() string {
 func (*AllowRequest) ProtoMessage() {}
 
 func (x *AllowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[8]
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -585,7 +711,7 @@ func (x *AllowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AllowRequest.ProtoReflect.Descriptor instead.
 func (*AllowRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{8}
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *AllowRequest) GetProfile() string {
@@ -614,7 +740,7 @@ type AllowResponse struct {
 
 func (x *AllowResponse) Reset() {
 	*x = AllowResponse{}
-	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[9]
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -626,7 +752,7 @@ func (x *AllowResponse) String() string {
 func (*AllowResponse) ProtoMessage() {}
 
 func (x *AllowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[9]
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -639,7 +765,7 @@ func (x *AllowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AllowResponse.ProtoReflect.Descriptor instead.
 func (*AllowResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{9}
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AllowResponse) GetAdded() []string {
@@ -666,7 +792,7 @@ type DisallowRequest struct {
 
 func (x *DisallowRequest) Reset() {
 	*x = DisallowRequest{}
-	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[10]
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -678,7 +804,7 @@ func (x *DisallowRequest) String() string {
 func (*DisallowRequest) ProtoMessage() {}
 
 func (x *DisallowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[10]
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -691,7 +817,7 @@ func (x *DisallowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisallowRequest.ProtoReflect.Descriptor instead.
 func (*DisallowRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{10}
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *DisallowRequest) GetProfile() string {
@@ -716,7 +842,7 @@ type DisallowResponse struct {
 
 func (x *DisallowResponse) Reset() {
 	*x = DisallowResponse{}
-	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[11]
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -728,7 +854,7 @@ func (x *DisallowResponse) String() string {
 func (*DisallowResponse) ProtoMessage() {}
 
 func (x *DisallowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[11]
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -741,7 +867,297 @@ func (x *DisallowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisallowResponse.ProtoReflect.Descriptor instead.
 func (*DisallowResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{11}
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{12}
+}
+
+type ChangeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Old           string                 `protobuf:"bytes,2,opt,name=old,proto3" json:"old,omitempty"`
+	New           string                 `protobuf:"bytes,3,opt,name=new,proto3" json:"new,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangeRequest) Reset() {
+	*x = ChangeRequest{}
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeRequest) ProtoMessage() {}
+
+func (x *ChangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeRequest.ProtoReflect.Descriptor instead.
+func (*ChangeRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ChangeRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ChangeRequest) GetOld() string {
+	if x != nil {
+		return x.Old
+	}
+	return ""
+}
+
+func (x *ChangeRequest) GetNew() string {
+	if x != nil {
+		return x.New
+	}
+	return ""
+}
+
+type ChangeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangeResponse) Reset() {
+	*x = ChangeResponse{}
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeResponse) ProtoMessage() {}
+
+func (x *ChangeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeResponse.ProtoReflect.Descriptor instead.
+func (*ChangeResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{14}
+}
+
+type ModeRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// manual, smart or off
+	Mode          string `protobuf:"bytes,2,opt,name=mode,proto3" json:"mode,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModeRequest) Reset() {
+	*x = ModeRequest{}
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModeRequest) ProtoMessage() {}
+
+func (x *ModeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModeRequest.ProtoReflect.Descriptor instead.
+func (*ModeRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ModeRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ModeRequest) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+type ModeResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What the row of When to ask says once it changed, and what wins over it
+	Note          string `protobuf:"bytes,1,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModeResponse) Reset() {
+	*x = ModeResponse{}
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModeResponse) ProtoMessage() {}
+
+func (x *ModeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModeResponse.ProtoReflect.Descriptor instead.
+func (*ModeResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ModeResponse) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type SkipRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Session       string                 `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	On            bool                   `protobuf:"varint,2,opt,name=on,proto3" json:"on,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SkipRequest) Reset() {
+	*x = SkipRequest{}
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SkipRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SkipRequest) ProtoMessage() {}
+
+func (x *SkipRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SkipRequest.ProtoReflect.Descriptor instead.
+func (*SkipRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *SkipRequest) GetSession() string {
+	if x != nil {
+		return x.Session
+	}
+	return ""
+}
+
+func (x *SkipRequest) GetOn() bool {
+	if x != nil {
+		return x.On
+	}
+	return false
+}
+
+type SkipResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Note          string                 `protobuf:"bytes,1,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SkipResponse) Reset() {
+	*x = SkipResponse{}
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SkipResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SkipResponse) ProtoMessage() {}
+
+func (x *SkipResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_approvals_v1_approvals_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SkipResponse.ProtoReflect.Descriptor instead.
+func (*SkipResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_approvals_v1_approvals_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *SkipResponse) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
 }
 
 var File_icebath_approvals_v1_approvals_proto protoreflect.FileDescriptor
@@ -777,15 +1193,26 @@ const file_icebath_approvals_v1_approvals_proto_rawDesc = "" +
 	"\x0fSuggestResponse\x12<\n" +
 	"\tproposals\x18\x01 \x03(\v2\x1e.icebath.approvals.v1.ProposalR\tproposals\x12\x12\n" +
 	"\x04days\x18\x02 \x01(\x05R\x04days\x12\x18\n" +
-	"\aallowed\x18\x03 \x01(\x05R\aallowed\"'\n" +
+	"\aallowed\x18\x03 \x01(\x05R\aallowed\"A\n" +
 	"\vListRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"2\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x18\n" +
+	"\asession\x18\x02 \x01(\tR\asession\"2\n" +
 	"\x04Kind\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
-	"\x05about\x18\x02 \x01(\tR\x05about\"Z\n" +
+	"\x05about\x18\x02 \x01(\tR\x05about\"w\n" +
+	"\x05Entry\x12\x14\n" +
+	"\x05value\x18\x01 \x01(\tR\x05value\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05title\x18\x03 \x01(\tR\x05title\x12\x18\n" +
+	"\athrough\x18\x04 \x01(\tR\athrough\x12\x14\n" +
+	"\x05about\x18\x05 \x01(\tR\x05about\"\xe1\x01\n" +
 	"\fListResponse\x12\x18\n" +
 	"\aallowed\x18\x01 \x03(\tR\aallowed\x120\n" +
-	"\x05kinds\x18\x02 \x03(\v2\x1a.icebath.approvals.v1.KindR\x05kinds\"D\n" +
+	"\x05kinds\x18\x02 \x03(\v2\x1a.icebath.approvals.v1.KindR\x05kinds\x125\n" +
+	"\aentries\x18\x03 \x03(\v2\x1b.icebath.approvals.v1.EntryR\aentries\x12\x18\n" +
+	"\askipped\x18\x04 \x01(\bR\askipped\x12\x18\n" +
+	"\awinning\x18\x05 \x01(\tR\awinning\x12\x1a\n" +
+	"\blaunched\x18\x06 \x01(\bR\blaunched\"D\n" +
 	"\fAllowRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x1a\n" +
 	"\bpatterns\x18\x02 \x03(\tR\bpatterns\"9\n" +
@@ -795,13 +1222,31 @@ const file_icebath_approvals_v1_approvals_proto_rawDesc = "" +
 	"\x0fDisallowRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x1a\n" +
 	"\bpatterns\x18\x02 \x03(\tR\bpatterns\"\x12\n" +
-	"\x10DisallowResponse2\xb5\x03\n" +
+	"\x10DisallowResponse\"M\n" +
+	"\rChangeRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x10\n" +
+	"\x03old\x18\x02 \x01(\tR\x03old\x12\x10\n" +
+	"\x03new\x18\x03 \x01(\tR\x03new\"\x10\n" +
+	"\x0eChangeResponse\";\n" +
+	"\vModeRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04mode\x18\x02 \x01(\tR\x04mode\"\"\n" +
+	"\fModeResponse\x12\x12\n" +
+	"\x04note\x18\x01 \x01(\tR\x04note\"7\n" +
+	"\vSkipRequest\x12\x18\n" +
+	"\asession\x18\x01 \x01(\tR\asession\x12\x0e\n" +
+	"\x02on\x18\x02 \x01(\bR\x02on\"\"\n" +
+	"\fSkipResponse\x12\x12\n" +
+	"\x04note\x18\x01 \x01(\tR\x04note2\xa8\x05\n" +
 	"\x10ApprovalsService\x12M\n" +
 	"\x04Test\x12!.icebath.approvals.v1.TestRequest\x1a\".icebath.approvals.v1.TestResponse\x12V\n" +
 	"\aSuggest\x12$.icebath.approvals.v1.SuggestRequest\x1a%.icebath.approvals.v1.SuggestResponse\x12M\n" +
 	"\x04List\x12!.icebath.approvals.v1.ListRequest\x1a\".icebath.approvals.v1.ListResponse\x12P\n" +
 	"\x05Allow\x12\".icebath.approvals.v1.AllowRequest\x1a#.icebath.approvals.v1.AllowResponse\x12Y\n" +
-	"\bDisallow\x12%.icebath.approvals.v1.DisallowRequest\x1a&.icebath.approvals.v1.DisallowResponseB\xe3\x01\n" +
+	"\bDisallow\x12%.icebath.approvals.v1.DisallowRequest\x1a&.icebath.approvals.v1.DisallowResponse\x12S\n" +
+	"\x06Change\x12#.icebath.approvals.v1.ChangeRequest\x1a$.icebath.approvals.v1.ChangeResponse\x12M\n" +
+	"\x04Mode\x12!.icebath.approvals.v1.ModeRequest\x1a\".icebath.approvals.v1.ModeResponse\x12M\n" +
+	"\x04Skip\x12!.icebath.approvals.v1.SkipRequest\x1a\".icebath.approvals.v1.SkipResponseB\xe3\x01\n" +
 	"\x18com.icebath.approvals.v1B\x0eApprovalsProtoP\x01ZEgithub.com/nickheyer/icebath/pkg/gen/icebath/approvals/v1;approvalsv1\xa2\x02\x03IAX\xaa\x02\x14Icebath.Approvals.V1\xca\x02\x14Icebath\\Approvals\\V1\xe2\x02 Icebath\\Approvals\\V1\\GPBMetadata\xea\x02\x16Icebath::Approvals::V1b\x06proto3"
 
 var (
@@ -816,7 +1261,7 @@ func file_icebath_approvals_v1_approvals_proto_rawDescGZIP() []byte {
 	return file_icebath_approvals_v1_approvals_proto_rawDescData
 }
 
-var file_icebath_approvals_v1_approvals_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_icebath_approvals_v1_approvals_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_icebath_approvals_v1_approvals_proto_goTypes = []any{
 	(*TestRequest)(nil),      // 0: icebath.approvals.v1.TestRequest
 	(*TestResponse)(nil),     // 1: icebath.approvals.v1.TestResponse
@@ -825,30 +1270,44 @@ var file_icebath_approvals_v1_approvals_proto_goTypes = []any{
 	(*SuggestResponse)(nil),  // 4: icebath.approvals.v1.SuggestResponse
 	(*ListRequest)(nil),      // 5: icebath.approvals.v1.ListRequest
 	(*Kind)(nil),             // 6: icebath.approvals.v1.Kind
-	(*ListResponse)(nil),     // 7: icebath.approvals.v1.ListResponse
-	(*AllowRequest)(nil),     // 8: icebath.approvals.v1.AllowRequest
-	(*AllowResponse)(nil),    // 9: icebath.approvals.v1.AllowResponse
-	(*DisallowRequest)(nil),  // 10: icebath.approvals.v1.DisallowRequest
-	(*DisallowResponse)(nil), // 11: icebath.approvals.v1.DisallowResponse
+	(*Entry)(nil),            // 7: icebath.approvals.v1.Entry
+	(*ListResponse)(nil),     // 8: icebath.approvals.v1.ListResponse
+	(*AllowRequest)(nil),     // 9: icebath.approvals.v1.AllowRequest
+	(*AllowResponse)(nil),    // 10: icebath.approvals.v1.AllowResponse
+	(*DisallowRequest)(nil),  // 11: icebath.approvals.v1.DisallowRequest
+	(*DisallowResponse)(nil), // 12: icebath.approvals.v1.DisallowResponse
+	(*ChangeRequest)(nil),    // 13: icebath.approvals.v1.ChangeRequest
+	(*ChangeResponse)(nil),   // 14: icebath.approvals.v1.ChangeResponse
+	(*ModeRequest)(nil),      // 15: icebath.approvals.v1.ModeRequest
+	(*ModeResponse)(nil),     // 16: icebath.approvals.v1.ModeResponse
+	(*SkipRequest)(nil),      // 17: icebath.approvals.v1.SkipRequest
+	(*SkipResponse)(nil),     // 18: icebath.approvals.v1.SkipResponse
 }
 var file_icebath_approvals_v1_approvals_proto_depIdxs = []int32{
 	3,  // 0: icebath.approvals.v1.SuggestResponse.proposals:type_name -> icebath.approvals.v1.Proposal
 	6,  // 1: icebath.approvals.v1.ListResponse.kinds:type_name -> icebath.approvals.v1.Kind
-	0,  // 2: icebath.approvals.v1.ApprovalsService.Test:input_type -> icebath.approvals.v1.TestRequest
-	2,  // 3: icebath.approvals.v1.ApprovalsService.Suggest:input_type -> icebath.approvals.v1.SuggestRequest
-	5,  // 4: icebath.approvals.v1.ApprovalsService.List:input_type -> icebath.approvals.v1.ListRequest
-	8,  // 5: icebath.approvals.v1.ApprovalsService.Allow:input_type -> icebath.approvals.v1.AllowRequest
-	10, // 6: icebath.approvals.v1.ApprovalsService.Disallow:input_type -> icebath.approvals.v1.DisallowRequest
-	1,  // 7: icebath.approvals.v1.ApprovalsService.Test:output_type -> icebath.approvals.v1.TestResponse
-	4,  // 8: icebath.approvals.v1.ApprovalsService.Suggest:output_type -> icebath.approvals.v1.SuggestResponse
-	7,  // 9: icebath.approvals.v1.ApprovalsService.List:output_type -> icebath.approvals.v1.ListResponse
-	9,  // 10: icebath.approvals.v1.ApprovalsService.Allow:output_type -> icebath.approvals.v1.AllowResponse
-	11, // 11: icebath.approvals.v1.ApprovalsService.Disallow:output_type -> icebath.approvals.v1.DisallowResponse
-	7,  // [7:12] is the sub-list for method output_type
-	2,  // [2:7] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	7,  // 2: icebath.approvals.v1.ListResponse.entries:type_name -> icebath.approvals.v1.Entry
+	0,  // 3: icebath.approvals.v1.ApprovalsService.Test:input_type -> icebath.approvals.v1.TestRequest
+	2,  // 4: icebath.approvals.v1.ApprovalsService.Suggest:input_type -> icebath.approvals.v1.SuggestRequest
+	5,  // 5: icebath.approvals.v1.ApprovalsService.List:input_type -> icebath.approvals.v1.ListRequest
+	9,  // 6: icebath.approvals.v1.ApprovalsService.Allow:input_type -> icebath.approvals.v1.AllowRequest
+	11, // 7: icebath.approvals.v1.ApprovalsService.Disallow:input_type -> icebath.approvals.v1.DisallowRequest
+	13, // 8: icebath.approvals.v1.ApprovalsService.Change:input_type -> icebath.approvals.v1.ChangeRequest
+	15, // 9: icebath.approvals.v1.ApprovalsService.Mode:input_type -> icebath.approvals.v1.ModeRequest
+	17, // 10: icebath.approvals.v1.ApprovalsService.Skip:input_type -> icebath.approvals.v1.SkipRequest
+	1,  // 11: icebath.approvals.v1.ApprovalsService.Test:output_type -> icebath.approvals.v1.TestResponse
+	4,  // 12: icebath.approvals.v1.ApprovalsService.Suggest:output_type -> icebath.approvals.v1.SuggestResponse
+	8,  // 13: icebath.approvals.v1.ApprovalsService.List:output_type -> icebath.approvals.v1.ListResponse
+	10, // 14: icebath.approvals.v1.ApprovalsService.Allow:output_type -> icebath.approvals.v1.AllowResponse
+	12, // 15: icebath.approvals.v1.ApprovalsService.Disallow:output_type -> icebath.approvals.v1.DisallowResponse
+	14, // 16: icebath.approvals.v1.ApprovalsService.Change:output_type -> icebath.approvals.v1.ChangeResponse
+	16, // 17: icebath.approvals.v1.ApprovalsService.Mode:output_type -> icebath.approvals.v1.ModeResponse
+	18, // 18: icebath.approvals.v1.ApprovalsService.Skip:output_type -> icebath.approvals.v1.SkipResponse
+	11, // [11:19] is the sub-list for method output_type
+	3,  // [3:11] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_icebath_approvals_v1_approvals_proto_init() }
@@ -863,7 +1322,7 @@ func file_icebath_approvals_v1_approvals_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_approvals_v1_approvals_proto_rawDesc), len(file_icebath_approvals_v1_approvals_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

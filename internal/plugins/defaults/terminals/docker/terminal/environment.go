@@ -371,7 +371,7 @@ func (c *container) attach(ctx context.Context) bool {
 		switch {
 		case !c.o.pinned:
 			slog.Warn("Existing container runs another image; the default Docker image changed. Keeping the existing sandbox — approve the switch by "+
-				"setting Container image in /settings under Terminal → Docker (files in /root and /workspace carry over), or set it to the image the "+
+				"setting Container image on the Docker page of /sandbox (files in /root and /workspace carry over), or set it to the image the "+
 				"sandbox runs to keep it and stop this notice.", attrs...)
 		case !imageReady(ctx, c.docker, image):
 			slog.Warn("Existing container runs another image; the Docker image could not be pulled — keeping the current sandbox until it can.", attrs...)

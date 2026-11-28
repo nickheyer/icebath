@@ -257,7 +257,7 @@ func (d *Driver) versionCheck(ctx context.Context, cfg *config.Config, binary st
 func grantRow(p *probes, platform, field, label string, bound bool) check {
 	if p.permissions == nil {
 		if p.permErr != "" {
-			return check{"status": "fail", "message": sentence(p.permErr)}
+			return check{"status": "fail", "message": strs.Full(p.permErr)}
 		}
 		return check{"status": "skip", "message": "cua-driver could not report its permissions."}
 	}
@@ -293,7 +293,7 @@ func axRow(p *probes) check {
 		}
 		return check{"status": "pass", "message": message}
 	case p.appsProbed && p.appsErr != "":
-		return check{"status": "fail", "message": sentence(p.appsErr)}
+		return check{"status": "fail", "message": strs.Full(p.appsErr)}
 	case p.appsProbed:
 		message := "cua-driver could not list the open apps."
 		if granted {
@@ -342,7 +342,7 @@ func (d *Driver) fallback(ctx context.Context, cfg *config.Config, binary, reaso
 		{"tcc_screen_recording", grantRow(p, platform, "screen_recording", "Screen Recording", true)},
 		{"ax_capability", axRow(p)},
 		{"health_report_path", check{"status": "skip", "message": "These checks come from icebath itself, as older drivers such as 0.10 give no " +
-			"health report it can read. " + sentence(short)}},
+			"health report it can read. " + strs.Full(short)}},
 	}
 	if out, err := d.run(ctx, cfg, binary, 8*time.Second, "doctor"); err == nil {
 		if text := strings.TrimSpace(out.stdout + out.stderr); text != "" {
@@ -595,7 +595,7 @@ func (d *Driver) Doctor(ctx context.Context, cfg *config.Config, out, errOut io.
 		return 2, nil
 	}
 	if exchange, ok := errors.AsType[*exchangeError](err); ok {
-		fmt.Fprintln(errOut, "✗ cua-driver did not give its health report. "+sentence(exchange.Error()))
+		fmt.Fprintln(errOut, "✗ cua-driver did not give its health report. "+strs.Full(exchange.Error()))
 		return 2, nil
 	}
 	if err != nil {

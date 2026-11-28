@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/internal/server"
 	bitwardenv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/bitwarden/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/bitwarden/v1/bitwardenv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 type service struct {
@@ -133,7 +134,7 @@ func (s *service) binary(ctx context.Context, cfg *config.Config) (string, error
 	}
 	binary, err := s.store.Install(ctx, cfg)
 	if err != nil {
-		return "", refuse("icebath could not install bws, the program it reads Bitwarden with: " + secrets.Sentence(err.Error()))
+		return "", refuse("icebath could not install bws, the program it reads Bitwarden with: " + strs.Sentence(err.Error()))
 	}
 	return binary, nil
 }
@@ -244,54 +245,4 @@ func (s *service) Token(ctx context.Context, request *bitwardenv1.TokenRequest) 
 	}
 	response.EnvPath = cfg.EnvPath()
 	return response, nil
-}
-
-func (s *service) Sync(ctx context.Context, request *bitwardenv1.SyncRequest) (*bitwardenv1.Preview, error) {
-	cfg, err := server.Profile(s.config, request.GetProfile())
-	if err != nil {
-		return nil, err
-	}
-	tokenEnv, token, project := s.store.TokenEnv(cfg), s.stored(cfg), strings.TrimSpace(cfg.GetString(bitwardenconfig.ProjectID))
-	switch {
-	case !cfg.GetBool(bitwardenconfig.Enabled):
-		return nil, refuse("Bitwarden is off. Run icebath secrets bitwarden setup to turn it on.")
-	case token == "":
-		return nil, refuse("No access token is set in " + tokenEnv + ". Run icebath secrets bitwarden token to add one.")
-	case project == "":
-		return nil, refuse("No Bitwarden project is chosen. Run icebath secrets bitwarden setup to pick one.")
-	}
-	pulled, warnings, err := s.store.Pull(ctx, cfg, bitwardensecrets.Pull{Token: token, Project: project, Server: strings.TrimSpace(cfg.GetString(bitwardenconfig.ServerURL)),
-		Dir: cfg.ProfileDir(cfg.Profile()), Env: s.store.Host().Existing(cfg)})
-	if err != nil {
-		return nil, refuse(err.Error())
-	}
-	apply := request.GetApply()
-	existing, override := s.store.Host().Existing(cfg), cfg.GetBool(bitwardenconfig.Override) || apply
-	preview := &bitwardenv1.Preview{Warnings: warnings}
-	exported := map[string]string{}
-	for _, name := range slices.Sorted(maps.Keys(pulled)) {
-		action := secrets.Action(name, tokenEnv, existing, override)
-		if apply && (action == "export" || action == "override") {
-			exported[name] = pulled[name]
-			action = map[string]string{"export": "exported", "override": "overrode"}[action]
-		}
-		preview.Rows = append(preview.Rows, &bitwardenv1.Row{Name: name, Action: action})
-	}
-	if apply {
-		s.store.Host().Export(cfg, bitwardenconfig.Name, exported)
-		preview.Exported = int32(len(exported))
-	}
-	return preview, nil
-}
-
-func (s *service) Disable(_ context.Context, request *bitwardenv1.DisableRequest) (*bitwardenv1.DisableResponse, error) {
-	cfg, err := server.Profile(s.config, request.GetProfile())
-	if err != nil {
-		return nil, err
-	}
-	if err := cfg.Set(bitwardenconfig.Enabled, false); err != nil {
-		return nil, err
-	}
-	s.store.Host().Reset(cfg)
-	return &bitwardenv1.DisableResponse{}, nil
 }

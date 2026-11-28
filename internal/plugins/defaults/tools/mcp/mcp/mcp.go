@@ -26,7 +26,6 @@ var bundled embed.FS
 const manifestVersion = 1
 
 var (
-	namePattern  = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 	envPattern   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	envReference = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 	slugPattern  = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
@@ -86,9 +85,10 @@ func manifest(root fs.FS, rel, path string) (mcp.Entry, error) {
 	if version, ok := doc["manifest_version"].(int); !ok || version != manifestVersion {
 		return mcp.Entry{}, fmt.Errorf("The catalog file %s has manifest_version %v, but this icebath reads version %d.", path, doc["manifest_version"], manifestVersion)
 	}
+	// The name is the one the server is kept under and its files are cloned to, so it is one a server can have
 	name, _ := doc["name"].(string)
-	if !namePattern.MatchString(name) {
-		return mcp.Entry{}, fmt.Errorf("The catalog file %s has no usable name.", path)
+	if !config.Named(name) {
+		return mcp.Entry{}, fmt.Errorf("The catalog file %s has no usable name. A name holds only lower case letters, digits, - and _.", path)
 	}
 	description := strings.TrimSpace(text(doc["description"]))
 	if description == "" {

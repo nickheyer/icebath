@@ -27,7 +27,7 @@ func Register(cfg *config.Config, registry *skills.Registry) {
 			{Key: GitHubAppID, Title: "GitHub App ID", About: "The ID of a GitHub App that the hub signs in as.",
 				Help: "Set the key file and installation ID of the App as well.", Default: "", Env: []string{"GITHUB_APP_ID"}, Advanced: true},
 			{Key: GitHubAppKey, Title: "GitHub App key file", About: "The file that holds the private key of the GitHub App.", Help: "A .pem file.",
-				Default: "", Env: []string{"GITHUB_APP_PRIVATE_KEY_PATH"}, Advanced: true},
+				Default: "", Env: []string{"GITHUB_APP_PRIVATE_KEY_PATH"}, Advanced: true, Path: &config.Path{Kind: config.PathFile, Exists: true}},
 			{Key: GitHubAppInstallation, Title: "GitHub App installation", About: "The installation ID of the GitHub App that the hub reads through.",
 				Default: "", Env: []string{"GITHUB_APP_INSTALLATION_ID"}, Advanced: true},
 		},

@@ -5,7 +5,6 @@ const (
 	Voice              = "voice"
 	Input              = Voice + ".input_enabled"
 	SpeakReplies       = Voice + ".speak_replies"
-	RecordKey          = Voice + ".record_key"
 	SubmitMode         = Voice + ".submit_mode"
 	BargeIn            = Voice + ".barge_in"
 	BargeInGrace       = Voice + ".barge_in_grace_seconds"
@@ -47,21 +46,22 @@ const (
 
 // Speech to text
 const (
-	STT              = "stt"
-	STTEnabled       = STT + ".enabled"
-	STTProvider      = STT + ".provider"
-	EchoTranscripts  = STT + ".echo_transcripts"
-	Language         = STT + ".language"
-	Prompt           = STT + ".prompt"
-	Streaming        = STT + ".streaming"
-	TrimSilence      = STT + ".cloud_trim_silence"
-	TrimThreshold    = STT + ".cloud_trim_threshold_db"
-	TrimKeep         = STT + ".cloud_trim_keep_ms"
-	STTCommands      = STT + ".providers"
-	LocalCommand     = STT + ".local_command"
-	LanguageEnv      = "ICEBATH_LOCAL_STT_LANGUAGE"
-	LocalCommandEnv  = "ICEBATH_LOCAL_STT_COMMAND"
-	DefaultRecognize = "local"
+	STT             = "stt"
+	STTEnabled      = STT + ".enabled"
+	STTProvider     = STT + ".provider"
+	EchoTranscripts = STT + ".echo_transcripts"
+	Language        = STT + ".language"
+	Prompt          = STT + ".prompt"
+	Streaming       = STT + ".streaming"
+	TrimSilence     = STT + ".cloud_trim_silence"
+	TrimThreshold   = STT + ".cloud_trim_threshold_db"
+	TrimKeep        = STT + ".cloud_trim_keep_ms"
+	STTCommands     = STT + ".providers"
+	LocalCommand    = STT + ".local_command"
+	LanguageEnv     = "ICEBATH_LOCAL_STT_LANGUAGE"
+	LocalCommandEnv = "ICEBATH_LOCAL_STT_COMMAND"
+	// Name of the engine of this machine, which a launch may ask for
+	LocalRecognizer = "local"
 )
 
 // Wake word
@@ -78,6 +78,14 @@ const (
 	WakeProfileRouting     = Wake + ".profile_routing"
 	DefaultPhrase          = "hey icebath"
 	AutoWake               = "auto"
+	// Variable of the keys file that holds the Picovoice access key Porcupine needs
+	AccessKeyEnv = "PORCUPINE_ACCESS_KEY"
+)
+
+// Kinds of thing a setting of speech names, by which a screen of speech registers the picker of each
+const (
+	// A microphone of this computer
+	Microphone = "speech.microphone"
 )
 
 // Helper model tasks of speech
@@ -87,6 +95,9 @@ const (
 	// Answers a turn the user spoke, faster than the session's model
 	VoiceChat = "voice_chat"
 )
+
+// Words of the value of a service that follows the value kept for every service until it holds its own
+const SameAsVoice = "Same as Voice"
 
 // Keys every service keeps under its own section
 const (

@@ -99,7 +99,7 @@ func (h *Packages) install(ctx context.Context, cfg *config.Config, a InstallArg
 			if len(problems) == 1 {
 				verb, them = "is", "it is"
 			}
-			r.Line(fmt.Sprintf("✗ %s %s missing or out of date, so %s not on your PATH. Run `icebath pm install` again.", joined(problems, "and"), verb, them))
+			r.Line(fmt.Sprintf("✗ %s %s missing or out of date, so %s not on your PATH. Run `icebath pm install` again.", strs.And(problems), verb, them))
 			return 1, nil
 		}
 	}
@@ -132,7 +132,7 @@ func (h *Packages) installFlagError(a InstallArgs, extras []string) string {
 	names := len(a.Names) > 0
 	if a.Target != "" {
 		if !slices.Contains(Targets, a.Target) {
-			return fmt.Sprintf("There is no platform %s. Use %s.", a.Target, joined(Targets, "or"))
+			return fmt.Sprintf("There is no platform %s. Use %s.", a.Target, strs.Or(Targets))
 		}
 		if !names {
 			return "--target needs the names of the programs to prepare."
@@ -155,8 +155,8 @@ func (h *Packages) installFlagError(a InstallArgs, extras []string) string {
 		return "--without changes which default programs are installed, so it takes no names, --extra or --target."
 	}
 	if _, _, unknown := h.splitWithout(a.Without); len(unknown) > 0 {
-		return fmt.Sprintf("--without cannot leave out %s. It takes the optional default programs %s, or the extras %s.", joined(unknown, "and"),
-			joined(h.defaultNames(), "and"), joined(h.extraNames(), "and"))
+		return fmt.Sprintf("--without cannot leave out %s. It takes the optional default programs %s, or the extras %s.", strs.And(unknown),
+			strs.And(h.defaultNames()), strs.And(h.extraNames()))
 	}
 	return ""
 }
@@ -294,7 +294,7 @@ func (h *Packages) Doctor(ctx context.Context, cfg *config.Config, repair bool, 
 			return 0, err
 		}
 		if reason := p.Missing(target); reason != "" {
-			r.Line(fmt.Sprintf("  %s is not available for %s: %s", name, target, sentence(reason, name)))
+			r.Line(fmt.Sprintf("  %s is not available for %s: %s", name, target, sentenceAbout(reason, name)))
 			continue
 		}
 		mark, weight, after := "✗", 1, " Run `icebath pm install "+name+"`."
@@ -322,7 +322,7 @@ func (h *Packages) Doctor(ctx context.Context, cfg *config.Config, repair bool, 
 		entry := loc.store.entry(got.Entry)
 		if reason := h.verify(p, entry, target); reason != "" {
 			r.Line(fmt.Sprintf("✗ %s is installed but did not pass its check: %s Run `icebath pm install %s` to install it again.", name,
-				sentence(reason, name), name))
+				sentenceAbout(reason, name), name))
 			bad++
 			continue
 		}
@@ -362,7 +362,7 @@ func (h *Packages) Doctor(ctx context.Context, cfg *config.Config, repair bool, 
 	case 1:
 		r.Line("  The extra " + absent[0] + " is not installed. It is optional.")
 	default:
-		r.Line("  The extras " + joined(absent, "and") + " are not installed. They are optional.")
+		r.Line("  The extras " + strs.And(absent) + " are not installed. They are optional.")
 	}
 	cache, err := h.doctorCache(ctx, cfg, repair, r)
 	if err != nil {
@@ -384,7 +384,7 @@ func (h *Packages) doctorCache(ctx context.Context, cfg *config.Config, repair b
 	}
 	if !repair {
 		r.Line(fmt.Sprintf("✗ The uv cache in %s has damaged entries for %s. Run `icebath pm doctor --repair`, or let the next install that "+
-			"meets one remove it.", cache, joined(corrupt, "and")))
+			"meets one remove it.", cache, strs.And(corrupt)))
 		return 1, nil
 	}
 	e, err := h.pyenv(ctx, cfg, cache, nil, true, r)
@@ -399,10 +399,10 @@ func (h *Packages) doctorCache(ctx context.Context, cfg *config.Config, repair b
 		return 0, err
 	}
 	if left := slices.Sorted(maps.Keys(corruptCached(cache))); len(left) > 0 {
-		r.Line(fmt.Sprintf("✗ The uv cache in %s still has damaged entries for %s after cleaning.", cache, joined(left, "and")))
+		r.Line(fmt.Sprintf("✗ The uv cache in %s still has damaged entries for %s after cleaning.", cache, strs.And(left)))
 		return 1, nil
 	}
-	r.Line(fmt.Sprintf("✓ Removed the damaged uv cache entries for %s. They download again when next used.", joined(corrupt, "and")))
+	r.Line(fmt.Sprintf("✓ Removed the damaged uv cache entries for %s. They download again when next used.", strs.And(corrupt)))
 	return 0, nil
 }
 
@@ -680,7 +680,7 @@ func (h *Packages) update(ctx context.Context, cfg *config.Config, a UpdateArgs,
 			}
 		}
 		if len(ignored) > 0 {
-			r.Line("⚠ --termux repairs only the pins of the Termux pool, so it ignores " + joined(ignored, "and") + ".")
+			r.Line("⚠ --termux repairs only the pins of the Termux pool, so it ignores " + strs.And(ignored) + ".")
 		}
 		return h.termux(ctx, cfg, a.Check, r)
 	}
@@ -745,7 +745,7 @@ func (h *Packages) update(ctx context.Context, cfg *config.Config, a UpdateArgs,
 		}
 	}
 	if len(failures) > 0 {
-		r.Line(fmt.Sprintf("✗ The newest version of %s could not be found, so nothing was changed.", joined(failures, "and")))
+		r.Line(fmt.Sprintf("✗ The newest version of %s could not be found, so nothing was changed.", strs.And(failures)))
 		return 1, nil
 	}
 	if a.Check {
@@ -785,11 +785,11 @@ func printDecision(r Reporter, d *decision, width int) {
 	}
 	switch {
 	case d.version == nil:
-		r.Line(fmt.Sprintf("%s  %s", name, sentence(cmp.Or(d.reason, "up to date"), d.name)))
+		r.Line(fmt.Sprintf("%s  %s", name, sentenceAbout(cmp.Or(d.reason, "up to date"), d.name)))
 	case !d.changed():
 		r.Line(fmt.Sprintf("%s  %s, up to date", name, pinned(d.locked)))
 	case d.locked != nil && *d.version == *d.locked && len(d.artifacts) > 0:
-		r.Line(fmt.Sprintf("%s  %s, with newer archives for %s", name, *d.version, joined(slices.Sorted(maps.Keys(d.artifacts)), "and")))
+		r.Line(fmt.Sprintf("%s  %s, with newer archives for %s", name, *d.version, strs.And(slices.Sorted(maps.Keys(d.artifacts)))))
 	default:
 		per := ""
 		distinct := map[string]bool{}
@@ -828,7 +828,7 @@ func (h *Packages) applyPins(ctx context.Context, cfg *config.Config, changed []
 			if he, ok := errors.AsType[*HTTPError](err); ok && he.URL != "" {
 				detail = fmt.Sprintf("%s, from %s", err, he.URL)
 			}
-			r.Line(fmt.Sprintf("✗ %s could not be pinned: %s", d.name, sentence(detail, d.name)))
+			r.Line(fmt.Sprintf("✗ %s could not be pinned: %s", d.name, sentenceAbout(detail, d.name)))
 			if _, seen := failed[d.name]; !seen {
 				failedNames = append(failedNames, d.name)
 			}
@@ -859,7 +859,7 @@ func (h *Packages) applyPins(ctx context.Context, cfg *config.Config, changed []
 	if len(failed) == 0 {
 		return code, nil
 	}
-	r.Line(fmt.Sprintf("✗ Pinned %s, and %s failed: %s.", strs.Count(len(pinned), "program"), strs.Count(len(failed), "program"), joined(failedNames, "and")))
+	r.Line(fmt.Sprintf("✗ Pinned %s, and %s failed: %s.", strs.Count(len(pinned), "program"), strs.Count(len(failed), "program"), strs.And(failedNames)))
 	for _, name := range failedNames {
 		receiptOf(ctx).step("pin "+name, false, failed[name])
 	}

@@ -15,6 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -97,8 +98,8 @@ func (c *core) adminRead(path string, parse func(data []byte) (map[string]any, e
 	return values, stamp
 }
 
-// Settings of the administrator's config.yaml: keys folded to lower case as every config.yaml's are, nulls dropped since a null pins nothing,
-// references read from this process's environment so a profile can't shadow a pinned value
+// Settings of the administrator's config.yaml: every name as the file spells it, matched as a key answers to any config.yaml's, nulls dropped
+// since a null pins nothing, references read from this process's environment so a profile can't shadow a pinned value
 func (c *core) adminConfig(data []byte) (map[string]any, error) {
 	var doc any
 	if err := yaml.Unmarshal(data, &doc); err != nil {
@@ -107,7 +108,7 @@ func (c *core) adminConfig(data []byte) (map[string]any, error) {
 	if doc == nil {
 		return map[string]any{}, nil
 	}
-	m, ok := doc.(map[string]any)
+	m, ok := plain(doc).(map[string]any)
 	if !ok {
 		return nil, &shapeError{kind: kindOf(doc)}
 	}
@@ -115,7 +116,7 @@ func (c *core) adminConfig(data []byte) (map[string]any, error) {
 	return values, nil
 }
 
-// Mapping with its keys folded to lower case and its nulls dropped, with the sections they leave empty
+// Mapping with its nulls dropped, with the sections they leave empty
 func pinnable(m map[string]any) map[string]any {
 	out := map[string]any{}
 	for key, value := range m {
@@ -129,7 +130,7 @@ func pinnable(m map[string]any) map[string]any {
 			}
 			value = kept
 		}
-		out[strings.ToLower(key)] = value
+		out[key] = value
 	}
 	return out
 }
@@ -201,8 +202,9 @@ func (c *core) loadedAdminEnv() map[string]string {
 	return c.adminEnv
 }
 
-// Keys the administrator pins, each to the value at its end, sorted
+// Keys the administrator pins, each to the value at its end, the parts icebath declares spelled as declared, sorted
 func (c *Config) ManagedKeys() []string {
+	look := c.planner()
 	var keys []string
 	var walk func(m map[string]any, prefix string)
 	walk = func(m map[string]any, prefix string) {
@@ -211,43 +213,39 @@ func (c *Config) ManagedKeys() []string {
 				walk(child, prefix+key+".")
 				continue
 			}
-			keys = append(keys, prefix+key)
+			keys = append(keys, look.path(prefix+key).String())
 		}
 	}
 	walk(c.Pins(), "")
 	slices.Sort(keys)
-	return keys
+	return slices.Compact(keys)
 }
 
-// Value the administrator pins under the key, a mapping when they pin keys below it, false when they pin nothing there
-func (c *Config) pinnedAt(key string) (any, bool) {
-	var node any = c.Pins()
-	for _, part := range strings.Split(key, ".") {
-		m, ok := node.(map[string]any)
-		if !ok || m == nil {
-			return nil, false
-		}
-		if node, ok = m[part]; !ok {
-			return nil, false
-		}
+// Value the administrator pins under the key, a mapping when they pin keys below it, false when they pin nothing there or for no key
+func (c *Config) pinnedAt(key keyPath) (any, bool) {
+	pins := c.Pins()
+	if pins == nil || len(key.parts) == 0 {
+		return nil, false
 	}
-	return node, true
+	return lookup(pins, key)
 }
 
 // Whether the administrator pins the key itself or a key above it to a value rather than a mapping of values
-func (c *Config) pinned(key string) bool {
+func (c *Config) pinned(key keyPath) bool {
 	var node any = c.Pins()
 	if node == nil {
 		return false
 	}
-	for _, part := range strings.Split(key, ".") {
+	for i, part := range key.parts {
 		m, ok := node.(map[string]any)
 		if !ok {
 			return true
 		}
-		if node, ok = m[part]; !ok {
+		name, ok := pickIn(m, part, key.match[i])
+		if !ok {
 			return false
 		}
+		node = m[name]
 	}
 	_, mapping := node.(map[string]any)
 	return !mapping
@@ -261,7 +259,7 @@ func (c *Config) tellPins(pins map[string]any) {
 			key, value := prefix+name, m[name]
 			if _, setting, ok := c.Setting(key); ok {
 				if _, err := setting.Check(value); err != nil && c.once("misfit", key, fmt.Sprint(value)) {
-					slog.Warn(fmt.Sprintf("%s has %s set to %v, but %s. Using the default (%v) instead.", administrator, key, value, lowerFirst(err.Error()),
+					slog.Warn(fmt.Sprintf("%s has %s set to %v, but %s. Using the default (%v) instead.", administrator, key, value, strs.Lower(err.Error()),
 						setting.DefaultValue()))
 				}
 				continue
@@ -278,27 +276,19 @@ func (c *Config) tellPins(pins map[string]any) {
 	walk(pins, "")
 }
 
-// Whether a key is a section above at least one setting
+// Whether a key is a section above at least one setting, its parts answering to declared ones in any case
 func (c *Config) holdsSettings(key string) bool {
 	for _, section := range c.Sections() {
-		if section.Key == key || strings.HasPrefix(section.Key, key+".") {
+		if same(section.Key, key, spelled) || below(section.Key, key, spelled) {
 			return true
 		}
 		for _, setting := range section.Settings {
-			if strings.HasPrefix(setting.Key, key+".") {
+			if below(setting.Key, key, spelled) {
 				return true
 			}
 		}
 	}
 	return false
-}
-
-func lowerFirst(text string) string {
-	if text == "" {
-		return text
-	}
-	r, size := utf8.DecodeRuneInString(text)
-	return strings.ToLower(string(r)) + text[size:]
 }
 
 // Package manager that installed icebath and keeps its settings, from ICEBATH_MANAGED or the marker in the config folder, empty when none does
@@ -367,13 +357,19 @@ func (e *LockedError) Error() string { return e.Refusal() }
 // changes or a part of a table setting, the administrator sets a variable the setting reads or the package manager that installed icebath
 // keeps the settings
 func (c *Config) Lock(key string) *LockedError {
-	key = strings.ToLower(strings.TrimSpace(key))
-	if c.pinned(key) {
+	look := c.planner()
+	return c.lock(look, look.path(key))
+}
+
+// Why the key as the settings keep it can't be changed here, nil when it can, its setting found through the finder
+func (c *Config) lock(look *finder, path keyPath) *LockedError {
+	key := path.String()
+	if c.pinned(path) {
 		return &LockedError{Key: key, By: ByAdministrator, Source: managedSource("config.yaml")}
 	}
-	_, setting, known := c.Setting(key)
+	_, setting, known := look.setting(key)
 	if !known {
-		setting, _, known = c.Under(key)
+		setting, _, known = look.under(key)
 	}
 	if known && !setting.Internal {
 		managed := c.ManagedEnv()
@@ -387,7 +383,7 @@ func (c *Config) Lock(key string) *LockedError {
 		}
 	}
 	if store, err := c.store(key); err == nil {
-		if level := store.locked(key); level != "" {
+		if level := store.locked(path); level != "" {
 			return &LockedError{Key: key, By: ByRemote, Source: level}
 		}
 	}
@@ -424,19 +420,4 @@ func pinValue(setting Setting, known bool, pin any) any {
 		return setting.DefaultValue()
 	}
 	return checked
-}
-
-// Mapping with the pinned keys over the value's, which a pin of keys below a table setting adds to rather than replaces
-func overlay(value, pin any) any {
-	base, okBase := value.(map[string]any)
-	over, okOver := pin.(map[string]any)
-	if !okBase || !okOver {
-		return pin
-	}
-	out := make(map[string]any, len(base)+len(over))
-	maps.Copy(out, base)
-	for key, item := range over {
-		out[key] = overlay(base[key], item)
-	}
-	return out
 }

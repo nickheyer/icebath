@@ -47,3 +47,7 @@ const (
 	GatewayInline     = "inline"
 	GatewayBackground = "background"
 )
+
+// Kind of thing Method names, a way subagents are run, by the name the Subagents page registers its picker under: the methods that can run,
+// each opening its own settings
+const PickMethod = "method"

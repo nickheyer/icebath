@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 
 	"connectrpc.com/connect/v2"
@@ -20,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
 	worktreesv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/worktrees/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/worktrees/v1/worktreesv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 )
 
@@ -103,7 +103,7 @@ func (l *launcher) Around(ctx context.Context, conn *connect.Client, given launc
 	if want {
 		created, err := service.Create(ctx, &worktreesv1.CreateRequest{Directory: start, Pid: int64(os.Getpid()), Launch: true})
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "✗ Could not make the worktree. "+sentence(tui.Reason(err)))
+			fmt.Fprintln(os.Stderr, "✗ Could not make the worktree. "+strs.Full(tui.Reason(err)))
 			return exit(1)
 		}
 		say(created.GetLines())
@@ -133,7 +133,7 @@ func (l *launcher) Around(ctx context.Context, conn *connect.Client, given launc
 		if settled, settleErr := service.Settle(ctx, &worktreesv1.SettleRequest{Tree: tree, Choice: choice, Launch: true, Pid: int64(os.Getpid())}); settleErr == nil {
 			say(settled.GetLines())
 		} else {
-			fmt.Fprintln(os.Stderr, "✗ Could not tidy up the worktree "+tree.GetPath()+". "+sentence(tui.Reason(settleErr)))
+			fmt.Fprintln(os.Stderr, "✗ Could not tidy up the worktree "+tree.GetPath()+". "+strs.Full(tui.Reason(settleErr)))
 		}
 	}
 	return err
@@ -153,22 +153,9 @@ func (l *launcher) settleMade(ctx context.Context, service worktreesv1connect.Wo
 		if settled, err := service.Settle(ctx, &worktreesv1.SettleRequest{Tree: tree, Choice: choice, Pid: int64(os.Getpid())}); err == nil {
 			say(settled.GetLines())
 		} else {
-			fmt.Fprintln(os.Stderr, "✗ Could not tidy up the worktree "+tree.GetPath()+". "+sentence(tui.Reason(err)))
+			fmt.Fprintln(os.Stderr, "✗ Could not tidy up the worktree "+tree.GetPath()+". "+strs.Full(tui.Reason(err)))
 		}
 	}
-}
-
-// Reason a server gave as a sentence: capital first letter, a period at the end
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	text = strings.ToUpper(text[:1]) + text[1:]
-	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
-		text += "."
-	}
-	return text
 }
 
 // Asks on the terminal what to do with a tree holding uncommitted changes or unpushed commits, kept with no terminal, for a clean tree, a

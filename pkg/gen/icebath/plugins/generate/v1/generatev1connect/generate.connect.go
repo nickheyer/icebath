@@ -28,6 +28,10 @@ const (
 	GenerateServiceListProcedure = "/icebath.plugins.generate.v1.GenerateService/List"
 	// GenerateServiceModelsProcedure is the procedure name of the GenerateService's Models RPC.
 	GenerateServiceModelsProcedure = "/icebath.plugins.generate.v1.GenerateService/Models"
+	// GenerateServiceChooseProcedure is the procedure name of the GenerateService's Choose RPC.
+	GenerateServiceChooseProcedure = "/icebath.plugins.generate.v1.GenerateService/Choose"
+	// GenerateServiceVideosProcedure is the procedure name of the GenerateService's Videos RPC.
+	GenerateServiceVideosProcedure = "/icebath.plugins.generate.v1.GenerateService/Videos"
 )
 
 var (
@@ -45,14 +49,32 @@ var (
 			Procedure:  GenerateServiceModelsProcedure,
 		}
 	})
+	generateServiceChooseSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_generate_v1_generate_proto.Services().ByName("GenerateService").Methods().ByName("Choose"),
+			Procedure:  GenerateServiceChooseProcedure,
+		}
+	})
+	generateServiceVideosSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_generate_v1_generate_proto.Services().ByName("GenerateService").Methods().ByName("Videos"),
+			Procedure:  GenerateServiceVideosProcedure,
+		}
+	})
 )
 
 // GenerateServiceClient is a client for the icebath.plugins.generate.v1.GenerateService service.
 type GenerateServiceClient interface {
-	// Services of a kind and the one in use
+	// Services of a kind with how each stands, the one chosen, and whether the agent makes things of the kind
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	// Models of one service, read live where the service lists its own
 	Models(context.Context, *v1.ModelsRequest) (*v1.ModelsResponse, error)
+	// Uses a service for a kind, the model it has kept as it was; the first service that is ready for none
+	Choose(context.Context, *v1.ChooseRequest) (*v1.ChooseResponse, error)
+	// Turns the making of videos on or off
+	Videos(context.Context, *v1.VideosRequest) (*v1.ChooseResponse, error)
 }
 
 // NewGenerateServiceClient constructs a client for the icebath.plugins.generate.v1.GenerateService
@@ -64,10 +86,14 @@ func NewGenerateServiceClient(client *connect.Client) GenerateServiceClient {
 // GenerateServiceHandler is an implementation of the icebath.plugins.generate.v1.GenerateService
 // service.
 type GenerateServiceHandler interface {
-	// Services of a kind and the one in use
+	// Services of a kind with how each stands, the one chosen, and whether the agent makes things of the kind
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	// Models of one service, read live where the service lists its own
 	Models(context.Context, *v1.ModelsRequest) (*v1.ModelsResponse, error)
+	// Uses a service for a kind, the model it has kept as it was; the first service that is ready for none
+	Choose(context.Context, *v1.ChooseRequest) (*v1.ChooseResponse, error)
+	// Turns the making of videos on or off
+	Videos(context.Context, *v1.VideosRequest) (*v1.ChooseResponse, error)
 }
 
 // RegisterGenerateServiceHandler registers svc as the icebath.plugins.generate.v1.GenerateService
@@ -77,6 +103,8 @@ func RegisterGenerateServiceHandler(server *connect.Server, svc GenerateServiceH
 	server.Register(
 		connect.Method{Spec: generateServiceListSpec(), Handler: adapter.list},
 		connect.Method{Spec: generateServiceModelsSpec(), Handler: adapter.models},
+		connect.Method{Spec: generateServiceChooseSpec(), Handler: adapter.choose},
+		connect.Method{Spec: generateServiceVideosSpec(), Handler: adapter.videos},
 	)
 }
 
@@ -89,6 +117,14 @@ func (UnimplementedGenerateServiceHandler) List(context.Context, *v1.ListRequest
 
 func (UnimplementedGenerateServiceHandler) Models(context.Context, *v1.ModelsRequest) (*v1.ModelsResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.generate.v1.GenerateService.Models is not implemented")
+}
+
+func (UnimplementedGenerateServiceHandler) Choose(context.Context, *v1.ChooseRequest) (*v1.ChooseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.generate.v1.GenerateService.Choose is not implemented")
+}
+
+func (UnimplementedGenerateServiceHandler) Videos(context.Context, *v1.VideosRequest) (*v1.ChooseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.generate.v1.GenerateService.Videos is not implemented")
 }
 
 type generateServiceClient struct {
@@ -106,6 +142,22 @@ func (c *generateServiceClient) List(ctx context.Context, req *v1.ListRequest) (
 func (c *generateServiceClient) Models(ctx context.Context, req *v1.ModelsRequest) (*v1.ModelsResponse, error) {
 	var res v1.ModelsResponse
 	if err := c.client.CallUnary(ctx, generateServiceModelsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *generateServiceClient) Choose(ctx context.Context, req *v1.ChooseRequest) (*v1.ChooseResponse, error) {
+	var res v1.ChooseResponse
+	if err := c.client.CallUnary(ctx, generateServiceChooseSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *generateServiceClient) Videos(ctx context.Context, req *v1.VideosRequest) (*v1.ChooseResponse, error) {
+	var res v1.ChooseResponse
+	if err := c.client.CallUnary(ctx, generateServiceVideosSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -131,6 +183,30 @@ func (h generateServiceHandler) models(ctx context.Context, _ connect.Spec, stre
 		return err
 	}
 	res, err := h.svc.Models(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h generateServiceHandler) choose(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ChooseRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Choose(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h generateServiceHandler) videos(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.VideosRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Videos(ctx, &req)
 	if err != nil {
 		return err
 	}

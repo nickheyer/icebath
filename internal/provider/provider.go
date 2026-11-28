@@ -113,6 +113,9 @@ type Spec struct {
 	AutoFirst bool
 	// Taken when nothing names a provider and no other kind has a credential, once its own is found outside icebath, as AWS's is
 	AutoLast bool
+	// Its accounts sign in, rather than keep an API key, unless the person gives one: one with none is Not signed in rather than Not
+	// connected
+	SignIn bool
 
 	SupportsStreaming          *bool
 	SupportsPromptCacheKey     bool
@@ -559,7 +562,7 @@ func (e *APIError) Error() string {
 	var lead string
 	switch e.Kind {
 	case ErrAuth:
-		lead = who + " did not accept the account" + status + ". Check its API key or sign-in in /providers."
+		lead = who + " did not accept the account" + status + ". Type /providers to sign in again or change its API key."
 	case ErrRateLimit:
 		lead = who + " is limiting requests for " + model + status + ". Wait a moment, then send your message again."
 	case ErrQuota:
@@ -567,13 +570,13 @@ func (e *APIError) Error() string {
 	case ErrContextOverflow:
 		lead = "The session is too long for " + model + " on " + who + status + ". Type /compress to summarize it, or /new to start a new one."
 	case ErrModelNotFound:
-		lead = who + " does not have the model " + model + status + ". Pick another with /model."
+		lead = who + " does not have the model " + model + status + ". Type /model to pick another."
 	case ErrServer:
 		lead = who + " had a failure of its own" + status + ". Send your message again shortly."
 	case ErrNetwork:
 		lead = "icebath could not get an answer from " + who + status + ". Check your connection, then send your message again."
 	case ErrContentFilter:
-		lead = who + "'s safety filter refused the request" + status + ". Rephrase your message, or pick another model with /model."
+		lead = who + "'s safety filter refused the request" + status + ". Rephrase your message, or type /model to pick another model."
 	case ErrEmptyResponse:
 		lead = who + " sent back an empty reply" + status + ". Send your message again."
 	case ErrInvalidRequest:
@@ -639,6 +642,8 @@ type Registrant interface {
 
 type Registry struct {
 	registrants []Registrant
+	// What keeps names of providers and accounts beyond the settings, told of each change of one
+	followers []Follower
 }
 
 func (r *Registry) Register(registrant Registrant) {

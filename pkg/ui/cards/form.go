@@ -1,9 +1,11 @@
 package cards
 
 import (
+	"os"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -40,6 +42,8 @@ func registerFormKeys(km *keys.Map) {
 		{ID: "form.submit", Context: FormContext, Label: "submit", Doc: "Submit the form", Default: []string{"ctrl+s"}},
 		{ID: "form.cancel", Context: FormContext, Label: "cancel", Doc: "Close the form without saving", Default: []string{"esc"}},
 		{ID: "form.enter", Context: FormTextContext, Label: "next", Doc: "Go to the next field, or submit from the last one", Default: []string{"enter"}},
+		{ID: "form.complete", Context: FormTextContext, Label: "complete", Doc: "Complete the path typed into the field", Default: []string{"tab"},
+			Quiet: true},
 		{ID: "form.toggle", Context: FormPickContext, Label: "change", Doc: "Toggle, choose or press the selected field", Default: []string{"enter", "space"}},
 		{ID: "form.choice.next", Context: FormPickContext, Label: "next choice", Doc: "Move to the next choice", Default: []string{"right"}, Quiet: true},
 		{ID: "form.choice.prev", Context: FormPickContext, Label: "previous choice", Doc: "Move to the previous choice", Default: []string{"left"}, Quiet: true},
@@ -97,6 +101,9 @@ type Field struct {
 	Select bool
 	// Says what is wrong with a value, empty when it is fine
 	Check func(value string) string
+	// A path of this computer of that kind, which tab completes, the last one of text that names several as PATH separates its folders;
+	// none for text that is no path
+	Path PathKind
 }
 
 // Form a caller describes: its fields, what sending it does and any keys of its own
@@ -111,6 +118,8 @@ type FormSpec struct {
 	Done func(f *Form, values map[string]string) tea.Cmd
 	// Runs on the cancel key, nil closing nothing on its own
 	Cancel func(f *Form) tea.Cmd
+	// Runs once the form leaves its hub, sent or not, such as to stop waiting for an answer that can no longer come
+	Closed func(f *Form) tea.Cmd
 	// Opens a long list of choices in a picker of the caller's, nil cycling through them in place
 	Pick func(f *Form, field Field) tea.Cmd
 	// Runs once a field's answer is given: a switch flipped, a choice made, or text kept as the cursor leaves the field
@@ -148,6 +157,8 @@ type Form struct {
 	w, h  int
 	// Cell of the cursor at the last paint, x below zero for none
 	cx, cy int
+	// What the last tab found for the path in the field under the cursor, said under it until the text changes
+	found string
 }
 
 // Window manager interfaces the form answers
@@ -156,7 +167,80 @@ var _ interface {
 	wm.Contexter
 	wm.Hinter
 	wm.Cursorer
+	wm.Answerer
+	Closer
 } = (*Form)(nil)
+
+// Told by the hub that the form left it
+func (f *Form) Closed() tea.Cmd {
+	if f.spec.Closed != nil {
+		return f.spec.Closed(f)
+	}
+	return nil
+}
+
+// Paths a tab looks at to complete one, and how many of them it names under the field
+const pathLook, pathNamed = 400, 12
+
+// Whether the form has a use for the action: tab completes only in a field that holds a path, and goes on to the next field in any other
+func (f *Form) Answers(id string) bool {
+	if id != "form.complete" {
+		return true
+	}
+	fd := f.field()
+	return fd != nil && typed(fd.Kind) && fd.Path != PathNone
+}
+
+// Completes the path in the field under the cursor: one that fits is written in, several write in what they all start with, and when
+// that is all typed already their names are said under the field
+func (f *Form) complete() tea.Cmd {
+	fd := f.field()
+	if fd == nil || fd.Path == PathNone {
+		return nil
+	}
+	base := f.env.ProjectDir
+	if f.env.WorkDir != nil {
+		base = f.env.WorkDir()
+	}
+	// Text that is no one path but names several, as PATH separates its folders, has its last one completed, those before it staying as
+	// they are
+	before, word := "", fd.Value
+	offers := PathOffers(word, base, fd.Path, pathLook)
+	if at := strings.LastIndexByte(word, os.PathListSeparator); len(offers) == 0 && at >= 0 {
+		before, word = word[:at+1], word[at+1:]
+		offers = PathOffers(word, base, fd.Path, pathLook)
+	}
+	f.found = ""
+	switch len(offers) {
+	case 0:
+		f.found = "Nothing here starts with that."
+		return nil
+	case 1:
+		f.SetValue(fd.ID, before+offers[0].Text)
+		return nil
+	}
+	common := offers[0].Text
+	for _, offer := range offers[1:] {
+		// Cut letter by letter, never inside one
+		for !strings.HasPrefix(offer.Text, common) {
+			_, size := utf8.DecodeLastRuneInString(common)
+			common = common[:len(common)-size]
+		}
+	}
+	if len(common) > len(word) {
+		f.SetValue(fd.ID, before+common)
+		return nil
+	}
+	var names []string
+	for _, offer := range offers[:min(len(offers), pathNamed)] {
+		names = append(names, offer.Display)
+	}
+	f.found = strings.Join(names, "  ")
+	if len(offers) > pathNamed {
+		f.found += "  +" + strconv.Itoa(len(offers)-pathNamed) + " more"
+	}
+	return nil
+}
 
 // Builds a form from the spec, the cursor on its first field
 func NewForm(env *Env, spec FormSpec) *Form {
@@ -235,7 +319,7 @@ func (f *Form) moveTo(i int) tea.Cmd {
 		return nil
 	}
 	cmd := f.leave()
-	f.focus = i
+	f.focus, f.found = i, ""
 	return cmd
 }
 
@@ -253,6 +337,7 @@ func (f *Form) sync() {
 		fd := &f.fields[r.field]
 		if v := f.edits[r.field].Value(); v != fd.Value {
 			fd.Value = v
+			f.found = ""
 			delete(f.errs, fd.ID)
 		}
 	}
@@ -261,9 +346,21 @@ func (f *Form) sync() {
 func (f *Form) Title() string { return f.spec.Title }
 func (f *Form) Init() tea.Cmd { return nil }
 
+// Whether every field is typed into, a form that then has no row of buttons and no row of fields kept back: enter goes from field to
+// field and sends from the last, and each field shows its help under it always
+func (f *Form) typedOnly() bool {
+	return len(f.fields) > 0 && !slices.ContainsFunc(f.fields, func(fd Field) bool { return !typed(fd.Kind) })
+}
+
 // Rows in view order, the fields kept back shown only once opened
 func (f *Form) rows() []formRow {
 	var out []formRow
+	if f.typedOnly() {
+		for i := range f.fields {
+			out = append(out, formRow{field: i})
+		}
+		return out
+	}
 	hidden := 0
 	for i, fd := range f.fields {
 		if fd.More && !f.more {
@@ -324,11 +421,21 @@ func (f *Form) Contexts() []string {
 	return append(out, FormPickContext, FormContext)
 }
 
-// Buttons of the form: what enter does on the row in hand, sending the form when enter does something else, then the form's own
+// Whether the row in hand is the last that takes the cursor, where enter sends a form of typed fields
+func (f *Form) last() bool { return f.next(f.focus, 1) == f.focus }
+
+// Buttons of the form: what enter does on the row in hand, sending the form when enter does something else, then the form's own. A form
+// of typed fields names only what enter does, going on to the next field or sending from the last
 func (f *Form) Hints() []wm.Hint {
 	send := f.spec.Submit
 	if send == "" {
 		send = lang.T(txt.KitFormSend)
+	}
+	if f.typedOnly() {
+		if f.last() {
+			return []wm.Hint{{Action: "form.enter", Label: send}}
+		}
+		return []wm.Hint{{Action: "form.enter", Label: "next"}}
 	}
 	rows := f.rows()
 	r := f.row()
@@ -560,8 +667,10 @@ func (f *Form) act(id string) tea.Cmd {
 		if f.spec.Cancel != nil {
 			return f.spec.Cancel(f)
 		}
+	case "form.complete":
+		return f.complete()
 	case "form.enter":
-		if next := f.next(f.focus, 1); f.rows()[next].submit {
+		if next := f.next(f.focus, 1); f.rows()[next].submit || f.typedOnly() && f.last() {
 			return f.submit()
 		}
 		return f.moveTo(f.next(f.focus, 1))
@@ -638,6 +747,7 @@ func (f *Form) layout(w int) []formLine {
 	}
 	lw := f.labelWidth(w)
 	vw := max(w-lw-5, 8)
+	only := f.typedOnly()
 	for i, r := range f.rows() {
 		focused := i == f.focus
 		mark := "  "
@@ -690,6 +800,9 @@ func (f *Form) layout(w int) []formLine {
 		} else {
 			label = render.Dim(label, t)
 		}
+		if only && i > 0 {
+			out = append(out, formLine{row: -1, cursor: -1})
+		}
 		value, cursor := f.valueCell(fd, vw, focused)
 		line := formLine{text: mark + label + " " + value, row: i, cursor: -1}
 		if cursor >= 0 {
@@ -698,6 +811,19 @@ func (f *Form) layout(w int) []formLine {
 		out = append(out, line)
 		under := ""
 		switch {
+		case only:
+			// A form of typed fields says under every field what to type there, always, and a refusal above that
+			var said []string
+			if f.errs[fd.ID] != "" {
+				said = append(said, render.Bad(f.errs[fd.ID], t))
+			}
+			if focused && f.found != "" {
+				said = append(said, render.Warm(f.found, t))
+			}
+			if fd.Help != "" {
+				said = append(said, dimLines(fd.Help, t))
+			}
+			under = strings.Join(said, "\n")
 		case f.errs[fd.ID] != "":
 			under = render.Bad(f.errs[fd.ID], t)
 		case focused && fd.Kind == FieldChoice:
@@ -705,6 +831,11 @@ func (f *Form) layout(w int) []formLine {
 				under = render.Dim(fd.Choices[c].Meaning, t)
 			} else if fd.Help != "" {
 				under = dimLines(fd.Help, t)
+			}
+		case focused && f.found != "":
+			under = render.Warm(f.found, t)
+			if fd.Help != "" {
+				under += "\n" + dimLines(fd.Help, t)
 			}
 		case focused && fd.Help != "":
 			under = dimLines(fd.Help, t)
@@ -762,9 +893,14 @@ func (f *Form) valueCell(fd Field, vw int, focused bool) (string, int) {
 	if fd.Kind == FieldSecret {
 		text = strings.Repeat("•", len([]rune(text)))
 	}
+	// Nothing that was not typed shows in a field of a form of typed fields: what empty means is said under it
+	placeholder := fd.Placeholder
+	if f.typedOnly() {
+		placeholder = ""
+	}
 	if !focused {
 		if text == "" {
-			return render.Dim(fd.Placeholder, t), -1
+			return render.Dim(placeholder, t), -1
 		}
 		return ansi.Truncate(text, vw, "…"), -1
 	}
@@ -773,8 +909,8 @@ func (f *Form) valueCell(fd Field, vw int, focused bool) (string, int) {
 		cell, cursor = e.Line(vw - 1)
 		selected = e.Whole()
 	}
-	if text == "" && fd.Placeholder != "" {
-		cell = render.Dim(ansi.Truncate(fd.Placeholder, vw, "…"), t)
+	if text == "" && placeholder != "" {
+		cell = render.Dim(ansi.Truncate(placeholder, vw, "…"), t)
 	}
 	pad := strings.Repeat(" ", max(vw-ansi.StringWidth(ansi.Strip(cell)), 0))
 	box := lipgloss.NewStyle().Background(t.Ghost)

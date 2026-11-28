@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/internal/auxiliary"
 	"github.com/nickheyer/icebath/internal/mcp"
 	mcpconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/mcp/config"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/internal/tools"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 )
@@ -103,8 +104,13 @@ func (s *sampler) CreateMessage(ctx context.Context, params *mcp.CreateMessagePa
 	callCtx, cancel := context.WithTimeout(callCtx, s.config.Timeout)
 	defer cancel()
 	client := s.server.helpers(base)
-	text, err := client.Complete(callCtx, auxiliary.Request{Task: mcpconfig.Task, Messages: messages, Model: model, MaxTokens: maxTokens,
-		Temperature: params.Temperature, Timeout: s.config.Timeout})
+	request := auxiliary.Request{Task: mcpconfig.Task, Messages: messages, Model: model, MaxTokens: maxTokens, Temperature: params.Temperature,
+		Timeout: s.config.Timeout}
+	// A model picked with its provider runs there, whatever provider the helper task of MCP servers uses
+	if s.config.Provider != "" && model == s.config.Model {
+		request.Model, request.Entry = "", providerconfig.Pair(s.config.Provider, model)
+	}
+	text, err := client.Complete(callCtx, request)
 	switch {
 	case errors.Is(callCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
 		return nil, s.fail(fmt.Sprintf("Sampling LLM call timed out after %ss for server '%s'", strings.TrimSuffix(fmt.Sprintf("%g", s.config.Timeout.Seconds()), ".0"), name))

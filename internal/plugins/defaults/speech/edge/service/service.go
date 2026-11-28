@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/internal/plugins/defaults/speech/edge/config"
@@ -28,7 +29,21 @@ func Register(registry *speech.Registry) {
 		Synthesize: func(ctx context.Context, job *speech.Job, request speech.Request) (string, error) {
 			return synthesize(ctx, client, job, request)
 		},
+		Choices: []speech.Choices{{Setting: config.Voice, List: func(ctx context.Context, _ *speech.Job) ([]speech.Pick, error) {
+			return voices(ctx, client)
+		}}},
 	}}})
+}
+
+// Voices Edge offers now, by the name the setting takes, each with its language and kind of voice
+func voices(ctx context.Context, client *edgetts.Client) ([]speech.Pick, error) {
+	listed, err := client.Voices(ctx)
+	var picks []speech.Pick
+	for _, v := range listed {
+		about := strings.TrimSuffix(v.Locale+" · "+strings.ToLower(v.Gender), " · ")
+		picks = append(picks, speech.Pick{Value: v.ShortName, Title: v.ShortName, About: about})
+	}
+	return picks, err
 }
 
 // Edge rate of a speed, a signed whole percentage

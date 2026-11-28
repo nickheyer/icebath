@@ -61,8 +61,8 @@ func read(ctx context.Context, env *prompt.Env, path string) (string, bool) {
 	case result := <-done:
 		return result.text, result.err == nil
 	case <-timer.C:
-		env.Notify(fmt.Sprintf("⚠ The project file %s took longer than %s to read, so it was left out. Raise Project file wait in /settings "+
-			"under Agent › Prompt if it needs more time.", path, strs.Span(wait)))
+		env.Notify(fmt.Sprintf("⚠ The project file %s took longer than %s to read, so it was left out. Raise Project file wait with "+
+			"/settings project file wait if it needs more time.", path, strs.Span(wait)))
 	case <-ctx.Done():
 	}
 	return "", false
@@ -88,7 +88,7 @@ func truncate(env *prompt.Env, content, name, path string) string {
 		return content
 	}
 	env.Notify(fmt.Sprintf("⚠ The project file %s was cut, because its %s are more than the limit of %s. Trim the file, raise Project file "+
-		"limit in /settings under Agent › Prompt, or use a model with a bigger context window.", name, strs.Counted(float64(len(runes)), "characters"),
+		"limit with /settings project file limit, or use a model with a bigger context window.", name, strs.Counted(float64(len(runes)), "characters"),
 		strs.Number(float64(most))))
 	head, tail := int(float64(most)*truncateHeadShare), int(float64(most)*truncateTailShare)
 	sections := ""

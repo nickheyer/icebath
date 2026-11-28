@@ -39,7 +39,7 @@ func (s sections) Sections(ctx context.Context, env *prompt.Env) ([]prompt.Secti
 			text, names, missing := s.skills.Turn(env).AutoLoaded(ctx)
 			loaded = names
 			if len(missing) > 0 {
-				env.Notify("These skills of Always loaded in /settings under Skills are missing or off, so they were left out: " + strings.Join(missing, ", ") + ".")
+				env.Notify("These skills of Always loaded are missing or off, so they were left out: " + strings.Join(missing, ", ") + ".")
 			}
 			return text
 		})

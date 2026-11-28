@@ -67,6 +67,8 @@ func Register(registry *speech.Registry) {
 				Find: find,
 			},
 			Setup: setup,
+			Choices: []speech.Choices{{Setting: config.VoiceID, List: listVoices},
+				speech.Fixed(config.ModelID, config.DefaultModel, "eleven_flash_v2_5", "eleven_turbo_v2_5", "eleven_v3")},
 		}},
 		Recognizing: []speech.Recognizer{{
 			Name: config.Name, Title: "ElevenLabs Scribe", About: "Tells speakers apart and marks sounds, needs an API key", Cloud: true, Rank: 7,

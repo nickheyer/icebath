@@ -99,7 +99,7 @@ func (c commands) run(cmd *cobra.Command, path string, o options) error {
 	}
 	recipe, source, err := recipes.LoadOrDetect(root)
 	if err != nil {
-		fmt.Fprintln(errs, "✗ Could not read the recipe of the project. "+sentence(err.Error()))
+		fmt.Fprintln(errs, "✗ Could not read the recipe of the project. "+strs.Full(err.Error()))
 		return exit(1)
 	}
 	if recipe == nil {
@@ -119,7 +119,7 @@ func (c commands) run(cmd *cobra.Command, path string, o options) error {
 	if o.save {
 		saved, err := recipes.SaveManifest(root, recipe)
 		if err != nil {
-			fmt.Fprintln(errs, "✗ Could not save the recipe. "+sentence(err.Error()))
+			fmt.Fprintln(errs, "✗ Could not save the recipe. "+strs.Full(err.Error()))
 			return exit(1)
 		}
 		if !o.json {
@@ -139,7 +139,7 @@ func (c commands) run(cmd *cobra.Command, path string, o options) error {
 	run.Supervisor, run.Config = c.terminal.Supervisor, c.config
 	result, err := recipes.Run(cmd.Context(), root, recipe, run)
 	if err != nil {
-		fmt.Fprintln(errs, "✗ Could not run the recipe. "+sentence(err.Error()))
+		fmt.Fprintln(errs, "✗ Could not run the recipe. "+strs.Full(err.Error()))
 		return exit(1)
 	}
 	c.record(cmd, root, recipe, result, len(o.phases) > 0 || o.skipStart)
@@ -219,19 +219,6 @@ func emit(w io.Writer, value any, pretty bool) {
 		encoder.SetIndent("", "  ")
 	}
 	encoder.Encode(value)
-}
-
-// Text as a sentence: capital first letter, a period at the end
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	text = strings.ToUpper(text[:1]) + text[1:]
-	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
-		text += "."
-	}
-	return text
 }
 
 // Length of a step in seconds as words, to a tenth of a second

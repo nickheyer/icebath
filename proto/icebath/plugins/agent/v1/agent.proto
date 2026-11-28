@@ -49,6 +49,83 @@ service AgentService {
   rpc Finalize(FinalizeRequest) returns (FinalizeResponse);
   // Tells the session's pre_command hooks of a slash command the app runs itself
   rpc Observe(ObserveRequest) returns (ObserveResponse);
+  // What the session keeps for itself over the settings of new chats, with what is in effect for it
+  rpc Chat(ChatRequest) returns (ChatResponse);
+  // Holds the session to a model of a provider of its profile, or lets it take the model of new chats again
+  rpc SetModel(SetModelRequest) returns (SetModelResponse);
+  // Sets how hard the session's model thinks, or lets it take the effort of new chats again
+  rpc SetEffort(SetEffortRequest) returns (SetEffortResponse);
+  // Sets what a message sent while the session's agent works does, or lets it take the choice of new chats again
+  rpc SetBusy(SetBusyRequest) returns (SetBusyResponse);
+}
+
+message ChatRequest {
+  string session_id = 1;
+  // Profile whose settings the asker shows, the one in use when empty
+  string profile = 2;
+}
+
+message ChatResponse {
+  // The session runs on the profile asked about
+  bool shown = 1;
+  string profile = 2;
+  // Provider of the model in effect, by its name in the profile and as a person knows it, and the model; no model while none is known
+  string provider = 3;
+  string provider_title = 4;
+  string model = 5;
+  // The session holds a model of its own rather than the one of new chats
+  bool own_model = 6;
+  // Effort in effect, empty for the model's own, and whether the session holds one of its own
+  string effort = 7;
+  bool own_effort = 8;
+  // What a message sent while the agent works does: queue, steer or interrupt; and whether the session holds a choice of its own
+  string busy = 9;
+  bool own_busy = 10;
+  // Account of the provider the session is held to, @rotate for the accounts that take turns, empty for the provider's own choice; and
+  // the name a person knows it by
+  string account = 11;
+  string account_title = 12;
+  // Accounts the provider of the model in effect has
+  int32 accounts = 13;
+}
+
+message SetModelRequest {
+  string session_id = 1;
+  // Provider of the profile, by its name there; none for a model shortcut, which says where it runs
+  string provider = 2;
+  // Model or model shortcut; none takes the provider's default model
+  string model = 3;
+  // Lets go of the session's own model, the one of new chats applying again
+  bool clear = 4;
+}
+
+message SetModelResponse {
+  // What the person is told, the note the control gives
+  string said = 1;
+}
+
+message SetEffortRequest {
+  string session_id = 1;
+  // none, minimal, low, medium, high, xhigh or max
+  string effort = 2;
+  // Lets go of the session's own effort, the effort of new chats applying again
+  bool clear = 3;
+}
+
+message SetEffortResponse {
+  string said = 1;
+}
+
+message SetBusyRequest {
+  string session_id = 1;
+  // queue, steer or interrupt
+  string mode = 2;
+  // Lets go of the session's own choice, the choice of new chats applying again
+  bool clear = 3;
+}
+
+message SetBusyResponse {
+  string said = 1;
 }
 
 message FinalizeRequest {
@@ -178,6 +255,10 @@ message State {
   double cost = 10;
   // What a message sent while the session's agent works does: queue, steer or interrupt
   string busy_input_mode = 11;
+  // Name a person knows the provider by
+  string provider_title = 12;
+  // The session runs on the profile in use
+  bool profile_in_use = 13;
 }
 
 message SendRequest {
@@ -398,6 +479,8 @@ message LoginExhausted {
   bool rotation = 8;
   // What the session does once the login runs out: fail or rotate
   string on_exhausted = 9;
+  // Name a person knows the provider by
+  string provider_title = 10;
 }
 
 message LiveRequest {}
@@ -593,6 +676,8 @@ message SetLoginResponse {
   bool retried = 4;
   // Why the choice could not take effect at once, the choice kept
   string warning = 5;
+  // What the person is told, the note the control gives
+  string said = 6;
 }
 
 message WaitLoginRequest {

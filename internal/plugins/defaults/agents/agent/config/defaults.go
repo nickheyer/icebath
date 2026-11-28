@@ -4,53 +4,74 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/internal/auxiliary"
+	auxiliaryconfig "github.com/nickheyer/icebath/internal/auxiliary/config"
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/provider"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 )
 
-func Register(cfg *config.Config, providers, personalities func() []config.Option) {
-	cfg.Register(config.Sections{{
+// Choices read from the settings of the profile shown, the one a page or a write is about
+type choices func(values *config.Config) func() []config.Option
+
+// Registers the settings of the agent. Those whose choices are things of the profile, its providers and its personalities, are made for the
+// profile whose settings are read, so the choices and the checks behind them are that profile's
+func Register(cfg *config.Config, providers, personalities choices) {
+	cfg.Register(sections{providers: providers, personalities: personalities})
+}
+
+// Sections of the agent, of its prompt and of its guards of tool loops, made for the profile of the values: those under the agent are made
+// with it, since a fixed section can't sit under one that comes and goes
+type sections struct {
+	providers, personalities choices
+}
+
+func (s sections) Sections(values *config.Config) []config.Section {
+	return []config.Section{s.agent(values), prompt(s.personalities(values)), loops()}
+}
+
+func (s sections) agent(values *config.Config) config.Section {
+	providers := s.providers(values)
+	return config.Section{
 		Key:   Key,
 		Title: "Agent",
 		About: "The model that answers you and how it works",
 		Group: config.GroupModels,
 		Order: 20,
 		Settings: []config.Setting{
-			{Key: Provider, Title: "Provider", About: "The provider the agent uses unless a session picks its own.", Default: "", Slash: "model",
-				Options: func() []config.Option {
+			{Key: Provider, Title: "Provider", About: "The provider that new chats use.", Default: "", Picks: providerconfig.PickProvider, Custom: true,
+				Apply: config.NewSessions, Options: func() []config.Option {
 					return append([]config.Option{{Title: "First connected", About: "The first provider icebath finds an account or key for"}},
 						providers()...)
 				}},
-			{Key: Model, Title: "Model", About: "The model the agent uses unless a session picks its own.", Help: "A model name or one of your model shortcuts.",
-				Default: "", Zero: "The provider's default", Slash: "model"},
-			{Key: ReasoningEffort, Title: "Reasoning effort", About: "How much the model thinks before it answers.", Default: "", Slash: "reasoning",
-				Options: func() []config.Option { return provider.EffortOptions(config.Option{Title: "The model's default"}) }},
+			{Key: Model, Title: "Model", About: "The model that new chats use.", Default: "", Zero: "The provider's default", Picks: providerconfig.PickModel,
+				Custom: true, Apply: config.NewSessions},
+			{Key: ReasoningEffort, Title: "Reasoning effort", About: "How much the model thinks before it answers.", Default: "", Picks: auxiliaryconfig.PickEffort,
+				Apply: config.NewSessions, Options: func() []config.Option { return provider.EffortOptions(config.Option{Title: "The model's default"}) }},
+			{Key: Fallbacks, Title: "Fallback models", About: "Models to try in order when the main model fails.", Default: []string{}, Zero: "None",
+				Picks: providerconfig.PickModel, Ordered: true, Entry: &config.Entry{Noun: "model"}},
+			{Key: BusyInputMode, Title: "Enter while busy", About: "What happens to a message you send while the agent is working.", Default: BusyQueue,
+				Apply: config.NewSessions, Options: BusyChoices},
 			{Key: Thinking, Title: "Reasoning display", About: "How the reasoning of the model is shown in the chat.", Default: ThinkingFolded,
-				Slash: "reasoning", Options: config.Options(
+				Options: config.Options(
 					config.Option{Value: ThinkingHidden, Title: "Hidden", About: "Not shown"},
 					config.Option{Value: ThinkingFolded, Title: "Collapsed", About: "One line that you can click to open"},
 					config.Option{Value: ThinkingOpen, Title: "Expanded", About: "Shown in full"},
 				)},
 			{Key: MaxTurns, Title: "Max steps", About: "The most model calls the agent may make for one reply.", Default: 0, Zero: "No limit", Counts: "calls",
 				Apply: config.NextMessage},
-			{Key: Fallbacks, Title: "Fallback models", About: "Models to try in order when the main model fails.",
-				Help: "Write each as provider:model, with the name the provider has in this profile.", Default: []string{}},
-			{Key: BusyInputMode, Title: "Enter while busy", About: "What happens to a message you send while the agent is working.", Default: BusyQueue,
-				Options: config.Options(
-					config.Option{Value: BusyQueue, Title: "Queue it", About: "Send it after the current reply ends"},
-					config.Option{Value: BusySteer, Title: "Steer", About: "Add it to the current reply"},
-					config.Option{Value: BusyInterrupt, Title: "Interrupt", About: "Stop the reply and send it now"},
-				)},
 			{Key: Aliases, Title: "Model shortcuts", About: "Short names you can use in place of a model's full name.",
-				Help: "Use a shortcut in the Model setting, with /model and for subagents of a profile.", Default: map[string]any{}, Advanced: true,
+				Help: "Type a shortcut with /model, such as /model fast.", Default: map[string]any{}, Custom: true,
 				Entry: &config.Entry{Noun: "shortcut", Name: "Shortcut name", Fields: []config.Setting{
-					{Key: "model", Title: "Model", About: "The model the shortcut stands for.", Default: ""},
-					{Key: "provider", Title: "Provider", About: "The provider that runs the model.", Default: "", Zero: "The profile's provider"},
-					{Key: "base_url", Title: "Base URL", About: "The address of a server of your own that runs the model.", Default: "",
-						Zero: "The provider's address"},
+					{Key: "model", Title: "Model", About: "The model the shortcut stands for.", Default: "", Picks: providerconfig.PickModel, Need: true},
+					{Key: "provider", Title: "Provider", About: "The provider that runs the model.", Default: "", Zero: "The provider of new chats",
+						Picks: providerconfig.PickProvider},
+					{Key: "base_url", Title: "Address", About: "The address of a server of your own that runs the model.",
+						Help: "Such as http://localhost:8080/v1.", Default: "", Zero: "The provider's address", Starts: []string{"http://", "https://"},
+						Advanced: true},
 					{Key: "api_key", Title: "API key", About: "Your API key for that server.", Help: "Write ${NAME} to read it from a variable.",
-						Default: "", Secret: true},
-					{Key: "key_env", Title: "Key variable", About: "The environment variable that holds the API key.", Default: ""},
+						Default: "", Secret: true, Advanced: true},
+					{Key: "key_env", Title: "Key variable", About: "The environment variable that holds the API key.", Help: "Such as MY_SERVER_KEY.",
+						Default: "", Advanced: true},
 				}}},
 			{Key: ContextLength, Title: "Context window", About: "How much text the model can read at once.",
 				Help: "Set this only when icebath gets the size wrong.", Default: 0, Zero: "Automatic", Counts: "tokens", Least: config.Num(0), Advanced: true},
@@ -87,8 +108,12 @@ func Register(cfg *config.Config, providers, personalities func() []config.Optio
 			{Key: ClarifyTimeout, Title: "Question wait", About: "How long the agent waits when it asks you a question.", Default: time.Hour,
 				Zero: "Forever", Advanced: true},
 		},
-	}})
-	cfg.Register(config.Sections{{
+	}
+}
+
+// Section of the guards of tool loops
+func loops() config.Section {
+	return config.Section{
 		Key:    LoopKey,
 		Parent: Key,
 		Title:  "Tool loops",
@@ -117,17 +142,17 @@ func Register(cfg *config.Config, providers, personalities func() []config.Optio
 			{Key: LoopStopNoProgress, Title: "Stop after no progress", About: "How many times a read-only call brings nothing new before the reply is stopped.",
 				Default: 5, Counts: "times", Least: config.Num(1), Apply: config.NextMessage, Advanced: true},
 		},
-	}})
-	registerPrompt(cfg, personalities)
+	}
 }
 
-func registerPrompt(cfg *config.Config, personalities func() []config.Option) {
+// Section of the agent's prompt, the personalities being those of the profile of the values
+func prompt(personalities func() []config.Option) config.Section {
 	guidance := config.Options(
 		config.Option{Value: GuidanceAuto, Title: "Automatic", About: "On for the models that need it"},
 		config.Option{Value: GuidanceAlways, Title: "Always", About: "On for every model"},
 		config.Option{Value: GuidanceNever, Title: "Never", About: "Off for every model"},
 	)
-	cfg.Register(config.Sections{{
+	return config.Section{
 		Key:    PromptKey,
 		Parent: Key,
 		Title:  "Prompt",
@@ -139,11 +164,13 @@ func registerPrompt(cfg *config.Config, personalities func() []config.Option) {
 					return append([]config.Option{{Title: "None", About: "The agent's own tone"}}, personalities()...)
 				}},
 			{Key: Personalities, Title: "Your personalities", About: "Personalities of your own that you can pick by name.", Default: map[string]any{},
-				Entry: &config.Entry{Noun: "personality", Name: "Personality name", Fields: []config.Setting{
-					{Key: "description", Title: "Description", About: "A short line shown when you pick a personality.", Default: ""},
-					{Key: "system_prompt", Title: "Instructions", About: "What the agent is told to be and do.", Default: ""},
-					{Key: "tone", Title: "Tone", About: "The tone the agent speaks in.", Default: ""},
-					{Key: "style", Title: "Style", About: "The style the agent replies in.", Default: ""},
+				Custom: true, Entry: &config.Entry{Noun: "personality", Name: "Personality name", Fields: []config.Setting{
+					{Key: "description", Title: "Description", About: "A short line shown when you pick a personality.",
+						Help: "Such as Calm and brief.", Default: ""},
+					{Key: "system_prompt", Title: "Instructions", About: "What the agent is told to be and do.",
+						Help: "Such as You are a calm assistant who answers in few words.", Default: ""},
+					{Key: "tone", Title: "Tone", About: "The tone the agent speaks in.", Help: "Such as warm and patient.", Default: ""},
+					{Key: "style", Title: "Style", About: "The style the agent replies in.", Help: "Such as short lists, no jokes.", Default: ""},
 				}}},
 			{Key: SystemPrompt, Title: "Your instructions", About: "Instructions of your own that are added to every session.",
 				Help: "A personality you pick is used in place of these.", Default: "", Apply: config.NextMessage},
@@ -173,16 +200,54 @@ func registerPrompt(cfg *config.Config, personalities func() []config.Option) {
 			{Key: ContextFileReadTimeout, Title: "Project file wait", About: "How long icebath waits while it reads a project instruction file.",
 				Default: 5 * time.Second, Zero: "5 seconds", Apply: config.NewSessions, Advanced: true},
 			{Key: PlatformHints, Title: "Advice by app", About: "Changes to the formatting advice the agent gets in each app.",
-				Help: "An app name such as tui, cli, cron or a chat app's name.", Default: map[string]any{}, Apply: config.NewSessions, Advanced: true,
-				Entry: &config.Entry{Noun: "app", Name: "App name", Fields: []config.Setting{
+				Default: map[string]any{}, Apply: config.NewSessions, Advanced: true,
+				Entry: &config.Entry{Noun: "app", Names: Apps, Fields: []config.Setting{
 					{Key: "replace", Title: "Replacement", About: "Text used in place of the built-in advice.", Default: "", Zero: "The built-in advice"},
 					{Key: "append", Title: "Addition", About: "Text added after the advice.", Default: ""},
 				}}},
 			{Key: PassSessionID, Title: "Share session ID", About: "Tell the agent the ID of its session.", Default: false, Apply: config.NextMessage,
 				Advanced: true},
 			{Key: PrefillMessagesFile, Title: "Example messages file", About: "A JSON file of example messages added to the start of every session.",
-				Help: "A relative path starts from the profile folder.", Default: "", Env: []string{"ICEBATH_PREFILL_MESSAGES_FILE"},
-				Apply: config.NewSessions, Advanced: true},
+				Default: "", Env: []string{"ICEBATH_PREFILL_MESSAGES_FILE"}, Apply: config.NewSessions, Advanced: true,
+				Path: &config.Path{Kind: config.PathFile, Exists: true}},
 		},
-	}})
+	}
+}
+
+// Apps icebath runs sessions in, by the name a session's app has, with what a person calls each: those the agent gets formatting advice
+// for, then the chat apps
+func Apps() []config.Option {
+	return []config.Option{
+		{Value: "tui", Title: "This app", About: "The terminal app"},
+		{Value: "cli", Title: "Command line", About: "icebath chat in a plain terminal"},
+		{Value: "cron", Title: "Scheduled jobs", About: "Jobs that run on a schedule, with nobody watching"},
+		{Value: "api_server", Title: "API server", About: "Apps that reach icebath through its API"},
+		{Value: "mcp", Title: "MCP clients", About: "Programs that use icebath as an MCP server"},
+		{Value: "telegram", Title: "Telegram"},
+		{Value: "discord", Title: "Discord"},
+		{Value: "matrix", Title: "Matrix"},
+		{Value: "whatsapp", Title: "WhatsApp"},
+		{Value: "signal", Title: "Signal"},
+		{Value: "feishu", Title: "Feishu"},
+	}
+}
+
+// What happens to a message you send while a reply is being written: each choice of Enter while busy
+func BusyChoices() []config.Option {
+	return []config.Option{
+		{Value: BusyQueue, Title: "Sent after the reply", About: "Your message waits for the current reply to end"},
+		{Value: BusySteer, Title: "Added to the reply", About: "The agent reads it at the next step of the current reply"},
+		{Value: BusyInterrupt, Title: "Sent at once", About: "The current reply stops and your message goes now"},
+	}
+}
+
+// Title of a choice of Enter while busy, every page, note and command saying it so; the first one's for a value no choice has
+func BusyTitle(mode string) string {
+	choices := BusyChoices()
+	for _, choice := range choices {
+		if choice.Value == mode {
+			return choice.Title
+		}
+	}
+	return choices[0].Title
 }

@@ -3,7 +3,10 @@ package server
 import (
 	"context"
 
+	"connectrpc.com/connect/v2"
+
 	"github.com/nickheyer/icebath/internal/server"
+	"github.com/nickheyer/icebath/internal/terminal"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
 	terminalv1 "github.com/nickheyer/icebath/pkg/gen/icebath/terminal/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/terminal/v1/terminalv1connect"
@@ -14,26 +17,42 @@ func (s *service) Backends(_ context.Context, request *terminalv1.BackendsReques
 	if err != nil {
 		return nil, err
 	}
-	response := &terminalv1.BackendsResponse{Profile: cfg.Profile()}
-	for _, report := range s.terminal.Survey(cfg) {
+	response := &terminalv1.BackendsResponse{Profile: cfg.Profile(), Variable: s.terminal.Holder(cfg)}
+	for _, place := range s.terminal.Places(cfg) {
 		backend := &terminalv1.Backend{
-			Name:        report.Backend.Name,
-			Title:       report.Backend.Title,
-			About:       report.Backend.About,
-			Selected:    report.Selected,
-			Unavailable: report.Unavailable,
-			Setup:       report.Setup,
-			Prepares:    report.Backend.Prepare != nil,
+			Name:     place.Backend.Name,
+			Title:    place.Backend.Title,
+			About:    place.Backend.About,
+			Selected: place.Selected,
+			Prepares: place.Backend.Prepare != nil,
+			State:    place.State,
+			Ready:    place.State == terminal.Ready,
+			Missing:  place.Missing,
+			Why:      place.Why,
+			Readies:  place.Backend.Readies,
 		}
-		for _, check := range report.Checks {
-			backend.Checks = append(backend.Checks, &terminalv1.Check{Ok: check.OK, Label: check.Label, Detail: check.Detail})
+		for _, check := range place.Checks {
+			backend.Checks = append(backend.Checks, &terminalv1.Check{Ok: check.OK, Label: check.Label, State: check.State, Detail: check.Detail,
+				Fix: check.Fix, Setting: check.Setting})
 		}
-		if section, ok := cfg.Section(terminalconfig.Key + "." + report.Backend.Name); ok && len(section.Settings) > 0 {
+		if section, ok := cfg.Section(terminalconfig.Key + "." + place.Backend.Name); ok && len(section.Settings) > 0 {
 			backend.Section = section.Key
 		}
 		response.Backends = append(response.Backends, backend)
 	}
 	return response, nil
+}
+
+func (s *service) Use(_ context.Context, request *terminalv1.UseRequest) (*terminalv1.UseResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	note, held, err := s.terminal.Use(cfg, request.GetBackend())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
+	}
+	return &terminalv1.UseResponse{Note: note, Held: held}, nil
 }
 
 func (s *service) Prepare(ctx context.Context, request *terminalv1.PrepareRequest, stream terminalv1connect.BackendServicePrepareServerStream) error {

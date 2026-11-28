@@ -27,7 +27,7 @@ func Register(cfg *config.Config) {
 			{Key: ForwardEnv, Title: "Passed-in variables", About: "Variables from your environment that are passed into the sandbox.",
 				Help: "Names only. The values come from your environment.", Default: []string{}, Env: []string{"TERMINAL_DOCKER_FORWARD_ENV"}},
 			{Key: Env, Title: "Variables", About: "Variables set inside the sandbox.", Default: map[string]any{}, Env: []string{"TERMINAL_DOCKER_ENV"},
-				Entry: &config.Entry{Noun: "variable", Name: "Variable name", Capitals: true, Fields: []config.Setting{
+				Entry: &config.Entry{Noun: "variable", Name: "Variable name", Fields: []config.Setting{
 					{Title: "Value", About: "The text that the variable holds.", Default: ""},
 				}}},
 			{Key: RunAsHostUser, Title: "Run as your user", About: "Run commands in the sandbox as your own user instead of root.", Default: false,

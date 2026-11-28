@@ -820,8 +820,8 @@ func (m *Manager) detached(ctx context.Context, op *Operation) string {
 				}
 			}
 			if len(missing) > 0 {
-				m.fail(op, t.Name, fmt.Sprintf("Set %s in your environment or in /settings under Tools › MCP servers › Values, then install it again.",
-					strings.Join(missing, ", ")))
+				m.fail(op, t.Name, fmt.Sprintf("%s has no value yet. Set it in your environment or as a value of MCP servers, then install the "+
+					"server again.", strings.Join(missing, ", ")))
 				continue
 			}
 			op.move(t.Name, TargetInitiated, nil)

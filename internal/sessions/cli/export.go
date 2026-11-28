@@ -129,7 +129,7 @@ func addExport(parent *cobra.Command, at func(*cobra.Command) *run) {
 func (r *run) matching(filter *sessionsv1.Filter) ([]*sessionsv1.Session, error) {
 	response, err := r.service.Prune(r.ctx(), &sessionsv1.PruneRequest{Filter: filter, DryRun: true})
 	if err != nil {
-		return nil, errors.New(sentence(tui.Reason(err)))
+		return nil, errors.New(strs.Sentence(tui.Reason(err)))
 	}
 	return response.GetSessions(), nil
 }
@@ -179,7 +179,7 @@ func (r *run) collect(id string, filter *sessionsv1.Filter, f *filters, capped, 
 	}
 	response, err := r.service.Export(r.ctx(), request)
 	if err != nil {
-		return nil, false, errors.New(sentence(tui.Reason(err)))
+		return nil, false, errors.New(strs.Sentence(tui.Reason(err)))
 	}
 	return response.GetTranscripts(), false, nil
 }
@@ -285,7 +285,7 @@ func (r *run) exportTrace(output, id string, filter *sessionsv1.Filter, f *filte
 		}
 		transcripts, _, err := r.collect(id, nil, f, false, false)
 		if err != nil {
-			r.printf("✗ The session %s could not be loaded: %s", id, sentence(err.Error()))
+			r.printf("✗ The session %s could not be loaded: %s", id, strs.Sentence(err.Error()))
 			return nil
 		}
 		if len(transcripts) == 0 || len(transcripts[0].GetMessages()) == 0 {
@@ -398,7 +398,7 @@ func (r *run) exportMemory(output, format, id string, filter *sessionsv1.Filter,
 	for _, head := range heads {
 		response, err := r.service.Export(r.ctx(), &sessionsv1.ExportRequest{Filter: &sessionsv1.Filter{Ids: []string{head}}, Lineage: lineage})
 		if err != nil {
-			return errors.New(sentence(tui.Reason(err)))
+			return errors.New(strs.Sentence(tui.Reason(err)))
 		}
 		segments := response.GetTranscripts()
 		if len(segments) == 0 {
@@ -467,7 +467,7 @@ func (r *run) exportMemory(output, format, id string, filter *sessionsv1.Filter,
 			return fmt.Errorf("The session %s was not deleted, because its export file %s is missing.", id, file.path)
 		}
 		if outcome := export.Verify(data, file.id, file.count); outcome != "ok" {
-			return fmt.Errorf("The session %s was not deleted, because its export did not check out: %s", id, sentence(outcome))
+			return fmt.Errorf("The session %s was not deleted, because its export did not check out: %s", id, strs.Sentence(outcome))
 		}
 	}
 	deleted, err := r.service.Delete(r.ctx(), &sessionsv1.DeleteRequest{Id: id})
@@ -476,7 +476,7 @@ func (r *run) exportMemory(output, format, id string, filter *sessionsv1.Filter,
 			return fmt.Errorf("The session %s was exported but not deleted, because it, or one of its subagents, is in the middle of a reply or of "+
 				"being summarized.", id)
 		}
-		return fmt.Errorf("The session %s was exported but not deleted: %s", id, sentence(tui.Reason(err)))
+		return fmt.Errorf("The session %s was exported but not deleted: %s", id, strs.Sentence(tui.Reason(err)))
 	}
 	others := len(deleted.GetIds()) - 1
 	line := fmt.Sprintf("✓ Deleted the exported session %s", id)

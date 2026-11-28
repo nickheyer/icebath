@@ -53,8 +53,8 @@ func (d *Desktop) Resolve(cfg *config.Config) Placement {
 		title = backend.Title
 	}
 	return Placement{Refused, name, "The agent's commands run in " + title + ", which cannot hold the agent desktop yet. Running the desktop " +
-		"on this computer would put the agent's screen and browser outside the sandbox you chose, so it runs here only when you set Location in " +
-		"/settings under Agent desktop to This computer."}
+		"on this computer would put the agent's screen and browser outside the sandbox you chose, so it runs here only when you set Location, an option of " +
+		"Agent desktop, to This computer."}
 }
 
 // Whether the profile's screen lives in the terminal backend's sandbox

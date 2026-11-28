@@ -30,6 +30,7 @@ import (
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/internal/tools"
 	"github.com/nickheyer/icebath/internal/transport"
+	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -89,6 +90,8 @@ type pool struct {
 	warned    map[string]bool
 	stderr    *os.File
 	tallies   tallies
+	// Servers of the catalog plugins ship, as the servers were last read
+	bundled []mcp.Entry
 
 	// Tools of every server, built again once something changed
 	defsMu  sync.Mutex
@@ -180,7 +183,11 @@ func (p *pool) specs() map[string]*spec {
 		p.mu.Unlock()
 		out[name] = s
 	}
-	for _, entry := range p.m.catalog.Bundled(p.cfg) {
+	bundled := p.m.catalog.Bundled(p.cfg)
+	p.mu.Lock()
+	p.bundled = bundled
+	p.mu.Unlock()
+	for _, entry := range bundled {
 		switch _, native := out[entry.Name]; {
 		case rejected[entry.Name]:
 			slog.Warn("MCP server a plugin ships skipped: the profile's own entry of that name was rejected", "server", entry.Name)
@@ -497,7 +504,7 @@ func (p *pool) launchEnv(ctx context.Context, s *spec) (map[string]string, strin
 			env[name] = value
 		}
 	}
-	command := terminal.ExpandUser(s.Command)
+	command := fsx.ExpandHome(s.Command)
 	launcher := windowsLauncher.ReplaceAllString(command, "")
 	if _, family := managedLaunchers[launcher]; family {
 		executable, dirs, ok, err := p.managedLauncher(ctx, launcher)

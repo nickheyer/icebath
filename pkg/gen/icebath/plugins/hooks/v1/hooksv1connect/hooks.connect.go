@@ -34,6 +34,10 @@ const (
 	HooksServiceCheckProcedure = "/icebath.plugins.hooks.v1.HooksService/Check"
 	// HooksServiceAcceptProcedure is the procedure name of the HooksService's Accept RPC.
 	HooksServiceAcceptProcedure = "/icebath.plugins.hooks.v1.HooksService/Accept"
+	// HooksServiceChangeWebhookProcedure is the procedure name of the HooksService's ChangeWebhook RPC.
+	HooksServiceChangeWebhookProcedure = "/icebath.plugins.hooks.v1.HooksService/ChangeWebhook"
+	// HooksServiceTestWebhookProcedure is the procedure name of the HooksService's TestWebhook RPC.
+	HooksServiceTestWebhookProcedure = "/icebath.plugins.hooks.v1.HooksService/TestWebhook"
 )
 
 var (
@@ -72,13 +76,27 @@ var (
 			Procedure:  HooksServiceAcceptProcedure,
 		}
 	})
+	hooksServiceChangeWebhookSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_hooks_v1_hooks_proto.Services().ByName("HooksService").Methods().ByName("ChangeWebhook"),
+			Procedure:  HooksServiceChangeWebhookProcedure,
+		}
+	})
+	hooksServiceTestWebhookSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_hooks_v1_hooks_proto.Services().ByName("HooksService").Methods().ByName("TestWebhook"),
+			Procedure:  HooksServiceTestWebhookProcedure,
+		}
+	})
 )
 
 // HooksServiceClient is a client for the icebath.plugins.hooks.v1.HooksService service.
 type HooksServiceClient interface {
 	// Every shell hook and outbound webhook of the profile, with the events a hook may be set on
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
-	// One change to the hooks: add, remove, allow or revoke; answered with the hooks after it
+	// One change to a hook: add, edit, remove, allow or revoke; answered with the hooks after it and what was done
 	Change(context.Context, *v1.ChangeRequest) (*v1.ChangeResponse, error)
 	// Runs hooks of an event once on its sample event: the one the command names, or every one of the event whose matcher names the tool
 	Test(context.Context, *v1.TestRequest) (*v1.TestResponse, error)
@@ -86,6 +104,10 @@ type HooksServiceClient interface {
 	Check(context.Context, *v1.CheckRequest) (*v1.CheckResponse, error)
 	// Allows every hook the profile's settings set, as a launch with --accept-hooks does
 	Accept(context.Context, *v1.AcceptRequest) (*v1.AcceptResponse, error)
+	// One change to a webhook: add, edit or remove; answered with the hooks after it and what was done
+	ChangeWebhook(context.Context, *v1.WebhookRequest) (*v1.ChangeResponse, error)
+	// Posts a sample event to a webhook now and says how its address answered
+	TestWebhook(context.Context, *v1.TestWebhookRequest) (*v1.TestWebhookResponse, error)
 }
 
 // NewHooksServiceClient constructs a client for the icebath.plugins.hooks.v1.HooksService service.
@@ -98,7 +120,7 @@ func NewHooksServiceClient(client *connect.Client) HooksServiceClient {
 type HooksServiceHandler interface {
 	// Every shell hook and outbound webhook of the profile, with the events a hook may be set on
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
-	// One change to the hooks: add, remove, allow or revoke; answered with the hooks after it
+	// One change to a hook: add, edit, remove, allow or revoke; answered with the hooks after it and what was done
 	Change(context.Context, *v1.ChangeRequest) (*v1.ChangeResponse, error)
 	// Runs hooks of an event once on its sample event: the one the command names, or every one of the event whose matcher names the tool
 	Test(context.Context, *v1.TestRequest) (*v1.TestResponse, error)
@@ -106,6 +128,10 @@ type HooksServiceHandler interface {
 	Check(context.Context, *v1.CheckRequest) (*v1.CheckResponse, error)
 	// Allows every hook the profile's settings set, as a launch with --accept-hooks does
 	Accept(context.Context, *v1.AcceptRequest) (*v1.AcceptResponse, error)
+	// One change to a webhook: add, edit or remove; answered with the hooks after it and what was done
+	ChangeWebhook(context.Context, *v1.WebhookRequest) (*v1.ChangeResponse, error)
+	// Posts a sample event to a webhook now and says how its address answered
+	TestWebhook(context.Context, *v1.TestWebhookRequest) (*v1.TestWebhookResponse, error)
 }
 
 // RegisterHooksServiceHandler registers svc as the icebath.plugins.hooks.v1.HooksService
@@ -118,6 +144,8 @@ func RegisterHooksServiceHandler(server *connect.Server, svc HooksServiceHandler
 		connect.Method{Spec: hooksServiceTestSpec(), Handler: adapter.test},
 		connect.Method{Spec: hooksServiceCheckSpec(), Handler: adapter.check},
 		connect.Method{Spec: hooksServiceAcceptSpec(), Handler: adapter.accept},
+		connect.Method{Spec: hooksServiceChangeWebhookSpec(), Handler: adapter.changeWebhook},
+		connect.Method{Spec: hooksServiceTestWebhookSpec(), Handler: adapter.testWebhook},
 	)
 }
 
@@ -142,6 +170,14 @@ func (UnimplementedHooksServiceHandler) Check(context.Context, *v1.CheckRequest)
 
 func (UnimplementedHooksServiceHandler) Accept(context.Context, *v1.AcceptRequest) (*v1.AcceptResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.hooks.v1.HooksService.Accept is not implemented")
+}
+
+func (UnimplementedHooksServiceHandler) ChangeWebhook(context.Context, *v1.WebhookRequest) (*v1.ChangeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.hooks.v1.HooksService.ChangeWebhook is not implemented")
+}
+
+func (UnimplementedHooksServiceHandler) TestWebhook(context.Context, *v1.TestWebhookRequest) (*v1.TestWebhookResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.hooks.v1.HooksService.TestWebhook is not implemented")
 }
 
 type hooksServiceClient struct {
@@ -183,6 +219,22 @@ func (c *hooksServiceClient) Check(ctx context.Context, req *v1.CheckRequest) (*
 func (c *hooksServiceClient) Accept(ctx context.Context, req *v1.AcceptRequest) (*v1.AcceptResponse, error) {
 	var res v1.AcceptResponse
 	if err := c.client.CallUnary(ctx, hooksServiceAcceptSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *hooksServiceClient) ChangeWebhook(ctx context.Context, req *v1.WebhookRequest) (*v1.ChangeResponse, error) {
+	var res v1.ChangeResponse
+	if err := c.client.CallUnary(ctx, hooksServiceChangeWebhookSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *hooksServiceClient) TestWebhook(ctx context.Context, req *v1.TestWebhookRequest) (*v1.TestWebhookResponse, error) {
+	var res v1.TestWebhookResponse
+	if err := c.client.CallUnary(ctx, hooksServiceTestWebhookSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -244,6 +296,30 @@ func (h hooksServiceHandler) accept(ctx context.Context, _ connect.Spec, stream 
 		return err
 	}
 	res, err := h.svc.Accept(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h hooksServiceHandler) changeWebhook(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.WebhookRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ChangeWebhook(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h hooksServiceHandler) testWebhook(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.TestWebhookRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.TestWebhook(ctx, &req)
 	if err != nil {
 		return err
 	}

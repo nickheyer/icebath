@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/spf13/cast"
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/credentials"
 	qwenoauthconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/qwenoauth/config"
 	"github.com/nickheyer/icebath/internal/provider"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
@@ -94,20 +94,24 @@ func failed(message, code string, cause error) *credentials.AuthError {
 
 // Whether the provider may take the Qwen CLI's sign-in
 func adopts(account credentials.Account) bool {
-	adopt := account.Provider.Settings.Get(qwenoauthconfig.AdoptExternalLogins)
-	return (adopt == nil || cast.ToBool(adopt)) && !account.Ignores(qwenCLI)
+	return !account.Ignores(qwenCLI)
 }
 
-// Account's own sign-in, else a key from QWEN_API_KEY, else the Qwen CLI's sign-in when the provider may take it
+// An account's own sign-in, or the Qwen CLI's sign-in for an account that uses it; outside the accounts, a key from QWEN_API_KEY, else the
+// Qwen CLI's sign-in. The Qwen CLI's only while the provider may take it
 func (source) Credential(account credentials.Account) (credentials.Credential, bool) {
 	if account.Spec() != qwenoauthconfig.Name {
 		return credentials.Credential{}, false
 	}
-	if token := strings.TrimSpace(account.Fields.GetString(qwenoauthconfig.AccessToken)); token != "" && account.Name != "" {
-		return credentials.Credential{APIKey: token, Auth: provider.AuthOAuth, Origin: credentials.Saved,
-			Expires: millis(int64(account.Fields.GetInt(qwenoauthconfig.Expiry)))}, true
-	}
-	if found, ok := account.Lookup("", qwenoauthconfig.APIKeyEnv); ok {
+	if account.Name != "" {
+		if token := strings.TrimSpace(account.Fields.GetString(qwenoauthconfig.AccessToken)); token != "" {
+			return credentials.Credential{APIKey: token, Auth: provider.AuthOAuth, Origin: credentials.Saved,
+				Expires: millis(int64(account.Fields.GetInt(qwenoauthconfig.Expiry)))}, true
+		}
+		if account.Program() != qwenCLI {
+			return credentials.Credential{}, false
+		}
+	} else if found, ok := account.Lookup("", qwenoauthconfig.APIKeyEnv); ok {
 		found.Auth = provider.AuthAPIKey
 		return found, true
 	}
@@ -292,11 +296,24 @@ func signIn(p *credentials.Prompter) (credentials.Signed, error) {
 	return credentials.Signed{}, failed("The sign-in was not approved in time.", credentials.Expired, nil)
 }
 
-// Clears what the account keeps, so its credential is the Qwen CLI's sign-in on this computer
-func borrowed(p *credentials.Prompter) (credentials.Signed, error) {
-	if _, err := readCLI(); err != nil {
-		return credentials.Signed{}, err
+// Account that uses the Qwen CLI's sign-in, as the Qwen CLI renews it. The sign-in is read by the server, on its computer, so the server
+// is the one that looks for it as it keeps the account, and refuses one it does not find
+func borrowed(*credentials.Prompter) (credentials.Signed, error) {
+	return credentials.Signed{Fields: map[string]any{providerconfig.Program: qwenCLI}}, nil
+}
+
+// Why an account that uses the Qwen CLI's sign-in has none: the setting that turns it off, the provider leaving it out, or no sign-in
+// where the Qwen CLI keeps it
+func (source) Why(account credentials.Account) (string, bool) {
+	if account.Spec() != qwenoauthconfig.Name || account.Name == "" || account.Program() != qwenCLI {
+		return "", false
 	}
-	return credentials.Signed{Fields: map[string]any{qwenoauthconfig.AccessToken: nil, qwenoauthconfig.RefreshToken: nil, qwenoauthconfig.ResourceURL: nil,
-		qwenoauthconfig.Expiry: nil}}, nil
+	label := account.Provider.Label()
+	if account.Ignores(qwenCLI) {
+		return "It uses the sign-in of the Qwen CLI, which " + label + " leaves out until you turn it on again.", true
+	}
+	if _, err := readCLI(); err != nil {
+		return "It uses the sign-in of the Qwen CLI. " + err.Error(), true
+	}
+	return "The sign-in of the Qwen CLI in " + CLIPath() + " holds no token. Sign in again with `qwen auth qwen-oauth`.", true
 }

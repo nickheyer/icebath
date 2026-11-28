@@ -72,11 +72,9 @@ type applier struct {
 func (h *Secrets) apply(ctx context.Context, cfg *config.Config, env map[string]string, fresh bool) Report {
 	report := Report{Values: map[string]string{}, Applied: map[string]Applied{}}
 	var enabled []Source
-	for _, shape := range []string{Mapped, Bulk} {
-		for _, source := range h.Ordered(cfg) {
-			if source.Spec().Shape == shape && h.Enabled(cfg, source.Spec().Name) {
-				enabled = append(enabled, source)
-			}
+	for _, source := range h.Asked(cfg) {
+		if h.Enabled(cfg, source.Spec().Name) {
+			enabled = append(enabled, source)
 		}
 	}
 	if len(enabled) == 0 {
@@ -172,7 +170,7 @@ func (a *applier) set(report *SourceReport, spec Spec, override bool, name, valu
 	if owner, taken := a.claimed[name]; taken {
 		report.Claimed = append(report.Claimed, name)
 		a.report.Conflicts = append(a.report.Conflicts, fmt.Sprintf("%s and %s both hold %s, and %s comes first, so its value is used. Remove the "+
-			"variable from one store, or change Store order in /settings under Secret stores.", a.label(owner), spec.Label, name, a.label(owner)))
+			"variable from one store, or put the other first in Store order.", a.label(owner), spec.Label, name, a.label(owner)))
 		return false
 	}
 	existed := a.env[name] != ""

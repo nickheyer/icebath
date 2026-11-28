@@ -107,7 +107,7 @@ func ocr(ctx context.Context, data []byte, pages []int) (string, error) {
 	case 1:
 		return "", fmt.Errorf("%s is not on PATH, install poppler and tesseract", missing[0])
 	default:
-		return "", fmt.Errorf("%s and %s are not on PATH, install poppler and tesseract", strings.Join(missing[:len(missing)-1], ", "), missing[len(missing)-1])
+		return "", fmt.Errorf("%s are not on PATH, install poppler and tesseract", strs.And(missing))
 	}
 	langs, err := tesseractLanguages(ctx, bins["tesseract"])
 	if err != nil {

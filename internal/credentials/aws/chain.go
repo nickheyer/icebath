@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1556,4 +1558,14 @@ func Identity(ctx context.Context, keys Keys, region string) (string, error) {
 		return "", err
 	}
 	return cmp.Or(parsed.Arn, "unknown"), nil
+}
+
+// Names of the profiles of the shared config and credentials files, those the variables name or else those in ~/.aws, in order of the
+// alphabet; none when neither can be read
+func SharedProfiles(getenv func(string) string) []string {
+	shared, err := load(getenv("AWS_CONFIG_FILE"), getenv("AWS_SHARED_CREDENTIALS_FILE"))
+	if err != nil {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(shared.merged))
 }

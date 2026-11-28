@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/debug"
-	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/internal/approvals"
 	"github.com/nickheyer/icebath/internal/slash"
+	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -23,8 +23,13 @@ type Agent interface {
 	Deny(sessionID string, answer approvals.Answer) (int, error)
 	Yolo(sessionID string) (string, error)
 	Confirm(ctx context.Context, sessionID, command, detail string) (bool, string, error)
-	Model(ctx context.Context, sessionID, model, provider, effort string, reset, global bool) (string, error)
-	Reasoning(sessionID, level string, global bool) (string, error)
+	SetModel(ctx context.Context, sessionID, provider, model string, clear bool) (string, error)
+	SetEffort(ctx context.Context, sessionID, effort string, clear bool) (string, error)
+	SetBusy(ctx context.Context, sessionID, mode string, clear bool) (string, error)
+	SetLogin(ctx context.Context, sessionID, provider, login, onExhausted string, retry, clear bool) (*agentv1.SetLoginResponse, error)
+	ModelNow(ctx context.Context, sessionID string) (string, error)
+	EffortNow(sessionID string) (string, error)
+	BusyNow(sessionID string) (string, error)
 	Status(sessionID string) (string, error)
 	Approvals(sessionID, argument string) (string, error)
 	Profile(sessionID, name string) (string, error)
@@ -38,8 +43,6 @@ type Agent interface {
 	Delegation(sessionID, argument string) (string, error)
 	Review(ctx context.Context, sessionID, instructions string) (string, error)
 	SteerMessage(ctx context.Context, sessionID, text string) (string, error)
-	Busy(ctx context.Context, sessionID, argument string) (string, error)
-	Login(ctx context.Context, sessionID, provider, login string) (string, error)
 }
 
 type commands struct {
@@ -61,14 +64,13 @@ func (c commands) Commands() []slash.Command {
 		{Name: "deny", Usage: "[all] [reason]", Help: "Refuse the risky command that is waiting", Run: c.deny},
 		{Name: "yolo", Help: "Skip approvals in this session, or ask again", Run: c.yolo},
 		{Name: "status", Help: "Show the state of this session", Run: c.status},
-		{Name: "reasoning", Usage: "[level|reset] [--global]", Help: "Show or set the reasoning effort", Run: c.reasoning},
+		{Name: "reasoning", Usage: reasoningUsage, Help: "Set how hard the model thinks in this chat", Run: c.reasoning},
 		{Name: "approvals", Usage: "[manual|smart|off] [--session]", Help: "Choose when the agent asks before risky commands", Run: c.approvals},
 		{Name: "diff", Usage: "[staged|all|session] [--stat] [path...]",
 			Help: "Show the git changes in this folder", Run: c.diff},
 		{Name: "version", Aliases: []string{"v"}, Help: "Show the icebath version", Run: c.version},
 		{Name: "profile", Usage: "[name]", Help: "Show or switch the profile of this session", Run: c.profile},
-		{Name: "model", Usage: "[model|reset] [--provider name] [--reasoning level] [--login name] [--global|--session] [--refresh]",
-			Help: "Show or switch the model", Run: c.model},
+		{Name: "model", Usage: modelUsage, Help: "Switch the model of this chat", Run: c.model},
 		{Name: "personality", Usage: "[name|none]", Help: "Choose the personality the agent speaks with", Run: c.personality},
 		{Name: "usage", Usage: "[reset [--force]]", Help: "Show tokens used and the limits of your account", Run: c.usage},
 		{Name: "compress", Aliases: []string{"compact"}, Usage: "[here [N] | focus topic] [--preview] [--aggressive]",
@@ -80,7 +82,7 @@ func (c commands) Commands() []slash.Command {
 		{Name: "delegation", Usage: "[name]", Help: "Choose where subagents run", Run: c.delegation},
 		{Name: "review", Usage: "[instructions]", Help: "Have a subagent review the work just discussed", Run: c.review},
 		{Name: "steer", Aliases: []string{"s"}, Usage: "<message>", Help: "Tell the agent something after its next tool call", Run: c.steer},
-		{Name: "busy", Usage: "[queue|steer|interrupt|status]", Help: "Choose what enter does while the agent replies", Run: c.busy},
+		{Name: "busy", Usage: busyUsage, Help: "Choose what enter does in this chat while the agent replies", Run: c.busy},
 	}
 }
 
@@ -100,8 +102,24 @@ func (c commands) steer(ctx context.Context, call *slash.Call) (string, error) {
 	return c.agent.SteerMessage(ctx, call.SessionID, call.Argument)
 }
 
+// Words of the commands that set what the session keeps for itself, the same the slash list shows
+const (
+	modelUsage     = "[model|reset] [--provider name] [--reasoning level] [--login name] [--refresh]"
+	reasoningUsage = "[level|reset]"
+	busyUsage      = "[queue|steer|interrupt|reset]"
+)
+
+// Sets what enter does in the session while the agent works, as the row of This chat does, or says what it does now
 func (c commands) busy(ctx context.Context, call *slash.Call) (string, error) {
-	return c.agent.Busy(ctx, call.SessionID, call.Argument)
+	switch word := strings.ToLower(strings.TrimSpace(call.Argument)); word {
+	case "", "status":
+		return c.agent.BusyNow(call.SessionID)
+	case "reset":
+		return c.agent.SetBusy(ctx, call.SessionID, "", true)
+	case "queue", "steer", "interrupt":
+		return c.agent.SetBusy(ctx, call.SessionID, word, false)
+	}
+	return "", errors.New("Usage: /busy " + busyUsage)
 }
 
 func (c commands) usage(ctx context.Context, call *slash.Call) (string, error) {
@@ -266,13 +284,18 @@ func (c commands) status(_ context.Context, call *slash.Call) (string, error) {
 	return c.agent.Status(call.SessionID)
 }
 
-func (c commands) reasoning(_ context.Context, call *slash.Call) (string, error) {
-	words := strings.Fields(call.Argument)
-	global := slices.Contains(words, "--global")
-	if words = slices.DeleteFunc(words, func(word string) bool { return word == "--global" }); len(words) > 1 {
-		return "", errors.New("Usage: /reasoning [level|reset] [--global]")
+// Sets how hard the session's model thinks, as the row of This chat does, or says how hard it thinks now
+func (c commands) reasoning(ctx context.Context, call *slash.Call) (string, error) {
+	switch word := strings.ToLower(strings.TrimSpace(call.Argument)); {
+	case word == "":
+		return c.agent.EffortNow(call.SessionID)
+	case word == "reset":
+		return c.agent.SetEffort(ctx, call.SessionID, "", true)
+	case strings.ContainsAny(word, " \t"):
+		return "", errors.New("Usage: /reasoning " + reasoningUsage)
+	default:
+		return c.agent.SetEffort(ctx, call.SessionID, word, false)
 	}
-	return c.agent.Reasoning(call.SessionID, strings.Join(words, ""), global)
 }
 
 func (c commands) approvals(_ context.Context, call *slash.Call) (string, error) {
@@ -291,22 +314,23 @@ func (c commands) version(context.Context, *slash.Call) (string, error) {
 	return "icebath " + version + " · " + runtime.Version() + " · " + runtime.GOOS + "/" + runtime.GOARCH, nil
 }
 
+// Switches the session's model, its effort and its account, as the rows of This chat do, each saying what it did; or says the model it
+// uses now and the models its provider offers
 func (c commands) model(ctx context.Context, call *slash.Call) (string, error) {
-	const usage = "Usage: /model [model|reset] [--provider name] [--reasoning level] [--login name] [--global|--session] [--refresh]"
+	usage := errors.New("Usage: /model " + modelUsage)
 	var model, provider, effort, login string
-	var reset, global, refresh bool
-	words := strings.Fields(call.Argument)
+	var reset, refresh bool
+	words, err := fields(call.Argument)
+	if err != nil {
+		return "", usage
+	}
 	for i := 0; i < len(words); i++ {
 		switch word := words[i]; {
-		case word == "--global":
-			global = true
-		case word == "--session":
-			global = false
 		case word == "--refresh":
 			refresh = true
 		case word == "--provider" || word == "--reasoning" || word == "--login":
 			if i++; i == len(words) {
-				return "", errors.New(usage)
+				return "", usage
 			}
 			switch word {
 			case "--provider":
@@ -317,7 +341,7 @@ func (c commands) model(ctx context.Context, call *slash.Call) (string, error) {
 				effort = words[i]
 			}
 		case strings.HasPrefix(word, "--") || model != "" || reset:
-			return "", errors.New(usage)
+			return "", usage
 		case word == "reset":
 			reset = true
 		default:
@@ -329,19 +353,74 @@ func (c commands) model(ctx context.Context, call *slash.Call) (string, error) {
 			return "", err
 		}
 	}
-	if login != "" && model == "" && effort == "" && !reset {
-		// Only the login changes: on the provider named, else the session's own
-		return c.agent.Login(ctx, call.SessionID, provider, login)
+	var said []string
+	switch {
+	case reset:
+		note, err := c.agent.SetModel(ctx, call.SessionID, "", "", true)
+		if err != nil {
+			return "", err
+		}
+		said = append(said, note)
+	case model != "" || provider != "" && login == "":
+		note, err := c.agent.SetModel(ctx, call.SessionID, provider, model, false)
+		if err != nil {
+			return "", err
+		}
+		said = append(said, note)
 	}
-	out, err := c.agent.Model(ctx, call.SessionID, model, provider, effort, reset, global)
-	if err != nil || login == "" {
-		return out, err
+	if effort != "" {
+		note, err := c.agent.SetEffort(ctx, call.SessionID, effort, false)
+		if err != nil {
+			return "", err
+		}
+		said = append(said, note)
 	}
-	note, err := c.agent.Login(ctx, call.SessionID, provider, login)
-	if err != nil {
-		return "", err
+	if login != "" {
+		held, err := c.agent.SetLogin(ctx, call.SessionID, provider, login, "", false, false)
+		if err != nil {
+			return "", err
+		}
+		said = append(said, held.GetSaid())
 	}
-	return out + "\n\n" + note, nil
+	if len(said) == 0 {
+		return c.agent.ModelNow(ctx, call.SessionID)
+	}
+	return strings.Join(said, " "), nil
+}
+
+// Words of an argument split on spaces, a run in double quotes kept whole, as a name with a space is typed: /model --login "Work account".
+// Inside the quotes a backslash takes the next character as it is, so a name that holds a quote reads back as the notes write it
+func fields(argument string) ([]string, error) {
+	var words []string
+	var word strings.Builder
+	quoted, started, escaped := false, false, false
+	for _, r := range argument {
+		switch {
+		case escaped:
+			word.WriteRune(r)
+			escaped = false
+		case quoted && r == '\\':
+			escaped = true
+		case r == '"':
+			quoted, started = !quoted, true
+		case !quoted && (r == ' ' || r == '\t'):
+			if started {
+				words = append(words, word.String())
+				word.Reset()
+				started = false
+			}
+		default:
+			word.WriteRune(r)
+			started = true
+		}
+	}
+	if quoted || escaped {
+		return nil, errors.New("a quote is left open")
+	}
+	if started {
+		words = append(words, word.String())
+	}
+	return words, nil
 }
 
 func (c commands) compress(ctx context.Context, call *slash.Call) (string, error) {

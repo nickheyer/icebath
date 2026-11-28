@@ -2,8 +2,8 @@ package slash
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -25,51 +25,38 @@ func Register(registry *slash.Slash, cfg *config.Config, s *sessions.Sessions) {
 
 func (c commands) Commands() []slash.Command {
 	return []slash.Command{
-		{Name: "autoprune", Usage: "[on|off|later|status]", Help: "Turn automatic pruning of old sessions on or off", Run: c.autoprune},
+		{Name: "autoprune", Usage: "[on|off|later]", Help: "Delete old sessions when the server starts", Run: c.autoprune},
 		{Name: "discard", Usage: "[id...]", Help: "Unblock a session that icebath stopped mid-reply", Run: c.discard},
 	}
 }
 
+// /autoprune in a chat app: on and off are the shortcut to Delete old sessions, with the note its row gives, and later puts the question about
+// a low disk off for a week; alone it says in one line how things stand
 func (c commands) autoprune(ctx context.Context, call *slash.Call) (string, error) {
-	store, err := c.sessions.Current()
-	if err != nil {
-		return "", err
-	}
-	const unsaved = "Delete old sessions could not be saved. Check that the disk has space and that you may write the settings file."
-	set := func(on bool, done string) (string, error) {
-		if err := c.config.Set(sessionsconfig.AutoPrune, on); err != nil {
-			slog.Warn("Could not save sessions.auto_prune", "error", err)
-			return unsaved, nil
+	switch word := strings.ToLower(strings.TrimSpace(call.Argument)); word {
+	case "on", "off":
+		if err := c.config.Change(sessionsconfig.AutoPrune, word == "on"); err != nil {
+			return "", fmt.Errorf("Delete old sessions was not changed. The error was: %s", strings.TrimSuffix(err.Error(), ".")+".")
 		}
-		sessions.Unsnooze(c.config)
-		if c.config.GetBool(sessionsconfig.AutoPrune) != on {
-			return unsaved, nil
-		}
-		return done, nil
-	}
-	switch strings.ToLower(strings.TrimSpace(call.Argument)) {
-	case "on", "enable", "yes":
-		return set(true, "Delete old sessions is now On. Once a day, icebath deletes the ended sessions unused for longer than Delete after in "+
-			"/settings under Sessions.")
-	case "off", "disable", "no":
-		return set(false, "Delete old sessions is now Off, and icebath will not ask again. You can still run icebath sessions prune at any time.")
-	case "later", "snooze":
+		return "Delete old sessions is now " + strs.OnOff(c.config.GetBool(sessionsconfig.AutoPrune)) + ". Takes effect after icebath restarts.", nil
+	case "later":
 		if err := sessions.Snooze(c.config); err != nil {
 			return "", err
 		}
 		return "icebath asks again in a week if the disk is still low.", nil
+	case "":
+	default:
+		return "", errors.New("/autoprune takes on, off or later.")
 	}
-	on, source := sessions.AutoPruneState(c.config)
-	state := "Off"
-	if on {
-		state = "On"
+	store, err := c.sessions.Current()
+	if err != nil {
+		return "", err
 	}
-	from := map[string]string{"default": "as it is by default", "your setting": "as you set it", "your environment": "as your environment sets it"}[source]
-	days := c.config.GetInt(sessionsconfig.RetentionDays)
-	if days < 0 {
-		days = 90
+	if !c.config.GetBool(sessionsconfig.AutoPrune) {
+		return "Delete old sessions is Off." + sessions.DiskLine(ctx, store), nil
 	}
-	return fmt.Sprintf("Delete old sessions is %s, %s, for sessions unused for %s.%s\nUsage: /autoprune [on|off|later|status]", state, from,
+	days := max(c.config.GetInt(sessionsconfig.RetentionDays), 0)
+	return fmt.Sprintf("Delete old sessions is On. Each time the server starts, it deletes the sessions unused for %s.%s",
 		strs.Span(time.Duration(days)*24*time.Hour), sessions.DiskLine(ctx, store)), nil
 }
 

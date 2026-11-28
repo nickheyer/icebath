@@ -3,6 +3,7 @@ package server
 import (
 	"cmp"
 	"context"
+	"log/slog"
 
 	"connectrpc.com/connect/v2"
 
@@ -27,7 +28,23 @@ type service struct {
 }
 
 func Register(host *server.Server, a *approvals.Approvals, cfg *config.Config, s *sessions.Sessions, tm *terminal.Terminal, toolset *tools.Registry) {
-	host.Register(&service{approvals: a, config: cfg, sessions: s, terminal: tm, tools: toolset})
+	a.Risky(toolset.Risks)
+	service := &service{approvals: a, config: cfg, sessions: s, terminal: tm, tools: toolset}
+	a.OnYolo(service.keepYolo)
+	host.Register(service)
+}
+
+// Keeps whether a session skips asking on its record, whichever way it changed, so the session skips again once it is opened again
+func (s *service) keepYolo(id string) {
+	store, err := s.sessions.Current()
+	if err != nil {
+		slog.Warn("The session store could not be opened to keep whether a session skips approvals", "session", id, "error", err)
+		return
+	}
+	on := s.approvals.Yolo(id)
+	if err := store.Update(context.Background(), id, sessions.Change{Yolo: &on}); err != nil {
+		slog.Warn("Whether the session skips approvals could not be kept on its record", "session", id, "error", err)
+	}
 }
 
 func (s *service) Mount(services *connect.Server) {
@@ -82,9 +99,17 @@ func (s *service) List(_ context.Context, request *approvalsv1.ListRequest) (*ap
 	if err != nil {
 		return nil, err
 	}
-	response := &approvalsv1.ListResponse{Allowed: cfg.GetStringSlice(approvalsconfig.Allowlist)}
-	for _, kind := range s.tools.Risks() {
+	response := &approvalsv1.ListResponse{Winning: s.approvals.Winning(cfg), Launched: s.approvals.Launched()}
+	for _, entry := range s.approvals.Allowed(cfg) {
+		response.Allowed = append(response.Allowed, entry.Value)
+		response.Entries = append(response.Entries, &approvalsv1.Entry{Value: entry.Value, Kind: entry.Kind, Title: entry.Title, Through: entry.Through,
+			About: entry.About})
+	}
+	for _, kind := range s.approvals.Kinds() {
 		response.Kinds = append(response.Kinds, &approvalsv1.Kind{Value: kind.Value, About: kind.About})
+	}
+	if id := request.GetSession(); id != "" {
+		response.Skipped = s.approvals.Skips(id)
 	}
 	return response, nil
 }
@@ -110,4 +135,35 @@ func (s *service) Disallow(_ context.Context, request *approvalsv1.DisallowReque
 		return nil, err
 	}
 	return &approvalsv1.DisallowResponse{}, nil
+}
+
+func (s *service) Change(_ context.Context, request *approvalsv1.ChangeRequest) (*approvalsv1.ChangeResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.approvals.Change(cfg, request.GetOld(), request.GetNew()); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
+	}
+	return &approvalsv1.ChangeResponse{}, nil
+}
+
+func (s *service) Mode(_ context.Context, request *approvalsv1.ModeRequest) (*approvalsv1.ModeResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	note, err := s.approvals.SetMode(cfg, request.GetMode())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
+	}
+	return &approvalsv1.ModeResponse{Note: note}, nil
+}
+
+func (s *service) Skip(_ context.Context, request *approvalsv1.SkipRequest) (*approvalsv1.SkipResponse, error) {
+	note, err := s.approvals.Skip(request.GetSession(), request.GetOn())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
+	}
+	return &approvalsv1.SkipResponse{Note: note}, nil
 }

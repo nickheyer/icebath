@@ -67,7 +67,7 @@ func create(ctx context.Context, spec *terminal.Spec, skillset *skills.Registry)
 		return nil, err
 	}
 	if t.host == "" || t.user == "" {
-		return nil, errors.New("The SSH host and user are not set. Enter them in /settings under Terminal › SSH, or choose another place to run commands in /backends.")
+		return nil, errors.New("The SSH host and user are not set. Enter them on the SSH page of /sandbox, or choose another place to run commands there.")
 	}
 	if err := client(); err != nil {
 		return nil, err

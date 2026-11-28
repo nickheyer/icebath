@@ -135,18 +135,13 @@ func list(cfg *config.Config, key string) ([]string, error) {
 	return out, nil
 }
 
-// Table setting as names and values: the table kept in the file, which keeps its names in lower case, named here in upper case as
-// variables are, or the JSON object its variable holds
+// Table setting as names and values: the table kept in the file, each name as it is written, or the JSON object its variable holds
 func table(cfg *config.Config, key string) (map[string]any, error) {
 	switch value := cfg.Get(key).(type) {
 	case nil:
 		return map[string]any{}, nil
 	case map[string]any:
-		out := make(map[string]any, len(value))
-		for name, item := range value {
-			out[strings.ToUpper(name)] = item
-		}
-		return out, nil
+		return value, nil
 	case string:
 		out := map[string]any{}
 		if strings.TrimSpace(value) == "" {
@@ -167,7 +162,7 @@ func malformed(cfg *config.Config, key, value string) error {
 	if _, setting, ok := cfg.Setting(key); ok && setting.Title != "" {
 		title = setting.Title
 	}
-	return fmt.Errorf("%s is set to %q, which is not a list or a table. Change it in /settings under Terminal › Docker.", title, value)
+	return fmt.Errorf("%s is set to %q, which is not a list or a table. Change it on the Docker page of /sandbox.", title, value)
 }
 
 // Forwarded variable names that are variable names, once each

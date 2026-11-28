@@ -16,6 +16,7 @@ import (
 	cuconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/computeruse/config"
 	"github.com/nickheyer/icebath/internal/plugins/defaults/tools/computeruse/cua"
 	"github.com/nickheyer/icebath/internal/tools"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Element cap of a capture's result
@@ -180,11 +181,7 @@ func said(action string) string {
 	if words, ok := actionWords[action]; ok {
 		return words
 	}
-	text := strings.ReplaceAll(action, "_", " ")
-	if text == "" {
-		return text
-	}
-	return strings.ToUpper(text[:1]) + text[1:]
+	return strs.Capital(strings.ReplaceAll(action, "_", " "))
 }
 
 // One line of what the action does, as the approval prompt shows it

@@ -25,7 +25,6 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	camofoxconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/camofox/config"
 	sessionstore "github.com/nickheyer/icebath/internal/sessions"
-	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/internal/tools"
 	"github.com/nickheyer/icebath/pkg/fsx"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
@@ -65,7 +64,7 @@ type Camofox struct{ r *registrant }
 func Register(registry *tools.Registry, stores *sessionstore.Registry, browsers *browser.Registry, cfg *config.Config) *Camofox {
 	r := &registrant{config: cfg, sessions: map[slot]*session{}, vnc: map[string]*string{}}
 	registry.Register(r)
-	browsers.Register(browser.Declared{Holders: []browser.Page{{Name: "camofox", Title: "Camofox", Has: r.hasPage, Evaluate: r.evaluatePage}}})
+	browsers.Register(browser.Declared{Holders: []browser.Page{{Name: "camofox", Title: "Camofox", Section: camofoxconfig.Key, Has: r.hasPage, Evaluate: r.evaluatePage}}})
 	stores.OnRelease(func(ctx context.Context, session string) { r.release(ctx, session) })
 	return &Camofox{r: r}
 }
@@ -620,7 +619,7 @@ func (s *scope) cookiesDir() string {
 	if raw == "" {
 		raw = "~/.camofox/cookies"
 	}
-	return filepath.Clean(terminal.ExpandUser(raw))
+	return filepath.Clean(fsx.ExpandHome(raw))
 }
 
 // Path with every link in it followed, as far as the path exists
@@ -871,7 +870,7 @@ func (r *registrant) Tools() []tools.Def {
 	def := func(name, title, about, icon, subject string, effect tools.Effect, spec map[string]any, check func(*tools.Env) bool,
 		run tools.Handler) tools.Def {
 		return tools.Def{Name: name, Toolset: camofoxconfig.Toolset, Title: title, About: about, Group: "Browser", Icon: icon, Subject: subject,
-			Schema: spec, Handler: run, Check: check, Effect: effect, Fallible: true, Untrusted: true}
+			Schema: spec, Handler: run, Check: check, Lacks: lacks, Effect: effect, Fallible: true, Untrusted: true}
 	}
 	return []tools.Def{
 		def("browser_navigate", "Open page", "Open a web page in the Camofox browser", tools.IconFetch, "url", tools.MayChange, schema("Navigate to a URL in the browser. Initializes the session "+
@@ -984,4 +983,14 @@ func (c *Camofox) Setup(cfg *config.Config, address, key string) error {
 		return cfg.Set(camofoxconfig.APIKey, key)
 	}
 	return nil
+}
+
+// What a Camofox tool lacks to run: the address of the Camofox server, or the API key the cookies of a page need
+func lacks(env *tools.Env) string {
+	return "It needs the Camofox browser set up, with its address and, for cookies, its API key."
+}
+
+// The Camofox tools join the group of the browser tools
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: "Browser"}}
 }

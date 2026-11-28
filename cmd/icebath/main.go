@@ -64,6 +64,7 @@ import (
 	secretsserver "github.com/nickheyer/icebath/internal/secrets/server"
 	"github.com/nickheyer/icebath/internal/server"
 	"github.com/nickheyer/icebath/internal/sessions"
+	sessionsapp "github.com/nickheyer/icebath/internal/sessions/app"
 	sessionscli "github.com/nickheyer/icebath/internal/sessions/cli"
 	sessionsserver "github.com/nickheyer/icebath/internal/sessions/server"
 	sessionsslash "github.com/nickheyer/icebath/internal/sessions/slash"
@@ -71,15 +72,17 @@ import (
 	"github.com/nickheyer/icebath/internal/slash"
 	slashserver "github.com/nickheyer/icebath/internal/slash/server"
 	"github.com/nickheyer/icebath/internal/speech"
-	speechapp "github.com/nickheyer/icebath/internal/speech/app"
+	speechcli "github.com/nickheyer/icebath/internal/speech/cli"
 	speechserver "github.com/nickheyer/icebath/internal/speech/server"
 	"github.com/nickheyer/icebath/internal/state"
 	statecli "github.com/nickheyer/icebath/internal/state/cli"
 	"github.com/nickheyer/icebath/internal/terminal"
 	terminalapp "github.com/nickheyer/icebath/internal/terminal/app"
+	terminalcli "github.com/nickheyer/icebath/internal/terminal/cli"
 	terminalserver "github.com/nickheyer/icebath/internal/terminal/server"
 	"github.com/nickheyer/icebath/internal/tools"
 	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
+	toolscli "github.com/nickheyer/icebath/internal/tools/cli"
 	toolsserver "github.com/nickheyer/icebath/internal/tools/server"
 	"github.com/nickheyer/icebath/internal/transport"
 	"github.com/nickheyer/icebath/internal/vault"
@@ -236,13 +239,16 @@ func run(ctx context.Context, args []string) (err error) {
 	slashserver.Register(srv, sl)
 	toolsserver.Register(srv, cfg, tl)
 	toolsapp.Register(a)
+	toolscli.Register(c)
 	promptserver.Register(srv, pm)
 	promptcli.Register(c)
 	terminalserver.Register(srv, cfg, tm)
 	terminalapp.Register(a)
+	terminalcli.Register(c)
 	approvalsserver.Register(srv, ap, cfg, s, tm, &tl.Registry)
 	approvalscli.Register(c)
 	approvalsapp.Register(a)
+	sessionsapp.Register(a)
 	packagesserver.Register(srv, cfg, pk)
 	packagescli.Register(c)
 	secretsserver.Register(srv, cfg, sc)
@@ -254,7 +260,7 @@ func run(ctx context.Context, args []string) (err error) {
 	botdesktopserver.Register(srv, cfg, bd)
 	botdesktopapp.Register(a)
 	speechserver.Register(srv, cfg, sp, pr)
-	speechapp.Register(a)
+	speechcli.Register(c)
 	// A process wedged after a stop signal or in its cleanup is ended anyway, the commands it started killed first
 	kill := func() { tm.KillForeground(true) }
 	ln.Signaled(ctx, kill)
@@ -291,6 +297,8 @@ func run(ctx context.Context, args []string) (err error) {
 		if len(args) > 1 {
 			return errors.New("icebath server takes no arguments.\nUsage: icebath server")
 		}
+		// What the server had to tell the person and no window showed is printed as it stops
+		defer sessionscli.Told(context.WithoutCancel(ctx), client.InProcess(srv.Services()), os.Stderr)
 		return serve(ctx)
 	}
 
@@ -311,7 +319,15 @@ func run(ctx context.Context, args []string) (err error) {
 	}
 	c.Launch(ln.Flags(), given)
 	c.Serve(serve)
-	return reached(c.Run(profile.WithPicked(ctx, picked), conn, args), st.Backend)
+	// A command told that its server is this process's own knows that what it leaves in the server's memory ends with it
+	command := profile.WithPicked(ctx, picked)
+	if st.Backend == "" {
+		command = cli.WithOwnServer(command)
+	}
+	err = c.Run(command, conn, args)
+	// What the command's store had to tell the person, such as a session database set aside, is printed after the command
+	sessionscli.Told(context.WithoutCancel(ctx), conn, os.Stderr)
+	return reached(err, st.Backend)
 }
 
 // Failure of a command run against the server icebath connect set, said in words when that server could not be reached or refused its

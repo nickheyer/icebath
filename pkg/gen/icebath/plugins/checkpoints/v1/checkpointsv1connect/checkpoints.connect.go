@@ -102,11 +102,11 @@ type CheckpointServiceClient interface {
 	Diff(context.Context, *v1.DiffRequest) (*v1.DiffResponse, error)
 	// Puts the session's project, or one file of it, back as a snapshot has it
 	Restore(context.Context, *v1.RestoreRequest) (*v1.RestoreResponse, error)
-	// What the snapshots of the profile in use take
+	// What the snapshots of a profile take
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Deletes the projects whose folder is gone and those not snapshotted lately, then brings the store within its size
 	Prune(context.Context, *v1.PruneRequest) (*v1.PruneResponse, error)
-	// Deletes every snapshot of the profile in use
+	// Deletes every snapshot of a profile
 	Clear(context.Context, *v1.ClearRequest) (*v1.ClearResponse, error)
 	// Deletes the archives of what the checkpoint folder held before its store was made
 	ClearLegacy(context.Context, *v1.ClearLegacyRequest) (*v1.ClearLegacyResponse, error)
@@ -128,11 +128,11 @@ type CheckpointServiceHandler interface {
 	Diff(context.Context, *v1.DiffRequest) (*v1.DiffResponse, error)
 	// Puts the session's project, or one file of it, back as a snapshot has it
 	Restore(context.Context, *v1.RestoreRequest) (*v1.RestoreResponse, error)
-	// What the snapshots of the profile in use take
+	// What the snapshots of a profile take
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Deletes the projects whose folder is gone and those not snapshotted lately, then brings the store within its size
 	Prune(context.Context, *v1.PruneRequest) (*v1.PruneResponse, error)
-	// Deletes every snapshot of the profile in use
+	// Deletes every snapshot of a profile
 	Clear(context.Context, *v1.ClearRequest) (*v1.ClearResponse, error)
 	// Deletes the archives of what the checkpoint folder held before its store was made
 	ClearLegacy(context.Context, *v1.ClearLegacyRequest) (*v1.ClearLegacyResponse, error)

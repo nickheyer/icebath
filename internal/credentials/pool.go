@@ -16,8 +16,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/spf13/cast"
 
@@ -25,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/internal/provider"
 	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // States an account's credential can be in, as icebath last found it
@@ -311,27 +310,35 @@ func Reset(account Account) (bool, error) {
 	return true, Status{}.save(account)
 }
 
-// Accounts the profile's choice puts first, and the ones a provider held to one account moves on to when it may
-func rows(instance provider.Instance) (first, spare []string) {
-	var rotation, others []string
+// Accounts the profile's choice puts first, and the ones a provider held to one account moves on to when it may. The credential outside
+// the accounts comes after them where every account is tried in order, and where a provider held to one account moves on to the accounts
+// outside the rotation. Turning is which of the two the accounts that take turns are, 0 or 1, the rotation order picking among them; -1
+// when neither is, and each is tried in its order
+func rows(instance provider.Instance) (first, spare []Account, turning int) {
+	var rotation, others []Account
 	for _, name := range instance.Accounts {
-		marked := instance.AccountFields(name).GetBool(providerconfig.InRotation)
+		account := Of(instance, name)
+		marked := account.Fields.GetBool(providerconfig.InRotation)
 		switch {
 		case instance.Pinned && name == instance.Account, !instance.Pinned && !instance.Rotate, instance.Rotate && marked:
-			first = append(first, name)
+			first = append(first, account)
 		case marked:
-			rotation = append(rotation, name)
+			rotation = append(rotation, account)
 		default:
-			others = append(others, name)
+			others = append(others, account)
 		}
 	}
-	if !instance.Pinned || instance.Settings.GetString(providerconfig.OnExhausted) != providerconfig.Rotate {
-		return first, nil
+	switch {
+	case !instance.Pinned && !instance.Rotate:
+		return append(first, Outside(instance)), nil, -1
+	case !instance.Pinned:
+		return first, nil, 0
+	case instance.Settings.GetString(providerconfig.OnExhausted) != providerconfig.Rotate:
+		return first, nil, -1
+	case len(rotation) > 0:
+		return first, rotation, 1
 	}
-	if len(rotation) > 0 {
-		return first, rotation
-	}
-	return first, others
+	return first, append(others, Outside(instance)), -1
 }
 
 // Why no account could be used
@@ -341,11 +348,11 @@ type blocked struct {
 	until   time.Time
 }
 
-// Account a request for the model goes out with, by the profile's choice among the provider's accounts and its rotation strategy, and
-// its credential. Accounts named in skip are left out
+// Account a request for the model goes out with, by the profile's choice among the provider's accounts, the rotation order picking among
+// the accounts that take turns, and its credential. Accounts named in skip are left out
 func (r *Registry) choose(instance provider.Instance, model string, skip ...string) (Account, Credential, error) {
 	if len(instance.Accounts) == 0 {
-		account := Of(instance, "")
+		account := Outside(instance)
 		r.renewDue(account)
 		credential, ok := r.Credential(account)
 		if !ok && !instance.Spec.Local && instance.Spec.Auth != provider.AuthNone {
@@ -353,41 +360,172 @@ func (r *Registry) choose(instance provider.Instance, model string, skip ...stri
 		}
 		return account, credential, nil
 	}
-	first, spare := rows(instance)
+	first, spare, turning := rows(instance)
 	sole := r.sole(instance)
 	var stopped []blocked
-	for _, names := range [][]string{first, spare} {
+	for turn, accounts := range [][]Account{first, spare} {
 		var usable []Account
 		credentials := map[string]Credential{}
-		for _, name := range names {
-			if slices.Contains(skip, name) {
+		for _, account := range accounts {
+			if account.Name != "" && slices.Contains(skip, account.Name) {
 				continue
 			}
-			account := Of(instance, name)
 			credential, ok, why := r.usable(account, model, sole)
 			if why != nil {
+				why.account = instance.AccountTitle(why.account)
 				stopped = append(stopped, *why)
 			}
 			if ok {
 				usable = append(usable, account)
-				credentials[name] = credential
+				credentials[account.Name] = credential
 			}
 		}
-		if len(usable) > 0 {
-			account := pick(instance, usable)
-			return account, credentials[account.Name], nil
+		if len(usable) == 0 {
+			continue
+		}
+		account := usable[0]
+		if turn == turning {
+			account = pick(instance, usable)
+		}
+		return account, credentials[account.Name], nil
+	}
+	if len(stopped) > 0 {
+		return Account{}, Credential{}, refusal(instance, stopped, "")
+	}
+	return Account{}, Credential{}, r.unconnected(instance)
+}
+
+// Why a provider can't take a request now: whole, as a refusal of the request says it; as the first line of its page says it, the one
+// thing wrong and the one thing to do; and the other way out, said in the pane of the option whose setting is named below the provider
+type Unready struct {
+	Text, Short string
+	Instead, Of string
+}
+
+func (u *Unready) Error() string { return u.Text }
+
+// Why none of the accounts the provider may take has a credential to use, nor the credential outside them where it may take that, and
+// what to do
+func (r *Registry) unconnected(instance provider.Instance) error {
+	label := instance.Label()
+	if !instance.Pinned {
+		if instance.Rotate {
+			return &Unready{Text: fmt.Sprintf("None of the accounts that %s takes turns between can sign in. Connect them again, or let others take "+
+				"turns.", label), Short: "None of the accounts that take turns can sign in. Connect one again.",
+				Instead: "Every account in order would also try the accounts that don't take turns.", Of: providerconfig.Account}
+		}
+		return &Unready{Text: fmt.Sprintf("None of the accounts of %s can sign in, and %s finds no API key or sign-in outside them. Connect an "+
+			"account again.", label, label), Short: "None of the accounts can sign in. Connect one again."}
+	}
+	account, title := Of(instance, instance.Account), instance.AccountTitle(instance.Account)
+	unready := &Unready{Text: fmt.Sprintf("%s always uses the account %s, which %s.", label, title, lacks(account)), Short: short(instance, account, title)}
+	if reason := r.why(account); reason != "" {
+		unready.Text = fmt.Sprintf("%s always uses the account %s, which can't sign in. %s", label, title, strs.Full(reason))
+		unready.Short = title + " can't sign in. Connect it again."
+	}
+	if found, ok := r.Credential(Outside(instance)); ok && (found.APIKey != "" || found.Sign != nil) {
+		unready.Text += fmt.Sprintf(" Connect that account again, or let %s try every account in order, which takes %s.", label, Words(found))
+		unready.Instead, unready.Of = "Every account in order would take "+Words(found)+" instead.", providerconfig.Account
+		return unready
+	}
+	unready.Text += " Connect that account again."
+	return unready
+}
+
+// What is wrong with the one account a provider always uses and what to do, in a line short enough to stand under the page's first one
+func short(instance provider.Instance, account Account, title string) string {
+	linked := strings.TrimSpace(account.Fields.GetString(providerconfig.KeyEnv))
+	switch {
+	case linked != "":
+		return title + " reads its API key from " + linked + ", which is not set. Set " + linked + "."
+	case account.Program() != "":
+		return "icebath can't find the sign-in of " + account.Program() + " that " + title + " uses. Sign in to " + account.Program() + " again."
+	case account.Holds():
+		return title + " keeps nothing that can sign in. Connect it again."
+	case instance.Spec.SignIn:
+		return title + " is not signed in. Sign in to it again."
+	}
+	return title + " is not connected. Connect it again."
+}
+
+// What an account with no credential lacks, as the end of a sentence about it
+func lacks(account Account) string {
+	linked := strings.TrimSpace(account.Fields.GetString(providerconfig.KeyEnv))
+	switch {
+	case linked != "":
+		return "reads its API key from " + linked + ", and " + linked + " is not set"
+	case account.Program() != "":
+		return "uses the sign-in of " + account.Program() + " on this computer, and icebath can't find it"
+	case account.Holds():
+		return "keeps nothing that can sign in"
+	}
+	return "holds no API key or sign-in"
+}
+
+// Credential outside the accounts as a sentence names it: the key in a variable, or the sign-in another program keeps on this computer
+func Words(credential Credential) string {
+	switch credential.Origin {
+	case Environment:
+		return "the API key in " + credential.Source
+	case External:
+		return "the sign-in of " + credential.Source + " on this computer"
+	}
+	return "the credential it finds"
+}
+
+// Why the account has no credential to use now, in sentences about it, empty while it has one: the program or service it signs in with
+// as its registrant says, the variable it reads its key from unset, what it keeps unusable, or nothing kept at all
+func (r *Registry) Missing(account Account) string {
+	if credential, ok := r.Credential(account); ok && (credential.APIKey != "" || credential.Sign != nil) {
+		return ""
+	}
+	if reason := r.why(account); reason != "" {
+		return strs.Full(reason)
+	}
+	if account.Name == "" {
+		return ""
+	}
+	if account.Holds() {
+		return "It " + lacks(account) + "."
+	}
+	return "It " + lacks(account) + ". It was never connected, or what it signed in with was removed."
+}
+
+// Whether a request can go to the provider now: nil when it can, else why not in words a person acts on. With the account it goes out
+// with, the one with no name being the credential outside the accounts, and that credential, which a server of your own may do without.
+// With wires given, a provider whose API is none that icebath sends is not ready either
+func (r *Registry) Ready(instance provider.Instance, wires map[provider.APIMode]provider.Factory) (Account, Credential, error) {
+	route := base(instance, "")
+	if !instance.Known {
+		return Account{}, Credential{}, unknown(instance)
+	}
+	if _, wired := wires[instance.Spec.Mode]; wires != nil && !wired {
+		return Account{}, Credential{}, fmt.Errorf("%s takes requests in the %s format, which icebath can't send yet.", instance.Label(),
+			format(instance.Spec.Mode))
+	}
+	account, credential, err := r.choose(instance, route.Model)
+	if err != nil {
+		return account, credential, err
+	}
+	if _, err := r.routed(instance, route, account, credential, &episode{renewals: map[string]int{}}); err != nil {
+		return account, credential, err
+	}
+	return account, credential, nil
+}
+
+// Refusal of a provider whose kind no plugin registers
+func unknown(instance provider.Instance) error {
+	return fmt.Errorf("%s is a kind of provider, %s, that no plugin of icebath knows.", instance.Label(), instance.Spec.Name)
+}
+
+// API of requests as the Request format setting names it
+func format(mode provider.APIMode) string {
+	for _, option := range providerconfig.Modes() {
+		if option.Value == string(mode) && option.Value != "" {
+			return option.Title
 		}
 	}
-	reason := ""
-	if len(stopped) == 0 {
-		for _, name := range slices.Concat(first, spare) {
-			if !slices.Contains(skip, name) {
-				reason = r.why(Of(instance, name))
-				break
-			}
-		}
-	}
-	return Account{}, Credential{}, refusal(instance, stopped, reason)
+	return strings.ReplaceAll(string(mode), "_", " ")
 }
 
 // Whether the account can take a request for the model now, with its credential renewed when due; what stops it when something does
@@ -436,11 +574,12 @@ func pick(instance provider.Instance, usable []Account) Account {
 // Error naming why no account of the provider can be used now and what to do about it
 func refusal(instance provider.Instance, stopped []blocked, reason string) error {
 	label := instance.Label()
+	added := label + " is not connected. Add an account."
 	if len(stopped) == 0 && reason != "" {
-		return fmt.Errorf("%s is not connected. %s", label, sentence(reason))
+		return &Unready{Text: fmt.Sprintf("%s is not connected. %s", label, strs.Full(reason)), Short: added}
 	}
 	if len(stopped) == 0 {
-		return fmt.Errorf("%s is not connected. Connect it with /providers.", label)
+		return &Unready{Text: fmt.Sprintf("%s is not connected. Add an account or an API key to it.", label), Short: added}
 	}
 	why := func(b blocked) string {
 		return cmp.Or(b.status.Reason, b.status.Message, statusText(b.status.Code))
@@ -448,12 +587,14 @@ func refusal(instance provider.Instance, stopped []blocked, reason string) error
 	if len(stopped) == 1 && instance.Pinned {
 		b := stopped[0]
 		if b.status.State == Dead {
-			return fmt.Errorf("The account %s of %s can't sign in any more: %s. Sign in again with /providers or `icebath auth add %s`.",
-				b.account, label, strings.TrimSuffix(why(b), "."), instance.ID)
+			return &Unready{Text: fmt.Sprintf("The account %s of %s can't sign in any more: %s. Connect it again.", b.account, label,
+				strings.TrimSuffix(why(b), ".")), Short: b.account + " can't sign in any more. Connect it again."}
 		}
-		return fmt.Errorf("The account %s of %s has reached its limit until %s: %s. Pick another account with /providers or `icebath auth use %s "+
-			"<account>`, or let icebath move on to the others with `icebath auth rotation %s --on-exhausted rotate`.", b.account, label,
-			b.until.Local().Format("15:04"), strings.TrimSuffix(why(b), "."), instance.ID, instance.ID)
+		until := b.until.Local().Format("15:04")
+		return &Unready{Text: fmt.Sprintf("The account %s of %s has reached its limit until %s: %s. Pick another account, or set When an account "+
+			"runs out to Move on.", b.account, label, until, strings.TrimSuffix(why(b), ".")),
+			Short:   b.account + " reached its limit until " + until + ". Pick another account to go on.",
+			Instead: "Move on would go on with the next account by itself.", Of: providerconfig.OnExhausted}
 	}
 	var next time.Time
 	for _, b := range stopped {
@@ -462,11 +603,12 @@ func refusal(instance provider.Instance, stopped []blocked, reason string) error
 		}
 	}
 	if next.IsZero() {
-		return fmt.Errorf("No account of %s can be used, because the sign-in of each was refused for good. Sign in again with /providers or "+
-			"`icebath auth add %s`.", label, instance.ID)
+		return &Unready{Text: fmt.Sprintf("No account of %s can be used, because the sign-in of each was refused for good. Connect one of them "+
+			"again.", label), Short: "The sign-in of every account was refused. Connect one again."}
 	}
-	return fmt.Errorf("Every account of %s is at its limit, and the first frees up at %s. Add another with /providers, or clear the limits with "+
-		"`icebath auth reset %s`.", label, next.Local().Format("15:04"), instance.ID)
+	until := next.Local().Format("15:04")
+	return &Unready{Text: fmt.Sprintf("Every account of %s is at its limit, and the first frees up at %s. Add another account, or forget the "+
+		"limit of one.", label, until), Short: "Every account reached its limit until " + until + ". Add another account."}
 }
 
 func statusText(code int) string {
@@ -592,7 +734,7 @@ type episode struct {
 func (r *Registry) Route(instance provider.Instance, model string) (provider.Route, error) {
 	route := base(instance, model)
 	if !instance.Known {
-		return route, fmt.Errorf("%s is a kind of provider, %s, that no plugin of icebath knows.", instance.Label(), instance.Spec.Name)
+		return route, unknown(instance)
 	}
 	account, credential, err := r.choose(instance, route.Model)
 	if err != nil {
@@ -605,7 +747,7 @@ func (r *Registry) Route(instance provider.Instance, model string) (provider.Rou
 func (r *Registry) RouteWith(instance provider.Instance, model, name string) (provider.Route, error) {
 	route := base(instance, model)
 	if !instance.Known {
-		return route, fmt.Errorf("%s is a kind of provider, %s, that no plugin of icebath knows.", instance.Label(), instance.Spec.Name)
+		return route, unknown(instance)
 	}
 	if !slices.Contains(instance.Accounts, name) {
 		return route, fmt.Errorf("%s has no account named %s.", instance.Label(), name)
@@ -649,7 +791,7 @@ func (r *Registry) routed(instance provider.Instance, route provider.Route, acco
 		route = instance.Spec.Route(route, instance.Settings)
 	}
 	if route.BaseURL == "" {
-		return route, fmt.Errorf("%s has no address set. Set its Base URL in /providers.", instance.Label())
+		return route, fmt.Errorf("%s needs the address of its server.", instance.Label())
 	}
 	if credential.APIKey != "" || credential.Sign != nil {
 		model := route.Model
@@ -896,9 +1038,10 @@ func (r *Registry) Lease(instance provider.Instance, model, name string) (provid
 		r.pool.mu.Unlock()
 		order := slices.Clone(instance.Accounts)
 		slices.SortStableFunc(order, func(a, b string) int { return cmp.Compare(held[a], held[b]) })
-		first, spare := rows(instance)
+		first, spare, _ := rows(instance)
+		taken := slices.Concat(first, spare)
 		for _, account := range order {
-			if slices.Contains(first, account) || slices.Contains(spare, account) {
+			if slices.ContainsFunc(taken, func(other Account) bool { return other.Name == account }) {
 				if _, ok, _ := r.usable(Of(instance, account), model, r.sole(instance)); ok {
 					name = account
 					break
@@ -930,20 +1073,4 @@ func (r *Registry) Lease(instance provider.Instance, model, name string) (provid
 			}
 		})
 	}, nil
-}
-
-// Text as a sentence: its first letter in capitals, icebath left in lower case, and a period at its end unless it ends one already
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	if !strings.HasPrefix(text, "icebath") {
-		first, size := utf8.DecodeRuneInString(text)
-		text = string(unicode.ToUpper(first)) + text[size:]
-	}
-	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
-		text += "."
-	}
-	return text
 }

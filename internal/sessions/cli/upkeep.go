@@ -107,12 +107,12 @@ func addPrune(parent *cobra.Command, at func(*cobra.Command) *run) {
 			filter.IncludeArchived, filter.IncludePinned = includeArchived, includePinned
 			preview, err := r.service.Prune(r.ctx(), &sessionsv1.PruneRequest{Filter: filter, DryRun: true})
 			if err != nil {
-				return errors.New(sentence(tui.Reason(err)))
+				return errors.New(strs.Sentence(tui.Reason(err)))
 			}
 			return r.confirmBulk(&f, filter, preview.GetSessions(), int(preview.GetPinned()), int(preview.GetOpen()), true, func() error {
 				done, err := r.service.Prune(r.ctx(), &sessionsv1.PruneRequest{Filter: filter, Force: force})
 				if err != nil {
-					return errors.New(sentence(tui.Reason(err)))
+					return errors.New(strs.Sentence(tui.Reason(err)))
 				}
 				r.printf("✓ Deleted %s.", strs.Count(int(done.GetDeleted()), "session"))
 				if done.GetBusy() > 0 {
@@ -207,7 +207,7 @@ func (r *run) pruneNeverActive(f *filters) error {
 	filter := &sessionsv1.Filter{NeverActive: true, ActiveBefore: timestampAgo(time.Duration(age * 86400 * float64(time.Second)))}
 	preview, err := r.service.Prune(r.ctx(), &sessionsv1.PruneRequest{Filter: filter, DryRun: true})
 	if err != nil {
-		return errors.New(sentence(tui.Reason(err)))
+		return errors.New(strs.Sentence(tui.Reason(err)))
 	}
 	matches := preview.GetSessions()
 	older := strs.Span(time.Duration(age * 24 * float64(time.Hour)).Round(time.Hour))
@@ -242,7 +242,7 @@ func (r *run) pruneNeverActive(f *filters) error {
 	}
 	done, err := r.service.Prune(r.ctx(), &sessionsv1.PruneRequest{Filter: filter})
 	if err != nil {
-		return errors.New(sentence(tui.Reason(err)))
+		return errors.New(strs.Sentence(tui.Reason(err)))
 	}
 	r.printf("✓ Deleted %s and %s.", strs.Count(int(done.GetDeleted()), "unused session"), strs.Count(int(done.GetRoutes()), "old route"))
 	if done.GetBusy() > 0 {
@@ -272,12 +272,12 @@ func addArchive(parent *cobra.Command, at func(*cobra.Command) *run) {
 			filter.IncludeOpen = includeOpen
 			preview, err := r.service.Archive(r.ctx(), &sessionsv1.ArchiveRequest{Filter: filter, DryRun: true})
 			if err != nil {
-				return errors.New(sentence(tui.Reason(err)))
+				return errors.New(strs.Sentence(tui.Reason(err)))
 			}
 			return r.confirmBulk(&f, filter, preview.GetSessions(), int(preview.GetPinned()), int(preview.GetOpen()), false, func() error {
 				done, err := r.service.Archive(r.ctx(), &sessionsv1.ArchiveRequest{Filter: filter})
 				if err != nil {
-					return errors.New(sentence(tui.Reason(err)))
+					return errors.New(strs.Sentence(tui.Reason(err)))
 				}
 				r.printf("✓ Archived %s. They are hidden from lists and kept whole, and you can bring them back.",
 					strs.Count(int(done.GetArchived()), "session"))

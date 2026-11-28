@@ -80,6 +80,61 @@ func (Needs) EnumDescriptor() ([]byte, []int) {
 	return file_icebath_plugins_web_v1_web_proto_rawDescGZIP(), []int{0}
 }
 
+// What a backend is chosen for
+type Use int32
+
+const (
+	// Left as it is, when only the plan changes
+	Use_USE_UNSPECIFIED Use = 0
+	// Searches and pages
+	Use_USE_BOTH   Use = 1
+	Use_USE_SEARCH Use = 2
+	Use_USE_PAGES  Use = 3
+)
+
+// Enum value maps for Use.
+var (
+	Use_name = map[int32]string{
+		0: "USE_UNSPECIFIED",
+		1: "USE_BOTH",
+		2: "USE_SEARCH",
+		3: "USE_PAGES",
+	}
+	Use_value = map[string]int32{
+		"USE_UNSPECIFIED": 0,
+		"USE_BOTH":        1,
+		"USE_SEARCH":      2,
+		"USE_PAGES":       3,
+	}
+)
+
+func (x Use) Enum() *Use {
+	p := new(Use)
+	*p = x
+	return p
+}
+
+func (x Use) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Use) Descriptor() protoreflect.EnumDescriptor {
+	return file_icebath_plugins_web_v1_web_proto_enumTypes[1].Descriptor()
+}
+
+func (Use) Type() protoreflect.EnumType {
+	return &file_icebath_plugins_web_v1_web_proto_enumTypes[1]
+}
+
+func (x Use) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Use.Descriptor instead.
+func (Use) EnumDescriptor() ([]byte, []int) {
+	return file_icebath_plugins_web_v1_web_proto_rawDescGZIP(), []int{1}
+}
+
 // One way of using a backend
 type Plan struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -95,7 +150,9 @@ type Plan struct {
 	Prompt string `protobuf:"bytes,6,opt,name=prompt,proto3" json:"prompt,omitempty"`
 	Link   string `protobuf:"bytes,7,opt,name=link,proto3" json:"link,omitempty"`
 	// What a person gives before the plan works
-	Needs         Needs `protobuf:"varint,8,opt,name=needs,proto3,enum=icebath.plugins.web.v1.Needs" json:"needs,omitempty"`
+	Needs Needs `protobuf:"varint,8,opt,name=needs,proto3,enum=icebath.plugins.web.v1.Needs" json:"needs,omitempty"`
+	// Kind of provider whose sign-in the plan runs on, empty for none
+	SignIn        string `protobuf:"bytes,9,opt,name=sign_in,json=signIn,proto3" json:"sign_in,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -186,6 +243,13 @@ func (x *Plan) GetNeeds() Needs {
 	return Needs_NEEDS_UNSPECIFIED
 }
 
+func (x *Plan) GetSignIn() string {
+	if x != nil {
+		return x.SignIn
+	}
+	return ""
+}
+
 type Backend struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// As web.backend names it
@@ -209,8 +273,14 @@ type Backend struct {
 	// Used only once chosen by name
 	Explicit bool `protobuf:"varint,12,opt,name=explicit,proto3" json:"explicit,omitempty"`
 	// Settings a person sets to use it
-	Settings      []string `protobuf:"bytes,13,rep,name=settings,proto3" json:"settings,omitempty"`
-	Plans         []*Plan  `protobuf:"bytes,14,rep,name=plans,proto3" json:"plans,omitempty"`
+	Settings []string `protobuf:"bytes,13,rep,name=settings,proto3" json:"settings,omitempty"`
+	Plans    []*Plan  `protobuf:"bytes,14,rep,name=plans,proto3" json:"plans,omitempty"`
+	// How it stands in the state words, such as In use, Ready, Free or Needs an API key
+	State string `protobuf:"bytes,15,opt,name=state,proto3" json:"state,omitempty"`
+	// Can answer as it is: set up, or free
+	Usable bool `protobuf:"varint,16,opt,name=usable,proto3" json:"usable,omitempty"`
+	// Key of the section of its own settings, empty when it has none
+	Section       string `protobuf:"bytes,17,opt,name=section,proto3" json:"section,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -343,6 +413,27 @@ func (x *Backend) GetPlans() []*Plan {
 	return nil
 }
 
+func (x *Backend) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Backend) GetUsable() bool {
+	if x != nil {
+		return x.Usable
+	}
+	return false
+}
+
+func (x *Backend) GetSection() string {
+	if x != nil {
+		return x.Section
+	}
+	return ""
+}
+
 type ListRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Profile to read, the one in use when empty
@@ -400,7 +491,9 @@ type ListResponse struct {
 	// Whether free plans may answer
 	Free bool `protobuf:"varint,6,opt,name=free,proto3" json:"free,omitempty"`
 	// Plans pinned per backend in web.provider_tier
-	Tiers         map[string]string `protobuf:"bytes,7,rep,name=tiers,proto3" json:"tiers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Tiers map[string]string `protobuf:"bytes,7,rep,name=tiers,proto3" json:"tiers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// What answers searches and reads pages now, a sentence
+	Serving       string `protobuf:"bytes,8,opt,name=serving,proto3" json:"serving,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -484,11 +577,134 @@ func (x *ListResponse) GetTiers() map[string]string {
 	return nil
 }
 
+func (x *ListResponse) GetServing() string {
+	if x != nil {
+		return x.Serving
+	}
+	return ""
+}
+
+type ChooseRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Profile to change, the one in use when empty
+	Profile string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Backend chosen, empty for Automatic
+	Backend string `protobuf:"bytes,2,opt,name=backend,proto3" json:"backend,omitempty"`
+	Use     Use    `protobuf:"varint,3,opt,name=use,proto3,enum=icebath.plugins.web.v1.Use" json:"use,omitempty"`
+	// Plan of the backend: free, paid or auto; empty leaves it as it is
+	Plan          string `protobuf:"bytes,4,opt,name=plan,proto3" json:"plan,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChooseRequest) Reset() {
+	*x = ChooseRequest{}
+	mi := &file_icebath_plugins_web_v1_web_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChooseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChooseRequest) ProtoMessage() {}
+
+func (x *ChooseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_web_v1_web_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChooseRequest.ProtoReflect.Descriptor instead.
+func (*ChooseRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_web_v1_web_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ChooseRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ChooseRequest) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
+func (x *ChooseRequest) GetUse() Use {
+	if x != nil {
+		return x.Use
+	}
+	return Use_USE_UNSPECIFIED
+}
+
+func (x *ChooseRequest) GetPlan() string {
+	if x != nil {
+		return x.Plan
+	}
+	return ""
+}
+
+type ChooseResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What is in use for what now, one sentence
+	Note          string `protobuf:"bytes,1,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChooseResponse) Reset() {
+	*x = ChooseResponse{}
+	mi := &file_icebath_plugins_web_v1_web_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChooseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChooseResponse) ProtoMessage() {}
+
+func (x *ChooseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_web_v1_web_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChooseResponse.ProtoReflect.Descriptor instead.
+func (*ChooseResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_web_v1_web_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ChooseResponse) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
 var File_icebath_plugins_web_v1_web_proto protoreflect.FileDescriptor
 
 const file_icebath_plugins_web_v1_web_proto_rawDesc = "" +
 	"\n" +
-	" icebath/plugins/web/v1/web.proto\x12\x16icebath.plugins.web.v1\"\xdb\x01\n" +
+	" icebath/plugins/web/v1/web.proto\x12\x16icebath.plugins.web.v1\"\xf4\x01\n" +
 	"\x04Plan\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x14\n" +
 	"\x05badge\x18\x02 \x01(\tR\x05badge\x12 \n" +
@@ -497,7 +713,8 @@ const file_icebath_plugins_web_v1_web_proto_rawDesc = "" +
 	"\x03key\x18\x05 \x01(\tR\x03key\x12\x16\n" +
 	"\x06prompt\x18\x06 \x01(\tR\x06prompt\x12\x12\n" +
 	"\x04link\x18\a \x01(\tR\x04link\x123\n" +
-	"\x05needs\x18\b \x01(\x0e2\x1d.icebath.plugins.web.v1.NeedsR\x05needs\"\x85\x03\n" +
+	"\x05needs\x18\b \x01(\x0e2\x1d.icebath.plugins.web.v1.NeedsR\x05needs\x12\x17\n" +
+	"\asign_in\x18\t \x01(\tR\x06signIn\"\xcd\x03\n" +
 	"\aBackend\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -513,9 +730,12 @@ const file_icebath_plugins_web_v1_web_proto_rawDesc = "" +
 	"\brotating\x18\v \x01(\bR\brotating\x12\x1a\n" +
 	"\bexplicit\x18\f \x01(\bR\bexplicit\x12\x1a\n" +
 	"\bsettings\x18\r \x03(\tR\bsettings\x122\n" +
-	"\x05plans\x18\x0e \x03(\v2\x1c.icebath.plugins.web.v1.PlanR\x05plans\"'\n" +
+	"\x05plans\x18\x0e \x03(\v2\x1c.icebath.plugins.web.v1.PlanR\x05plans\x12\x14\n" +
+	"\x05state\x18\x0f \x01(\tR\x05state\x12\x16\n" +
+	"\x06usable\x18\x10 \x01(\bR\x06usable\x12\x18\n" +
+	"\asection\x18\x11 \x01(\tR\asection\"'\n" +
 	"\vListRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"\xe8\x02\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"\x82\x03\n" +
 	"\fListResponse\x12;\n" +
 	"\bbackends\x18\x01 \x03(\v2\x1f.icebath.plugins.web.v1.BackendR\bbackends\x12\x18\n" +
 	"\abackend\x18\x02 \x01(\tR\abackend\x12%\n" +
@@ -523,20 +743,35 @@ const file_icebath_plugins_web_v1_web_proto_rawDesc = "" +
 	"\x0fextract_backend\x18\x04 \x01(\tR\x0eextractBackend\x12\x1c\n" +
 	"\tavailable\x18\x05 \x01(\bR\tavailable\x12\x12\n" +
 	"\x04free\x18\x06 \x01(\bR\x04free\x12E\n" +
-	"\x05tiers\x18\a \x03(\v2/.icebath.plugins.web.v1.ListResponse.TiersEntryR\x05tiers\x1a8\n" +
+	"\x05tiers\x18\a \x03(\v2/.icebath.plugins.web.v1.ListResponse.TiersEntryR\x05tiers\x12\x18\n" +
+	"\aserving\x18\b \x01(\tR\aserving\x1a8\n" +
 	"\n" +
 	"TiersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*j\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x86\x01\n" +
+	"\rChooseRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x18\n" +
+	"\abackend\x18\x02 \x01(\tR\abackend\x12-\n" +
+	"\x03use\x18\x03 \x01(\x0e2\x1b.icebath.plugins.web.v1.UseR\x03use\x12\x12\n" +
+	"\x04plan\x18\x04 \x01(\tR\x04plan\"$\n" +
+	"\x0eChooseResponse\x12\x12\n" +
+	"\x04note\x18\x01 \x01(\tR\x04note*j\n" +
 	"\x05Needs\x12\x15\n" +
 	"\x11NEEDS_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rNEEDS_NOTHING\x10\x01\x12\x11\n" +
 	"\rNEEDS_API_KEY\x10\x02\x12\x11\n" +
 	"\rNEEDS_ADDRESS\x10\x03\x12\x11\n" +
-	"\rNEEDS_SIGN_IN\x10\x042_\n" +
+	"\rNEEDS_SIGN_IN\x10\x04*G\n" +
+	"\x03Use\x12\x13\n" +
+	"\x0fUSE_UNSPECIFIED\x10\x00\x12\f\n" +
+	"\bUSE_BOTH\x10\x01\x12\x0e\n" +
+	"\n" +
+	"USE_SEARCH\x10\x02\x12\r\n" +
+	"\tUSE_PAGES\x10\x032\xb8\x01\n" +
 	"\n" +
 	"WebService\x12Q\n" +
-	"\x04List\x12#.icebath.plugins.web.v1.ListRequest\x1a$.icebath.plugins.web.v1.ListResponseB\xe4\x01\n" +
+	"\x04List\x12#.icebath.plugins.web.v1.ListRequest\x1a$.icebath.plugins.web.v1.ListResponse\x12W\n" +
+	"\x06Choose\x12%.icebath.plugins.web.v1.ChooseRequest\x1a&.icebath.plugins.web.v1.ChooseResponseB\xe4\x01\n" +
 	"\x1acom.icebath.plugins.web.v1B\bWebProtoP\x01ZAgithub.com/nickheyer/icebath/pkg/gen/icebath/plugins/web/v1;webv1\xa2\x02\x03IPW\xaa\x02\x16Icebath.Plugins.Web.V1\xca\x02\x16Icebath\\Plugins\\Web\\V1\xe2\x02\"Icebath\\Plugins\\Web\\V1\\GPBMetadata\xea\x02\x19Icebath::Plugins::Web::V1b\x06proto3"
 
 var (
@@ -551,28 +786,34 @@ func file_icebath_plugins_web_v1_web_proto_rawDescGZIP() []byte {
 	return file_icebath_plugins_web_v1_web_proto_rawDescData
 }
 
-var file_icebath_plugins_web_v1_web_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_icebath_plugins_web_v1_web_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_icebath_plugins_web_v1_web_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_icebath_plugins_web_v1_web_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_icebath_plugins_web_v1_web_proto_goTypes = []any{
-	(Needs)(0),           // 0: icebath.plugins.web.v1.Needs
-	(*Plan)(nil),         // 1: icebath.plugins.web.v1.Plan
-	(*Backend)(nil),      // 2: icebath.plugins.web.v1.Backend
-	(*ListRequest)(nil),  // 3: icebath.plugins.web.v1.ListRequest
-	(*ListResponse)(nil), // 4: icebath.plugins.web.v1.ListResponse
-	nil,                  // 5: icebath.plugins.web.v1.ListResponse.TiersEntry
+	(Needs)(0),             // 0: icebath.plugins.web.v1.Needs
+	(Use)(0),               // 1: icebath.plugins.web.v1.Use
+	(*Plan)(nil),           // 2: icebath.plugins.web.v1.Plan
+	(*Backend)(nil),        // 3: icebath.plugins.web.v1.Backend
+	(*ListRequest)(nil),    // 4: icebath.plugins.web.v1.ListRequest
+	(*ListResponse)(nil),   // 5: icebath.plugins.web.v1.ListResponse
+	(*ChooseRequest)(nil),  // 6: icebath.plugins.web.v1.ChooseRequest
+	(*ChooseResponse)(nil), // 7: icebath.plugins.web.v1.ChooseResponse
+	nil,                    // 8: icebath.plugins.web.v1.ListResponse.TiersEntry
 }
 var file_icebath_plugins_web_v1_web_proto_depIdxs = []int32{
 	0, // 0: icebath.plugins.web.v1.Plan.needs:type_name -> icebath.plugins.web.v1.Needs
-	1, // 1: icebath.plugins.web.v1.Backend.plans:type_name -> icebath.plugins.web.v1.Plan
-	2, // 2: icebath.plugins.web.v1.ListResponse.backends:type_name -> icebath.plugins.web.v1.Backend
-	5, // 3: icebath.plugins.web.v1.ListResponse.tiers:type_name -> icebath.plugins.web.v1.ListResponse.TiersEntry
-	3, // 4: icebath.plugins.web.v1.WebService.List:input_type -> icebath.plugins.web.v1.ListRequest
-	4, // 5: icebath.plugins.web.v1.WebService.List:output_type -> icebath.plugins.web.v1.ListResponse
-	5, // [5:6] is the sub-list for method output_type
-	4, // [4:5] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	2, // 1: icebath.plugins.web.v1.Backend.plans:type_name -> icebath.plugins.web.v1.Plan
+	3, // 2: icebath.plugins.web.v1.ListResponse.backends:type_name -> icebath.plugins.web.v1.Backend
+	8, // 3: icebath.plugins.web.v1.ListResponse.tiers:type_name -> icebath.plugins.web.v1.ListResponse.TiersEntry
+	1, // 4: icebath.plugins.web.v1.ChooseRequest.use:type_name -> icebath.plugins.web.v1.Use
+	4, // 5: icebath.plugins.web.v1.WebService.List:input_type -> icebath.plugins.web.v1.ListRequest
+	6, // 6: icebath.plugins.web.v1.WebService.Choose:input_type -> icebath.plugins.web.v1.ChooseRequest
+	5, // 7: icebath.plugins.web.v1.WebService.List:output_type -> icebath.plugins.web.v1.ListResponse
+	7, // 8: icebath.plugins.web.v1.WebService.Choose:output_type -> icebath.plugins.web.v1.ChooseResponse
+	7, // [7:9] is the sub-list for method output_type
+	5, // [5:7] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_icebath_plugins_web_v1_web_proto_init() }
@@ -585,8 +826,8 @@ func file_icebath_plugins_web_v1_web_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_plugins_web_v1_web_proto_rawDesc), len(file_icebath_plugins_web_v1_web_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   5,
+			NumEnums:      2,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

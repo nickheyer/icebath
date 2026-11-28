@@ -82,7 +82,7 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 		Long: "A session started with -w works in a git worktree of its own, under .worktrees/ in the repository. Use these commands to list " +
 			"those worktrees, remove the ones that are safe to remove and bring back an archived one. With no subcommand, worktree lists " +
 			"them.\n\n" +
-			"When Archive unsaved work is on in /settings under Tools › Worktrees, a worktree with changes that are not committed or pushed " +
+			"While the setting Archive unsaved work is on, a worktree with changes that are not committed or pushed " +
 			"is archived to refs/icebath/archive/<tree> before it is removed. Worktrees in use are never touched.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return list(cmd, service, &root) },
@@ -139,7 +139,7 @@ func words(code string) string {
 	if text == "" {
 		return "Unknown"
 	}
-	return strings.ToUpper(text[:1]) + text[1:]
+	return strs.Capital(text)
 }
 
 func printJSON(out io.Writer, value any) error {

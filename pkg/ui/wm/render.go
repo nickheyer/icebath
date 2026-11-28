@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -978,8 +979,9 @@ func (m *Model) frame() screen {
 func (screen) WidthMethod() uv.WidthMethod { return uv.WidthMethod(ansi.GraphemeWidth) }
 
 // Paints the buttons of the card into its bottom edge and records the columns each covers. The one enter presses is lit, and each names its
-// key after its label while every button fits with its key; in a narrower edge the first and the last keep their keys the longest. When
-// the edge is too narrow for the labels alone the row slides to keep the lit one in view, an arrow on each side that has more
+// key after its label. In an edge too narrow for every button the first, which enter presses, and the last, the way out, stay while the
+// buttons between them go from the right; a button never shows without its key. When even one label is too wide the row slides to keep
+// the lit one in view, an arrow on each side that has more
 func (m *Model) paintHints(face screen, e *entry, x0, y, sx, w int) {
 	e.hints, e.buttons = e.hints[:0], e.buttons[:0]
 	var labels, chords []string
@@ -998,26 +1000,7 @@ func (m *Model) paintHints(face screen, e *entry, x0, y, sx, w int) {
 	if e.button >= len(labels) {
 		e.button = 0
 	}
-	n := len(labels)
-	keyed := 0
-	for i := range labels {
-		keyed += ansi.StringWidth(labels[i]) + 2
-		if chords[i] != "" {
-			keyed += ansi.StringWidth(chords[i]) + 1
-		}
-	}
-	// Too narrow for every key: the first button, which enter presses, and the last, which is the way out, keep theirs while the ones
-	// between give theirs up from the right until the row fits. Every key goes only when even that is too wide
-	for i := n - 2; i >= 1 && keyed > room; i-- {
-		if chords[i] != "" {
-			keyed -= ansi.StringWidth(chords[i]) + 1
-			chords[i] = ""
-		}
-	}
-	if keyed > room {
-		chords = make([]string, n)
-	}
-	// Cells a button takes: its label and its key, if shown, with a space at either end
+	// Cells a button takes: its label and its key, if it has one, with a space at either end
 	span := func(i int) int {
 		width := ansi.StringWidth(labels[i]) + 2
 		if chords[i] != "" {
@@ -1025,6 +1008,27 @@ func (m *Model) paintHints(face screen, e *entry, x0, y, sx, w int) {
 		}
 		return width
 	}
+	keyed := 0
+	for i := range labels {
+		keyed += span(i)
+	}
+	// Too narrow for every button: the buttons between the first and the last go from the right until the row fits, the one in hand
+	// moving with what stays
+	if n := len(labels); keyed > room {
+		at := e.button
+		for i := n - 2; i >= 1 && keyed > room; i-- {
+			keyed -= span(i)
+			labels, chords, e.buttons = slices.Delete(labels, i, i+1), slices.Delete(chords, i, i+1), slices.Delete(e.buttons, i, i+1)
+			switch {
+			case at == i:
+				at = 0
+			case at > i:
+				at--
+			}
+		}
+		e.button = at
+	}
+	n := len(labels)
 	first, last := min(e.first, e.button), 0
 	for {
 		used := 0

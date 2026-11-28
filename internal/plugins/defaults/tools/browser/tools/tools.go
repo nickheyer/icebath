@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/botdesktop"
 	"github.com/nickheyer/icebath/internal/browser"
+	browserconfig "github.com/nickheyer/icebath/internal/browser/config"
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/packages"
 	"github.com/nickheyer/icebath/internal/profile"
@@ -50,7 +51,18 @@ func Register(registry *tools.Registry, stores *sessionstore.Registry, profiles 
 	registry.Register(r)
 	profiles.Register(r)
 	stores.OnRelease(func(ctx context.Context, session string) { r.cleanupTask(ctx, r.config, session) })
-	return &Browser{r: r}
+	b := &Browser{r: r}
+	// Every write of the address of your own browser a person asks for attaches to it, or with none disconnects, as the page of Browser does
+	cfg.Guard(browserconfig.CDPURL, config.Guard{Write: func(cfg *config.Config, _ string, value any) (bool, error) {
+		address, _ := value.(string)
+		if strings.TrimSpace(address) == "" {
+			_, _, err := b.Disconnect(context.Background(), cfg)
+			return true, err
+		}
+		b.Attach(context.Background(), cfg, address)
+		return false, nil
+	}})
+	return b
 }
 
 func (r *registrant) Tools() []tools.Def {
@@ -84,6 +96,7 @@ func (r *registrant) Tools() []tools.Def {
 			Schema:    cdpSchema(),
 			Handler:   r.cdp,
 			Check:     attached,
+			Lacks:     unattached,
 			Fallible:  true,
 			Untrusted: true,
 		},
@@ -98,6 +111,7 @@ func (r *registrant) Tools() []tools.Def {
 			Schema:    dialogSchema(),
 			Handler:   r.dialog,
 			Check:     attached,
+			Lacks:     unattached,
 			Effect:    tools.Mutates,
 			Untrusted: true,
 		},
@@ -169,4 +183,12 @@ func (b *Browser) Attach(ctx context.Context, cfg *config.Config, endpoint strin
 // Ends the browser holding the user's own profile, that of the browser named or else of the default one
 func (b *Browser) CloseProfile(cfg *config.Config, name string) (bool, string) {
 	return CloseProfile(cfg, name)
+}
+
+// What the browser tools that drive your own browser lack to run
+func unattached(*tools.Env) string { return "It needs your own browser connected." }
+
+// The group of the browser tools, whose options are the area of the browser
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: "Browser", Area: browserconfig.Key, Order: 40}}
 }

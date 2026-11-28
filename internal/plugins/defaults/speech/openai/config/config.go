@@ -7,7 +7,6 @@ const Name = "openai"
 // Speech
 const (
 	TTS                = speechconfig.TTS + "." + Name
-	TTSAPIKey          = TTS + "." + speechconfig.APIKey
 	TTSBaseURL         = TTS + "." + speechconfig.BaseURL
 	TTSModel           = TTS + "." + speechconfig.ModelKey
 	TTSVoice           = TTS + ".voice"
@@ -26,7 +25,6 @@ const (
 // Speech recognition
 const (
 	STT                   = speechconfig.STT + "." + Name
-	STTAPIKey             = STT + "." + speechconfig.APIKey
 	STTBaseURL            = STT + "." + speechconfig.BaseURL
 	STTModel              = STT + "." + speechconfig.ModelKey
 	StreamingModel        = STT + ".streaming_model"

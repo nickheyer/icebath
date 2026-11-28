@@ -102,7 +102,7 @@ func (m *manager) Unlock(ctx context.Context, master string) (string, error) {
 		if detail == "" {
 			detail = "op gave no session token."
 		}
-		return "", fmt.Errorf("1Password did not unlock: %s", secrets.Sentence(detail))
+		return "", fmt.Errorf("1Password did not unlock: %s", strs.Sentence(detail))
 	}
 	return token, nil
 }
@@ -126,7 +126,7 @@ func (m *manager) run(ctx context.Context, session string, args ...string) (stri
 		if m.service == "" && (strings.Contains(lowered, "session") || strings.Contains(lowered, "sign in") || strings.Contains(lowered, "not signed in")) {
 			return "", vault.ErrLocked
 		}
-		return "", fmt.Errorf("op stopped with an error: %s", secrets.Sentence(strs.Head(detail, 200)))
+		return "", fmt.Errorf("op stopped with an error: %s", strs.Sentence(strs.Head(detail, 200)))
 	}
 	return out.Stdout, nil
 }

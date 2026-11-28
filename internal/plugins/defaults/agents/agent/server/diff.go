@@ -54,7 +54,7 @@ func gitFailure(err error) string {
 	if _, ok := errors.AsType[*git.TimeoutError](err); ok {
 		return "git took too long to list the changes. Try /diff --stat, or name fewer paths."
 	}
-	return "git failed. " + sentence(err.Error())
+	return "git failed. " + strs.Full(err.Error())
 }
 
 // Changes of the git checkout the folder is in: of the working tree against the index, of the index against HEAD (staged), or of both

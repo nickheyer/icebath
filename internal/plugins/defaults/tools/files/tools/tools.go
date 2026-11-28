@@ -111,16 +111,24 @@ func (r *registrant) Compacted(cfg *config.Config, session string) {
 // Whether a file tool can run: the profile's terminal backend can
 func (r *registrant) available(env *tools.Env) bool { return r.terminal.Check(env.Config) == nil }
 
+// What a file tool lacks to run: the reason the profile's terminal backend can't run
+func (r *registrant) lacks(env *tools.Env) string {
+	if err := r.terminal.Check(env.Config); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
 func (r *registrant) Tools() []tools.Def {
 	return []tools.Def{
 		{Name: ReadFile, Toolset: toolset, Title: "Read", About: "Read a file, including PDFs and office documents", Group: group, Icon: tools.IconRead, Subject: "path", Schema: r.readSchema(nil), Dynamic: r.readSchema,
-			Handler: r.read, Check: r.available, MaxResultChars: 100_000, Effect: tools.ReadOnly, Paths: paths(false)},
+			Handler: r.read, Check: r.available, Lacks: r.lacks, MaxResultChars: 100_000, Effect: tools.ReadOnly, Paths: paths(false)},
 		{Name: WriteFile, Toolset: toolset, Title: "Write", About: "Create a file, or replace everything in one", Group: group, Icon: tools.IconWrite, Subject: "path", Risks: []string{sshConfigRisk}, Schema: writeSchema,
-			Handler: r.write, Check: r.available, MaxResultChars: 100_000, Effect: tools.Mutates, Paths: paths(true)},
+			Handler: r.write, Check: r.available, Lacks: r.lacks, MaxResultChars: 100_000, Effect: tools.Mutates, Paths: paths(true)},
 		{Name: Patch, Toolset: toolset, Title: "Edit", About: "Change part of a file, or of several files at once", Group: group, Icon: tools.IconEdit, Subject: "path", Risks: []string{sshConfigRisk}, Schema: patchSchema(false),
-			Dynamic: r.patchSchema, Handler: r.patch, Check: r.available, MaxResultChars: 100_000, Effect: tools.Mutates, Paths: paths(true)},
+			Dynamic: r.patchSchema, Handler: r.patch, Check: r.available, Lacks: r.lacks, MaxResultChars: 100_000, Effect: tools.Mutates, Paths: paths(true)},
 		{Name: SearchFiles, Toolset: toolset, Title: "Search", About: "Search inside files, or find files by their name", Group: group, Icon: tools.IconSearch, Subject: "pattern", Schema: searchSchema, Handler: r.search,
-			Check: r.available, MaxResultChars: 100_000, Effect: tools.ReadOnly, Paths: paths(false)},
+			Check: r.available, Lacks: r.lacks, MaxResultChars: 100_000, Effect: tools.ReadOnly, Paths: paths(false)},
 	}
 }
 
@@ -440,4 +448,9 @@ func (o *ops) diagnostics(path string, before, after *string, started time.Time)
 		owner = "default"
 	}
 	return o.r.checkers.Check(o.ctx, o.cfg, o.full(path), before, after, owner, started)
+}
+
+// The group of the file tools, whose options are the files section
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: group, Sections: []string{filesconfig.Key}, Order: 10}}
 }

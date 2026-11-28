@@ -31,7 +31,7 @@ import (
 	"github.com/nickheyer/icebath/internal/provider"
 	browserutil "github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/fsx"
-	"github.com/spf13/cast"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -40,7 +40,6 @@ const (
 	anthropicOAuthTokenUserAgent = "axios/1.7.9"
 	anthropicOAuthRedirectURI    = "https://console.anthropic.com/oauth/code/callback"
 	anthropicOAuthScopes         = "org:create_api_key user:profile user:inference"
-	claudeCodeKeychainService    = "Claude Code-credentials"
 	spentRotationMaxTracked      = 64
 	spentRotationSidecarComment  = "Non-secret one-way fingerprints of Anthropic OAuth credentials whose rotation was " +
 		"consumed server-side but never durably committed. Written by Icebath so sibling " +
@@ -147,7 +146,7 @@ func spentRotationSidecarPath(sourcePath string) string {
 func SpentRotationSourcePath(env PoolEnv, source string) string {
 	switch source {
 	case "claude_code":
-		return ClaudeCodeCredentialsPath()
+		return ClaudeCodeCredentialsPath(env)
 	}
 	return ""
 }
@@ -300,11 +299,11 @@ func runSecurity(args []string, stdin string, timeout time.Duration) (string, st
 }
 
 // Account and payload of the Claude Code login Keychain item
-func findClaudeCodeKeychainItem() (string, map[string]any, bool) {
+func findClaudeCodeKeychainItem(env PoolEnv) (string, map[string]any, bool) {
 	if runtime.GOOS != "darwin" {
 		return "", nil, false
 	}
-	stdout, stderr, code, err := runSecurity([]string{"find-generic-password", "-s", claudeCodeKeychainService, "-g"}, "", 5*time.Second)
+	stdout, stderr, code, err := runSecurity([]string{"find-generic-password", "-s", claudeCodeKeychainService(env), "-g"}, "", 5*time.Second)
 	if err != nil || code != 0 {
 		return "", nil, false
 	}
@@ -325,13 +324,14 @@ func readClaudeCodeKeychainPayload(env PoolEnv) map[string]any {
 	if runtime.GOOS != "darwin" {
 		return nil
 	}
-	stdout, _, code, err := runSecurity([]string{"find-generic-password", "-s", claudeCodeKeychainService, "-w"}, "", 5*time.Second)
+	service := claudeCodeKeychainService(env)
+	stdout, _, code, err := runSecurity([]string{"find-generic-password", "-s", service, "-w"}, "", 5*time.Second)
 	if err != nil {
 		env.log().Debug("Keychain: security command not available or timed out")
 		return nil
 	}
 	if code != 0 {
-		env.log().Debug(fmt.Sprintf("Keychain: no entry found for %q", claudeCodeKeychainService))
+		env.log().Debug(fmt.Sprintf("Keychain: no entry found for %q", service))
 		return nil
 	}
 	raw := strings.TrimSpace(stdout)
@@ -346,13 +346,13 @@ func readClaudeCodeKeychainPayload(env PoolEnv) map[string]any {
 	return payload
 }
 
-// Command line for security -i that updates the Keychain item with the payload hex encoded
-func keychainMirrorCommand(account string, payload map[string]any) ([]string, string) {
+// Command line for security -i that updates the Keychain item of the service with the payload hex encoded
+func keychainMirrorCommand(account, service string, payload map[string]any) ([]string, string) {
 	quoted := func(v string) string {
 		return `"` + strings.ReplaceAll(strings.ReplaceAll(v, `\`, `\\`), `"`, `\"`) + `"`
 	}
 	raw, _ := json.Marshal(payload)
-	line := fmt.Sprintf("add-generic-password -U -a %s -s %s -X %s\n", quoted(account), quoted(claudeCodeKeychainService), hex.EncodeToString(raw))
+	line := fmt.Sprintf("add-generic-password -U -a %s -s %s -X %s\n", quoted(account), quoted(service), hex.EncodeToString(raw))
 	return []string{"security", "-i"}, line
 }
 
@@ -364,24 +364,52 @@ func readClaudeCodeCredentialsFromKeychain(env PoolEnv) map[string]any {
 	return claudeOAuthRecord(payload, "macos_keychain")
 }
 
-// ClaudeCodeCredentialsPath is Claude Code's shared OAuth file honoring CLAUDE_CONFIG_DIR
-func ClaudeCodeCredentialsPath() string {
-	override := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR"))
-	root := ""
-	if override != "" {
-		root = fsx.ExpandHome(override)
-	} else {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			userHome = os.Getenv("HOME")
-		}
-		root = filepath.Join(userHome, ".claude")
+// Variables that move the folder Claude Code keeps its sign-in in: the one of its sign-in alone, then the one of all it keeps
+const (
+	claudeSecureStorageEnv = "CLAUDE_SECURESTORAGE_CONFIG_DIR"
+	claudeConfigEnv        = "CLAUDE_CONFIG_DIR"
+)
+
+// Folder Claude Code keeps its sign-in in, found the way Claude Code finds it: CLAUDE_SECURESTORAGE_CONFIG_DIR when set, ~/.claude when it
+// is set empty; else CLAUDE_CONFIG_DIR; else ~/.claude. With the name of a folder of its own, empty for ~/.claude, which the name of its
+// Keychain item ends in
+func claudeCodeDir(env PoolEnv) (string, string) {
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		userHome = os.Getenv("HOME")
 	}
-	return filepath.Join(root, ".credentials.json")
+	home := filepath.Join(userHome, ".claude")
+	if dir, ok := env.Account.LookupEnv(claudeSecureStorageEnv); ok {
+		if dir == "" {
+			return home, ""
+		}
+		return fsx.ExpandHome(dir), norm.NFC.String(dir)
+	}
+	if dir, _ := env.Account.LookupEnv(claudeConfigEnv); dir != "" {
+		return fsx.ExpandHome(dir), norm.NFC.String(dir)
+	}
+	return home, ""
+}
+
+// ClaudeCodeCredentialsPath is the file Claude Code keeps its sign-in in, in the folder its variables name
+func ClaudeCodeCredentialsPath(env PoolEnv) string {
+	dir, _ := claudeCodeDir(env)
+	return filepath.Join(dir, ".credentials.json")
+}
+
+// Name of the Keychain item Claude Code keeps its sign-in in, ending in a hash of the folder its variables name when they name one
+func claudeCodeKeychainService(env PoolEnv) string {
+	_, own := claudeCodeDir(env)
+	if own == "" {
+		return "Claude Code-credentials"
+	}
+	sum := sha256.Sum256([]byte(own))
+	return "Claude Code-credentials-" + hex.EncodeToString(sum[:])[:8]
 }
 
 func readClaudeCodeCredentialsFromFile(env PoolEnv) map[string]any {
-	data := loadJSONIfExists(env, ClaudeCodeCredentialsPath(), "~/.claude/.credentials.json")
+	path := ClaudeCodeCredentialsPath(env)
+	data := loadJSONIfExists(env, path, path)
 	if data == nil {
 		return nil
 	}
@@ -390,7 +418,7 @@ func readClaudeCodeCredentialsFromFile(env PoolEnv) map[string]any {
 
 // ReadClaudeCodeCredentials reads the borrowed login from Keychain and file, preferring the only valid one
 func ReadClaudeCodeCredentials(env PoolEnv) map[string]any {
-	if !AdoptExternalLoginsEnabled(env) || env.Ignores != nil && env.Ignores(claudeCode) {
+	if env.Ignores != nil && env.Ignores(claudeCode) {
 		return nil
 	}
 	kc := readClaudeCodeCredentialsFromKeychain(env)
@@ -537,7 +565,7 @@ func oauthTokenState(result map[string]any, fallbackRefresh string) map[string]a
 // RefreshAnthropicOAuthPure refreshes an Anthropic OAuth token without touching local credential files
 func RefreshAnthropicOAuthPure(env PoolEnv, refreshToken string, useJSON bool) (map[string]any, error) {
 	if refreshToken == "" {
-		return nil, errors.New("This sign-in keeps no way to renew itself. Sign in again from /providers.")
+		return nil, errors.New("This sign-in keeps no way to renew itself. Sign in again.")
 	}
 	payload := map[string]string{"grant_type": "refresh_token", "refresh_token": refreshToken, "client_id": anthropicOAuthClientID}
 	var data []byte
@@ -557,7 +585,7 @@ func RefreshAnthropicOAuthPure(env PoolEnv, refreshToken string, useJSON bool) (
 		return nil, err
 	}
 	if anyString(result["access_token"]) == "" {
-		return nil, errors.New("Anthropic renewed the sign-in without sending a new token. Sign in again from /providers.")
+		return nil, errors.New("Anthropic renewed the sign-in without sending a new token. Sign in again.")
 	}
 	return oauthTokenState(result, refreshToken), nil
 }
@@ -576,7 +604,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 	if lockTimeout < AuthLockTimeout {
 		lockTimeout = AuthLockTimeout
 	}
-	credPath := ClaudeCodeCredentialsPath()
+	credPath := ClaudeCodeCredentialsPath(env)
 	unlock, err := env.fileLock(credPath, lockTimeout)
 	if err != nil {
 		env.log().Debug(fmt.Sprintf("Failed to acquire Claude Code refresh lock: %v", err))
@@ -602,7 +630,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 		return ""
 	}
 	if IsRotationConsumedUncommitted(refreshToken, credPath) {
-		env.log().Debug("Refresh token was already used by an unsaved rotation, so it is not sent again. Sign in again from /providers.")
+		env.log().Debug("Refresh token was already used by an unsaved rotation, so it is not sent again. Sign in again.")
 		return ""
 	}
 	sum := sha256.Sum256([]byte(refreshToken))
@@ -620,7 +648,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 			spentRotationMu.Lock()
 			deadRefreshTokenPrints[fingerprint] = true
 			spentRotationMu.Unlock()
-			env.log().Warn(fmt.Sprintf("The Claude Code refresh token is no longer valid (%v), so icebath can't use that login. Sign in to Anthropic from /providers.", err))
+			env.log().Warn(fmt.Sprintf("The Claude Code refresh token is no longer valid (%v), so icebath can't use that login. Sign in to Anthropic again.", err))
 		} else {
 			env.log().Debug(fmt.Sprintf("Failed to refresh Claude Code token: %v", err))
 		}
@@ -628,7 +656,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 	}
 	ms, _ := anyFloat(refreshed["expires_at_ms"])
 	if err := writeClaudeCodeCredentialsFn(env, anyString(refreshed["access_token"]), anyString(refreshed["refresh_token"]), int64(ms), nil, refreshToken); err != nil {
-		env.log().Error(fmt.Sprintf("Anthropic sign-in refresh rotated the token but couldn't save it to %s (%v), so the refresh failed. Sign in again from /providers.", credPath, err))
+		env.log().Error(fmt.Sprintf("Anthropic sign-in refresh rotated the token but couldn't save it to %s (%v), so the refresh failed. Sign in again.", credPath, err))
 		MarkRotationConsumedUncommitted(credPath, refreshToken, anyString(creds["accessToken"]), anyString(current["accessToken"]), anyString(current["refreshToken"]))
 		return ""
 	}
@@ -638,7 +666,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 
 // WriteClaudeCodeCredentials commits refreshed credentials to the Claude Code file and mirrors them into the Keychain
 func WriteClaudeCodeCredentials(env PoolEnv, accessToken, refreshToken string, expiresAtMS int64, scopes []any, spentRefreshToken string) error {
-	credPath := ClaudeCodeCredentialsPath()
+	credPath := ClaudeCodeCredentialsPath(env)
 	existing := map[string]any{}
 	if raw, err := os.ReadFile(credPath); err == nil {
 		if err := json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &existing); err != nil {
@@ -682,7 +710,7 @@ func mirrorClaudeCodeCredentialsToKeychain(env PoolEnv, accessToken, refreshToke
 	if runtime.GOOS != "darwin" {
 		return
 	}
-	account, existing, ok := findClaudeCodeKeychainItem()
+	account, existing, ok := findClaudeCodeKeychainItem(env)
 	if !ok {
 		return
 	}
@@ -691,7 +719,8 @@ func mirrorClaudeCodeCredentialsToKeychain(env PoolEnv, accessToken, refreshToke
 		env.log().Debug("Keychain mirror skipped: item does not hold the pair that was just rotated")
 		return
 	}
-	argv, line := keychainMirrorCommand(account, mergeKeychainCredentialPayload(existing, accessToken, refreshToken, expiresAtMS))
+	argv, line := keychainMirrorCommand(account, claudeCodeKeychainService(env), mergeKeychainCredentialPayload(existing, accessToken, refreshToken,
+		expiresAtMS))
 	_, stderr, code, err := runSecurity(argv[1:], line, 10*time.Second)
 	if err != nil {
 		env.log().Debug(fmt.Sprintf("Keychain mirror skipped (%v)", err))
@@ -714,7 +743,7 @@ func resolveClaudeCodeTokenFromCredentials(env PoolEnv, creds map[string]any) st
 	if creds == nil {
 		return ""
 	}
-	if IsRotationConsumedUncommitted(anyString(creds["accessToken"]), ClaudeCodeCredentialsPath()) {
+	if IsRotationConsumedUncommitted(anyString(creds["accessToken"]), ClaudeCodeCredentialsPath(env)) {
 		env.log().Debug("Claude Code credentials hold a rotated-but-uncommitted token - refusing")
 		return ""
 	}
@@ -725,7 +754,7 @@ func resolveClaudeCodeTokenFromCredentials(env PoolEnv, creds map[string]any) st
 	env.log().Debug("Claude Code credentials expired - attempting refresh")
 	refreshed := refreshClaudeCodeOAuthToken(env, creds)
 	if refreshed == "" {
-		env.log().Debug("Token refresh failed. Sign in to Anthropic from /providers.")
+		env.log().Debug("Token refresh failed. Sign in to Anthropic again.")
 	}
 	return refreshed
 }
@@ -950,30 +979,6 @@ func (env PoolEnv) fileLock(authPath string, timeout time.Duration) (func(), err
 		timeout = time.Second
 	}
 	return fsx.Lock(env.ctx(), lockPath, timeout)
-}
-
-// ExternalLoginsNotAdoptedNotice is printed once per process when a borrowed CLI login is skipped
-const ExternalLoginsNotAdoptedNotice = "Logins from other CLIs (Codex CLI, Claude Code) are not used because " + anthropicconfig.AdoptExternalLogins + " of the provider is off. " +
-	"Sign in from /providers instead."
-
-var (
-	externalLoginsNoticeMu     sync.Mutex
-	externalLoginsNoticeLogged bool
-)
-
-// AdoptExternalLoginsEnabled is adopt_external_logins of the provider, default true, logged once when off
-func AdoptExternalLoginsEnabled(env PoolEnv) bool {
-	adopt := env.Provider.Get(anthropicconfig.AdoptExternalLogins)
-	enabled := adopt == nil || cast.ToBool(adopt)
-	if !enabled {
-		externalLoginsNoticeMu.Lock()
-		if !externalLoginsNoticeLogged {
-			externalLoginsNoticeLogged = true
-			env.log().Info(ExternalLoginsNotAdoptedNotice)
-		}
-		externalLoginsNoticeMu.Unlock()
-	}
-	return enabled
 }
 
 // Longest wait for the cross process lock of an auth path

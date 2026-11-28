@@ -4,14 +4,23 @@ package icebath.plugins.lsp.v1;
 
 // Language servers that check the files the agent writes, on the machine the server runs on
 service LspService {
-  // The language server service of a profile and every server it knows
+  // How the language servers of a profile stand, each server in the words of the one function that says so, whether code is checked or not
   rpc Status(StatusRequest) returns (StatusResponse);
-  // Installs one server, or every server whose recipe installs by itself
+  // Installs one server, or each server not installed that icebath can install, saying at the end what was installed and what the others
+  // need
   rpc Install(InstallRequest) returns (stream InstallEvent);
   // Program a server runs from
   rpc Which(WhichRequest) returns (WhichResponse);
-  // Stops every running server of every profile; the next edit starts them again
-  rpc Restart(RestartRequest) returns (RestartResponse);
+  // Stops the running servers of a profile; the next edit starts them again
+  rpc Stop(StopRequest) returns (StopResponse);
+  // Adds a server of your own: its name, the command that starts it and the file types it checks
+  rpc Add(AddRequest) returns (AddResponse);
+  // Turns a server off or on
+  rpc Turn(TurnRequest) returns (TurnResponse);
+  // Removes a server you added
+  rpc Remove(RemoveRequest) returns (RemoveResponse);
+  // Trusts the folders the servers of a profile were kept out of
+  rpc Trust(TrustRequest) returns (TrustResponse);
 }
 
 message StatusRequest {
@@ -29,66 +38,102 @@ message Client {
   bool running = 5;
 }
 
-// A server and a root
+// A server and a folder
 message Pair {
   string server = 1;
   string root = 2;
 }
 
-message Service {
-  string wait_mode = 1;
-  // Seconds
-  double wait_timeout = 2;
-  string install_strategy = 3;
-  repeated Client clients = 4;
-  // Pairs that failed and are not tried again yet
-  repeated Pair broken = 5;
-  // Servers the settings turn off
-  repeated string disabled = 6;
-  double broken_retry_seconds = 7;
-  double warmup_timeout = 8;
-  repeated string exclude_roots = 9;
-  // The exclude setting is no list, which keeps every workspace out
-  bool exclude_roots_invalid = 10;
-  repeated string trusted_workspaces = 11;
-  // Pairs kept out of a workspace the user has not trusted
-  repeated Pair untrusted_skipped = 12;
-}
-
 message Server {
   string id = 1;
-  repeated string extensions = 2;
-  string description = 3;
-  // installed, missing or manual-only
-  string status = 4;
+  string description = 2;
+  repeated string extensions = 3;
+  // Running, Installed, Not installed, Off or Failed
+  string state = 4;
   // Where its program is, empty when it is not there
   string path = 5;
-  // Starts in a workspace the user has not trusted
-  bool untrusted_safe = 6;
-  // Declared by the settings
-  bool custom = 7;
-  // Key of its install recipe, empty for none, and whether the recipe installs by itself
-  string recipe = 8;
-  bool automatic = 9;
+  // What a person reads about installing it: that icebath installs it the first time a file needs it, or how to install it yourself; empty
+  // once it is there
+  string install = 6;
+  // Not there, and icebath can install it
+  bool installable = 7;
+  // A server you added, and the command it runs as a shell line
+  bool added = 8;
+  string command = 9;
+  // Starts in a folder you have not trusted
+  bool untrusted_safe = 10;
+  // Folders it runs in, failed in, and was kept out of for not being trusted
+  repeated string running = 11;
+  repeated string failed = 12;
+  repeated string skipped = 13;
+  // When a failed server is tried again, in words; empty for not until icebath restarts
+  string retry = 14;
 }
 
 message StatusResponse {
-  // The service, absent while language servers are off
-  Service service = 1;
-  // Servers the settings declare, then those icebath knows
-  repeated Server servers = 2;
+  // Code is checked
+  bool checking = 1;
+  bool install_when_needed = 2;
+  string wait_mode = 3;
+  // Seconds
+  double wait_timeout = 4;
+  double warmup_timeout = 5;
+  double broken_retry_seconds = 6;
+  // Servers you added, then those icebath knows
+  repeated Server servers = 7;
+  // Folders servers were kept out of for not being trusted, each once
+  repeated string skipped = 8;
+  repeated string exclude_roots = 9;
+  // The skipped folders setting is no list, which keeps every folder out
+  bool exclude_roots_invalid = 10;
+  repeated string trusted_workspaces = 11;
+  repeated Client clients = 12;
+  // Pairs that failed and are not tried again yet, and pairs kept out of a folder not trusted
+  repeated Pair broken = 13;
+  repeated Pair untrusted_skipped = 14;
+  // Servers that are off
+  repeated string disabled = 15;
   // Servers that start but stay silent for want of a companion tool
-  repeated string warnings = 3;
+  repeated string warnings = 16;
 }
 
 message InstallRequest {
   string profile = 1;
   // Server to install, by its id
   string server = 2;
-  // Every server whose recipe installs by itself instead
+  // Each server not installed that icebath can install instead
   bool all = 3;
-  // With all, the servers that install only by hand too, as far as they can
-  bool include_manual = 4;
+}
+
+// A server an install left installed
+message Installed {
+  string server = 1;
+  // Where its program is
+  string path = 2;
+  // It was there before the install
+  bool already = 3;
+}
+
+// One thing servers that could not be installed need, said once
+message Need {
+  // Servers it holds back, in the order they were tried
+  repeated string servers = 1;
+  // What they need and what to do, as one sentence that names them, such as "pyright, vue-language-server and 6 more need yarn. Install
+  // yarn, or set Node package manager to npm."
+  string text = 2;
+  // Key of the setting that gives it another way, and the value that does, empty for none
+  string setting = 3;
+  string value = 4;
+  // The one server it holds back is installed by hand, as the text says
+  bool by_hand = 5;
+}
+
+// What an install came to: the servers installed, then each thing the others need, said once with the servers it holds back
+message Outcome {
+  repeated Installed installed = 1;
+  repeated Need needs = 2;
+  // The servers installed by name, those that were there already, or that every server is; empty when none was
+  string done = 3;
 }
 
 // One step of an install
@@ -100,6 +145,8 @@ message InstallEvent {
     string err = 2;
     // How it ended
     int32 exit_code = 3;
+    // What the install came to, sent before it ends
+    Outcome outcome = 4;
   }
 }
 
@@ -113,6 +160,45 @@ message WhichResponse {
   string path = 1;
 }
 
-message RestartRequest {}
+message StopRequest {
+  string profile = 1;
+}
 
-message RestartResponse {}
+message StopResponse {
+  // How many ran
+  int32 stopped = 1;
+}
+
+message AddRequest {
+  string profile = 1;
+  string name = 2;
+  // Written as a shell line, such as gopls serve
+  string command = 3;
+  // File endings, such as .go, .mod, separated by commas or spaces
+  string types = 4;
+}
+
+message AddResponse {}
+
+message TurnRequest {
+  string profile = 1;
+  string server = 2;
+  bool on = 3;
+}
+
+message TurnResponse {}
+
+message RemoveRequest {
+  string profile = 1;
+  string server = 2;
+}
+
+message RemoveResponse {}
+
+message TrustRequest {
+  string profile = 1;
+}
+
+message TrustResponse {
+  repeated string folders = 1;
+}

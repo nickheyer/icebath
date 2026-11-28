@@ -33,6 +33,10 @@ const (
 	// BrowserServiceCloseProfileProcedure is the procedure name of the BrowserService's CloseProfile
 	// RPC.
 	BrowserServiceCloseProfileProcedure = "/icebath.plugins.browser.v1.BrowserService/CloseProfile"
+	// BrowserServiceServicesProcedure is the procedure name of the BrowserService's Services RPC.
+	BrowserServiceServicesProcedure = "/icebath.plugins.browser.v1.BrowserService/Services"
+	// BrowserServiceInstalledProcedure is the procedure name of the BrowserService's Installed RPC.
+	BrowserServiceInstalledProcedure = "/icebath.plugins.browser.v1.BrowserService/Installed"
 )
 
 var (
@@ -64,19 +68,37 @@ var (
 			Procedure:  BrowserServiceCloseProfileProcedure,
 		}
 	})
+	browserServiceServicesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_browser_v1_browser_proto.Services().ByName("BrowserService").Methods().ByName("Services"),
+			Procedure:  BrowserServiceServicesProcedure,
+		}
+	})
+	browserServiceInstalledSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_browser_v1_browser_proto.Services().ByName("BrowserService").Methods().ByName("Installed"),
+			Procedure:  BrowserServiceInstalledProcedure,
+		}
+	})
 )
 
 // BrowserServiceClient is a client for the icebath.plugins.browser.v1.BrowserService service.
 type BrowserServiceClient interface {
 	// The endpoint the profile's browser tools attach to, none when they launch their own browser
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
-	// Reaches, finds or launches a debuggable browser at the address and attaches the profile's browser tools to it, each step told as it
-	// goes and the outcome last
+	// Reaches, finds or launches a debuggable browser at the address and attaches the profile's browser tools to it, keeping the address in
+	// its settings so every session uses it; each step told as it goes and the outcome last
 	Connect(context.Context, *v1.ConnectRequest) (BrowserServiceConnectClientStream, error)
-	// Detaches the profile's browser tools from the endpoint they were attached to
+	// Detaches the profile's browser tools from the endpoint they were attached to and forgets its address
 	Disconnect(context.Context, *v1.DisconnectRequest) (*v1.DisconnectResponse, error)
 	// Ends the browser that holds the user's own profile, so its logins can be copied for the agent
 	CloseProfile(context.Context, *v1.CloseProfileRequest) (*v1.CloseProfileResponse, error)
+	// Where pages can open: this computer, the cloud services and the browsers that hold pages of their own, each with how it stands
+	Services(context.Context, *v1.ServicesRequest) (*v1.ServicesResponse, error)
+	// Browsers installed on the machine the server runs on, and the profiles of the default one, which your own profile is copied from
+	Installed(context.Context, *v1.InstalledRequest) (*v1.InstalledResponse, error)
 }
 
 // NewBrowserServiceClient constructs a client for the icebath.plugins.browser.v1.BrowserService
@@ -110,13 +132,17 @@ func (s BrowserServiceConnectClientStream) Close() error {
 type BrowserServiceHandler interface {
 	// The endpoint the profile's browser tools attach to, none when they launch their own browser
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
-	// Reaches, finds or launches a debuggable browser at the address and attaches the profile's browser tools to it, each step told as it
-	// goes and the outcome last
+	// Reaches, finds or launches a debuggable browser at the address and attaches the profile's browser tools to it, keeping the address in
+	// its settings so every session uses it; each step told as it goes and the outcome last
 	Connect(context.Context, *v1.ConnectRequest, BrowserServiceConnectServerStream) error
-	// Detaches the profile's browser tools from the endpoint they were attached to
+	// Detaches the profile's browser tools from the endpoint they were attached to and forgets its address
 	Disconnect(context.Context, *v1.DisconnectRequest) (*v1.DisconnectResponse, error)
 	// Ends the browser that holds the user's own profile, so its logins can be copied for the agent
 	CloseProfile(context.Context, *v1.CloseProfileRequest) (*v1.CloseProfileResponse, error)
+	// Where pages can open: this computer, the cloud services and the browsers that hold pages of their own, each with how it stands
+	Services(context.Context, *v1.ServicesRequest) (*v1.ServicesResponse, error)
+	// Browsers installed on the machine the server runs on, and the profiles of the default one, which your own profile is copied from
+	Installed(context.Context, *v1.InstalledRequest) (*v1.InstalledResponse, error)
 }
 
 // RegisterBrowserServiceHandler registers svc as the icebath.plugins.browser.v1.BrowserService
@@ -128,6 +154,8 @@ func RegisterBrowserServiceHandler(server *connect.Server, svc BrowserServiceHan
 		connect.Method{Spec: browserServiceConnectSpec(), Handler: adapter.connect},
 		connect.Method{Spec: browserServiceDisconnectSpec(), Handler: adapter.disconnect},
 		connect.Method{Spec: browserServiceCloseProfileSpec(), Handler: adapter.closeProfile},
+		connect.Method{Spec: browserServiceServicesSpec(), Handler: adapter.services},
+		connect.Method{Spec: browserServiceInstalledSpec(), Handler: adapter.installed},
 	)
 }
 
@@ -165,6 +193,14 @@ func (UnimplementedBrowserServiceHandler) CloseProfile(context.Context, *v1.Clos
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.browser.v1.BrowserService.CloseProfile is not implemented")
 }
 
+func (UnimplementedBrowserServiceHandler) Services(context.Context, *v1.ServicesRequest) (*v1.ServicesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.browser.v1.BrowserService.Services is not implemented")
+}
+
+func (UnimplementedBrowserServiceHandler) Installed(context.Context, *v1.InstalledRequest) (*v1.InstalledResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.browser.v1.BrowserService.Installed is not implemented")
+}
+
 type browserServiceClient struct {
 	client *connect.Client
 }
@@ -196,6 +232,22 @@ func (c *browserServiceClient) Disconnect(ctx context.Context, req *v1.Disconnec
 func (c *browserServiceClient) CloseProfile(ctx context.Context, req *v1.CloseProfileRequest) (*v1.CloseProfileResponse, error) {
 	var res v1.CloseProfileResponse
 	if err := c.client.CallUnary(ctx, browserServiceCloseProfileSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *browserServiceClient) Services(ctx context.Context, req *v1.ServicesRequest) (*v1.ServicesResponse, error) {
+	var res v1.ServicesResponse
+	if err := c.client.CallUnary(ctx, browserServiceServicesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *browserServiceClient) Installed(ctx context.Context, req *v1.InstalledRequest) (*v1.InstalledResponse, error) {
+	var res v1.InstalledResponse
+	if err := c.client.CallUnary(ctx, browserServiceInstalledSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -241,6 +293,30 @@ func (h browserServiceHandler) closeProfile(ctx context.Context, _ connect.Spec,
 		return err
 	}
 	res, err := h.svc.CloseProfile(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h browserServiceHandler) services(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ServicesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Services(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h browserServiceHandler) installed(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.InstalledRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Installed(ctx, &req)
 	if err != nil {
 		return err
 	}

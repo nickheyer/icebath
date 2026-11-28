@@ -416,11 +416,12 @@ func (b *searchBar) CursorX() int {
 	return 3 + caret
 }
 
-// Row at width with the count at the right, lit as a field while it takes typing
-func (b *searchBar) View(w int, count string, placeholder string, t theme.Theme) string {
+// Row at width with the count at the right, lit as a field while it takes typing and its list has the keys
+func (b *searchBar) View(w int, count string, placeholder string, keyed bool, t theme.Theme) string {
 	glyph := t.Glyphs.Search
 	base := lipgloss.NewStyle()
-	if b.active {
+	lit := b.active && keyed
+	if lit {
 		base = base.Background(t.Ghost)
 	}
 	right := ""
@@ -434,7 +435,7 @@ func (b *searchBar) View(w int, count string, placeholder string, t theme.Theme)
 		text = base.Foreground(t.TextDim).Render(placeholder)
 	}
 	mark := t.TextDim
-	if b.active || b.Query() != "" {
+	if lit || b.Query() != "" {
 		mark = t.Accent
 	}
 	left := base.Foreground(mark).Render(" "+glyph+" ") + text

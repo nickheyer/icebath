@@ -28,20 +28,14 @@ const (
 	EgressServiceStatusProcedure = "/icebath.plugins.egress.v1.EgressService/Status"
 	// EgressServiceInstallProcedure is the procedure name of the EgressService's Install RPC.
 	EgressServiceInstallProcedure = "/icebath.plugins.egress.v1.EgressService/Install"
-	// EgressServiceAuthorityProcedure is the procedure name of the EgressService's Authority RPC.
-	EgressServiceAuthorityProcedure = "/icebath.plugins.egress.v1.EgressService/Authority"
-	// EgressServiceMintProcedure is the procedure name of the EgressService's Mint RPC.
-	EgressServiceMintProcedure = "/icebath.plugins.egress.v1.EgressService/Mint"
-	// EgressServiceWriteProcedure is the procedure name of the EgressService's Write RPC.
-	EgressServiceWriteProcedure = "/icebath.plugins.egress.v1.EgressService/Write"
+	// EgressServiceTurnProcedure is the procedure name of the EgressService's Turn RPC.
+	EgressServiceTurnProcedure = "/icebath.plugins.egress.v1.EgressService/Turn"
 	// EgressServiceStartProcedure is the procedure name of the EgressService's Start RPC.
 	EgressServiceStartProcedure = "/icebath.plugins.egress.v1.EgressService/Start"
 	// EgressServiceStopProcedure is the procedure name of the EgressService's Stop RPC.
 	EgressServiceStopProcedure = "/icebath.plugins.egress.v1.EgressService/Stop"
 	// EgressServiceReloadProcedure is the procedure name of the EgressService's Reload RPC.
 	EgressServiceReloadProcedure = "/icebath.plugins.egress.v1.EgressService/Reload"
-	// EgressServiceDisableProcedure is the procedure name of the EgressService's Disable RPC.
-	EgressServiceDisableProcedure = "/icebath.plugins.egress.v1.EgressService/Disable"
 	// EgressServiceTextProcedure is the procedure name of the EgressService's Text RPC.
 	EgressServiceTextProcedure = "/icebath.plugins.egress.v1.EgressService/Text"
 )
@@ -61,25 +55,11 @@ var (
 			Procedure:  EgressServiceInstallProcedure,
 		}
 	})
-	egressServiceAuthoritySpec = sync.OnceValue(func() connect.Spec {
+	egressServiceTurnSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_plugins_egress_v1_egress_proto.Services().ByName("EgressService").Methods().ByName("Authority"),
-			Procedure:  EgressServiceAuthorityProcedure,
-		}
-	})
-	egressServiceMintSpec = sync.OnceValue(func() connect.Spec {
-		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_plugins_egress_v1_egress_proto.Services().ByName("EgressService").Methods().ByName("Mint"),
-			Procedure:  EgressServiceMintProcedure,
-		}
-	})
-	egressServiceWriteSpec = sync.OnceValue(func() connect.Spec {
-		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_plugins_egress_v1_egress_proto.Services().ByName("EgressService").Methods().ByName("Write"),
-			Procedure:  EgressServiceWriteProcedure,
+			StreamType: connect.StreamTypeServer,
+			Schema:     v1.File_icebath_plugins_egress_v1_egress_proto.Services().ByName("EgressService").Methods().ByName("Turn"),
+			Procedure:  EgressServiceTurnProcedure,
 		}
 	})
 	egressServiceStartSpec = sync.OnceValue(func() connect.Spec {
@@ -103,13 +83,6 @@ var (
 			Procedure:  EgressServiceReloadProcedure,
 		}
 	})
-	egressServiceDisableSpec = sync.OnceValue(func() connect.Spec {
-		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_plugins_egress_v1_egress_proto.Services().ByName("EgressService").Methods().ByName("Disable"),
-			Procedure:  EgressServiceDisableProcedure,
-		}
-	})
 	egressServiceTextSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
 			StreamType: connect.StreamTypeUnary,
@@ -125,20 +98,15 @@ type EgressServiceClient interface {
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Installs the pinned iron-proxy program, or checks and repairs the managed copy
 	Install(context.Context, *v1.InstallRequest) (*v1.InstallResponse, error)
-	// Makes the certificate authority the proxy signs with, kept when there is one
-	Authority(context.Context, *v1.AuthorityRequest) (*v1.AuthorityResponse, error)
-	// Mints a token for every known provider whose key is set, keeping the tokens of those that had one unless told to rotate
-	Mint(context.Context, *v1.MintRequest) (*v1.MintResponse, error)
-	// Writes proxy.yaml and the mappings and turns the integration on
-	Write(context.Context, *v1.WriteRequest) (*v1.WriteResponse, error)
+	// Turns hiding the keys on, setting the proxy up first when it is not and starting it, or off, stopping it; each step told as it goes
+	// and how it ended last
+	Turn(context.Context, *v1.TurnRequest) (EgressServiceTurnClientStream, error)
 	// Starts the proxy, refusing when the key source can't give it the keys
 	Start(context.Context, *v1.StartRequest) (*v1.StartResponse, error)
 	// Stops the proxy
 	Stop(context.Context, *v1.StopRequest) (*v1.StopResponse, error)
 	// Reloads the running proxy's rules from proxy.yaml, keeping its connections
 	Reload(context.Context, *v1.ReloadRequest) (*v1.ReloadResponse, error)
-	// Turns the integration off
-	Disable(context.Context, *v1.DisableRequest) (*v1.DisableResponse, error)
 	// Status as plain lines, what /egress shows
 	Text(context.Context, *v1.TextRequest) (*v1.TextResponse, error)
 }
@@ -149,26 +117,41 @@ func NewEgressServiceClient(client *connect.Client) EgressServiceClient {
 	return &egressServiceClient{client: client}
 }
 
+// EgressServiceTurnClientStream is the client stream for the EgressService's Turn RPC.
+type EgressServiceTurnClientStream struct {
+	stream connect.ClientStream
+}
+
+// Receive returns the next response message from the server.
+func (s EgressServiceTurnClientStream) Receive() (*v1.TurnEvent, error) {
+	var res v1.TurnEvent
+	if err := s.stream.Receive(&res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// Close releases the stream's resources. It is idempotent and is typically deferred to clean up a
+// stream abandoned before io.EOF.
+func (s EgressServiceTurnClientStream) Close() error {
+	return s.stream.Close()
+}
+
 // EgressServiceHandler is an implementation of the icebath.plugins.egress.v1.EgressService service.
 type EgressServiceHandler interface {
 	// How the proxy stands: settings, program, files, process, token mappings and the providers it can't cover
 	Status(context.Context, *v1.StatusRequest) (*v1.StatusResponse, error)
 	// Installs the pinned iron-proxy program, or checks and repairs the managed copy
 	Install(context.Context, *v1.InstallRequest) (*v1.InstallResponse, error)
-	// Makes the certificate authority the proxy signs with, kept when there is one
-	Authority(context.Context, *v1.AuthorityRequest) (*v1.AuthorityResponse, error)
-	// Mints a token for every known provider whose key is set, keeping the tokens of those that had one unless told to rotate
-	Mint(context.Context, *v1.MintRequest) (*v1.MintResponse, error)
-	// Writes proxy.yaml and the mappings and turns the integration on
-	Write(context.Context, *v1.WriteRequest) (*v1.WriteResponse, error)
+	// Turns hiding the keys on, setting the proxy up first when it is not and starting it, or off, stopping it; each step told as it goes
+	// and how it ended last
+	Turn(context.Context, *v1.TurnRequest, EgressServiceTurnServerStream) error
 	// Starts the proxy, refusing when the key source can't give it the keys
 	Start(context.Context, *v1.StartRequest) (*v1.StartResponse, error)
 	// Stops the proxy
 	Stop(context.Context, *v1.StopRequest) (*v1.StopResponse, error)
 	// Reloads the running proxy's rules from proxy.yaml, keeping its connections
 	Reload(context.Context, *v1.ReloadRequest) (*v1.ReloadResponse, error)
-	// Turns the integration off
-	Disable(context.Context, *v1.DisableRequest) (*v1.DisableResponse, error)
 	// Status as plain lines, what /egress shows
 	Text(context.Context, *v1.TextRequest) (*v1.TextResponse, error)
 }
@@ -180,15 +163,27 @@ func RegisterEgressServiceHandler(server *connect.Server, svc EgressServiceHandl
 	server.Register(
 		connect.Method{Spec: egressServiceStatusSpec(), Handler: adapter.status},
 		connect.Method{Spec: egressServiceInstallSpec(), Handler: adapter.install},
-		connect.Method{Spec: egressServiceAuthoritySpec(), Handler: adapter.authority},
-		connect.Method{Spec: egressServiceMintSpec(), Handler: adapter.mint},
-		connect.Method{Spec: egressServiceWriteSpec(), Handler: adapter.write},
+		connect.Method{Spec: egressServiceTurnSpec(), Handler: adapter.turn},
 		connect.Method{Spec: egressServiceStartSpec(), Handler: adapter.start},
 		connect.Method{Spec: egressServiceStopSpec(), Handler: adapter.stop},
 		connect.Method{Spec: egressServiceReloadSpec(), Handler: adapter.reload},
-		connect.Method{Spec: egressServiceDisableSpec(), Handler: adapter.disable},
 		connect.Method{Spec: egressServiceTextSpec(), Handler: adapter.text},
 	)
+}
+
+// EgressServiceTurnServerStream is the server stream for the EgressService's Turn RPC.
+type EgressServiceTurnServerStream struct {
+	stream connect.ServerStream
+}
+
+// SendHeaders flushes the response headers without a message. The first Send does this implicitly.
+func (s EgressServiceTurnServerStream) SendHeaders() error {
+	return s.stream.SendHeaders()
+}
+
+// Send sends a response message to the client.
+func (s EgressServiceTurnServerStream) Send(res *v1.TurnEvent) error {
+	return s.stream.Send(res)
 }
 
 // UnimplementedEgressServiceHandler returns CodeUnimplemented from all methods.
@@ -202,16 +197,8 @@ func (UnimplementedEgressServiceHandler) Install(context.Context, *v1.InstallReq
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.egress.v1.EgressService.Install is not implemented")
 }
 
-func (UnimplementedEgressServiceHandler) Authority(context.Context, *v1.AuthorityRequest) (*v1.AuthorityResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.egress.v1.EgressService.Authority is not implemented")
-}
-
-func (UnimplementedEgressServiceHandler) Mint(context.Context, *v1.MintRequest) (*v1.MintResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.egress.v1.EgressService.Mint is not implemented")
-}
-
-func (UnimplementedEgressServiceHandler) Write(context.Context, *v1.WriteRequest) (*v1.WriteResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.egress.v1.EgressService.Write is not implemented")
+func (UnimplementedEgressServiceHandler) Turn(context.Context, *v1.TurnRequest, EgressServiceTurnServerStream) error {
+	return connect.NewError(connect.CodeUnimplemented, "icebath.plugins.egress.v1.EgressService.Turn is not implemented")
 }
 
 func (UnimplementedEgressServiceHandler) Start(context.Context, *v1.StartRequest) (*v1.StartResponse, error) {
@@ -224,10 +211,6 @@ func (UnimplementedEgressServiceHandler) Stop(context.Context, *v1.StopRequest) 
 
 func (UnimplementedEgressServiceHandler) Reload(context.Context, *v1.ReloadRequest) (*v1.ReloadResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.egress.v1.EgressService.Reload is not implemented")
-}
-
-func (UnimplementedEgressServiceHandler) Disable(context.Context, *v1.DisableRequest) (*v1.DisableResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.egress.v1.EgressService.Disable is not implemented")
 }
 
 func (UnimplementedEgressServiceHandler) Text(context.Context, *v1.TextRequest) (*v1.TextResponse, error) {
@@ -254,28 +237,12 @@ func (c *egressServiceClient) Install(ctx context.Context, req *v1.InstallReques
 	return &res, nil
 }
 
-func (c *egressServiceClient) Authority(ctx context.Context, req *v1.AuthorityRequest) (*v1.AuthorityResponse, error) {
-	var res v1.AuthorityResponse
-	if err := c.client.CallUnary(ctx, egressServiceAuthoritySpec(), req, &res); err != nil {
-		return nil, err
+func (c *egressServiceClient) Turn(ctx context.Context, req *v1.TurnRequest) (EgressServiceTurnClientStream, error) {
+	stream, err := c.client.CallServerStream(ctx, egressServiceTurnSpec(), req)
+	if err != nil {
+		return EgressServiceTurnClientStream{}, err
 	}
-	return &res, nil
-}
-
-func (c *egressServiceClient) Mint(ctx context.Context, req *v1.MintRequest) (*v1.MintResponse, error) {
-	var res v1.MintResponse
-	if err := c.client.CallUnary(ctx, egressServiceMintSpec(), req, &res); err != nil {
-		return nil, err
-	}
-	return &res, nil
-}
-
-func (c *egressServiceClient) Write(ctx context.Context, req *v1.WriteRequest) (*v1.WriteResponse, error) {
-	var res v1.WriteResponse
-	if err := c.client.CallUnary(ctx, egressServiceWriteSpec(), req, &res); err != nil {
-		return nil, err
-	}
-	return &res, nil
+	return EgressServiceTurnClientStream{stream: stream}, nil
 }
 
 func (c *egressServiceClient) Start(ctx context.Context, req *v1.StartRequest) (*v1.StartResponse, error) {
@@ -297,14 +264,6 @@ func (c *egressServiceClient) Stop(ctx context.Context, req *v1.StopRequest) (*v
 func (c *egressServiceClient) Reload(ctx context.Context, req *v1.ReloadRequest) (*v1.ReloadResponse, error) {
 	var res v1.ReloadResponse
 	if err := c.client.CallUnary(ctx, egressServiceReloadSpec(), req, &res); err != nil {
-		return nil, err
-	}
-	return &res, nil
-}
-
-func (c *egressServiceClient) Disable(ctx context.Context, req *v1.DisableRequest) (*v1.DisableResponse, error) {
-	var res v1.DisableResponse
-	if err := c.client.CallUnary(ctx, egressServiceDisableSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -344,40 +303,12 @@ func (h egressServiceHandler) install(ctx context.Context, _ connect.Spec, strea
 	return stream.Send(res)
 }
 
-func (h egressServiceHandler) authority(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.AuthorityRequest
+func (h egressServiceHandler) turn(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.TurnRequest
 	if err := stream.Receive(&req); err != nil {
 		return err
 	}
-	res, err := h.svc.Authority(ctx, &req)
-	if err != nil {
-		return err
-	}
-	return stream.Send(res)
-}
-
-func (h egressServiceHandler) mint(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.MintRequest
-	if err := stream.Receive(&req); err != nil {
-		return err
-	}
-	res, err := h.svc.Mint(ctx, &req)
-	if err != nil {
-		return err
-	}
-	return stream.Send(res)
-}
-
-func (h egressServiceHandler) write(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.WriteRequest
-	if err := stream.Receive(&req); err != nil {
-		return err
-	}
-	res, err := h.svc.Write(ctx, &req)
-	if err != nil {
-		return err
-	}
-	return stream.Send(res)
+	return h.svc.Turn(ctx, &req, EgressServiceTurnServerStream{stream: stream})
 }
 
 func (h egressServiceHandler) start(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
@@ -410,18 +341,6 @@ func (h egressServiceHandler) reload(ctx context.Context, _ connect.Spec, stream
 		return err
 	}
 	res, err := h.svc.Reload(ctx, &req)
-	if err != nil {
-		return err
-	}
-	return stream.Send(res)
-}
-
-func (h egressServiceHandler) disable(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.DisableRequest
-	if err := stream.Receive(&req); err != nil {
-		return err
-	}
-	res, err := h.svc.Disable(ctx, &req)
 	if err != nil {
 		return err
 	}

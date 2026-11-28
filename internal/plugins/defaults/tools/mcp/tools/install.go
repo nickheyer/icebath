@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/mcp"
 	mcpconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/mcp/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Value a manifest names for the folder its repository was cloned to
@@ -94,24 +95,86 @@ func (m *Manager) Check(name string, settings map[string]any) []string {
 	return issues
 }
 
-// Keeps a server's settings, refusing a backdoor shape; the issues that refused it
+// Keeps a server's settings once its name and its shape check out, the one way a server is saved: from its page, icebath mcp, the catalog,
+// a server a plugin ships once you change it, and the settings service. A backdoor shape is refused with the issues that refused it; its
+// variables are kept as a table of names and values
 func (m *Manager) Save(cfg *config.Config, name string, settings map[string]any) ([]string, error) {
 	if !config.Named(name) {
 		return nil, fmt.Errorf("“%s” cannot name an MCP server. Use lower case letters, digits, dashes and underscores.", name)
 	}
+	settings = normal(settings)
 	if issues := validate(name, settings); len(issues) > 0 {
 		return append(issues, fmt.Sprintf("The MCP server %s was not saved, because its settings look like an attack.", name)), nil
 	}
 	if _, err := parseCosts(name, settings); err != nil {
 		return nil, err
 	}
+	if settings[mcpconfig.URL] == nil && strings.TrimSpace(fmt.Sprint(orNil(settings[mcpconfig.Command]))) == "" {
+		return nil, fmt.Errorf("The MCP server %s needs a command to run on this computer or an address to reach.", name)
+	}
 	return nil, m.config.In(cfg.Profile()).Set(mcpconfig.Servers+"."+name, settings)
 }
 
-// Removes a server's settings and its sign in, stopping it; false when the profile has none of that name
+// Settings of a server as they are kept: the words its command is given as one line a shell splits, and its variables written as a list of
+// NAME=value as a table of names and values
+func normal(settings map[string]any) map[string]any {
+	out := maps.Clone(settings)
+	switch args := settings["args"].(type) {
+	case []any, []string:
+		if words := stringList(args); len(words) > 0 {
+			out["args"] = strs.Quote(words)
+		} else {
+			delete(out, "args")
+		}
+	}
+	if list, ok := settings["env"].([]any); ok {
+		env := map[string]any{}
+		for name, value := range envOf(list) {
+			env[name] = value
+		}
+		out["env"] = env
+	}
+	return out
+}
+
+// Settings a server starts from when it is changed: those the profile keeps, else those of the plugin that ships it; nil for neither
+func (m *Manager) base(cfg *config.Config, name string) map[string]any {
+	if stored := m.Stored(cfg, name); stored != nil {
+		return cloneDeep(stored)
+	}
+	for _, entry := range m.catalog.Bundled(m.config.In(cfg.Profile())) {
+		if entry.Name == name {
+			return cloneDeep(entryConfig(entry, ""))
+		}
+	}
+	return nil
+}
+
+// Copy of a table and of every table inside it
+func cloneDeep(table map[string]any) map[string]any {
+	out := make(map[string]any, len(table))
+	for k, v := range table {
+		if inner, ok := v.(map[string]any); ok {
+			v = cloneDeep(inner)
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// Removes a server's settings and its sign in, stopping it; false when the profile has none of that name. A sign in made for a server that
+// was then never kept, as when adding one stops after its sign in, is forgotten all the same
 func (m *Manager) Remove(cfg *config.Config, name string) (bool, error) {
-	if m.Stored(cfg, name) == nil {
+	if !config.Named(name) {
 		return false, nil
+	}
+	if m.Stored(cfg, name) == nil {
+		if m.base(cfg, name) != nil {
+			return false, nil
+		}
+		p := m.pool(cfg)
+		p.forgetProvider(name)
+		return false, p.store(name).Remove(false)
 	}
 	p := m.pool(cfg)
 	p.drop(name)
@@ -122,52 +185,57 @@ func (m *Manager) Remove(cfg *config.Config, name string) (bool, error) {
 	return true, p.store(name).Remove(false)
 }
 
-// Turns a server on or off for new sessions
-func (m *Manager) Enable(cfg *config.Config, name string, enabled bool) error {
-	entry := m.Stored(cfg, name)
+// Saves a server changed as change says, from the settings it starts from, telling why it was refused
+func (m *Manager) change(cfg *config.Config, name string, change func(entry map[string]any)) error {
+	entry := m.base(cfg, name)
 	if entry == nil {
 		return fmt.Errorf("No MCP server is called “%s”. Run icebath mcp list to see yours.", name)
 	}
-	entry["enabled"] = enabled
-	return m.config.In(cfg.Profile()).Set(mcpconfig.Servers+"."+name, entry)
+	change(entry)
+	issues, err := m.Save(cfg, name, entry)
+	if err == nil && len(issues) > 0 {
+		err = errors.New(strings.Join(issues, " "))
+	}
+	return err
+}
+
+// Turns a server on or off for new sessions; a server a plugin ships is kept by the profile from then on
+func (m *Manager) Enable(cfg *config.Config, name string, enabled bool) error {
+	return m.change(cfg, name, func(entry map[string]any) { entry[mcpconfig.Enabled] = enabled })
 }
 
 // Keeps the tool filter of a server: only the tools of values for include, all but them for exclude; no values drops the filter
 func (m *Manager) SetFilter(cfg *config.Config, name, mode string, values []string) error {
-	entry := m.Stored(cfg, name)
-	if entry == nil {
-		return fmt.Errorf("No MCP server is called “%s”. Run icebath mcp list to see yours.", name)
-	}
-	if values == nil {
-		delete(entry, "tools")
-	} else {
-		block := table(entry["tools"])
+	return m.change(cfg, name, func(entry map[string]any) {
+		block := table(entry[mcpconfig.Filter])
 		if block == nil {
 			block = map[string]any{}
 		}
-		list := make([]any, len(values))
-		for i, v := range values {
-			list[i] = v
+		delete(block, mcpconfig.Include)
+		delete(block, mcpconfig.Exclude)
+		if values != nil {
+			block[mode] = anyList(values)
 		}
-		block[mode] = list
-		other := "exclude"
-		if mode == "exclude" {
-			other = "include"
+		if len(block) == 0 {
+			delete(entry, mcpconfig.Filter)
+			return
 		}
-		delete(block, other)
-		entry["tools"] = block
-	}
-	return m.config.In(cfg.Profile()).Set(mcpconfig.Servers+"."+name, entry)
+		entry[mcpconfig.Filter] = block
+	})
 }
 
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// Keeps a value the servers' settings name as ${NAME}
+// Keeps a value the servers' settings name as ${NAME}, the one way such a value is set or, empty, removed
 func (m *Manager) SetValue(cfg *config.Config, name, value string) error {
 	if !envName.MatchString(name) {
 		return fmt.Errorf("“%s” cannot name a value. Use letters, digits and underscores, and do not start with a digit.", name)
 	}
-	return m.config.In(cfg.Profile()).Set(mcpconfig.Env+"."+strings.ToLower(name), value)
+	var kept any = value
+	if value == "" {
+		kept = nil
+	}
+	return m.config.In(cfg.Profile()).Set(mcpconfig.Env+"."+name, kept)
 }
 
 // Value a server's settings name as ${NAME}: the environment's, else the profile's, empty when neither has one
@@ -176,7 +244,7 @@ func (m *Manager) Value(cfg *config.Config, name string) string {
 		return v
 	}
 	values := table(m.config.In(cfg.Profile()).Get(mcpconfig.Env))
-	if v, ok := values[strings.ToLower(name)]; ok && v != nil {
+	if v, ok := values[name]; ok && v != nil {
 		return fmt.Sprint(v)
 	}
 	return ""
@@ -347,8 +415,12 @@ type InstallError struct {
 
 func (e *InstallError) Error() string { return e.Msg }
 
-// Removes a server installed from the catalog and its cloned files; whether anything was removed
+// Removes a server installed from the catalog and its cloned files; whether anything was removed. Only a name a server can have names a
+// folder of cloned files: any other, such as one with a path in it, removes nothing
 func (m *Manager) Uninstall(cfg *config.Config, name string) (bool, error) {
+	if !config.Named(name) {
+		return false, fmt.Errorf("“%s” cannot name an MCP server. Use lower case letters, digits, dashes and underscores.", name)
+	}
 	removed, err := m.Remove(cfg, name)
 	if err != nil {
 		return removed, err

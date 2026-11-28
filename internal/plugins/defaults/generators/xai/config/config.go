@@ -7,7 +7,8 @@ const (
 	ImageModel = ImageKey + ".model"
 	Resolution = ImageKey + ".resolution"
 
-	VideoKey = generationconfig.VideoKey + ".xai"
+	VideoKey   = generationconfig.VideoKey + ".xai"
+	VideoModel = VideoKey + ".model"
 )
 
 // Settings of xAI's storage of what it makes, below the image or video key

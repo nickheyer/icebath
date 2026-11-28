@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/internal/packages"
 	"github.com/nickheyer/icebath/internal/speech"
 	speechconfig "github.com/nickheyer/icebath/internal/speech/config"
 	"github.com/nickheyer/icebath/internal/speech/portaudio"
@@ -88,7 +87,7 @@ func describe(selector any, pa *portaudio.Audio) Device {
 func silentHint(d Device) string {
 	if runtime.GOOS == "darwin" {
 		return "Let your terminal or the icebath desktop app use the microphone in System Settings › Privacy & Security › Microphone, " +
-			"then run /wake off and /wake on."
+			"then turn Listen hands-free off and on."
 	}
 	label := strings.TrimSpace(d.Name)
 	if label == "" {
@@ -102,9 +101,9 @@ func silentHint(d Device) string {
 		label += " through " + host
 	}
 	if runtime.GOOS == "windows" {
-		return "It listens on " + label + ". Pick another Microphone in /settings under Wake word, then run /wake off and /wake on."
+		return "It listens on " + label + ". Pick another Microphone, then turn Listen hands-free off and on."
 	}
-	return "It listens on " + label + ". Check that this microphone is the right one and not muted, then run /wake off and /wake on."
+	return "It listens on " + label + ". Check that this microphone is the right one and not muted, then turn Listen hands-free off and on."
 }
 
 // One capture block at the microphone's rate as an exact engine frame, averaged down or interpolated up
@@ -486,38 +485,65 @@ func (m *Mode) wakeOf(w *speechv1.Wake) *speech.Wake {
 
 // Engine the settings pick: auto taking the open vocabulary engine unless a model file is set
 func (m *Mode) engine(w *speechv1.Wake) (speech.Engine, bool) {
+	return Listener(m.speech, w)
+}
+
+// Engine the wake settings pick on this machine: auto taking the open vocabulary engine unless a model file is set; false for a name no
+// engine has
+func Listener(sp *speech.Speech, w *speechv1.Wake) (speech.Engine, bool) {
 	model := false
-	for _, e := range m.speech.Engines() {
+	for _, e := range sp.Engines() {
 		if e.Model != "" && strings.TrimSpace(w.GetSettings()[e.Model]) != "" {
 			model = true
 		}
 	}
-	return m.speech.WakeEngine(w.GetProvider(), model)
+	return sp.WakeEngine(w.GetProvider(), model)
 }
 
-// Whether the wake word can listen on this machine, and how to make it when it can't
+// Whether the wake word can listen on this machine, and when it can't, what keeps it and what to do as the page of the wake word says it
 type WakeCheck struct {
 	Available bool
-	Engine    string
-	Phrase    string
-	Installed bool
-	Audio     bool
-	Input     bool
-	Key       bool
-	STT       bool
-	TTS       bool
-	Hint      string
+	// Engine the settings pick, by name and by title
+	Engine, Title string
+	Phrase        string
+	Installed     bool
+	Audio         bool
+	Input         bool
+	Key           bool
+	STT           bool
+	// What keeps it from listening, a clause; empty when nothing does
+	Cause string
+	// What to do, a sentence naming the row of the page of the wake word that does it
+	Fix string
+	// That row, as AtListener, AtMicrophone or AtRecognition name it, empty for none on the page; and what to do there first, said when
+	// turning the wake word on lands there
+	Row, First string
+}
+
+// Rows of the page of the wake word that do a step the wake word misses
+const (
+	AtListener    = "listener"
+	AtMicrophone  = "microphone"
+	AtRecognition = "recognition"
+)
+
+// What keeps the wake word from listening as one message, empty when nothing does
+func (c WakeCheck) Line() string {
+	if c.Cause == "" {
+		return ""
+	}
+	return strings.TrimSpace("The wake word can't listen yet: " + c.Cause + ". " + c.Fix)
 }
 
 func supported(sp *speech.Speech, e speech.Engine) bool {
 	return e.Supported == nil || e.Supported(sp)
 }
 
-func installed(sp *speech.Speech, e speech.Engine) bool {
+func installed(sp *speech.Speech, e speech.Engine, w *speechv1.Wake) bool {
 	if e.Installed == nil {
 		return supported(sp, e)
 	}
-	return e.Installed(sp)
+	return e.Installed(sp, w.GetSettings())
 }
 
 // Whether a microphone is there
@@ -537,73 +563,89 @@ func inputReady() bool {
 	return err == nil && d.MaxInputChannels > 0
 }
 
-// Checks engine, install, key, microphone, recognizer and voice without installing anything
-func (m *Mode) WakeCheck() WakeCheck {
-	settings := m.Settings()
-	w := settings.GetWake()
-	check := WakeCheck{Phrase: w.GetPhrase(), Key: true}
-	check.STT = settings.GetRecognition().GetLabel() != ""
-	check.TTS = settings.GetSpeaking().GetReady()
-	e, known := m.engine(w)
-	if !known {
-		check.Hint = fmt.Sprintf("No listener is named %s. Pick another Listener in /settings under Wake word.", w.GetProvider())
-		return check
-	}
-	check.Engine = e.Name
-	check.Installed = installed(m.speech, e)
-	platform := check.Installed || supported(m.speech, e)
-	if check.Installed {
-		check.Audio = audioLoads()
-		check.Input = inputReady()
-	}
-	modelOK := e.Model == "" || strings.TrimSpace(w.GetSettings()[e.Model]) != ""
-	auto := w.GetProvider() == "" || w.GetProvider() == speechconfig.AutoWake
+// State words of a listener, the same on its row and in every sentence
+const (
+	NeedsAccessKey = "Needs an access key"
+	NeedsModelFile = "Needs a model file"
+)
+
+// How a listener stands on this machine with the wake settings: its state words, what keeps it from listening with what to do about it as
+// the page of the wake word says it, whose Listener row does it, and what to do first as a note says it
+type Standing struct {
+	State, Cause, Fix, First string
+}
+
+// The one answer to how a listener stands here, picked by name or by Automatic alike: its build, its model file, its key and its install,
+// never installing anything
+func EngineStanding(sp *speech.Speech, w *speechv1.Wake, e speech.Engine) Standing {
 	switch {
-	case !platform && auto && e.Open:
-		check.Hint = fmt.Sprintf("%s, the listener that hears “%s”, has no build for this computer.", e.Title, w.GetPhrase())
-		for _, other := range m.speech.Engines() {
-			if other.Model != "" && supported(m.speech, other) {
-				check.Hint += " Give " + other.Title + " a model file trained for your phrase in /settings under Wake word › " + other.Title + "."
-				break
-			}
-		}
-	case !platform:
+	case !installed(sp, e, w) && !supported(sp, e):
 		var others []string
-		for _, other := range m.speech.Engines() {
-			if other.Name != e.Name && other.Model == "" && supported(m.speech, other) {
+		for _, other := range sp.Engines() {
+			if other.Name != e.Name && supported(sp, other) {
 				others = append(others, other.Title)
 			}
 		}
-		check.Hint = e.Title + " has no build for this computer."
+		s := Standing{State: speech.CantRun, Cause: e.Title + " has no build for this computer", First: "Pick another listener"}
 		if len(others) > 0 {
-			check.Hint += " Set Listener in /settings under Wake word to " + strings.Join(others, " or ") + "."
+			s.Fix = "Listener picks " + strs.Or(others) + "."
 		}
-	case !modelOK:
-		check.Hint = "Give " + e.Title + " a model file trained for your phrase in /settings under Wake word › " + e.Title +
-			fmt.Sprintf(", or set Listener there to Automatic so a listener that hears any phrase listens for “%s”.", w.GetPhrase())
+		return s
+	case e.Model != "" && strings.TrimSpace(w.GetSettings()[e.Model]) == "":
+		return Standing{State: NeedsModelFile, Cause: fmt.Sprintf("%s has no model file for “%s”", e.Title, w.GetPhrase()),
+			Fix: "Listener takes one, or picks Automatic.", First: "Give " + e.Title + " a model file"}
 	case e.Key && strings.TrimSpace(w.GetAccessKey()) == "":
-		check.Key = false
-		check.Hint = e.Title + " needs a Picovoice access key. Get one free at https://console.picovoice.ai, then set PORCUPINE_ACCESS_KEY in your keys file."
-	case !check.Installed:
-		check.Hint = e.Title + " is not installed. Run " + packages.InstallHint(e.Extra) + " to install it."
-	case !check.Audio:
-		check.Hint = "Listening needs PortAudio, the sound library icebath records with, and a working microphone."
-	case !check.STT || !check.TTS:
-		var missing, screens []string
-		if !check.STT {
-			missing, screens = append(missing, "speech to text"), append(screens, "/recognition")
-		}
-		if !check.TTS {
-			missing, screens = append(missing, "text to speech"), append(screens, "/speech")
-		}
-		them := "it"
-		if len(missing) > 1 {
-			them = "them"
-		}
-		check.Hint = fmt.Sprintf("The wake word needs %s. Set %s up in %s.", strings.Join(missing, " and "), them, strings.Join(screens, " and "))
+		return Standing{State: NeedsAccessKey, Cause: e.Title + " needs a Picovoice access key",
+			Fix: "Listener takes the key, which console.picovoice.ai gives free.", First: "Give " + e.Title + " its access key"}
+	case !installed(sp, e, w):
+		return Standing{State: speech.NotInstalled, Cause: e.Title + " is not installed", Fix: "Listener installs it.", First: "Install " + e.Title}
 	}
-	check.Available = platform && check.Key && modelOK && check.STT && check.TTS && check.Installed && check.Audio
+	return Standing{State: speech.Ready}
+}
+
+// The one answer to whether the wake word can listen here with the voice settings of a profile, the listener picked by name or by Automatic
+// alike: how its listener stands, the sound system, a microphone, then the speech to text that turns what you say after the phrase into
+// your message, never installing anything. Replies read aloud are no part of it, that is Speak replies
+func CheckWake(sp *speech.Speech, settings *speechv1.VoiceReply) WakeCheck {
+	w := settings.GetWake()
+	check := WakeCheck{Phrase: w.GetPhrase(), Key: true}
+	stt := settings.GetRecognition().GetHindrance()
+	check.STT = stt == nil
+	e, known := Listener(sp, w)
+	if !known {
+		check.Cause, check.Fix, check.Row, check.First = "no listener is called "+w.GetProvider(), "Listener picks another.", AtListener, "Pick another listener"
+		return check
+	}
+	check.Engine, check.Title = e.Name, e.Title
+	check.Installed = installed(sp, e, w)
+	if check.Installed {
+		check.Audio = audioLoads()
+		check.Input = check.Audio && inputReady()
+	}
+	standing := EngineStanding(sp, w, e)
+	check.Key = standing.State != NeedsAccessKey
+	switch {
+	case standing.Cause != "":
+		check.Cause, check.Fix, check.Row, check.First = standing.Cause, standing.Fix, AtListener, standing.First
+	case !check.Audio:
+		p := captureMissing()
+		if p == nil {
+			p = &Problem{Cause: "the sound system did not start"}
+		}
+		check.Cause, check.Fix, check.First = p.Cause, p.Fix, "Make the sound system start"
+	case !check.Input:
+		check.Cause, check.Fix, check.Row, check.First = "no microphone was found", "Microphone picks one once it is connected.", AtMicrophone,
+			"Connect a microphone"
+	case !check.STT:
+		check.Cause, check.Fix, check.Row, check.First = stt.GetCause(), Fix(stt, "Speech to text"), AtRecognition, "Set up speech to text"
+	}
+	check.Available = check.Cause == ""
 	return check
+}
+
+// Whether the wake word can listen here with the settings last read
+func (m *Mode) WakeCheck() WakeCheck {
+	return CheckWake(m.speech, m.Settings())
 }
 
 // Whether a surface may host the listener
@@ -620,7 +662,7 @@ const (
 	WakeOwned       = "owned"
 )
 
-// What arming the wake word came to
+// What arming the wake word came to: listening for the phrase with the engine of the title, else why not, with what to do
 type WakeStart struct {
 	Started bool
 	Reason  string
@@ -636,8 +678,8 @@ func (m *Mode) StartWake(ctx context.Context, surface string, enabled bool) Wake
 	w := settings.GetWake()
 	check := m.WakeCheck()
 	if !check.Available {
-		slog.Warn(fmt.Sprintf("wake.start(%s): not available — %s", surface, check.Hint))
-		return WakeStart{Reason: WakeUnavailable, Hint: check.Hint}
+		slog.Warn(fmt.Sprintf("wake.start(%s): not available — %s", surface, check.Line()))
+		return WakeStart{Reason: WakeUnavailable, Hint: check.Line()}
 	}
 	enabled = enabled || w.GetEnabled()
 	if !surfaceAllowed(w, enabled, surface) {
@@ -672,9 +714,9 @@ func (m *Mode) StartWake(ctx context.Context, surface string, enabled bool) Wake
 		slog.Warn(fmt.Sprintf("wake.start(%s): failed to start listener: %s", surface, err))
 		return WakeStart{Reason: WakeUnavailable, Hint: err.Error()}
 	}
-	fresh := w.GetNewSession()
+	routed := w.GetRouting()
 	d := &detector{engine: hotword, input: inputSelector(w.GetInputDevice()), failed: m.wakeFailed}
-	l := &listener{detector: d, release: release, phrase: w.GetPhrase(), engine: e.Name, surface: surface}
+	l := &listener{detector: d, release: release, phrase: w.GetPhrase(), engine: e.Title, surface: surface}
 	d.onWake = func() {
 		if !m.pauseWake() {
 			return
@@ -686,8 +728,10 @@ func (m *Mode) StartWake(ctx context.Context, surface string, enabled bool) Wake
 			}
 		}
 		slog.Info(fmt.Sprintf("wake.detected: profile=%q", profile))
+		// Start a new session is read as the phrase is heard, so a change to it counts at once
+		fresh := m.Settings().GetWake().GetNewSession()
 		if m.events.Woke != nil {
-			call(func() { m.events.Woke(phrase, profile, fresh) })
+			call(func() { m.events.Woke(phrase, profile, routed, fresh) })
 		}
 	}
 	m.mu.Lock()
@@ -792,7 +836,7 @@ type WakeState struct {
 func (m *Mode) WakeStatus() WakeState {
 	w := m.Settings().GetWake()
 	check := m.WakeCheck()
-	state := WakeState{Phrase: check.Phrase, Engine: check.Engine, Enabled: w.GetEnabled(), Check: check, Hint: check.Hint}
+	state := WakeState{Phrase: check.Phrase, Engine: check.Title, Enabled: w.GetEnabled(), Check: check, Hint: check.Line()}
 	m.mu.Lock()
 	l := m.wake
 	m.mu.Unlock()
@@ -806,7 +850,7 @@ func (m *Mode) WakeStatus() WakeState {
 		state.Device = describe(inputSelector(w.GetInputDevice()), nil)
 	}
 	if state.Device.Error != "" && state.Hint == "" {
-		state.Hint = "The wake word microphone could not be found: " + strings.TrimSuffix(state.Device.Error, ".") + "."
+		state.Hint = "The wake word microphone was not found. Pick another Microphone. The error was: " + strings.TrimSuffix(state.Device.Error, ".") + "."
 	}
 	if state.Silent && state.Hint == "" {
 		state.Hint = silentHint(state.Device)

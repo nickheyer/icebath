@@ -596,3 +596,8 @@ func (a *Agent) control(ctx context.Context, session, action string, args map[st
 		"appended to its next tool result — the current tool call is never cut. If the child finishes before a delivery boundary remains, the text is " +
 		"reported back as missed_steer in its completion entry."})
 }
+
+// The group of the tool that hands work to subagents, whose options are the area of subagents
+func (d delegates) Groups() []tools.Group {
+	return []tools.Group{{Title: "Subagents", Area: delegationconfig.Key, Order: 120}}
+}

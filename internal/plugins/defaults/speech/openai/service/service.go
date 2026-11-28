@@ -18,7 +18,6 @@ import (
 	configapi "github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/plugins/defaults/speech/openai/config"
 	"github.com/nickheyer/icebath/internal/speech"
-	speechconfig "github.com/nickheyer/icebath/internal/speech/config"
 	"github.com/nickheyer/icebath/internal/web"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
@@ -26,8 +25,8 @@ import (
 // Where an OpenAI key is made
 const link = "https://platform.openai.com/api-keys"
 
-// What a missing key says, naming the section whose OpenAI API key is empty
-const noKey = "OpenAI has no API key. Set API key in /settings under %s, then OpenAI, or set VOICE_TOOLS_OPENAI_KEY or OPENAI_API_KEY."
+// What a missing key says: the one place a key of OpenAI's speech is kept, the keys file
+const noKey = "OpenAI needs an API key. Give it one in Settings › Voice › %s › OpenAI, which keeps it in your keys file as " + speech.OpenAIAudioKey + "."
 
 // Models of Groq's catalog, retired ones included, swapped for OpenAI's default
 var groqModels = strs.Set("whisper-large-v3-turbo", "whisper-large-v3", "distil-whisper-large-v3-en")
@@ -47,10 +46,14 @@ func Register(registry *speech.Registry) {
 				Open: stream},
 			Opus:  speech.NativeOpus,
 			Setup: setup,
+			Choices: []speech.Choices{
+				speech.Fixed(config.TTSVoice, "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"),
+				speech.Fixed(config.TTSModel, "gpt-4o-mini-tts", "tts-1", "tts-1-hd"),
+			},
 		}},
 		Recognizing: []speech.Recognizer{{
 			Name: config.Name, Title: "OpenAI", About: "Accurate speech to text, needs an OpenAI API key", Cloud: true, Rank: 4, Whisper: true,
-			Detected: "OpenAI Whisper API", Explains: true,
+			Detected: "OpenAI Whisper API",
 			Missing: func(_ context.Context, job *speech.Job) string {
 				_, _, err := listenRoute(job)
 				if err != nil {
@@ -73,29 +76,13 @@ func Register(registry *speech.Registry) {
 	})
 }
 
-// Key and address of OpenAI speech: tts.openai.api_key, then the voice key, then the OpenAI key or account; the refusal naming them when
-// none is set
+// Key and address of OpenAI speech: the voice key of the keys file, then the OpenAI key or account; the refusal saying where a key goes
+// when none is set
 func speakRoute(job *speech.Job) (string, string, error) {
-	if key := strs.Filled(job.Text(config.TTSAPIKey, ""), job.OpenAIKey()); key != "" {
+	if key := job.OpenAIKey(); key != "" {
 		return key, job.Text(config.TTSBaseURL, speech.OpenAIBase), nil
 	}
-	return "", "", refusal(job, speechconfig.TTS)
-}
-
-// Refusal of a missing key, naming the service the profile itself chose, a choice of the session's layer alone not counting
-func refusal(job *speech.Job, section string) error {
-	choice := speechconfig.TTSProvider
-	if section == speechconfig.STT {
-		choice = speechconfig.STTProvider
-	}
-	name := "Text to speech"
-	if section == speechconfig.STT {
-		name = "Speech to text"
-	}
-	if chosen := speech.Chosen(job.Config.With(nil), choice); chosen != "" {
-		return speech.Misconfigured(fmt.Sprintf("%s is set to use %s, and %s", name, chosen, fmt.Sprintf(noKey, name)))
-	}
-	return speech.Misconfigured(fmt.Sprintf(noKey, name))
+	return "", "", speech.Misconfigured(fmt.Sprintf(noKey, "Text to speech"))
 }
 
 // Fields beside OpenAI's own an OpenAI compatible speech server takes: the language as lang_code and the consent of a cloned voice
@@ -122,9 +109,9 @@ func synthesize(ctx context.Context, job *speech.Job, request speech.Request) (s
 	return request.Path, err
 }
 
-// Key of live speech: tts.openai.api_key, else the voice key, then the OpenAI key or account
+// Key of live speech: the voice key, then the OpenAI key or account
 func streamKey(job *speech.Job) string {
-	return strs.Filled(job.Text(config.TTSAPIKey, ""), job.OpenAIKey())
+	return job.OpenAIKey()
 }
 
 // Rate parameter of a content type, spaced by any of the white space a header may hold
@@ -197,17 +184,18 @@ func private(address string) bool {
 	return err == nil && web.Private(addr)
 }
 
-// Key and address of OpenAI transcription: stt.openai.api_key with its endpoint; a private endpoint with no key; else the voice key or
-// OpenAI key, which goes to the configured endpoint only when STT_OPENAI_BASE_URL set it, else to OpenAI
+// Key and address of OpenAI transcription: the voice key of the keys file with the configured endpoint, the key of OpenAI's speech that it
+// is; a private endpoint with no key; else the OpenAI key or account, which goes to the configured endpoint only when STT_OPENAI_BASE_URL
+// set it, else to OpenAI
 func listenRoute(job *speech.Job) (string, string, error) {
-	key, base := job.Text(config.STTAPIKey, ""), job.Text(config.STTBaseURL, "")
-	switch {
+	base := job.Text(config.STTBaseURL, "")
+	switch key := job.Getenv(speech.OpenAIAudioKey); {
 	case key != "":
 		return key, strs.Filled(base, speech.OpenAIBase), nil
 	case base != "" && private(base):
 		return "not-needed", base, nil
 	}
-	if key = job.OpenAIKey(); key != "" {
+	if key := job.Key("OPENAI_API_KEY", "openai-api"); key != "" {
 		if _, setting, ok := job.Config.Setting(config.STTBaseURL); ok {
 			if source, _ := job.Config.Source(setting); source == configapi.FromEnvironment {
 				return key, strs.Filled(base, speech.OpenAIBase), nil
@@ -215,7 +203,7 @@ func listenRoute(job *speech.Job) (string, string, error) {
 		}
 		return key, speech.OpenAIBase, nil
 	}
-	return "", "", refusal(job, speechconfig.STT)
+	return "", "", speech.Misconfigured(fmt.Sprintf(noKey, "Speech to text"))
 }
 
 // Transcription client of an OpenAI compatible service, such as Groq and DeepInfra beside OpenAI itself, tried and bounded as the OpenAI

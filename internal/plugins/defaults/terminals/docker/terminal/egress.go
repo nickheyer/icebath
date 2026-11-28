@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const (
@@ -56,13 +57,13 @@ func egressOf(proxy terminal.Proxy) (egress, error) {
 	}
 	switch {
 	case !proxy.Configured:
-		return degraded("The sandbox proxy is on but not set up. Run `icebath egress setup` to make its tokens and write proxy.yaml.")
+		return degraded("The key proxy is on but not set up. Set it up in Key proxy, in /sandbox, or with `icebath egress setup`.")
 	case !proxy.Running:
-		return degraded(fmt.Sprintf("The sandbox proxy is on but not running on port %d. Start it with `icebath egress start`.", proxy.Port))
+		return degraded(fmt.Sprintf("The key proxy is on but not running on port %d. Start it in Key proxy, in /sandbox, or with `icebath egress start`.", proxy.Port))
 	case proxy.CA == "" || !fsx.IsFile(proxy.CA):
-		return degraded(fmt.Sprintf("The CA certificate of the sandbox proxy is missing from %s. Run `icebath egress setup` again to make a new one.", proxy.CA))
+		return degraded(fmt.Sprintf("The CA certificate of the key proxy is missing from %s. Set the proxy up again in Key proxy, in /sandbox, or with `icebath egress setup`.", proxy.CA))
 	case len(proxy.Tokens) == 0:
-		return degraded("The sandbox proxy is set up, but its mappings.json is empty or damaged. Run `icebath egress setup` again to make provider " +
+		return degraded("The key proxy is set up, but its mappings.json is empty or damaged. Set it up again in Key proxy, in /sandbox, or with `icebath egress setup`, to make provider " +
 			"tokens before a sandbox starts.")
 	}
 	secure, plain := fmt.Sprintf("http://host.docker.internal:%d", proxy.Port), fmt.Sprintf("http://host.docker.internal:%d", proxy.Port+1)
@@ -112,7 +113,7 @@ func collision(text string, enforce bool, remedy, consequence string) error {
 	if enforce {
 		return errors.New(text + " " + remedy)
 	}
-	slog.Warn(text+" Required for Docker is off under Sandbox proxy. "+consequence, "enforce_on_docker", false)
+	slog.Warn(text+" Required for Docker is off in Key proxy. "+consequence, "enforce_on_docker", false)
 	return nil
 }
 
@@ -129,9 +130,9 @@ func (e egress) checkForward(forward []string) error {
 		return nil
 	}
 	slices.Sort(hit)
-	return collision(fmt.Sprintf("Passed-in variables in /settings under Terminal › Docker would hand the sandbox the real values of %s, which the "+
-		"sandbox proxy keeps out.", listOf(hit)), e.enforce,
-		"Remove them from Passed-in variables, or turn off Required for Docker under Sandbox proxy to let the sandbox have them.",
+	return collision(fmt.Sprintf("Passed-in variables on the Docker page of /sandbox would hand the sandbox the real values of %s, which the "+
+		"key proxy keeps out.", listOf(hit)), e.enforce,
+		"Remove them from Passed-in variables, or turn off Required for Docker in Key proxy, in /sandbox, to let the sandbox have them.",
 		"The values passed in win over the tokens of the proxy.")
 }
 
@@ -167,8 +168,8 @@ func (e egress) checkEnv(env map[string]string) error {
 		return nil
 	}
 	slices.Sort(hit)
-	return collision(fmt.Sprintf("Variables in /settings under Terminal › Docker set %s, which the sandbox proxy sets itself.", listOf(hit)), e.enforce,
-		"Remove them from Variables, or turn off Required for Docker under Sandbox proxy to let your values win.",
+	return collision(fmt.Sprintf("Variables on the Docker page of /sandbox set %s, which the key proxy sets itself.", listOf(hit)), e.enforce,
+		"Remove them from Variables, or turn off Required for Docker in Key proxy, in /sandbox, to let your values win.",
 		"Your values win, so sandbox traffic does not go through the proxy.")
 }
 
@@ -249,8 +250,8 @@ func (e egress) checkExtra(extra []string) error {
 		hit = append(hit, name)
 	}
 	slices.Sort(hit)
-	return collision(fmt.Sprintf("Extra flags in /settings under Terminal › Docker set %s, which the sandbox proxy controls.", listOf(hit)), e.enforce,
-		"Remove those flags, or turn off Required for Docker under Sandbox proxy to let them through.",
+	return collision(fmt.Sprintf("Extra flags on the Docker page of /sandbox set %s, which the key proxy controls.", listOf(hit)), e.enforce,
+		"Remove those flags, or turn off Required for Docker in Key proxy, in /sandbox, to let them through.",
 		"The extra flags may send sandbox traffic around the proxy.")
 }
 
@@ -305,8 +306,5 @@ func listOf(items []string) string {
 	for i, item := range items {
 		quoted[i] = strconv.Quote(item)
 	}
-	if len(quoted) < 2 {
-		return strings.Join(quoted, "")
-	}
-	return strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
+	return strs.And(quoted)
 }

@@ -19,6 +19,7 @@ func Register(cfg *config.Config) {
 			{Key: CJKFTS, Title: "Search East Asian text", About: "Make Chinese, Japanese and Korean text in sessions searchable.", Default: true,
 				Apply: config.Restart},
 			{Key: Path, Title: "Database file", About: "The file sessions are saved in.", Default: filepath.Join(cfg.Dir(), "sessions.db"), Apply: config.Restart,
+				Path:     &config.Path{Kind: config.PathFile},
 				Advanced: true},
 			{Key: JournalMode, Title: "Journal mode", About: "How the database writes changes to disk.", Default: WAL,
 				Help: "Pick Delete on network drives. A database in write-ahead mode stays so until `icebath sessions set-journal-mode delete`.",

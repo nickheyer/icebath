@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
@@ -28,8 +29,9 @@ func (r *Registry) Rotates(account Account) bool {
 	return false
 }
 
-// What the accounts of providers do as profiles are made: a copy of a profile drops the sign-ins whose refresh token works once, and a fresh
-// profile takes the providers and accounts of the profile it is made from without those
+// What the accounts of providers do as profiles are made: a copy of a profile drops the sign-ins whose refresh token works once, a copy made
+// without credentials drops every account that kept a key or a sign-in of its own, and a fresh profile takes the providers and accounts of
+// the profile it is made from without those
 type Profiles struct {
 	Credentials *Credentials
 	Providers   *provider.Registry
@@ -65,10 +67,30 @@ func (p Profiles) dropRotating(cfg *config.Config) ([]string, error) {
 	return dropped, nil
 }
 
+// Removes the accounts of a copy made without credentials that kept a key or a sign-in of their own, which the copy left out: every account
+// but those that read their key from a variable or use the sign-in of another program on this computer. So no account stands without the
+// credential that makes it one
+func (p Profiles) dropKept(cfg *config.Config) error {
+	for _, instance := range p.Providers.Instances(cfg) {
+		for _, name := range instance.Accounts {
+			account := Of(instance, name)
+			if strings.TrimSpace(account.Fields.GetString(providerconfig.KeyEnv)) != "" || account.Program() != "" {
+				continue
+			}
+			if _, err := p.Providers.RemoveAccount(context.Background(), cfg, instance.ID, name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (p Profiles) Made(making profile.Making) ([]string, error) {
 	target := p.Config.In(making.Profile)
 	var lines []string
 	switch {
+	case making.Source != "" && making.Bare:
+		return nil, p.dropKept(target)
 	case making.Source != "":
 	case making.Bare || making.Launch == "":
 		return nil, nil
@@ -84,8 +106,8 @@ func (p Profiles) Made(making profile.Making) ([]string, error) {
 	}
 	dropped, err := p.dropRotating(target)
 	if len(dropped) > 0 {
-		lines = append(lines, fmt.Sprintf("⚠ These accounts were not copied, because each can renew only once: %s. Sign them in on the profile %s "+
-			"from /providers.", strings.Join(dropped, ", "), making.Profile))
+		lines = append(lines, fmt.Sprintf("⚠ These accounts were not copied, because each can renew only once: %s. Sign them in again on the "+
+			"profile %s.", strings.Join(dropped, ", "), making.Profile))
 	}
 	return lines, err
 }

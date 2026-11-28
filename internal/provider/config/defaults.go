@@ -7,7 +7,7 @@ func Register(cfg *config.Config, providers config.Registrant) {
 	cfg.Register(config.Sections{{
 		Key:   Key,
 		Title: "Providers",
-		About: "Accounts and API keys for the AI services you use",
+		About: "A provider runs the models the agent works with",
 		Group: config.GroupModels,
 		Order: 10,
 	}})

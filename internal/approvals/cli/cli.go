@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/internal/cli"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	approvalsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/approvals/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/approvals/v1/approvalsv1connect"
 	"github.com/nickheyer/icebath/pkg/strs"
@@ -26,9 +27,10 @@ type exit int
 func (e exit) Error() string { return "" }
 func (e exit) ExitCode() int { return int(e) }
 
-const usage = "usage: icebath approvals <subcommand>\n\nsubcommands:\n  suggest    Mine past approval decisions into a proposed\n" +
-	"             command_allowlist (dry by default; --apply N,M to merge)\n  test       Dry-run the approval verdict for a command without\n" +
-	"             executing it (exit 0 allow / 2 ask / 3 deny)\n\nRun `icebath approvals <subcommand> -h` for details.\n"
+const usage = "Usage: icebath approvals <command>\n\nCommands:\n  list       Show what runs without asking\n" +
+	"  allow      Let a command or a pattern run without asking\n  remove     Ask again before a command or a pattern\n" +
+	"  mode       Set when the agent asks\n  suggest    Suggest commands from your past approvals\n" +
+	"  test       Show whether a command would run, ask first or be refused\n\nRun icebath approvals <command> -h for more.\n"
 
 type commands struct{}
 
@@ -41,16 +43,17 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	root := &cobra.Command{
 		Use:     "approvals",
 		GroupID: cli.GroupSafety,
-		Short:   "Suggest and test the commands that run without asking",
-		Long: "The agent asks before it runs a risky command, unless the command is one of your allowed commands. suggest proposes allowed " +
-			"commands from the ones you approved before. test shows what would happen to a command, without running it.",
+		Short:   "Choose the commands that run without asking",
+		Long: "The agent asks before it runs a risky command, unless the command runs without asking. list shows what runs without asking, " +
+			"allow and remove change it, and mode sets when the agent asks. suggest proposes commands from the ones you approved before. test " +
+			"shows what would happen to a command, without running it.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmt.Fprint(cmd.OutOrStdout(), usage)
 			return exit(1)
 		},
 	}
-	root.AddCommand(suggest(service), test(service))
+	root.AddCommand(list(service), allow(service), remove(service), mode(service), suggest(service), test(service))
 	return []*cobra.Command{root}
 }
 
@@ -68,7 +71,7 @@ func suggest(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
 			d := int32(days)
-			response, err := service.Suggest(cmd.Context(), &approvalsv1.SuggestRequest{Days: &d, MinCount: int32(least), Limit: int32(limit), Store: store})
+			response, err := service.Suggest(cmd.Context(), &approvalsv1.SuggestRequest{Profile: picked.Picked(cmd.Context()), Days: &d, MinCount: int32(least), Limit: int32(limit), Store: store})
 			if err != nil {
 				if failure, ok := errors.AsType[*connect.Error](err); ok && failure.Code() == connect.CodeNotFound {
 					fmt.Fprintf(out, "✗ The session store could not be found. %s\n", failure.Message())
@@ -87,7 +90,7 @@ func suggest(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 				for _, i := range indices {
 					patterns = append(patterns, proposals[i].GetPattern())
 				}
-				allowed, err := service.Allow(cmd.Context(), &approvalsv1.AllowRequest{Patterns: patterns})
+				allowed, err := service.Allow(cmd.Context(), &approvalsv1.AllowRequest{Profile: picked.Picked(cmd.Context()), Patterns: patterns})
 				if err != nil {
 					return err
 				}
@@ -95,11 +98,11 @@ func suggest(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 					fmt.Fprintf(out, "{\"applied\": %s, \"allowlist_size\": %d}\n", spacedList(patterns), allowed.GetSize())
 					return nil
 				}
-				fmt.Fprintln(out, "✓ Added to Allowed commands in /settings under Approvals:")
+				fmt.Fprintln(out, "✓ These now run without asking:")
 				for _, pattern := range patterns {
 					fmt.Fprintf(out, "  + %s\n", pattern)
 				}
-				fmt.Fprintf(out, "\nAllowed commands now holds %s.\n", strs.Count(int(allowed.GetSize()), "command"))
+				fmt.Fprintf(out, "\n%s run without asking now.\n", strs.Count(int(allowed.GetSize()), "command or pattern"))
 				return nil
 			}
 			if asJSON {
@@ -109,7 +112,7 @@ func suggest(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&apply, "apply", "", "Numbers of the proposals to add to your allowed commands, such as 1,3")
+	cmd.Flags().StringVar(&apply, "apply", "", "Numbers of the proposals that run without asking from now on, such as 1,3")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print the result as JSON")
 	cmd.Flags().IntVar(&days, "days", 90, "How many days of history to read, 0 reads all of it")
 	cmd.Flags().IntVar(&least, "min-count", 2, "How many approvals a command needs before it is proposed")
@@ -155,7 +158,7 @@ func render(out io.Writer, proposals []*approvalsv1.Proposal, days int) {
 			"are of a kind that is never proposed, for safety.\nTo see more, lower --min-count or raise --days.\n", window(days))
 		return
 	}
-	fmt.Fprintf(out, "Commands you approved often in %s, which you can add to Allowed commands:\n\n", window(days))
+	fmt.Fprintf(out, "Commands you approved often in %s, which could run without asking:\n\n", window(days))
 	for i, p := range proposals {
 		kind := ""
 		if p.GetKind() == "class" {
@@ -169,8 +172,7 @@ func render(out io.Writer, proposals []*approvalsv1.Proposal, days int) {
 			fmt.Fprintf(out, "       Such as: %s\n", example)
 		}
 	}
-	fmt.Fprint(out, "\nNothing has changed yet. Add the ones you want by their numbers:\n  icebath approvals suggest --apply 1,3\nThey join "+
-		"Allowed commands in /settings under Approvals of this profile.\n")
+	fmt.Fprint(out, "\nNothing has changed yet. Let the ones you want run without asking by their numbers:\n  icebath approvals suggest --apply 1,3\n")
 }
 
 func listJSON(out io.Writer, store string, days int, proposals []*approvalsv1.Proposal) error {
@@ -272,7 +274,7 @@ func test(service approvalsv1connect.ApprovalsServiceClient) *cobra.Command {
 				fmt.Fprintln(out, "Name the command to test after --.\nUsage: icebath approvals test [--env-type TYPE] [--json] -- <command...>")
 				return exit(1)
 			}
-			v, err := service.Test(cmd.Context(), &approvalsv1.TestRequest{Command: strings.Join(words, " "), Backend: backend})
+			v, err := service.Test(cmd.Context(), &approvalsv1.TestRequest{Profile: picked.Picked(cmd.Context()), Command: strings.Join(words, " "), Backend: backend})
 			if err != nil {
 				return err
 			}

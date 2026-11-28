@@ -27,14 +27,6 @@ func (k Kind) choice() string {
 	return generationconfig.ImageProvider
 }
 
-// Setting that names the model of the kind
-func (k Kind) model() string {
-	if k == Video {
-		return generationconfig.VideoModel
-	}
-	return generationconfig.ImageModel
-}
-
 // A service that draws pictures, makes videos or both, what a generation plugin registers
 type Service struct {
 	// As image_gen.provider and video_gen.provider name it
@@ -50,23 +42,23 @@ type Service struct {
 
 // What a person sets up to use a service
 type Setup struct {
-	// Price and needs in a few words, such as paid
+	// Price in a word, free for one that costs nothing
 	Badge string
-	// Setting of the key it asks for, empty when it asks for none
+	// Setting of the API key of its own it asks for, empty when it asks for none
 	Key string
-	// What to ask for the key and where to get one
+	// What the key is called and where to get one
 	Prompt, Link string
-	// Kind of model provider whose key or sign-in it uses, connected in /providers; empty for none
-	Provider string
+	// Kinds of model provider whose account it uses instead, the first the one a person adds; none for a service with a key of its own
+	Providers []string
 }
 
 // Pictures of a service
 type Images struct {
 	// What it draws and how, a line for the picker
 	About string
-	// Settings of the service for pictures, such as its model
-	Settings []string
-	// Setting of its own that names the model it draws with, where a model picked for it is kept; Image model when empty
+	// Section of its settings for pictures, whose page is its page under Images
+	Section string
+	// Setting of its own that names the model it draws with, empty for its default: the one model of the service
 	Model string
 	// Models it draws with, as the picker lists them, and the one it uses when no setting names one
 	Models  func(ctx context.Context, cfg *config.Config) []Model
@@ -78,9 +70,10 @@ type Images struct {
 
 // Videos of a service
 type Videos struct {
-	About    string
-	Settings []string
-	// Setting of its own that names the model it makes videos with, where a model picked for it is kept; Video model when empty
+	About string
+	// Section of its settings for videos, whose page is its page under Videos
+	Section string
+	// Setting of its own that names the model it makes videos with, empty for its default: the one model of the service
 	Model   string
 	Models  func(ctx context.Context, cfg *config.Config) []Model
 	Default func(ctx context.Context, cfg *config.Config) string
@@ -149,7 +142,7 @@ type ImageRequest struct {
 	Upscale *bool
 	// Creative controls the call gave that the service takes, by name
 	Controls map[string]any
-	// Model image_gen.model names, empty when it names none
+	// Model the service's own setting names, empty for its default
 	Model string
 }
 
@@ -173,7 +166,7 @@ func (r ImageRequest) Sources(limit int) []string {
 // One video_generate call as a service is asked it
 type VideoRequest struct {
 	Prompt string
-	// Model video_gen.model names, else the service's default
+	// Model the service's own setting names, empty for its default
 	Model string
 	// Still to animate, and reference pictures: URLs, data URLs or paths of this machine
 	Image      string
@@ -220,11 +213,18 @@ func (r *Registry) Register(registrant Registrant) {
 	r.registrants = append(r.registrants, registrant)
 }
 
-// Every service, in the order they were registered
+// Every service, in the order they were registered. A service of a kind without the section of its page or the setting of its model is a
+// mistake of the code
 func (r *Registry) Services() []Service {
 	var services []Service
 	for _, registrant := range r.registrants {
-		services = append(services, registrant.Services()...)
+		for _, service := range registrant.Services() {
+			if (service.Images != nil && (service.Images.Section == "" || service.Images.Model == "")) ||
+				(service.Videos != nil && (service.Videos.Section == "" || service.Videos.Model == "")) {
+				panic("generation: service " + service.Name + " names no section or no model setting of its own")
+			}
+			services = append(services, service)
+		}
 	}
 	return services
 }
@@ -269,15 +269,34 @@ func (s Service) About(kind Kind) string {
 	return ""
 }
 
-// Setting a model picked for the service's kind is kept in: its own, else the kind's
+// Setting of its own that names its model for the kind, empty for a kind it does not make
 func (s Service) ModelSetting(kind Kind) string {
 	switch {
-	case kind == Video && s.Videos != nil && s.Videos.Model != "":
+	case kind == Video && s.Videos != nil:
 		return s.Videos.Model
-	case kind == Image && s.Images != nil && s.Images.Model != "":
+	case kind == Image && s.Images != nil:
 		return s.Images.Model
 	}
-	return kind.model()
+	return ""
+}
+
+// Model its own setting names for the kind, empty for its default
+func (s Service) Model(cfg *config.Config, kind Kind) string {
+	if key := s.ModelSetting(kind); key != "" {
+		return strings.TrimSpace(cfg.GetString(key))
+	}
+	return ""
+}
+
+// Section of its settings for the kind, whose page is its page
+func (s Service) Section(kind Kind) string {
+	switch {
+	case kind == Video && s.Videos != nil:
+		return s.Videos.Section
+	case kind == Image && s.Images != nil:
+		return s.Images.Section
+	}
+	return ""
 }
 
 // Whether it can be used with the settings
@@ -288,11 +307,6 @@ func (s Service) Set(cfg *config.Config) bool {
 // Service chosen for the kind, lower cased, empty when none is
 func Chosen(cfg *config.Config, kind Kind) string {
 	return strings.ToLower(strings.TrimSpace(cfg.GetString(kind.choice())))
-}
-
-// Model the settings name for the kind, empty when they name none
-func Named(cfg *config.Config, kind Kind) string {
-	return strings.TrimSpace(cfg.GetString(kind.model()))
 }
 
 // Service that makes the kind with the settings: the one chosen, set up or not, else the first set up; an error the model reads when the
@@ -310,9 +324,9 @@ func (r *Registry) Active(cfg *config.Config, kind Kind) (Service, error) {
 		}
 	}
 	if kind == Video {
-		return Service{}, fmt.Errorf("No video generation backend is configured. Pick one with /videogen (%s).", r.names(kind))
+		return Service{}, fmt.Errorf("No video generation backend is configured. The user picks one with /videos (%s).", r.names(kind))
 	}
-	return Service{}, fmt.Errorf("Image generation is unavailable: no image service is set up. Pick one with /imagegen (%s).", r.names(kind))
+	return Service{}, fmt.Errorf("Image generation is unavailable: no image service is set up. The user picks one with /images (%s).", r.names(kind))
 }
 
 // Service chosen in the settings that no plugin registers
@@ -323,9 +337,9 @@ type Unregistered struct {
 
 func (e *Unregistered) Error() string {
 	if e.Kind == Video {
-		return fmt.Sprintf("video_gen.provider='%s' is set but no plugin registered that name. Pick an installed video generation service with /videogen.", e.Name)
+		return fmt.Sprintf("video_gen.provider='%s' is set but no plugin registered that name. The user picks an installed video service with /videos.", e.Name)
 	}
-	return fmt.Sprintf("image_gen.provider='%s' is set but no plugin registered that name. Pick an installed image generation service with /imagegen.", e.Name)
+	return fmt.Sprintf("image_gen.provider='%s' is set but no plugin registered that name. The user picks an installed image service with /images.", e.Name)
 }
 
 // Names of the services of the kind as a list for a sentence
@@ -356,7 +370,8 @@ func New(cfg *config.Config) *Generation {
 			return out
 		}
 	}
-	generationconfig.Register(cfg, options(Image, "The first service that is set up"), options(Video, "The first service that is set up"))
+	generationconfig.Register(cfg, options(Image, "The first service that is ready"), options(Video, "The first service that is ready"))
+	g.guard(cfg)
 	return g
 }
 

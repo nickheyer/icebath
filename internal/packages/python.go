@@ -541,10 +541,10 @@ func (e *pyenv) recovering(ctx context.Context, stage string, attempt func() (uv
 			delete(union, name)
 		}
 		names := slices.Sorted(maps.Keys(union))
-		reporter(e.report).Line(fmt.Sprintf("The cached copy of %s is damaged, so it is removed from the uv cache and the install runs again.", joined(names, "and")))
+		reporter(e.report).Line(fmt.Sprintf("The cached copy of %s is damaged, so it is removed from the uv cache and the install runs again.", strs.And(names)))
 		if err := e.purge(ctx, names); err != nil {
 			if ie, ok := errors.AsType[*InstallError](err); ok {
-				return r, Failure(ie.Package, fmt.Sprintf("%s Before that, `uv %s` failed: %s", sentence(ie.Cause, ie.Package), stage, strs.Tail(strings.TrimSpace(r.output), 600)), ie.Remedy)
+				return r, Failure(ie.Package, fmt.Sprintf("%s Before that, `uv %s` failed: %s", sentenceAbout(ie.Cause, ie.Package), stage, strs.Tail(strings.TrimSpace(r.output), 600)), ie.Remedy)
 			}
 			return r, err
 		}
@@ -564,8 +564,8 @@ func (e *pyenv) recovering(ctx context.Context, stage string, attempt func() (uv
 			remedy = "The package source serves a broken wheel. Try again later, or pin another version."
 		}
 		return r, Failure(pythonEnvironment, fmt.Sprintf("`uv %s` ended with exit code %d, because the cached copy of %s is still damaged after %s "+
-			"was removed from the uv cache at %s: %s", stage, r.code, joined(slices.Sorted(maps.Keys(still)), "and"),
-			joined(slices.Sorted(maps.Keys(purged)), "and"), e.cache, strs.Tail(strings.TrimSpace(r.output), 600)), remedy)
+			"was removed from the uv cache at %s: %s", stage, r.code, strs.And(slices.Sorted(maps.Keys(still))),
+			strs.And(slices.Sorted(maps.Keys(purged))), e.cache, strs.Tail(strings.TrimSpace(r.output), 600)), remedy)
 	}
 	return r, nil
 }
@@ -591,7 +591,7 @@ func (e *pyenv) purge(ctx context.Context, names []string) error {
 		return err
 	}
 	if r.code != 0 {
-		return Failure("uv", fmt.Sprintf("%s could not be removed from the uv cache at %s: %s", joined(names, "and"), e.cache, strs.Tail(r.output, 600)), "")
+		return Failure("uv", fmt.Sprintf("%s could not be removed from the uv cache at %s: %s", strs.And(names), e.cache, strs.Tail(r.output, 600)), "")
 	}
 	return removeCorrupt(e.cache, names)
 }

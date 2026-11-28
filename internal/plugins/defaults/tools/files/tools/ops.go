@@ -572,5 +572,7 @@ func enabled(cfg *config.Config, key string) bool {
 	return true
 }
 
-// Whether the stale write guard and the cross session file state are off
-func (o *ops) unguarded() bool { return o.cfg.GetBool(filesconfig.DisableStateGuard) }
+// Whether the stale write guard and the cross session file state are off: by the setting, or by the variable that turns them off for a run
+func (o *ops) unguarded() bool {
+	return !o.cfg.GetBool(filesconfig.StateGuard) || config.Yes(o.cfg.Getenv(filesconfig.NoStateGuardEnv))
+}

@@ -18,20 +18,22 @@ type Recognizer struct {
 	Instead string
 	// Runs on this machine: no upload cap applies and Apple's CAF is read as it is
 	Local bool
+	// A program of yours, which the settings hold
+	Program bool
 	// A cloud service, whose uploads have their silence trimmed
 	Cloud bool
 	// Place among the cloud services stt.provider falls back to when no local engine is installed, lower first; 0 for none
 	Rank int
 	// Why it can't transcribe with the profile's settings now, empty when it can, never installing anything
 	Missing func(ctx context.Context, job *Job) string
-	// Its reason for not transcribing is the answer a transcription gets when it is chosen, in place of the setup hint naming every service
-	Explains bool
 	// Service tried in its place when it is chosen but missing, such as the other local engine
 	Fallback string
 	// Model it transcribes with, the call's own first, then its setting
 	Model func(job *Job, model string) string
 	// Language its own setting gives, empty to leave it to stt.language
 	Language func(job *Job) string
+	// Hint text its own setting gives, empty to leave it to stt.prompt
+	Prompt func(job *Job) string
 	// Byte and duration caps of one upload with the model, none for a local engine
 	Limit func(model string) Limit
 	// Of the whisper family, which reads only the last 224 tokens of a prompt, so a longer one is cut to them
@@ -41,7 +43,7 @@ type Recognizer struct {
 	Live func(ctx context.Context, job *Job, hints Hints, partial func(string)) (Live, error)
 	// What a person sets up to use it
 	Setup Setup
-	// Settings of it a person picks from a list in the voice setup, such as its model
+	// Settings of it a person picks from a list on its page in Voice, such as its model
 	Choices []Choices
 }
 

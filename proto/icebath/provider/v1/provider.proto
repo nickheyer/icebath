@@ -12,10 +12,30 @@ service ProviderService {
   rpc Specs(SpecsRequest) returns (SpecsResponse);
   rpc Models(ModelsRequest) returns (ModelsResponse);
   rpc Add(AddRequest) returns (AddResponse);
+  // Removes a provider with its accounts, then clears every setting and session that named it
   rpc Remove(RemoveRequest) returns (RemoveResponse);
-  rpc AddAccount(AddAccountRequest) returns (AddAccountResponse);
+  // Gives a provider the name a person typed: the name shown changes and the key it is kept under follows it
+  rpc Rename(RenameRequest) returns (RenameResponse);
+  // Keeps a credential in an account, which is made with it when the provider has none of the name: written whole at once, so that no
+  // account stands without the credential that makes it one
+  rpc Connect(ConnectRequest) returns (ConnectResponse);
+  // Removes an account, then clears every setting and session that named it
   rpc RemoveAccount(RemoveAccountRequest) returns (RemoveAccountResponse);
   rpc UseAccount(UseAccountRequest) returns (UseAccountResponse);
+  // Turns an account's taking turns on or off, the provider taking turns while one does
+  rpc SetTurns(SetTurnsRequest) returns (SetTurnsResponse);
+  // Turns the use of a credential found outside the accounts off or on: the one control of that choice
+  rpc SetOutside(SetOutsideRequest) returns (SetOutsideResponse);
+  // Offers a provider's models in the model list, or leaves them out
+  rpc SetOffered(SetOfferedRequest) returns (SetOfferedResponse);
+  // Limits and abilities set for models, by provider and model
+  rpc Limits(LimitsRequest) returns (LimitsResponse);
+  rpc SetLimit(SetLimitRequest) returns (SetLimitResponse);
+  rpc RemoveLimit(RemoveLimitRequest) returns (RemoveLimitResponse);
+  // Lists of models of single kinds of provider, read over the online list
+  rpc Catalogs(CatalogsRequest) returns (CatalogsResponse);
+  rpc SetCatalog(SetCatalogRequest) returns (SetCatalogResponse);
+  rpc RemoveCatalog(RemoveCatalogRequest) returns (RemoveCatalogResponse);
   // What the provider says the account in use may still spend
   rpc Usage(UsageRequest) returns (UsageResponse);
   // Renews the sign-in of an account now, clearing a limit its old token ran into
@@ -44,11 +64,11 @@ message Account {
   string title = 2;
   // Settings section of the account, its fields keyed below it
   string section = 3;
-  // The account requests are made with
+  // The account that requests go out with now
   bool active = 4;
   Origin credential_origin = 5;
   string credential_source = 6;
-  // How it signs in: api_key, oauth, aws_sigv4 or gcp_oauth
+  // How it signs in: api_key, oauth, aws_sigv4 or gcp_oauth; empty while it has no credential to use
   string auth = 7;
   // ready, limited, needs_sign_in, dead, or unavailable while it has no credential
   string status = 8;
@@ -72,6 +92,16 @@ message Account {
   int64 requests = 17;
   // Whether its sign-in can be renewed
   bool renewable = 18;
+  // Why it has no credential to use, in sentences a person reads: nothing kept at all, the variable it reads unset, the sign-in of the
+  // program it uses not found; empty while it has one
+  string missing = 19;
+  // State in one to three words, by the one function every page and command uses: Signed in, Connected, Not signed in, Not connected,
+  // then when it applies in use and limit reached until a time
+  string state = 20;
+  // State as a sentence, the first line of its page: Signed in as someone, Uses the API key in a variable, Not signed in
+  string standing = 21;
+  // Program whose sign-in on this computer it uses, empty for none
+  string program = 22;
 }
 
 message Provider {
@@ -90,7 +120,8 @@ message Provider {
   repeated string aliases = 10;
   bool local = 11;
   bool aggregator = 12;
-  // Where the credential of the account in use comes from
+  // Where the credential that requests go out with now comes from: unneeded for a provider ready without one, unspecified while it is
+  // not ready
   Origin credential_origin = 13;
   string credential_source = 14;
   repeated string key_env = 15;
@@ -100,12 +131,12 @@ message Provider {
   string section = 17;
   // Whether icebath can send it requests
   bool usable = 18;
-  // Account in use, empty while it has none
+  // Account its choice names: the one it always uses, else the first it tries; empty while it has none
   string account = 19;
   repeated Account accounts = 20;
   // Whether a plugin registers its kind
   bool known = 21;
-  // Left out of the model pickers by models.catalog.excluded_providers
+  // Left out of the model list: its place in models.catalog.excluded_providers
   bool hidden = 22;
   // Whether its kind can say what its accounts may still spend
   bool usage = 23;
@@ -122,6 +153,31 @@ message Provider {
   bool rotate = 28;
   // Variables and programs its credential is not taken from
   repeated string ignored = 29;
+  // Whether a request can go to it now, by the one test that the providers screen, the model picker and the agent use
+  bool ready = 30;
+  // Why it is not ready and what to do, in sentences a person reads; empty while it is ready
+  string why = 31;
+  // Credential found outside its accounts: an API key in a variable or the sign-in of another program on this computer, which it takes
+  // when it has no account, and after its accounts while it tries every account in order; unspecified when none is found
+  Origin outside_origin = 32;
+  string outside_source = 33;
+  // Account that requests go out with now, empty for the credential outside its accounts and while it is not ready
+  string using = 34;
+  // Requests go out with the credential found outside its accounts now
+  bool outside_used = 35;
+  // State in one to three words, by the one function every page and command uses: Connected, Signed in, Not connected, Not signed in,
+  // Ready, or Needs … with what it needs
+  string state = 36;
+  // State as a sentence, the first line of its page: who it is connected as, or the one thing wrong and the one thing to do
+  string standing = 37;
+  // The address of its server is the person's to give, as a server of their own's is
+  bool own = 38;
+  // Its accounts sign in, rather than keep an API key, unless the person gives one
+  bool signs_in = 39;
+  // While it is not ready, the other way out than the one its first line names, as a sentence the pane of one option says, and that
+  // option's setting by its name below the provider; empty for none
+  string instead = 40;
+  string instead_of = 41;
 }
 
 message Spec {
@@ -144,6 +200,12 @@ message Spec {
   bool keyed = 14;
   // Place among the well-known kinds offered first, 1 at the top; 0 for a kind listed by name with the rest
   uint32 rank = 15;
+  // Its accounts sign in, rather than keep an API key, unless the person gives one
+  bool signs_in = 16;
+  // The address of a provider of it is the person's to give, as a server of their own's is
+  bool own = 17;
+  // A provider of it has no address until the person gives one
+  bool needs_address = 18;
 }
 
 message ListRequest {
@@ -178,6 +240,9 @@ message ModelsResponse {
   repeated Model details = 2;
   // The models stand in for a list the provider could not give
   bool fallback = 3;
+  // Why the provider gave no list of models of its own and what to do, in sentences a person reads: the address it could not reach, the
+  // error it answered with, or a list with nothing in it; empty when it gave one
+  string unlisted = 4;
 }
 
 // What is known of one model a provider offers
@@ -243,11 +308,13 @@ message UsageWindow {
 
 message AddRequest {
   string spec = 1;
-  // Name in the profile, the kind's name, numbered when taken, when empty
+  // Name in the profile, made from the title or the kind's name, numbered when taken, when empty
   string name = 2;
   string title = 3;
   // Profile to act on, the one in use when empty
   string profile = 4;
+  // Address of its server, for a kind whose address is the person's to give; the kind's own when empty
+  string base_url = 5;
 }
 
 message AddResponse {
@@ -260,18 +327,43 @@ message RemoveRequest {
   string profile = 2;
 }
 
-message RemoveResponse {}
-
-message AddAccountRequest {
-  string provider = 1;
-  // Name of the account, default, numbered when taken, when empty
-  string name = 2;
-  string title = 3;
-  // Profile to act on, the one in use when empty
-  string profile = 4;
+message RemoveResponse {
+  // Variables cleared from the profile's .env, those its accounts read their keys from that no other account reads
+  repeated string cleared = 1;
+  // What named the provider and was cleared, a phrase each, such as Model of Agent or 2 sessions
+  repeated string named = 2;
+  // What the removal did, one or two sentences a person reads
+  string said = 3;
 }
 
-message AddAccountResponse {
+message RenameRequest {
+  string provider = 1;
+  // Name shown; the kind's name for none
+  string title = 2;
+  // Profile to act on, the one in use when empty
+  string profile = 3;
+}
+
+message RenameResponse {
+  Provider provider = 1;
+}
+
+message ConnectRequest {
+  string provider = 1;
+  // Account already there to keep the credential in; a new account when empty, unless one signs in as the same identity
+  string account = 2;
+  // Name the account is shown by, as the person gave it: a new account is named after the identity, else the way it signs in, when empty;
+  // one already there keeps its own
+  string title = 3;
+  // Fields of the credential by their names below the account, each as YAML, null for none
+  map<string, string> fields = 4;
+  // Profile to act on, the one in use when empty
+  string profile = 5;
+  // Who the sign-in signed in as, such as an email; empty when not known
+  string identity = 6;
+}
+
+message ConnectResponse {
   Account account = 1;
 }
 
@@ -280,14 +372,136 @@ message RemoveAccountRequest {
   string account = 2;
   // Profile to act on, the one in use when empty
   string profile = 3;
-  // In place of an account: a variable or program the provider takes its credential from outside its accounts, left out from now on
-  string source = 4;
 }
 
 message RemoveAccountResponse {
-  // Variables cleared from the profile's .env: the one the account read its key from, or the source left out
+  // Variables cleared from the profile's .env: the one the account read its key from, unless another account reads it
   repeated string cleared = 1;
+  // What named the account and was cleared, a phrase each
+  repeated string named = 2;
+  // What the removal did, one or two sentences a person reads
+  string said = 3;
 }
+
+message SetTurnsRequest {
+  string provider = 1;
+  string account = 2;
+  bool on = 3;
+  // Profile to act on, the one in use when empty
+  string profile = 4;
+}
+
+message SetTurnsResponse {
+  // What changed, one sentence a person reads
+  string said = 1;
+}
+
+message SetOutsideRequest {
+  string provider = 1;
+  // Variable or program the credential comes from, as the provider names it
+  string source = 2;
+  bool on = 3;
+  // Profile to act on, the one in use when empty
+  string profile = 4;
+}
+
+message SetOutsideResponse {
+  // What changed, one sentence a person reads
+  string said = 1;
+}
+
+message SetOfferedRequest {
+  string provider = 1;
+  bool on = 2;
+  // Profile to act on, the one in use when empty
+  string profile = 3;
+}
+
+message SetOfferedResponse {
+  // What changed, one sentence a person reads
+  string said = 1;
+}
+
+// Limits and abilities set for one model of a provider, or for every model of it
+message Limit {
+  string provider = 1;
+  // Model, empty for every model of the provider
+  string model = 2;
+  // Tokens it reads at once, 0 for what icebath finds
+  int64 context_window = 3;
+  // Whether it uses tools, sees images and reasons; unset for what icebath finds
+  optional bool tools = 4;
+  optional bool vision = 5;
+  optional bool reasoning = 6;
+  // Family its requests are shaped for, empty for what icebath finds
+  string family = 7;
+  // Name the provider is shown by
+  string provider_title = 8;
+}
+
+message LimitsRequest {
+  // Profile to act on, the one in use when empty
+  string profile = 1;
+}
+
+message LimitsResponse {
+  repeated Limit limits = 1;
+  // Model families a limit may name, in the order offered
+  repeated string families = 2;
+}
+
+message SetLimitRequest {
+  Limit limit = 1;
+  // Profile to act on, the one in use when empty
+  string profile = 2;
+}
+
+message SetLimitResponse {
+  Limit limit = 1;
+}
+
+message RemoveLimitRequest {
+  string provider = 1;
+  string model = 2;
+  // Profile to act on, the one in use when empty
+  string profile = 3;
+}
+
+message RemoveLimitResponse {}
+
+// List of models of one kind of provider, read over the online list
+message Catalog {
+  // Kind, by the name of its spec
+  string kind = 1;
+  string address = 2;
+  // Name the kind is shown by
+  string title = 3;
+}
+
+message CatalogsRequest {
+  // Profile to act on, the one in use when empty
+  string profile = 1;
+}
+
+message CatalogsResponse {
+  repeated Catalog catalogs = 1;
+}
+
+message SetCatalogRequest {
+  Catalog catalog = 1;
+  // Profile to act on, the one in use when empty
+  string profile = 2;
+}
+
+message SetCatalogResponse {}
+
+message RemoveCatalogRequest {
+  string kind = 1;
+  // Profile to act on, the one in use when empty
+  string profile = 2;
+}
+
+message RemoveCatalogResponse {}
 
 message UseAccountRequest {
   string provider = 1;
@@ -340,6 +554,7 @@ message MoveAccountResponse {
 message RenameAccountRequest {
   string provider = 1;
   string account = 2;
+  // Name shown, as the person typed it: the key the account is kept under follows it
   string name = 3;
   // Profile to act on, the one in use when empty
   string profile = 4;

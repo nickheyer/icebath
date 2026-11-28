@@ -16,6 +16,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/internal/config"
+	modelsconfig "github.com/nickheyer/icebath/internal/models/config"
 	"github.com/nickheyer/icebath/internal/provider"
 	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
@@ -183,13 +184,14 @@ func (m *Models) ContextLength(ctx context.Context, cfg *config.Config, route pr
 func (m *Models) contextLength(ctx context.Context, cfg *config.Config, route provider.Route) int {
 	model, base, key := route.Model, strings.TrimRight(strings.TrimSpace(route.BaseURL), "/"), route.APIKey
 	spec := m.Spec(route)
+	// A window set for the model itself wins over the one set for every model of its provider
+	if n, ok := m.overrideInt(cfg, m.explicit(cfg, route), modelsconfig.OverrideContext); ok {
+		return n
+	}
 	if instance, ok := m.providers.Instance(cfg, route.Provider); ok {
 		if n := instance.Settings.GetInt(providerconfig.ContextLength); n > 0 {
 			return n
 		}
-	}
-	if n, ok := m.overrideInt(cfg, m.explicit(cfg, route), "context_window"); ok {
-		return n
 	}
 	if parsed, err := url.Parse(base); base != "" && (err != nil || parsed.Port() != "" && !digits(parsed.Port())) {
 		base = ""

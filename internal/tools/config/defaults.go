@@ -10,7 +10,7 @@ func Register(cfg *config.Config, tools func() []config.Option) {
 		Group: config.GroupAbilities,
 		Order: 10,
 		Settings: []config.Setting{
-			{Key: Disabled, Title: "Turned off", About: "Tools that the agent cannot use.", Default: []string{}, Options: tools, Slash: "tools"},
+			{Key: Disabled, Title: "Tools that are off", About: "Tools that the agent cannot use.", Default: []string{}, Options: tools, Custom: true},
 			{Key: InlineDiffs, Title: "Show diffs", About: "Show the changes to a file as a diff in the chat.", Default: true},
 			{Key: InlineImages, Title: "Images in chat", About: "How images from tools are drawn in the chat.", Default: ImagesAuto,
 				Options: config.Options(
@@ -21,7 +21,8 @@ func Register(cfg *config.Config, tools func() []config.Option) {
 			{Key: RedactSecrets, Title: "Hide secrets", About: "Hide API keys and tokens in what tools show the agent, such as files and search results.",
 				Default: true, Env: []string{"ICEBATH_REDACT_SECRETS"}},
 			{Key: TrustedWorkspaces, Title: "Trusted folders", About: "Folders where code checkers may run the project's own programs.",
-				Help: "Such as npx tsc or rustfmt. The git worktree you work in is always trusted.", Default: []string{}},
+				Help: "Such as npx tsc or rustfmt. The git worktree you work in is always trusted.", Default: []string{}, Entry: &config.Entry{Noun: "folder"},
+				Path: &config.Path{Kind: config.PathFolder}},
 			{Key: OutputMaxBytes, Title: "Command output size", About: "How much output of one command the agent reads.",
 				Help: "Longer output keeps its start and end, and the middle is cut.", Default: 50000, Counts: "characters", Advanced: true},
 			{Key: OutputMaxLines, Title: "Lines per file read", About: "The most lines of a file that one read returns.", Default: 2000, Counts: "lines",

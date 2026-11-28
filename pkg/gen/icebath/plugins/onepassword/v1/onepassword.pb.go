@@ -21,6 +21,164 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type AccountsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AccountsRequest) Reset() {
+	*x = AccountsRequest{}
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccountsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccountsRequest) ProtoMessage() {}
+
+func (x *AccountsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccountsRequest.ProtoReflect.Descriptor instead.
+func (*AccountsRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *AccountsRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+// One account op knows: its sign-in address, which op --account takes, and the email it signs in with
+type Account struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Account) Reset() {
+	*x = Account{}
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Account) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Account) ProtoMessage() {}
+
+func (x *Account) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Account.ProtoReflect.Descriptor instead.
+func (*Account) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Account) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *Account) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+type AccountsResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Accounts []*Account             `protobuf:"bytes,1,rep,name=accounts,proto3" json:"accounts,omitempty"`
+	// The op program was not found, or could not list the accounts and said why
+	BinaryMissing bool   `protobuf:"varint,2,opt,name=binary_missing,json=binaryMissing,proto3" json:"binary_missing,omitempty"`
+	Error         string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AccountsResponse) Reset() {
+	*x = AccountsResponse{}
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccountsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccountsResponse) ProtoMessage() {}
+
+func (x *AccountsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccountsResponse.ProtoReflect.Descriptor instead.
+func (*AccountsResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *AccountsResponse) GetAccounts() []*Account {
+	if x != nil {
+		return x.Accounts
+	}
+	return nil
+}
+
+func (x *AccountsResponse) GetBinaryMissing() bool {
+	if x != nil {
+		return x.BinaryMissing
+	}
+	return false
+}
+
+func (x *AccountsResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 type StateRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Profile whose store is read, the one in use when empty
@@ -31,7 +189,7 @@ type StateRequest struct {
 
 func (x *StateRequest) Reset() {
 	*x = StateRequest{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[0]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -43,7 +201,7 @@ func (x *StateRequest) String() string {
 func (*StateRequest) ProtoMessage() {}
 
 func (x *StateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[0]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -56,7 +214,7 @@ func (x *StateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StateRequest.ProtoReflect.Descriptor instead.
 func (*StateRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{0}
+	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *StateRequest) GetProfile() string {
@@ -76,7 +234,7 @@ type Reference struct {
 
 func (x *Reference) Reset() {
 	*x = Reference{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[1]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -88,7 +246,7 @@ func (x *Reference) String() string {
 func (*Reference) ProtoMessage() {}
 
 func (x *Reference) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[1]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -101,7 +259,7 @@ func (x *Reference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Reference.ProtoReflect.Descriptor instead.
 func (*Reference) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{1}
+	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Reference) GetEnv() string {
@@ -143,7 +301,7 @@ type StateResponse struct {
 
 func (x *StateResponse) Reset() {
 	*x = StateResponse{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[2]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -155,7 +313,7 @@ func (x *StateResponse) String() string {
 func (*StateResponse) ProtoMessage() {}
 
 func (x *StateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[2]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -168,7 +326,7 @@ func (x *StateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StateResponse.ProtoReflect.Descriptor instead.
 func (*StateResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{2}
+	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *StateResponse) GetEnabled() bool {
@@ -256,19 +414,21 @@ func (x *StateResponse) GetEnvPath() string {
 }
 
 type SetupRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	Account       string                 `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
-	TokenEnv      string                 `protobuf:"bytes,3,opt,name=token_env,json=tokenEnv,proto3" json:"token_env,omitempty"`
-	Token         string                 `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`
-	BinaryPath    string                 `protobuf:"bytes,5,opt,name=binary_path,json=binaryPath,proto3" json:"binary_path,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Account op signs in to without a token, empty for the one it uses by default
+	Account  string `protobuf:"bytes,2,opt,name=account,proto3" json:"account,omitempty"`
+	TokenEnv string `protobuf:"bytes,3,opt,name=token_env,json=tokenEnv,proto3" json:"token_env,omitempty"`
+	// Service account token to keep in the keys file, empty to use the one kept or the sign-in of op
+	Token         string `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`
+	BinaryPath    string `protobuf:"bytes,5,opt,name=binary_path,json=binaryPath,proto3" json:"binary_path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetupRequest) Reset() {
 	*x = SetupRequest{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[3]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -280,7 +440,7 @@ func (x *SetupRequest) String() string {
 func (*SetupRequest) ProtoMessage() {}
 
 func (x *SetupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[3]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -293,7 +453,7 @@ func (x *SetupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetupRequest.ProtoReflect.Descriptor instead.
 func (*SetupRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{3}
+	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SetupRequest) GetProfile() string {
@@ -346,13 +506,15 @@ type SetupResponse struct {
 	// The op program was not found, at the path given when there is one, and nothing was changed
 	BinaryMissing bool   `protobuf:"varint,9,opt,name=binary_missing,json=binaryMissing,proto3" json:"binary_missing,omitempty"`
 	BinaryPath    string `protobuf:"bytes,10,opt,name=binary_path,json=binaryPath,proto3" json:"binary_path,omitempty"`
+	// op is not signed in with the token or the account, and nothing was changed
+	NotSignedIn   bool `protobuf:"varint,11,opt,name=not_signed_in,json=notSignedIn,proto3" json:"not_signed_in,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SetupResponse) Reset() {
 	*x = SetupResponse{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[4]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -364,7 +526,7 @@ func (x *SetupResponse) String() string {
 func (*SetupResponse) ProtoMessage() {}
 
 func (x *SetupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[4]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -377,7 +539,7 @@ func (x *SetupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetupResponse.ProtoReflect.Descriptor instead.
 func (*SetupResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{4}
+	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SetupResponse) GetBinary() string {
@@ -450,6 +612,13 @@ func (x *SetupResponse) GetBinaryPath() string {
 	return ""
 }
 
+func (x *SetupResponse) GetNotSignedIn() bool {
+	if x != nil {
+		return x.NotSignedIn
+	}
+	return false
+}
+
 type TokenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
@@ -461,7 +630,7 @@ type TokenRequest struct {
 
 func (x *TokenRequest) Reset() {
 	*x = TokenRequest{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[5]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +642,7 @@ func (x *TokenRequest) String() string {
 func (*TokenRequest) ProtoMessage() {}
 
 func (x *TokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[5]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -486,7 +655,7 @@ func (x *TokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenRequest.ProtoReflect.Descriptor instead.
 func (*TokenRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{5}
+	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TokenRequest) GetProfile() string {
@@ -526,7 +695,7 @@ type TokenResponse struct {
 
 func (x *TokenResponse) Reset() {
 	*x = TokenResponse{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[6]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -538,7 +707,7 @@ func (x *TokenResponse) String() string {
 func (*TokenResponse) ProtoMessage() {}
 
 func (x *TokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[6]
+	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -551,7 +720,7 @@ func (x *TokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenResponse.ProtoReflect.Descriptor instead.
 func (*TokenResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{6}
+	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *TokenResponse) GetIdentity() string {
@@ -596,475 +765,20 @@ func (x *TokenResponse) GetDisabled() bool {
 	return false
 }
 
-type MapRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	Env           string                 `protobuf:"bytes,2,opt,name=env,proto3" json:"env,omitempty"`
-	Reference     string                 `protobuf:"bytes,3,opt,name=reference,proto3" json:"reference,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *MapRequest) Reset() {
-	*x = MapRequest{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MapRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MapRequest) ProtoMessage() {}
-
-func (x *MapRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MapRequest.ProtoReflect.Descriptor instead.
-func (*MapRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *MapRequest) GetProfile() string {
-	if x != nil {
-		return x.Profile
-	}
-	return ""
-}
-
-func (x *MapRequest) GetEnv() string {
-	if x != nil {
-		return x.Env
-	}
-	return ""
-}
-
-func (x *MapRequest) GetReference() string {
-	if x != nil {
-		return x.Reference
-	}
-	return ""
-}
-
-type MapResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Reference as kept, empty when the pair was refused for the warnings
-	Reference     string   `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
-	Warnings      []string `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
-	Enabled       bool     `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *MapResponse) Reset() {
-	*x = MapResponse{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MapResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MapResponse) ProtoMessage() {}
-
-func (x *MapResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MapResponse.ProtoReflect.Descriptor instead.
-func (*MapResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *MapResponse) GetReference() string {
-	if x != nil {
-		return x.Reference
-	}
-	return ""
-}
-
-func (x *MapResponse) GetWarnings() []string {
-	if x != nil {
-		return x.Warnings
-	}
-	return nil
-}
-
-func (x *MapResponse) GetEnabled() bool {
-	if x != nil {
-		return x.Enabled
-	}
-	return false
-}
-
-type UnmapRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	Env           string                 `protobuf:"bytes,2,opt,name=env,proto3" json:"env,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UnmapRequest) Reset() {
-	*x = UnmapRequest{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UnmapRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UnmapRequest) ProtoMessage() {}
-
-func (x *UnmapRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UnmapRequest.ProtoReflect.Descriptor instead.
-func (*UnmapRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *UnmapRequest) GetProfile() string {
-	if x != nil {
-		return x.Profile
-	}
-	return ""
-}
-
-func (x *UnmapRequest) GetEnv() string {
-	if x != nil {
-		return x.Env
-	}
-	return ""
-}
-
-type UnmapResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The variable had a reference
-	Mapped        bool `protobuf:"varint,1,opt,name=mapped,proto3" json:"mapped,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UnmapResponse) Reset() {
-	*x = UnmapResponse{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UnmapResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UnmapResponse) ProtoMessage() {}
-
-func (x *UnmapResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UnmapResponse.ProtoReflect.Descriptor instead.
-func (*UnmapResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *UnmapResponse) GetMapped() bool {
-	if x != nil {
-		return x.Mapped
-	}
-	return false
-}
-
-type SyncRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	Apply         bool                   `protobuf:"varint,2,opt,name=apply,proto3" json:"apply,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SyncRequest) Reset() {
-	*x = SyncRequest{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SyncRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SyncRequest) ProtoMessage() {}
-
-func (x *SyncRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SyncRequest.ProtoReflect.Descriptor instead.
-func (*SyncRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *SyncRequest) GetProfile() string {
-	if x != nil {
-		return x.Profile
-	}
-	return ""
-}
-
-func (x *SyncRequest) GetApply() bool {
-	if x != nil {
-		return x.Apply
-	}
-	return false
-}
-
-// What the next start would do with one variable: export, override, skip_set, skip_token or unresolved; exported or skipped once a sync
-// set them
-type Row struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Row) Reset() {
-	*x = Row{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Row) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Row) ProtoMessage() {}
-
-func (x *Row) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Row.ProtoReflect.Descriptor instead.
-func (*Row) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *Row) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *Row) GetAction() string {
-	if x != nil {
-		return x.Action
-	}
-	return ""
-}
-
-type SyncResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Rows          []*Row                 `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
-	Warnings      []string               `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
-	Exported      int32                  `protobuf:"varint,3,opt,name=exported,proto3" json:"exported,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SyncResponse) Reset() {
-	*x = SyncResponse{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SyncResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SyncResponse) ProtoMessage() {}
-
-func (x *SyncResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SyncResponse.ProtoReflect.Descriptor instead.
-func (*SyncResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{13}
-}
-
-func (x *SyncResponse) GetRows() []*Row {
-	if x != nil {
-		return x.Rows
-	}
-	return nil
-}
-
-func (x *SyncResponse) GetWarnings() []string {
-	if x != nil {
-		return x.Warnings
-	}
-	return nil
-}
-
-func (x *SyncResponse) GetExported() int32 {
-	if x != nil {
-		return x.Exported
-	}
-	return 0
-}
-
-type DisableRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DisableRequest) Reset() {
-	*x = DisableRequest{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DisableRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DisableRequest) ProtoMessage() {}
-
-func (x *DisableRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DisableRequest.ProtoReflect.Descriptor instead.
-func (*DisableRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *DisableRequest) GetProfile() string {
-	if x != nil {
-		return x.Profile
-	}
-	return ""
-}
-
-type DisableResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DisableResponse) Reset() {
-	*x = DisableResponse{}
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[15]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DisableResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DisableResponse) ProtoMessage() {}
-
-func (x *DisableResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes[15]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DisableResponse.ProtoReflect.Descriptor instead.
-func (*DisableResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP(), []int{15}
-}
-
 var File_icebath_plugins_onepassword_v1_onepassword_proto protoreflect.FileDescriptor
 
 const file_icebath_plugins_onepassword_v1_onepassword_proto_rawDesc = "" +
 	"\n" +
-	"0icebath/plugins/onepassword/v1/onepassword.proto\x12\x1eicebath.plugins.onepassword.v1\"(\n" +
+	"0icebath/plugins/onepassword/v1/onepassword.proto\x12\x1eicebath.plugins.onepassword.v1\"+\n" +
+	"\x0fAccountsRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"9\n" +
+	"\aAccount\x12\x18\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x14\n" +
+	"\x05email\x18\x02 \x01(\tR\x05email\"\x94\x01\n" +
+	"\x10AccountsResponse\x12C\n" +
+	"\baccounts\x18\x01 \x03(\v2'.icebath.plugins.onepassword.v1.AccountR\baccounts\x12%\n" +
+	"\x0ebinary_missing\x18\x02 \x01(\bR\rbinaryMissing\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"(\n" +
 	"\fStateRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\";\n" +
 	"\tReference\x12\x10\n" +
@@ -1093,7 +807,7 @@ const file_icebath_plugins_onepassword_v1_onepassword_proto_rawDesc = "" +
 	"\ttoken_env\x18\x03 \x01(\tR\btokenEnv\x12\x14\n" +
 	"\x05token\x18\x04 \x01(\tR\x05token\x12\x1f\n" +
 	"\vbinary_path\x18\x05 \x01(\tR\n" +
-	"binaryPath\"\xb5\x02\n" +
+	"binaryPath\"\xd9\x02\n" +
 	"\rSetupResponse\x12\x16\n" +
 	"\x06binary\x18\x01 \x01(\tR\x06binary\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x18\n" +
@@ -1107,7 +821,8 @@ const file_icebath_plugins_onepassword_v1_onepassword_proto_rawDesc = "" +
 	"\x0ebinary_missing\x18\t \x01(\bR\rbinaryMissing\x12\x1f\n" +
 	"\vbinary_path\x18\n" +
 	" \x01(\tR\n" +
-	"binaryPath\"V\n" +
+	"binaryPath\x12\"\n" +
+	"\rnot_signed_in\x18\v \x01(\bR\vnotSignedIn\"V\n" +
 	"\fTokenRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x16\n" +
@@ -1118,42 +833,12 @@ const file_icebath_plugins_onepassword_v1_onepassword_proto_rawDesc = "" +
 	"\x0ebinary_missing\x18\x03 \x01(\bR\rbinaryMissing\x12\x19\n" +
 	"\benv_path\x18\x04 \x01(\tR\aenvPath\x12\x1b\n" +
 	"\ttoken_env\x18\x05 \x01(\tR\btokenEnv\x12\x1a\n" +
-	"\bdisabled\x18\x06 \x01(\bR\bdisabled\"V\n" +
-	"\n" +
-	"MapRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x10\n" +
-	"\x03env\x18\x02 \x01(\tR\x03env\x12\x1c\n" +
-	"\treference\x18\x03 \x01(\tR\treference\"a\n" +
-	"\vMapResponse\x12\x1c\n" +
-	"\treference\x18\x01 \x01(\tR\treference\x12\x1a\n" +
-	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +
-	"\aenabled\x18\x03 \x01(\bR\aenabled\":\n" +
-	"\fUnmapRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x10\n" +
-	"\x03env\x18\x02 \x01(\tR\x03env\"'\n" +
-	"\rUnmapResponse\x12\x16\n" +
-	"\x06mapped\x18\x01 \x01(\bR\x06mapped\"=\n" +
-	"\vSyncRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x14\n" +
-	"\x05apply\x18\x02 \x01(\bR\x05apply\"1\n" +
-	"\x03Row\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
-	"\x06action\x18\x02 \x01(\tR\x06action\"\x7f\n" +
-	"\fSyncResponse\x127\n" +
-	"\x04rows\x18\x01 \x03(\v2#.icebath.plugins.onepassword.v1.RowR\x04rows\x12\x1a\n" +
-	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x1a\n" +
-	"\bexported\x18\x03 \x01(\x05R\bexported\"*\n" +
-	"\x0eDisableRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"\x11\n" +
-	"\x0fDisableResponse2\xdb\x05\n" +
+	"\bdisabled\x18\x06 \x01(\bR\bdisabled2\xb5\x03\n" +
 	"\x12OnePasswordService\x12d\n" +
-	"\x05State\x12,.icebath.plugins.onepassword.v1.StateRequest\x1a-.icebath.plugins.onepassword.v1.StateResponse\x12d\n" +
+	"\x05State\x12,.icebath.plugins.onepassword.v1.StateRequest\x1a-.icebath.plugins.onepassword.v1.StateResponse\x12m\n" +
+	"\bAccounts\x12/.icebath.plugins.onepassword.v1.AccountsRequest\x1a0.icebath.plugins.onepassword.v1.AccountsResponse\x12d\n" +
 	"\x05Setup\x12,.icebath.plugins.onepassword.v1.SetupRequest\x1a-.icebath.plugins.onepassword.v1.SetupResponse\x12d\n" +
-	"\x05Token\x12,.icebath.plugins.onepassword.v1.TokenRequest\x1a-.icebath.plugins.onepassword.v1.TokenResponse\x12^\n" +
-	"\x03Map\x12*.icebath.plugins.onepassword.v1.MapRequest\x1a+.icebath.plugins.onepassword.v1.MapResponse\x12d\n" +
-	"\x05Unmap\x12,.icebath.plugins.onepassword.v1.UnmapRequest\x1a-.icebath.plugins.onepassword.v1.UnmapResponse\x12a\n" +
-	"\x04Sync\x12+.icebath.plugins.onepassword.v1.SyncRequest\x1a,.icebath.plugins.onepassword.v1.SyncResponse\x12j\n" +
-	"\aDisable\x12..icebath.plugins.onepassword.v1.DisableRequest\x1a/.icebath.plugins.onepassword.v1.DisableResponseB\xa4\x02\n" +
+	"\x05Token\x12,.icebath.plugins.onepassword.v1.TokenRequest\x1a-.icebath.plugins.onepassword.v1.TokenResponseB\xa4\x02\n" +
 	"\"com.icebath.plugins.onepassword.v1B\x10OnepasswordProtoP\x01ZQgithub.com/nickheyer/icebath/pkg/gen/icebath/plugins/onepassword/v1;onepasswordv1\xa2\x02\x03IPO\xaa\x02\x1eIcebath.Plugins.Onepassword.V1\xca\x02\x1eIcebath\\Plugins\\Onepassword\\V1\xe2\x02*Icebath\\Plugins\\Onepassword\\V1\\GPBMetadata\xea\x02!Icebath::Plugins::Onepassword::V1b\x06proto3"
 
 var (
@@ -1168,47 +853,35 @@ func file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescGZIP() []byte 
 	return file_icebath_plugins_onepassword_v1_onepassword_proto_rawDescData
 }
 
-var file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_icebath_plugins_onepassword_v1_onepassword_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_icebath_plugins_onepassword_v1_onepassword_proto_goTypes = []any{
-	(*StateRequest)(nil),    // 0: icebath.plugins.onepassword.v1.StateRequest
-	(*Reference)(nil),       // 1: icebath.plugins.onepassword.v1.Reference
-	(*StateResponse)(nil),   // 2: icebath.plugins.onepassword.v1.StateResponse
-	(*SetupRequest)(nil),    // 3: icebath.plugins.onepassword.v1.SetupRequest
-	(*SetupResponse)(nil),   // 4: icebath.plugins.onepassword.v1.SetupResponse
-	(*TokenRequest)(nil),    // 5: icebath.plugins.onepassword.v1.TokenRequest
-	(*TokenResponse)(nil),   // 6: icebath.plugins.onepassword.v1.TokenResponse
-	(*MapRequest)(nil),      // 7: icebath.plugins.onepassword.v1.MapRequest
-	(*MapResponse)(nil),     // 8: icebath.plugins.onepassword.v1.MapResponse
-	(*UnmapRequest)(nil),    // 9: icebath.plugins.onepassword.v1.UnmapRequest
-	(*UnmapResponse)(nil),   // 10: icebath.plugins.onepassword.v1.UnmapResponse
-	(*SyncRequest)(nil),     // 11: icebath.plugins.onepassword.v1.SyncRequest
-	(*Row)(nil),             // 12: icebath.plugins.onepassword.v1.Row
-	(*SyncResponse)(nil),    // 13: icebath.plugins.onepassword.v1.SyncResponse
-	(*DisableRequest)(nil),  // 14: icebath.plugins.onepassword.v1.DisableRequest
-	(*DisableResponse)(nil), // 15: icebath.plugins.onepassword.v1.DisableResponse
+	(*AccountsRequest)(nil),  // 0: icebath.plugins.onepassword.v1.AccountsRequest
+	(*Account)(nil),          // 1: icebath.plugins.onepassword.v1.Account
+	(*AccountsResponse)(nil), // 2: icebath.plugins.onepassword.v1.AccountsResponse
+	(*StateRequest)(nil),     // 3: icebath.plugins.onepassword.v1.StateRequest
+	(*Reference)(nil),        // 4: icebath.plugins.onepassword.v1.Reference
+	(*StateResponse)(nil),    // 5: icebath.plugins.onepassword.v1.StateResponse
+	(*SetupRequest)(nil),     // 6: icebath.plugins.onepassword.v1.SetupRequest
+	(*SetupResponse)(nil),    // 7: icebath.plugins.onepassword.v1.SetupResponse
+	(*TokenRequest)(nil),     // 8: icebath.plugins.onepassword.v1.TokenRequest
+	(*TokenResponse)(nil),    // 9: icebath.plugins.onepassword.v1.TokenResponse
 }
 var file_icebath_plugins_onepassword_v1_onepassword_proto_depIdxs = []int32{
-	1,  // 0: icebath.plugins.onepassword.v1.StateResponse.references:type_name -> icebath.plugins.onepassword.v1.Reference
-	12, // 1: icebath.plugins.onepassword.v1.SyncResponse.rows:type_name -> icebath.plugins.onepassword.v1.Row
-	0,  // 2: icebath.plugins.onepassword.v1.OnePasswordService.State:input_type -> icebath.plugins.onepassword.v1.StateRequest
-	3,  // 3: icebath.plugins.onepassword.v1.OnePasswordService.Setup:input_type -> icebath.plugins.onepassword.v1.SetupRequest
-	5,  // 4: icebath.plugins.onepassword.v1.OnePasswordService.Token:input_type -> icebath.plugins.onepassword.v1.TokenRequest
-	7,  // 5: icebath.plugins.onepassword.v1.OnePasswordService.Map:input_type -> icebath.plugins.onepassword.v1.MapRequest
-	9,  // 6: icebath.plugins.onepassword.v1.OnePasswordService.Unmap:input_type -> icebath.plugins.onepassword.v1.UnmapRequest
-	11, // 7: icebath.plugins.onepassword.v1.OnePasswordService.Sync:input_type -> icebath.plugins.onepassword.v1.SyncRequest
-	14, // 8: icebath.plugins.onepassword.v1.OnePasswordService.Disable:input_type -> icebath.plugins.onepassword.v1.DisableRequest
-	2,  // 9: icebath.plugins.onepassword.v1.OnePasswordService.State:output_type -> icebath.plugins.onepassword.v1.StateResponse
-	4,  // 10: icebath.plugins.onepassword.v1.OnePasswordService.Setup:output_type -> icebath.plugins.onepassword.v1.SetupResponse
-	6,  // 11: icebath.plugins.onepassword.v1.OnePasswordService.Token:output_type -> icebath.plugins.onepassword.v1.TokenResponse
-	8,  // 12: icebath.plugins.onepassword.v1.OnePasswordService.Map:output_type -> icebath.plugins.onepassword.v1.MapResponse
-	10, // 13: icebath.plugins.onepassword.v1.OnePasswordService.Unmap:output_type -> icebath.plugins.onepassword.v1.UnmapResponse
-	13, // 14: icebath.plugins.onepassword.v1.OnePasswordService.Sync:output_type -> icebath.plugins.onepassword.v1.SyncResponse
-	15, // 15: icebath.plugins.onepassword.v1.OnePasswordService.Disable:output_type -> icebath.plugins.onepassword.v1.DisableResponse
-	9,  // [9:16] is the sub-list for method output_type
-	2,  // [2:9] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	1, // 0: icebath.plugins.onepassword.v1.AccountsResponse.accounts:type_name -> icebath.plugins.onepassword.v1.Account
+	4, // 1: icebath.plugins.onepassword.v1.StateResponse.references:type_name -> icebath.plugins.onepassword.v1.Reference
+	3, // 2: icebath.plugins.onepassword.v1.OnePasswordService.State:input_type -> icebath.plugins.onepassword.v1.StateRequest
+	0, // 3: icebath.plugins.onepassword.v1.OnePasswordService.Accounts:input_type -> icebath.plugins.onepassword.v1.AccountsRequest
+	6, // 4: icebath.plugins.onepassword.v1.OnePasswordService.Setup:input_type -> icebath.plugins.onepassword.v1.SetupRequest
+	8, // 5: icebath.plugins.onepassword.v1.OnePasswordService.Token:input_type -> icebath.plugins.onepassword.v1.TokenRequest
+	5, // 6: icebath.plugins.onepassword.v1.OnePasswordService.State:output_type -> icebath.plugins.onepassword.v1.StateResponse
+	2, // 7: icebath.plugins.onepassword.v1.OnePasswordService.Accounts:output_type -> icebath.plugins.onepassword.v1.AccountsResponse
+	7, // 8: icebath.plugins.onepassword.v1.OnePasswordService.Setup:output_type -> icebath.plugins.onepassword.v1.SetupResponse
+	9, // 9: icebath.plugins.onepassword.v1.OnePasswordService.Token:output_type -> icebath.plugins.onepassword.v1.TokenResponse
+	6, // [6:10] is the sub-list for method output_type
+	2, // [2:6] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_icebath_plugins_onepassword_v1_onepassword_proto_init() }
@@ -1222,7 +895,7 @@ func file_icebath_plugins_onepassword_v1_onepassword_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_plugins_onepassword_v1_onepassword_proto_rawDesc), len(file_icebath_plugins_onepassword_v1_onepassword_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

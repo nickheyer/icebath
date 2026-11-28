@@ -42,7 +42,8 @@ var native = strs.Set(".wav", ".aiff", ".aif")
 const deadline = 300 * time.Second
 
 // What a transcription answers when there is no program to run
-const absent = "No whisper program was found on this computer. Install whisper.cpp or whisper, or set Local command in /settings under Speech to text."
+const absent = "No whisper program was found on this computer. Install whisper.cpp or whisper, or give the command of one in Settings › Voice › " +
+	"Speech to text › Local command."
 
 // A program that exited with a failure, with what it said: its error output, else its output, else how it exited
 type exitedError struct{ detail string }
@@ -66,6 +67,7 @@ func Register(registry *speech.Registry, host *packages.Packages) {
 		},
 		Language:   func(job *speech.Job) string { return job.Text(localconfig.Language, "") },
 		Transcribe: w.transcribe,
+		Setup:      speech.Setup{Needs: "a whisper program"},
 	}}})
 }
 

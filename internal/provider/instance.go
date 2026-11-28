@@ -2,13 +2,17 @@ package provider
 
 import (
 	"cmp"
+	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/internal/config"
 	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
+	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
 )
 
 // Provider a profile has, kept under providers and its name there: a kind of provider with a title, base URL, default model, models and
@@ -29,7 +33,11 @@ type Instance struct {
 	// Held to the one account named in Account
 	Pinned bool
 	// Takes turns between its accounts marked for rotation; neither this nor Pinned takes every account in order
-	Rotate   bool
+	Rotate bool
+	// The address of its server is the person's to give, as its kind says before any address is given: Spec holds the address given, so
+	// it no longer tells
+	Own bool
+	// Settings of the provider, whose writes never make it again once it is removed
 	Settings config.View
 }
 
@@ -37,9 +45,14 @@ func (i Instance) Label() string {
 	return cmp.Or(i.Spec.DisplayName, i.ID)
 }
 
-// Fields of one account of the provider
+// Fields of one account of the provider, whose writes never make the account again once it is removed
 func (i Instance) AccountFields(name string) config.View {
-	return i.Settings.View(providerconfig.Accounts).View(name)
+	return i.Settings.View(providerconfig.Accounts).View(name).Within()
+}
+
+// Name an account of the provider is shown by: its title, else its name
+func (i Instance) AccountTitle(name string) string {
+	return cmp.Or(strings.TrimSpace(i.AccountFields(name).GetString(providerconfig.Title)), name)
 }
 
 // Settings of every provider of the profile
@@ -78,12 +91,13 @@ func (r *Registry) Instance(cfg *config.Config, name string) (Instance, bool) {
 }
 
 func (r *Registry) instance(cfg *config.Config, id string) Instance {
-	settings := providers(cfg).View(id)
+	settings := providers(cfg).View(id).Within()
 	kind, _ := settings.Stored(providerconfig.Type).(string)
 	spec, known := r.exact(kind)
 	if !known {
 		spec = Spec{Name: kind}
 	}
+	own := spec.Own()
 	spec.DisplayName = settings.GetString(providerconfig.Title)
 	spec.BaseURL = settings.GetString(providerconfig.BaseURL)
 	spec.DefaultModel = settings.GetString(providerconfig.DefaultModel)
@@ -93,7 +107,7 @@ func (r *Registry) instance(cfg *config.Config, id string) Instance {
 	if spec.Resolve != nil {
 		spec = spec.Resolve(spec, settings)
 	}
-	instance := Instance{ID: id, Spec: spec, Known: known, Models: settings.GetStringSlice(providerconfig.Models), Settings: settings}
+	instance := Instance{ID: id, Spec: spec, Known: known, Models: settings.GetStringSlice(providerconfig.Models), Own: own, Settings: settings}
 	instance.Accounts = ordered(settings.View(providerconfig.Accounts))
 	instance.Account = settings.GetString(providerconfig.Account)
 	instance.Rotate = instance.Account == providerconfig.Rotation
@@ -140,104 +154,249 @@ func (r *Registry) Options(cfg *config.Config) func() []config.Option {
 	}
 }
 
-// Adds a provider of the kind to the profile under the name, or under the kind's name, numbered when one has it already
-func (r *Registry) Add(cfg *config.Config, kind, id, title string) (Instance, error) {
+// Adds a provider of the kind to the profile with the address of its server when one is given, written whole in one write: under the name
+// given, else under the key its title makes, else under the kind's name, numbered when one has it already
+func (r *Registry) Add(cfg *config.Config, kind, id, title, address string) (Instance, error) {
 	spec, ok := r.Spec(kind)
 	if !ok || spec.Hidden {
-		return Instance{}, fmt.Errorf("There is no kind of provider named %s. Run `icebath providers` to see the kinds.", kind)
+		return Instance{}, fmt.Errorf("There is no kind of provider named %s.", kind)
 	}
-	id = strings.ToLower(strings.TrimSpace(id))
+	id, title = strings.ToLower(strings.TrimSpace(id)), strings.TrimSpace(title)
+	taken := func(name string) bool { return providers(cfg).View(name).Exists() }
 	switch {
 	case id != "" && !config.Named(id):
 		return Instance{}, fmt.Errorf("%q can't name a provider. Use lower case letters, digits, dashes or underscores.", id)
-	case id != "" && providers(cfg).View(id).Exists():
+	case id != "" && taken(id):
 		return Instance{}, fmt.Errorf("The profile already has a provider named %s.", id)
+	case id == "" && title != "":
+		id = providerconfig.KeyOf(title, spec.Name, taken)
 	case id == "":
-		id = free(spec.Name, func(name string) bool { return providers(cfg).View(name).Exists() })
+		id = providerconfig.KeyOf(spec.Name, spec.Name, taken)
 	}
-	settings := providers(cfg).View(id)
-	if err := settings.Set(providerconfig.Type, spec.Name); err != nil {
-		return Instance{}, err
+	entry := map[string]any{providerconfig.Type: spec.Name}
+	if title != "" {
+		entry[providerconfig.Title] = title
 	}
-	if title = strings.TrimSpace(title); title != "" {
-		if err := settings.Set(providerconfig.Title, title); err != nil {
+	if address = strings.TrimRight(strings.TrimSpace(address), "/"); address != "" {
+		if err := Address(address); err != nil {
 			return Instance{}, err
 		}
+		entry[providerconfig.BaseURL] = address
+	}
+	if err := providers(cfg).Set(id, entry); err != nil {
+		return Instance{}, err
 	}
 	return r.instance(cfg, id), nil
 }
 
-// Removes the provider from the profile, with its accounts
-func (r *Registry) Remove(cfg *config.Config, id string) error {
-	if _, ok := r.Instance(cfg, id); !ok || !providers(cfg).View(id).Exists() {
-		return fmt.Errorf("The profile has no provider named %s.", id)
-	}
-	return providers(cfg).View(id).Remove()
-}
+// Fields an account keeps beside its credential, which connecting it again leaves as they are
+var standing = []string{providerconfig.Title, providerconfig.Priority, providerconfig.InRotation, providerconfig.Requests, providerconfig.Used}
 
-// Adds an account to the provider under the name, or under default, numbered when one has it already. It is the one in use when the
-// provider had none
-func (r *Registry) AddAccount(cfg *config.Config, id, name, title string) (string, error) {
+// Keeps a credential in an account of the provider, written whole with the provider in one write so that no account stands without the
+// credential that makes it one. The account named takes it in place of the credential it kept and of the limits it ran into, its title,
+// place and rotation kept, and the title given when one is. With no account named, an account is made with it after the others, named as
+// the person named it, else after who signed in, else for the way it signs in: API key for a key, the program whose sign-in it uses; its
+// key made from that name by the one rule. It is the one in use when the provider had none. A variable or program the credential comes
+// from is one the provider takes from again. The account's name
+func (r *Registry) Connect(cfg *config.Config, id, name, title, identity string, fields map[string]any) (string, error) {
 	instance, ok := r.Instance(cfg, id)
 	if !ok {
-		return "", fmt.Errorf("The profile has no provider named %s.", id)
+		return "", noProvider(id)
 	}
 	name = strings.ToLower(strings.TrimSpace(name))
-	switch {
-	case name != "" && !config.Named(name):
-		return "", fmt.Errorf("%q can't name an account. Use lower case letters, digits, dashes or underscores.", name)
-	case name != "" && slices.Contains(instance.Accounts, name):
-		return "", fmt.Errorf("%s already has an account named %s.", instance.Label(), name)
-	case name == "":
-		name = free("default", func(name string) bool { return slices.Contains(instance.Accounts, name) })
+	exists := slices.Contains(instance.Accounts, name)
+	if name != "" && !exists {
+		return "", noAccount(instance, id, name)
 	}
-	fields := instance.AccountFields(name)
-	if err := fields.Set(providerconfig.Title, cmp.Or(strings.TrimSpace(title), name)); err != nil {
+	given, err := credentialFields(instance, fields, exists)
+	if err != nil {
 		return "", err
 	}
-	if n := len(instance.Accounts); n > 0 {
-		last := instance.AccountFields(instance.Accounts[n-1]).GetInt(providerconfig.Priority)
-		if err := fields.Set(providerconfig.Priority, max(last+1, n)); err != nil {
-			return "", err
-		}
-		return name, nil
+	title = strings.TrimSpace(title)
+	if !exists {
+		title = cmp.Or(title, strings.TrimSpace(identity), wayTitle(instance, given))
+		title = freeTitle(instance, title)
+		name = providerconfig.KeyOf(title, "account", func(key string) bool { return slices.Contains(instance.Accounts, key) })
 	}
-	return name, instance.Settings.Set(providerconfig.Account, name)
+	return name, r.rewrite(instance, func(kept map[string]any) error {
+		accounts := table(kept, providerconfig.Accounts)
+		entry := map[string]any{providerconfig.Title: cmp.Or(title, name)}
+		if old, _ := accounts[name].(map[string]any); exists {
+			for _, field := range standing {
+				if value, ok := old[field]; ok && value != nil {
+					entry[field] = value
+				}
+			}
+			if title != "" {
+				entry[providerconfig.Title] = title
+			}
+		} else if n := len(instance.Accounts); n > 0 {
+			last := instance.AccountFields(instance.Accounts[n-1]).GetInt(providerconfig.Priority)
+			entry[providerconfig.Priority] = max(last+1, n)
+		}
+		maps.Copy(entry, given)
+		accounts[name] = entry
+		if len(instance.Accounts) == 0 {
+			kept[providerconfig.Account] = name
+		}
+		for _, field := range []string{providerconfig.KeyEnv, providerconfig.Program} {
+			if source, _ := given[field].(string); source != "" {
+				unignore(kept, source)
+			}
+		}
+		return nil
+	})
 }
 
-// Removes an account of the provider, with everything it keeps: the variable it reads its key from cleared from the profile's .env too,
-// unless another account reads it. The variables cleared
-func (r *Registry) RemoveAccount(cfg *config.Config, id, name string) ([]string, error) {
-	instance, ok := r.Instance(cfg, id)
-	if !ok || !slices.Contains(instance.Accounts, name) {
-		return nil, noAccount(instance, id, name)
+// Name a new account takes for the way its credential signs in, when the person gave none and nobody signed in: API key for a key, the
+// program whose sign-in it uses, else the provider's name
+func wayTitle(instance Instance, fields map[string]any) string {
+	if program, _ := fields[providerconfig.Program].(string); program != "" {
+		return program
 	}
-	linked := strings.TrimSpace(instance.AccountFields(name).GetString(providerconfig.KeyEnv))
-	if err := instance.AccountFields(name).Remove(); err != nil {
-		return nil, err
+	if fields[providerconfig.APIKeyField] != nil || fields[providerconfig.KeyEnv] != nil {
+		return "API key"
 	}
-	var cleared []string
-	if linked != "" && !r.linked(cfg, linked) {
-		removed, err := cfg.RemoveEnv(linked)
+	return instance.Label()
+}
+
+// The title, numbered from 2 when another account of the provider has it
+func freeTitle(instance Instance, title string) string {
+	taken := func(candidate string) bool {
+		return slices.ContainsFunc(instance.Accounts, func(name string) bool { return strings.EqualFold(instance.AccountTitle(name), candidate) })
+	}
+	for n, candidate := 2, title; ; n, candidate = n+1, title+" "+strconv.Itoa(n) {
+		if !taken(candidate) {
+			return candidate
+		}
+	}
+}
+
+// Fields of the credential an account of the provider keeps, each checked against the field it fills, empty ones left out: those its kind
+// declares, the variable a key is read from and the program whose sign-in it uses. An error when one is none of those or none is left
+func credentialFields(instance Instance, fields map[string]any, exists bool) (map[string]any, error) {
+	declared := map[string]config.Setting{}
+	for _, field := range instance.Spec.AccountFields() {
+		declared[field.Key] = field
+	}
+	for _, field := range providerconfig.Kept(instance.Spec.Keyed()) {
+		if field.Key == providerconfig.KeyEnv || field.Key == providerconfig.Program {
+			declared[field.Key] = field
+		}
+	}
+	out := map[string]any{}
+	for name, value := range fields {
+		field, ok := declared[name]
+		if !ok {
+			return nil, fmt.Errorf("An account of %s can't keep what this sign-in gave, so nothing was kept.", instance.Label())
+		}
+		checked, err := field.Check(value)
 		if err != nil {
 			return nil, err
 		}
-		if removed {
-			cleared = append(cleared, linked)
+		if checked, err = field.Located(checked); err != nil {
+			return nil, err
+		}
+		if text, ok := checked.(string); ok {
+			checked = strings.TrimSpace(text)
+		}
+		if name == providerconfig.KeyEnv && checked != "" && !config.EnvName(checked.(string)) {
+			return nil, fmt.Errorf("%s can't name a variable. A variable name has only letters, digits and underscores, and starts with a letter.",
+				checked)
+		}
+		if config.Truthy(checked) {
+			out[name] = checked
 		}
 	}
-	if instance.Settings.Stored(providerconfig.Account) != name {
-		return cleared, nil
+	switch {
+	case len(out) > 0:
+		return out, nil
+	case exists:
+		return nil, fmt.Errorf("There is no API key or sign-in to keep, so the account of %s is as it was.", instance.Label())
 	}
-	// The account in use from now on is the first left whose credential still works, none when none does
-	var next any
-	for _, other := range instance.Accounts {
-		if status, _ := instance.AccountFields(other).Get(providerconfig.Status).(map[string]any); other != name && status["state"] != "dead" {
-			next = other
-			break
+	return nil, fmt.Errorf("There is no API key or sign-in to keep, so no account of %s was made.", instance.Label())
+}
+
+// What a removal did besides removing the thing: the variables it cleared from the profile's .env, and what named the thing, a phrase each
+type Removed struct {
+	Variables []string
+	Named     []string
+}
+
+// Removes a provider from the profile with its accounts, then clears every setting and everything else that named it
+func (r *Registry) Remove(ctx context.Context, cfg *config.Config, id string) (Removed, error) {
+	instance, ok := r.Instance(cfg, id)
+	if !ok || instance.ID != strings.ToLower(strings.TrimSpace(id)) {
+		return Removed{}, noProvider(id)
+	}
+	var linked []string
+	for _, account := range instance.Accounts {
+		if variable := strings.TrimSpace(instance.AccountFields(account).GetString(providerconfig.KeyEnv)); variable != "" {
+			linked = append(linked, variable)
 		}
 	}
-	return cleared, instance.Settings.Set(providerconfig.Account, next)
+	if err := providers(cfg).View(instance.ID).Remove(); err != nil {
+		return Removed{}, err
+	}
+	var removed Removed
+	if err := r.unlink(cfg, &removed, linked...); err != nil {
+		return removed, err
+	}
+	named, err := r.follow(ctx, cfg, Change{Provider: instance.ID})
+	removed.Named = named
+	return removed, err
+}
+
+// Removes an account of the provider, with everything it keeps, in one write with the provider's choice of account: the one in use from
+// then on is the first left whose credential still works. The variable it read its key from is cleared from the profile's .env too, unless
+// another account reads it; then every setting and everything else that named the account is cleared
+func (r *Registry) RemoveAccount(ctx context.Context, cfg *config.Config, id, name string) (Removed, error) {
+	instance, ok := r.Instance(cfg, id)
+	if !ok || !slices.Contains(instance.Accounts, name) {
+		return Removed{}, noAccount(instance, id, name)
+	}
+	linked := strings.TrimSpace(instance.AccountFields(name).GetString(providerconfig.KeyEnv))
+	err := r.rewrite(instance, func(kept map[string]any) error {
+		delete(table(kept, providerconfig.Accounts), name)
+		if kept[providerconfig.Account] != name {
+			return nil
+		}
+		delete(kept, providerconfig.Account)
+		for _, other := range instance.Accounts {
+			if status, _ := instance.AccountFields(other).Get(providerconfig.Status).(map[string]any); other != name && status["state"] != "dead" {
+				kept[providerconfig.Account] = other
+				break
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return Removed{}, err
+	}
+	var removed Removed
+	if err := r.unlink(cfg, &removed, linked); err != nil {
+		return removed, err
+	}
+	named, err := r.follow(ctx, cfg, Change{Provider: instance.ID, Account: name})
+	removed.Named = named
+	return removed, err
+}
+
+// Clears the variables from the profile's .env that no account of any provider reads any more, noting each one cleared
+func (r *Registry) unlink(cfg *config.Config, removed *Removed, variables ...string) error {
+	for _, variable := range variables {
+		if variable == "" || r.linked(cfg, variable) || slices.Contains(removed.Variables, variable) {
+			continue
+		}
+		cleared, err := cfg.RemoveEnv(variable)
+		if err != nil {
+			return err
+		}
+		if cleared {
+			removed.Variables = append(removed.Variables, variable)
+		}
+	}
+	return nil
 }
 
 // Whether an account of any provider of the profile reads its key from the variable
@@ -252,44 +411,18 @@ func (r *Registry) linked(cfg *config.Config, variable string) bool {
 	return false
 }
 
-// Leaves a variable or program out of the places the provider takes its credential from, a variable cleared from the profile's .env too.
-// The variables cleared
-func (r *Registry) Ignore(cfg *config.Config, id, source string) ([]string, error) {
-	instance, ok := r.Instance(cfg, id)
-	source = strings.TrimSpace(source)
-	switch {
-	case !ok:
-		return nil, fmt.Errorf("The profile has no provider named %s.", id)
-	case source == "":
-		return nil, fmt.Errorf("Name the environment variable or program that %s should not take its key from.", instance.Label())
-	}
-	if ignored := instance.Settings.GetStringSlice(providerconfig.Ignored); !slices.Contains(ignored, source) {
-		if err := instance.Settings.Set(providerconfig.Ignored, append(slices.Clone(ignored), source)); err != nil {
-			return nil, err
-		}
-	}
-	if !config.EnvName(source) {
-		return nil, nil
-	}
-	removed, err := cfg.RemoveEnv(source)
-	if err != nil || !removed {
-		return nil, err
-	}
-	return []string{source}, nil
-}
-
-// Uses the account for the provider from now on: one by name, Rotation for the accounts marked for rotation, or none for every account
-// in order
+// Uses the account for the provider from now on: one by name, Rotation for the accounts that take turns, or none for every account in
+// order. Taking turns is refused while no account takes turns
 func (r *Registry) UseAccount(cfg *config.Config, id, name string) error {
 	instance, ok := r.Instance(cfg, id)
 	switch {
 	case !ok:
-		return fmt.Errorf("The profile has no provider named %s.", id)
+		return noProvider(id)
 	case name == "":
 		return instance.Settings.Set(providerconfig.Account, nil)
 	case name == providerconfig.Rotation:
 		if !slices.ContainsFunc(instance.Accounts, func(account string) bool { return instance.AccountFields(account).GetBool(providerconfig.InRotation) }) {
-			return fmt.Errorf("No account of %s is in rotation. Mark accounts with `icebath auth rotation %s on` first.", instance.Label(), instance.ID)
+			return fmt.Errorf("None of the accounts of %s takes turns yet. Turn on Takes turns for the accounts that should.", instance.Label())
 		}
 	case !slices.Contains(instance.Accounts, name):
 		return noAccount(instance, id, name)
@@ -297,36 +430,71 @@ func (r *Registry) UseAccount(cfg *config.Config, id, name string) error {
 	return instance.Settings.Set(providerconfig.Account, name)
 }
 
-// Gives an account of the provider another name, keeping everything it holds and its place
-func (r *Registry) RenameAccount(cfg *config.Config, id, name, to string) error {
+// Gives an account the name a person typed, the one rule of every rename: the name shown changes, and the key the account is kept under
+// follows it to a free key made from the name, in one write with the provider's choice of account. Every setting and everything else that
+// named the account by its key carries over to the new one. The key it is kept under
+func (r *Registry) RenameAccount(ctx context.Context, cfg *config.Config, id, name, title string) (string, error) {
 	instance, ok := r.Instance(cfg, id)
-	to = strings.ToLower(strings.TrimSpace(to))
+	title = strings.TrimSpace(title)
 	switch {
-	case !ok:
-		return fmt.Errorf("The profile has no provider named %s.", id)
-	case !slices.Contains(instance.Accounts, name):
-		return noAccount(instance, id, name)
-	case !config.Named(to):
-		return fmt.Errorf("%q can't name an account. Use lower case letters, digits, dashes or underscores.", to)
-	case to == name:
+	case !ok || !slices.Contains(instance.Accounts, name):
+		return "", noAccount(instance, id, name)
+	case title == "":
+		return "", errors.New("Give the account a name with at least one letter or digit.")
+	}
+	to := providerconfig.KeyOf(title, "account", func(key string) bool { return key != name && slices.Contains(instance.Accounts, key) })
+	err := r.rewrite(instance, func(kept map[string]any) error {
+		accounts := table(kept, providerconfig.Accounts)
+		entry, _ := accounts[name].(map[string]any)
+		if entry == nil {
+			entry = map[string]any{}
+		}
+		entry[providerconfig.Title] = title
+		delete(accounts, name)
+		accounts[to] = entry
+		if kept[providerconfig.Account] == name {
+			kept[providerconfig.Account] = to
+		}
 		return nil
-	case slices.Contains(instance.Accounts, to):
-		return fmt.Errorf("%s already has an account named %s.", instance.Label(), to)
+	})
+	if err != nil || to == name {
+		return to, err
 	}
-	accounts := instance.Settings.View(providerconfig.Accounts)
-	if err := accounts.Set(to, accounts.Stored(name)); err != nil {
-		return err
-	}
-	if err := accounts.View(name).Remove(); err != nil {
-		return err
-	}
-	if instance.Settings.Stored(providerconfig.Account) == name {
-		return instance.Settings.Set(providerconfig.Account, to)
-	}
-	return nil
+	_, err = r.follow(ctx, cfg, Change{Provider: instance.ID, Account: name, To: to})
+	return to, err
 }
 
-// Moves an account of the provider to the place given from 0, the first tried, clamped to the places there are; the place it took
+// Gives a provider the name a person typed, by the same rule: the name shown changes and the key the provider is kept under follows it,
+// the kind's name for no name, in one write. Every setting and everything else that named the provider carries over. Its key
+func (r *Registry) Rename(ctx context.Context, cfg *config.Config, id, title string) (string, error) {
+	instance, ok := r.Instance(cfg, id)
+	if !ok || instance.ID != strings.ToLower(strings.TrimSpace(id)) {
+		return "", noProvider(id)
+	}
+	title = strings.TrimSpace(title)
+	all, _ := clone(providers(cfg).Stored("")).(map[string]any)
+	taken := func(key string) bool { return key != instance.ID && all[key] != nil }
+	to := providerconfig.KeyOf(cmp.Or(title, instance.Spec.Name), instance.Spec.Name, taken)
+	entry, _ := all[instance.ID].(map[string]any)
+	if entry == nil {
+		return "", noProvider(id)
+	}
+	if title == "" {
+		delete(entry, providerconfig.Title)
+	} else {
+		entry[providerconfig.Title] = title
+	}
+	delete(all, instance.ID)
+	all[to] = entry
+	if err := providers(cfg).Replace(all); err != nil || to == instance.ID {
+		return to, err
+	}
+	_, err := r.follow(ctx, cfg, Change{Provider: instance.ID, To: to})
+	return to, err
+}
+
+// Moves an account of the provider to the place given from 0, the first tried, clamped to the places there are, every account's place
+// written in one write; the place it took
 func (r *Registry) MoveAccount(cfg *config.Config, id, name string, place int) (int, error) {
 	instance, ok := r.Instance(cfg, id)
 	if !ok || !slices.Contains(instance.Accounts, name) {
@@ -334,21 +502,96 @@ func (r *Registry) MoveAccount(cfg *config.Config, id, name string, place int) (
 	}
 	others := slices.DeleteFunc(slices.Clone(instance.Accounts), func(other string) bool { return other == name })
 	place = min(max(place, 0), len(others))
-	for i, account := range slices.Insert(others, place, name) {
-		if err := instance.AccountFields(account).Set(providerconfig.Priority, i); err != nil {
-			return 0, err
+	return place, r.rewrite(instance, func(kept map[string]any) error {
+		accounts := table(kept, providerconfig.Accounts)
+		for i, account := range slices.Insert(others, place, name) {
+			if entry, ok := accounts[account].(map[string]any); ok {
+				entry[providerconfig.Priority] = i
+			}
 		}
-	}
-	return place, nil
+		return nil
+	})
 }
 
-// The name, or the name numbered from 2 when it is taken
-func free(name string, taken func(string) bool) string {
-	for n, candidate := 2, name; ; n, candidate = n+1, name+"-"+strconv.Itoa(n) {
-		if !taken(candidate) {
-			return candidate
+// Writes the provider's settings in one write, as the edit leaves a copy of what is kept, so that no reader sees half of a change; nothing
+// once the provider is gone
+func (r *Registry) rewrite(instance Instance, edit func(kept map[string]any) error) error {
+	kept, _ := clone(instance.Settings.Stored("")).(map[string]any)
+	if kept == nil {
+		return noProvider(instance.ID)
+	}
+	if err := edit(kept); err != nil {
+		return err
+	}
+	return instance.Settings.Replace(kept)
+}
+
+// Table under the name in a copy of what is kept, made when there is none
+func table(kept map[string]any, name string) map[string]any {
+	inner, ok := kept[name].(map[string]any)
+	if !ok {
+		inner = map[string]any{}
+		kept[name] = inner
+	}
+	return inner
+}
+
+// Copy of a value decoded from the settings, its tables and lists copied all the way down
+func clone(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, inner := range typed {
+			out[key] = clone(inner)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for i, inner := range typed {
+			out[i] = clone(inner)
+		}
+		return out
+	case []string:
+		return slices.Clone(typed)
+	}
+	return value
+}
+
+// Takes the source out of the places a copy of a provider's settings leaves out
+func unignore(kept map[string]any, source string) {
+	var left []any
+	for _, have := range texts(kept[providerconfig.Ignored]) {
+		if have != source {
+			left = append(left, have)
 		}
 	}
+	if left == nil {
+		delete(kept, providerconfig.Ignored)
+		return
+	}
+	kept[providerconfig.Ignored] = left
+}
+
+// Texts of a list decoded from the settings
+func texts(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return slices.Clone(typed)
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text, ok := item.(string); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// Refusal of a provider the profile does not have
+func noProvider(id string) error {
+	return fmt.Errorf("The profile has no provider named %s.", id)
 }
 
 // Fields an account of the kind keeps
@@ -393,12 +636,13 @@ func (s sections) Sections(values *config.Config) []config.Section {
 		settings := all.View(p.id)
 		accounts := settings.View(providerconfig.Accounts)
 		names := accounts.Names()
-		instance := providerconfig.Instance(p.kind, shown(p.spec, p.id, ""), p.spec.BaseURL, p.spec.BaseURLEnv, p.spec.DefaultModel, names)
+		instance := providerconfig.Instance(p.kind, shown(p.spec, p.id, ""), p.spec.BaseURL, p.spec.BaseURLEnv, p.spec.DefaultModel, p.spec.Own(),
+			titled(accounts, names))
 		out = append(out,
 			config.Section{Key: settings.Prefix(), Parent: providerconfig.Key, Title: p.label, About: "The models, accounts and limits of this provider",
 				Order:    (place + 1) * 10,
 				Settings: providerconfig.Under(settings.Prefix(), providerconfig.Arranged(slices.Concat(instance, providerconfig.Rotations(), p.spec.Settings)))},
-			config.Section{Key: accounts.Prefix(), Parent: settings.Prefix(), Title: "Accounts", About: "Your sign-ins and API keys for this provider", Order: 10},
+			config.Section{Key: accounts.Prefix(), Parent: settings.Prefix(), Title: "Accounts", About: "The accounts of this provider", Order: 10},
 		)
 		for place, name := range tried(accounts, names) {
 			fields := accounts.View(name)
@@ -412,19 +656,38 @@ func (s sections) Sections(values *config.Config) []config.Section {
 	return out
 }
 
-// Name a provider is shown by: the one the person gave it, else the name of its kind followed by its own name in the profile when that
-// differs from the kind's, so two of one kind tell apart
+// Name a provider is shown by: the one the person gave it, else the name of its kind, numbered as its key is when another of the kind
+// came first, so two of one kind tell apart
 func shown(kind Spec, id, own string) string {
 	if own = strings.TrimSpace(own); own != "" {
 		return own
 	}
-	switch label := kind.Label(); {
-	case label == "":
-		return id
-	case id != kind.Name:
-		return label + " (" + id + ")"
-	default:
-		return label
+	label := kind.Label()
+	if label == "" || id == kind.Name {
+		return cmp.Or(label, id)
+	}
+	if n, ok := strings.CutPrefix(id, kind.Name+"-"); ok {
+		if _, err := strconv.Atoi(n); err == nil {
+			return label + " " + n
+		}
+	}
+	return label + " (" + id + ")"
+}
+
+// Whether the address of a provider of the kind is the person's to give, as a server of their own's is
+func (s Spec) Own() bool {
+	return s.Local || s.BaseURL == ""
+}
+
+// Accounts by name with the titles they are shown by, in the order they are tried, read from what is kept each time they are asked for
+func titled(accounts config.View, names []string) func() []config.Option {
+	return func() []config.Option {
+		var options []config.Option
+		for _, name := range tried(accounts, names) {
+			title, _ := accounts.View(name).Stored(providerconfig.Title).(string)
+			options = append(options, config.Option{Value: name, Title: cmp.Or(strings.TrimSpace(title), name)})
+		}
+		return options
 	}
 }
 
@@ -442,4 +705,14 @@ func tried(accounts config.View, names []string) []string {
 // Refusal of an account the provider does not have, named by the provider's title when the profile has it
 func noAccount(instance Instance, id, name string) error {
 	return fmt.Errorf("%s has no account named %s.", cmp.Or(instance.Label(), id), name)
+}
+
+// Name the account of a listed provider with the name is shown by, its name when the provider lists no such account
+func AccountTitle(entry *providerv1.Provider, name string) string {
+	for _, account := range entry.GetAccounts() {
+		if account.GetName() == name {
+			return account.GetTitle()
+		}
+	}
+	return name
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	cuconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/computeruse/config"
 	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/nickheyer/icebath/pkg/proc"
 	"github.com/nickheyer/icebath/pkg/strs"
 	"gopkg.in/yaml.v3"
@@ -71,7 +72,7 @@ func (d *Driver) verifyApp(ctx context.Context, cfg *config.Config, app string) 
 		return nil
 	}
 	return fmt.Errorf("The CuaDriver app at %s is signed by the team “%s” instead of its makers, 4YEC26S9KF or YCK386LBJ7, so icebath does not "+
-		"start it. Only for a driver you built yourself, turn on Allow unsigned driver in /settings under Tools › Computer use.", app, team)
+		"start it. Only for a driver you built yourself, turn on Allow unsigned driver of computer use.", app, team)
 }
 
 // Whether a capability manifest is version 3 or newer, which bounds any permission mode
@@ -116,7 +117,7 @@ func newDaemon(d *Driver, cfg *config.Config, mode, manifest string) (*daemon, e
 		return nil, errors.New("bounded permission mode requires tools.computer_use.capability_manifest")
 	}
 	if manifest != "" {
-		abs, err := filepath.Abs(terminal.ExpandUser(manifest))
+		abs, err := filepath.Abs(fsx.ExpandHome(manifest))
 		if err != nil {
 			return nil, err
 		}

@@ -118,8 +118,8 @@ func (a *Agent) vet(r *run, reply *sessionsv1.Message, history []*sessionsv1.Mes
 			a.tell(r, "The model's tool call arrived cut off, so icebath did not run it.")
 			if finish == "length" {
 				return halted, nil, "The model's reply reached its length limit before its action was whole, so icebath did not run it and nothing " +
-					"changed. Send “continue”, or ask for the work in smaller steps.\nFor Claude models you can also raise Max output in /settings " +
-					"under Connections › Anthropic messages API."
+					"changed. Send “continue”, or ask for the work in smaller steps.\nFor Claude models you can also raise Max output with " +
+					"/settings max output."
 			}
 			return halted, nil, "The model's action arrived cut off, most likely by a dropped connection, so icebath did not run it and nothing " +
 				"changed. Send /retry, and if it keeps happening, ask for the work in smaller steps."

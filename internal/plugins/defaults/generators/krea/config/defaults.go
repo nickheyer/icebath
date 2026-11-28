@@ -14,9 +14,8 @@ func Register(cfg *config.Config) {
 		Order:  60,
 		Settings: []config.Setting{
 			{Key: APIKey, Title: "API key", About: "Your Krea API key.", Help: "Get one at " + KeyLink + ".", Default: "", Env: []string{"KREA_API_KEY"}, Secret: true},
-			{Key: Model, Title: "Model", About: "The Krea model that makes images.",
-				Help: "One of krea-3, krea-2-medium, krea-2-large or krea-2-medium-turbo. When neither model is set, Krea 2 Medium is used.", Default: "",
-				Zero: "The general model", Env: []string{"KREA_IMAGE_MODEL"}},
+			{Key: Model, Title: "Model", About: "The Krea model that makes images.", Default: "", Zero: "Krea 2 Medium", Env: []string{"KREA_IMAGE_MODEL"},
+				Picks: generationconfig.ImageModelOf(Name)},
 			{Key: Creativity, Title: "Creativity", About: "How freely Krea 2 models follow the description of an image.", Default: "medium",
 				Options: config.Options(
 					config.Option{Value: "raw", Title: "Raw", About: "The description as written"},

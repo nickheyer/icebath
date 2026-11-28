@@ -102,6 +102,32 @@ message Setting {
   bool need = 31;
   // What text must start with, one of them; any text when empty
   repeated string starts = 32;
+  // The page of its area changes it with a view made for it, so no list of settings shows it
+  bool custom = 33;
+  // Kind of thing its value names, by the name a screen registers a picker under; typed text when empty
+  string picks = 34;
+  // Things of the profile its value names, each by its name with the title a person knows it by; the value stays free
+  repeated Option names = 35;
+  // What its text names on this computer, unset for text that names no path
+  Path path = 36;
+  // Key of the table whose entry the setting is a declared field of, keyed below that entry; empty for a setting of its own
+  string entry_of = 37;
+  // A list whose order matters, its items moved up and down where it is changed
+  bool ordered = 38;
+}
+
+// What a setting's text names on this computer, and whether it must be there when the value is saved
+message Path {
+  PathKind kind = 1;
+  bool exists = 2;
+}
+
+// Kind of thing a path names: a file, a folder, or a program whose bare name is looked up on PATH
+enum PathKind {
+  PATH_KIND_UNSPECIFIED = 0;
+  PATH_KIND_FILE = 1;
+  PATH_KIND_FOLDER = 2;
+  PATH_KIND_PROGRAM = 3;
 }
 
 // When a change of a setting takes hold
@@ -121,10 +147,13 @@ message Entry {
   string name = 2;
   // Fields of an entry, each keyed by its name inside the entry; a single field with an empty key for an entry that is one value
   repeated Setting fields = 3;
-  // The names of the entries are names of variables, shown in capitals whatever case they are kept in
-  bool capitals = 4;
+  reserved 4;
+  reserved "capitals";
   // The names an entry may have, each with what a person calls it; any name when empty
   repeated Option names = 5;
+  // The names of the entries ignore case, as HTTP headers do: two names that differ only in case are one entry. Every other table keeps
+  // each name as it is written and two such names as two entries
+  bool ignore_case = 6;
 }
 
 message Section {
@@ -134,8 +163,12 @@ message Section {
   string description = 4;
   // Kept once for every profile rather than in the profile in use
   bool global = 5;
-  // Group of the first settings screen a section at the top is listed under
+  // Group of the settings menu an area is listed under
   string group = 6;
+  // An area of the settings menu: a section at the top, or one under another section that says it is one
+  bool area = 7;
+  // Key of the area whose page lists the settings of this section among its own, empty for a section that lists its own
+  string into = 8;
 }
 
 // Heading the first settings screen lists sections under
@@ -149,6 +182,8 @@ message ListRequest {
   string profile = 1;
   // Leaves out the values each setting may take, which can cost a check each, such as every terminal backend's
   bool bare = 2;
+  // Lists the declared fields of every entry of a table of things too, each a setting keyed below its entry
+  bool entries = 3;
 }
 
 message ListResponse {

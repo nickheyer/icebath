@@ -166,7 +166,7 @@ func (h *Packages) NodeModules(ctx context.Context, cfg *config.Config, dir stri
 		return ""
 	}
 	if !explicit && !h.LazyAllowed(cfg) {
-		return "Downloads when needed are off, so the Node packages of this folder were not installed. Turn on Download when needed in /settings under Downloads."
+		return "Downloads when needed are off, so the Node packages of this folder were not installed. Download when needed, the option of Downloads, turns them on."
 	}
 	verb := "install"
 	if fsx.IsFile(filepath.Join(dir, "package-lock.json")) {

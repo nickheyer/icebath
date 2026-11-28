@@ -19,14 +19,14 @@ func Register(cfg *config.Config) {
 				Help: "Patterns such as *.prompt.md.", Default: []string{}},
 			{Key: WriteSafeRoot, Title: "Writable folders", About: "The folders that the file tools may write in.",
 				Help: "Separate several folders as in PATH. Protected files still ask first.", Default: "", Zero: "Anywhere",
-				Env: []string{"ICEBATH_WRITE_SAFE_ROOT"}},
+				Env: []string{"ICEBATH_WRITE_SAFE_ROOT"}, Path: &config.Path{Kind: config.PathFolder, Several: true}},
 			{Key: ReadMaxChars, Title: "Read limit", About: "The most text that one file read returns.",
 				Help: "A longer read stops at a whole line, and the agent reads on from there.", Default: 100000, Counts: "characters", Least: config.Num(1),
 				Advanced: true},
 			{Key: NativeRead, Title: "Direct file access", About: "Read, write and search files on this computer directly instead of through commands.",
 				Default: true, Env: []string{"ICEBATH_NATIVE_FILE_READ"}, Advanced: true},
-			{Key: DisableStateGuard, Title: "Skip the stale-write check", About: "Let the agent replace files it has not read in full, and edit over newer changes.",
-				Default: false, Env: []string{"ICEBATH_DISABLE_FILE_STATE_GUARD"}, Advanced: true},
+			{Key: StateGuard, Title: "Check for stale writes", About: "Stop the agent from replacing a file it has not read in full, or one that changed since.",
+				Help: "The variable " + NoStateGuardEnv + " turns this off for a run.", Default: true, Advanced: true},
 		},
 	}})
 }

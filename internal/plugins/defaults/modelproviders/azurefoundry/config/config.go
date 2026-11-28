@@ -1,5 +1,7 @@
 package config
 
+import "github.com/nickheyer/icebath/internal/config"
+
 const (
 	Name         = "azure-foundry"
 	Title        = "Azure Foundry"
@@ -32,3 +34,9 @@ const (
 	CertificatePath     = "certificate_path"
 	CertificatePassword = "certificate_password"
 )
+
+// Field of an account that names the certificate of its service principal: the file its sign-in reads, which the account keeps by its
+// whole path
+var CertificateFile = config.Setting{Key: CertificatePath, Title: "Certificate", About: "The PEM or PFX certificate file of the service principal.",
+	Help: "A path such as ~/certs/foundry.pem.", Default: "", Zero: "From AZURE_CLIENT_CERTIFICATE_PATH",
+	Path: &config.Path{Kind: config.PathFile, Exists: true}}

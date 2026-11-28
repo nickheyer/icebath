@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
+	webconfig "github.com/nickheyer/icebath/internal/web/config"
 )
 
 func Register(cfg *config.Config) {
@@ -14,10 +15,11 @@ func Register(cfg *config.Config) {
 		Title:  "Web tools",
 		About:  "Limits and caching of web searches and page reads",
 		Order:  40,
+		Into:   webconfig.Key,
 		Settings: []config.Setting{
 			{Key: CacheEnabled, Title: "Reuse recent results", About: "Reuse recent search results and pages instead of fetching them again.", Default: true},
 			{Key: CacheExemptHosts, Title: "Always fresh sites", About: "Sites whose pages are always fetched fresh.", Help: "A site covers its subdomains as well.",
-				Default: []string{}},
+				Default: []string{}, Entry: &config.Entry{Noun: "site"}, Advanced: true},
 			{Key: ExtractCharLimit, Title: "Page text kept", About: "The most text that is kept from one web page.",
 				Help: "A longer page keeps its start and end, and the whole text is saved to a file.", Default: 15000, Counts: "characters",
 				Least: config.Num(MinCharLimit), Most: config.Num(MaxCharLimit), Advanced: true},

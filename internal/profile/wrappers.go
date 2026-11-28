@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -218,37 +219,58 @@ func RemoveAlias(name string) (bool, error) {
 	return os.Remove(path) == nil, nil
 }
 
-// Moves the alias of a renamed profile to its new name, made for it even when the old name had none: the lines saying how that went
-func FollowAlias(old, renamed string) []string {
+// Writes the shell command that opens icebath on the profile, named after it: what was done, or why nothing was, each a sentence
+func Command(name string) (done, failed string) {
+	collision, err := Collision(name)
+	switch {
+	case err != nil:
+		return "", "The shell command could not be made: " + failure(err) + "."
+	case collision != "":
+		return "", "No shell command was made, because " + strs.Lower(strings.TrimSuffix(collision, ".")) + "."
+	}
+	path, err := MakeAlias(name, "")
+	if err != nil {
+		return "", strs.Sentence(err.Error())
+	}
+	if onPath, err := AliasesOnPath(); err == nil && !onPath {
+		dir, _ := AliasDir()
+		return "Made the shell command " + Tilde(path) + ". Add " + Tilde(dir) + " to your PATH to run it by name.", ""
+	}
+	canon, _ := Normalize(name)
+	return "The shell command " + canon + " opens icebath on this profile.", ""
+}
+
+// Moves the shell command of a renamed profile to its new name, made for it even when the old name had none: what was done, or what failed
+func FollowAlias(old, renamed string) (done, failed string) {
 	if _, err := RemoveAlias(old); err != nil {
-		return []string{"⚠ The alias " + old + " could not be removed: " + failure(err) + "."}
+		return "", "The shell command " + old + " could not be removed: " + failure(err) + "."
 	}
 	collision, err := Collision(renamed)
 	switch {
 	case err != nil:
-		return []string{"⚠ No alias named " + renamed + " was made: " + failure(err) + "."}
+		return "", "No shell command named " + renamed + " was made: " + failure(err) + "."
 	case collision != "":
-		return []string{"⚠ No alias named " + renamed + " was made. " + sentence(collision)}
+		return "", "No shell command named " + renamed + " was made, because " + strs.Lower(strings.TrimSuffix(collision, ".")) + "."
 	}
 	if _, err := MakeAlias(renamed, ""); err != nil {
-		return []string{"⚠ " + sentence(err.Error())}
+		return "", strs.Sentence(err.Error())
 	}
-	return []string{"✓ The alias is now " + renamed + "."}
+	return "The shell command is " + renamed + " now.", ""
 }
 
-// Removes the alias icebath wrote for a deleted profile: the line saying it went, none when there was none
-func DropAlias(name string) []string {
+// Removes the shell command icebath wrote for a deleted profile: what was done, nothing when there was none, or what failed
+func DropAlias(name string) (done, failed string) {
 	path, err := OurAlias(name)
 	if err != nil {
-		return []string{"⚠ icebath could not look for the alias " + name + ": " + failure(err) + "."}
+		return "", "icebath could not look for the shell command " + name + ": " + failure(err) + "."
 	}
 	if path == "" {
-		return nil
+		return "", ""
 	}
 	if removed, err := RemoveAlias(name); err != nil || !removed {
-		return []string{"⚠ The alias " + path + " could not be removed."}
+		return "", "The shell command " + Tilde(path) + " could not be removed."
 	}
-	return []string{"✓ Removed the alias " + path + "."}
+	return "Removed the shell command " + Tilde(path) + ".", ""
 }
 
 // Alias that opens the profile, empty when none does

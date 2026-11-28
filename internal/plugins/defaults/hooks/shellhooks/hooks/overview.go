@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
-	"time"
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/hooks"
 	shellconfig "github.com/nickheyer/icebath/internal/plugins/defaults/hooks/shellhooks/config"
-	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // One configured hook with its consent
@@ -31,7 +31,8 @@ type Check struct {
 	// The script is there and can run as the command runs it
 	Runnable bool
 	Allowed  bool
-	// When it was allowed, a question mark when the allowlist does not say
+	// When it was allowed, a question mark when the allowlist does not say, empty for a hook that runs with no approval of its own: one the
+	// launch accepted, or any while Run without asking is on
 	ApprovedAt string
 	// Whether the allowlist holds a script time to compare, with Drift as a View has it when it does
 	Compared bool
@@ -51,6 +52,18 @@ func Events() []string {
 	var out []string
 	for _, name := range hooks.Points() {
 		if point, _ := hooks.PointOf(name); !point.NoShell {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// Names the events setting keeps hooks under that no shell hook runs on, sorted: their hooks are left out
+func Ignored(cfg *config.Config) []string {
+	block, _ := cfg.Get(shellconfig.Events).(map[string]any)
+	var out []string
+	for _, name := range slices.Sorted(maps.Keys(block)) {
+		if point, known := hooks.PointOf(name); !known || point.NoShell {
 			out = append(out, name)
 		}
 	}
@@ -215,7 +228,7 @@ func (r *Registrant) Test(ctx context.Context, cfg *config.Config, event, tool s
 func (r *Registrant) TestOne(ctx context.Context, cfg *config.Config, event, command, tool string) (*Run, error) {
 	spec, ok := r.Find(cfg, event, command)
 	if !ok {
-		return nil, &Refusal{Message: "There is no hook " + command + " on " + event + "."}
+		return nil, &Refusal{Message: "There is no hook " + command + " on " + title(event) + "."}
 	}
 	return r.once(ctx, cfg, spec, Sample(event, tool))
 }
@@ -228,13 +241,17 @@ func (r *Registrant) Check(ctx context.Context, cfg *config.Config, spec Spec) (
 		check.Problems++
 	}
 	entry := Entry(cfg, spec.Event, spec.Command)
-	if check.Allowed = len(entry) > 0; !check.Allowed {
+	allowed, _ := r.allowed(cfg)
+	// A hook runs once the allowlist holds it, the launch accepted it or Run without asking lets every hook run, as the list of hooks says it
+	if check.Allowed = len(entry) > 0 || allowed[spec.pair()] || cfg.GetBool(shellconfig.AutoAccept); !check.Allowed {
 		check.Problems++
 		return check, nil
 	}
-	check.ApprovedAt = "?"
-	if at, ok := entry["approved_at"]; ok && at != nil {
-		check.ApprovedAt = fmt.Sprint(at)
+	if len(entry) > 0 {
+		check.ApprovedAt = "?"
+		if at, ok := entry["approved_at"]; ok && at != nil {
+			check.ApprovedAt = fmt.Sprint(at)
+		}
 	}
 	if config.Truthy(entry["script_mtime_at_approval"]) {
 		var err error
@@ -270,51 +287,4 @@ func (r *Registrant) Check(ctx context.Context, cfg *config.Config, spec Spec) (
 		check.Problems++
 	}
 	return check, nil
-}
-
-// Adds a hook to the profile's events setting, its tools and seconds left out when not given
-func (r *Registrant) Add(cfg *config.Config, event, command, matcher string, timeout int) error {
-	command, matcher = strings.TrimSpace(command), strings.TrimSpace(matcher)
-	point, known := hooks.PointOf(event)
-	switch {
-	case !known || point.NoShell:
-		return &Refusal{Message: "icebath has no hook event “" + event + "”."}
-	case command == "":
-		return &Refusal{Message: "A hook needs a command."}
-	case matcher != "" && !point.Tool:
-		return &Refusal{Message: "Only hooks that run before or after a tool call can name tools."}
-	case timeout < 0 || timeout > MaxTimeout:
-		return &Refusal{Message: "A hook can take at most " + strs.Span(MaxTimeout*time.Second) + "."}
-	}
-	entry := map[string]any{"command": command}
-	if matcher != "" {
-		entry["matcher"] = matcher
-	}
-	if timeout > 0 {
-		entry["timeout"] = timeout
-	}
-	block, _ := cfg.Get(shellconfig.Events).(map[string]any)
-	list, _ := block[event].([]any)
-	return cfg.Set(shellconfig.Events+"."+event, append(append([]any{}, list...), entry))
-}
-
-// Takes every hook running the command out of the event's list of the profile's events setting, how many went
-func (r *Registrant) Remove(cfg *config.Config, event, command string) (int, error) {
-	block, _ := cfg.Get(shellconfig.Events).(map[string]any)
-	list, _ := block[event].([]any)
-	kept := make([]any, 0, len(list))
-	for _, item := range list {
-		entry, _ := item.(map[string]any)
-		if text, _ := entry["command"].(string); strings.TrimSpace(text) != command {
-			kept = append(kept, item)
-		}
-	}
-	removed := len(list) - len(kept)
-	if removed == 0 {
-		return 0, nil
-	}
-	if len(kept) == 0 {
-		return removed, cfg.Set(shellconfig.Events+"."+event, nil)
-	}
-	return removed, cfg.Set(shellconfig.Events+"."+event, kept)
 }

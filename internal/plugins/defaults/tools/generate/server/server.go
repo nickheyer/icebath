@@ -2,26 +2,25 @@ package server
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	"connectrpc.com/connect/v2"
 
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/generation"
-	generationconfig "github.com/nickheyer/icebath/internal/generation/config"
+	"github.com/nickheyer/icebath/internal/provider"
 	"github.com/nickheyer/icebath/internal/server"
 	generatev1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/generate/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/generate/v1/generatev1connect"
 )
 
 type service struct {
-	config   *config.Config
-	services *generation.Generation
+	config    *config.Config
+	services  *generation.Generation
+	providers *provider.Registry
 }
 
-func Register(registry *server.Registry, cfg *config.Config, services *generation.Generation) {
-	registry.Register(&service{config: cfg, services: services})
+func Register(registry *server.Registry, cfg *config.Config, services *generation.Generation, providers *provider.Registry) {
+	registry.Register(&service{config: cfg, services: services, providers: providers})
 }
 
 func (s *service) Mount(services *connect.Server) {
@@ -36,45 +35,66 @@ func kind(k generatev1.Kind) generation.Kind {
 	return generation.Image
 }
 
+var states = map[generation.State]generatev1.State{
+	generation.InUse:        generatev1.State_STATE_IN_USE,
+	generation.Ready:        generatev1.State_STATE_READY,
+	generation.Free:         generatev1.State_STATE_FREE,
+	generation.NeedsKey:     generatev1.State_STATE_NEEDS_KEY,
+	generation.NotConnected: generatev1.State_STATE_NOT_CONNECTED,
+}
+
 func (s *service) List(_ context.Context, request *generatev1.ListRequest) (*generatev1.ListResponse, error) {
 	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
 	k := kind(request.GetKind())
-	active, failed := s.services.Active(cfg, k)
-	response := &generatev1.ListResponse{Chosen: generation.Chosen(cfg, k), Model: generation.Named(cfg, k), Enabled: cfg.GetBool(generationconfig.VideoEnabled)}
-	switch {
-	case failed != nil:
-		// The error is written for the model: the screen says the same in a person's words
-		what, many := "image", "images"
-		if k == generation.Video {
-			what, many = "video", "videos"
+	if request.GetBare() {
+		response := &generatev1.ListResponse{}
+		for _, svc := range s.services.Making(k) {
+			response.Services = append(response.Services, &generatev1.Service{Name: svc.Name, Title: svc.Title, Description: svc.About(k),
+				Section: svc.Section(k), ModelSetting: svc.ModelSetting(k), Key: svc.Setup.Key})
 		}
-		response.Reason = fmt.Sprintf("No %s service is set up yet, so the agent can't make %s. Choose one below.", what, many)
-		if gone := new(generation.Unregistered); errors.As(failed, &gone) {
-			response.Reason = fmt.Sprintf("Your settings name the %s service %s, which this icebath does not have. Choose one below.", what, gone.Name)
-		}
-	case !active.Set(cfg):
-		response.Reason = active.Title + " is chosen, but its API key or sign-in is missing."
-	case k == generation.Video && !response.Enabled && response.Chosen == "":
-		response.Reason = "Videos are off. Choose a video service, or turn on Make videos in /settings under Videos."
-	default:
-		response.Offered = true
+		return response, nil
 	}
+	response := &generatev1.ListResponse{Chosen: generation.Chosen(cfg, k), On: generation.On(cfg, k), Hindrance: s.services.Hindrance(cfg, k)}
+	serving := s.services.Serving(cfg, k)
 	for _, svc := range s.services.Making(k) {
-		entry := &generatev1.Service{Name: svc.Name, Title: svc.Title, Description: svc.About(k), Badge: svc.Setup.Badge, Ready: svc.Set(cfg),
-			Chosen: svc.Name == response.Chosen, Active: failed == nil && svc.Name == active.Name, Key: svc.Setup.Key, Prompt: svc.Setup.Prompt,
-			Link: svc.Setup.Link, Provider: svc.Setup.Provider, ModelSetting: svc.ModelSetting(k)}
-		entry.Model = cfg.GetString(entry.ModelSetting)
+		state := s.services.State(cfg, k, svc)
+		entry := &generatev1.Service{Name: svc.Name, Title: svc.Title, Description: svc.About(k), State: states[state], Words: state.String(),
+			Chosen: svc.Name == response.Chosen, Section: svc.Section(k), ModelSetting: svc.ModelSetting(k), Key: svc.Setup.Key, Link: svc.Setup.Link}
+		if svc.Name == serving {
+			response.Serving = svc.Title
+		}
+		s.account(cfg, svc, entry)
 		if k == generation.Video {
-			entry.Settings, entry.Notes = svc.Videos.Settings, svc.Videos.Takes(cfg).Notes
+			entry.Notes = svc.Videos.Takes(cfg).Notes
 		} else {
-			entry.Settings, entry.Notes = svc.Images.Settings, svc.Images.Takes(cfg).Notes
+			entry.Notes = svc.Images.Takes(cfg).Notes
 		}
 		response.Services = append(response.Services, entry)
 	}
 	return response, nil
+}
+
+// The provider of the profile whose account a service uses, the first of its kinds the profile has; the kind a person adds when it has none
+func (s *service) account(cfg *config.Config, svc generation.Service, entry *generatev1.Service) {
+	kinds := svc.Setup.Providers
+	if len(kinds) == 0 {
+		return
+	}
+	entry.ProviderKind = kinds[0]
+	for _, k := range kinds {
+		for _, instance := range s.providers.Instances(cfg) {
+			if instance.Known && instance.Spec.Name == k {
+				entry.Provider, entry.ProviderTitle = instance.ID, instance.Label()
+				return
+			}
+		}
+	}
+	if spec, ok := s.providers.Spec(kinds[0]); ok {
+		entry.ProviderTitle = spec.DisplayName
+	}
 }
 
 func (s *service) Models(ctx context.Context, request *generatev1.ModelsRequest) (*generatev1.ModelsResponse, error) {
@@ -99,4 +119,31 @@ func (s *service) Models(ctx context.Context, request *generatev1.ModelsRequest)
 			Modalities: m.Modalities, MinDuration: int32(m.MinDuration), MaxDuration: int32(m.MaxDuration)})
 	}
 	return response, nil
+}
+
+func (s *service) Choose(_ context.Context, request *generatev1.ChooseRequest) (*generatev1.ChooseResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	k := kind(request.GetKind())
+	if err := s.services.Choose(cfg, k, request.GetService()); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
+	}
+	return &generatev1.ChooseResponse{Note: s.services.Note(cfg, k, generation.Chosen(cfg, k))}, nil
+}
+
+func (s *service) Videos(_ context.Context, request *generatev1.VideosRequest) (*generatev1.ChooseResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	if err := generation.SetVideos(cfg, request.GetOn()); err != nil {
+		return nil, err
+	}
+	note := "Make videos is now Off."
+	if request.GetOn() {
+		note = "Make videos is now On."
+	}
+	return &generatev1.ChooseResponse{Note: note}, nil
 }

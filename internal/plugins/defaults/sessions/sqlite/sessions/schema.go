@@ -1,8 +1,11 @@
 package sessions
 
 import (
+	"context"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/sqlitex"
 )
 
 // Characters of a tool result the search index holds; the rest of a long output is only found by scanning
@@ -213,7 +216,10 @@ END;
 `
 
 // Word index over what the messages say, read through a view that cuts tool output to its indexed start, kept in step by triggers
-var ftsSchema = `
+var ftsSchema = ftsBody + ftsTriggers
+
+// View and table of the word index
+var ftsBody = `
 CREATE VIEW IF NOT EXISTS messages_fts_src AS
 	SELECT id,
 		CASE WHEN role = 'tool' THEN substr(COALESCE(content, ''), 1, ` + strconv.Itoa(toolContentPrefix) + `) ELSE content END AS content,
@@ -227,7 +233,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 	content='messages_fts_src',
 	content_rowid='id'
 );
-` + ftsTriggers
+`
 
 // Whether the triggers of an index keep the message of the id in step: one past the ids a backfill of it indexes itself, or one it
 // already did; every message when no backfill runs
@@ -265,7 +271,10 @@ func trigramSessions(alias string) string {
 }
 
 // Index of three character runs, which finds Chinese, Japanese and Korean words the word index can't split
-var trigramSchema = `
+var trigramSchema = trigramBody + trigramTriggers
+
+// View and table of the trigram index
+var trigramBody = `
 CREATE VIEW IF NOT EXISTS messages_fts_trigram_src AS
 	SELECT m.id, m.content, m.tool_name
 	FROM messages AS m JOIN sessions AS s ON s.id = m.session_id
@@ -278,7 +287,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts_trigram USING fts5(
 	content_rowid='id',
 	tokenize='trigram'
 );
-` + trigramTriggers
+`
 
 var trigramTriggers = `
 CREATE TRIGGER IF NOT EXISTS messages_fts_trigram_insert AFTER INSERT ON messages
@@ -308,5 +317,9 @@ END;
 `
 
 // Triggers keeping the indexes in step, dropped when an index is found damaged so writes go on while search scans instead
-var indexTriggers = []string{"messages_fts_insert", "messages_fts_delete", "messages_fts_update", "messages_fts_trigram_insert",
-	"messages_fts_trigram_delete", "messages_fts_trigram_update"}
+var indexTriggers = append(wordIndex.triggerNames(), trigramIndex.triggerNames()...)
+
+// Shape of a session database, read from the statements that make it, the trigram index's included
+func declare(ctx context.Context) (*sqlitex.Schema, error) {
+	return sqlitex.Declare(ctx, schema, ftsSchema, trigramSchema)
+}

@@ -60,6 +60,26 @@ func Supported() bool {
 	return ok && native.Supported
 }
 
+// Whether the library of the engine is on this computer, the CPU build or the GPU one
+func Fetched(s *speech.Speech) bool {
+	for _, gpu := range []bool{false, true} {
+		if asset, ok := archive(gpu); ok && s.Fetched(asset) {
+			return true
+		}
+	}
+	return false
+}
+
+// Downloads the library of the engine and unpacks it, as Load does the first time, without loading it
+func Fetch(ctx context.Context, s *speech.Speech, gpu bool) error {
+	asset, ok := archive(gpu)
+	if !ok || !native.Supported {
+		return errors.New("The speech engine of this computer has no build for " + runtime.GOOS + "/" + runtime.GOARCH + ".")
+	}
+	_, err := s.Tree(ctx, asset)
+	return err
+}
+
 func device(gpu bool) string {
 	if gpu {
 		return "GPU"

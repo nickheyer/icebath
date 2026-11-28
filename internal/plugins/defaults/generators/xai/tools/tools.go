@@ -44,16 +44,16 @@ func schema(verb, noun, action string, extra map[string]any) map[string]any {
 
 func (r registrant) Tools() []tools.Def {
 	check := func(env *tools.Env) bool {
-		return generation.Chosen(env.Config, generation.Video) == xaiconfig.Name && r.services.Ready(env.Config)
+		return generation.On(env.Config, generation.Video) && generation.Chosen(env.Config, generation.Video) == xaiconfig.Name && r.services.Ready(env.Config)
 	}
 	return []tools.Def{
-		{Name: Edit, Toolset: "video_gen", Title: "Edit video", About: "Change a video that xAI made earlier", Group: "Images and video",
-			Icon: tools.IconEdit, Subject: "prompt", Schema: schema("Edit", "editing", "modify", nil), Handler: r.edit, Check: check, Unfocused: true},
-		{Name: Extend, Toolset: "video_gen", Title: "Extend video", About: "Make a video that xAI made earlier longer", Group: "Images and video",
+		{Name: Edit, Toolset: "video_gen", Title: "Edit video", About: "Change a video that xAI made earlier", Group: "Videos",
+			Icon: tools.IconEdit, Subject: "prompt", Schema: schema("Edit", "editing", "modify", nil), Handler: r.edit, Check: check, Lacks: lacks, Unfocused: true},
+		{Name: Extend, Toolset: "video_gen", Title: "Extend video", About: "Make a video that xAI made earlier longer", Group: "Videos",
 			Icon: tools.IconEdit, Subject: "prompt",
 			Schema: schema("Extend", "extension", "continue", map[string]any{
 				"duration": tools.Property("integer", "Desired extension duration in seconds. xAI clamps this to its supported range."),
-			}), Handler: r.extend, Check: check, Unfocused: true},
+			}), Handler: r.extend, Check: check, Lacks: lacks, Unfocused: true},
 	}
 }
 
@@ -81,13 +81,18 @@ func (r registrant) run(call *tools.Call, operation string, do func(job *generat
 		return tools.ErrorResult(fmt.Errorf("prompt is required for xAI video %s", operation))
 	case !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://"):
 		return tools.ErrorResult(errors.New("video_url must be a public HTTPS MP4 URL (the `video`/`public_url` from a prior Imagine result)"))
-	case generation.Chosen(call.Env.Config, generation.Video) != xaiconfig.Name:
-		return tools.JSON(map[string]any{"success": false, "error": "xAI video edit/extend tools require `video_gen.provider` to be configured as `xai`: pick xAI with /videogen.",
-			"error_type": "provider_not_configured", "provider": xaiconfig.Name})
+	case !generation.On(call.Env.Config, generation.Video) || generation.Chosen(call.Env.Config, generation.Video) != xaiconfig.Name:
+		return tools.JSON(map[string]any{"success": false, "error": "xAI video edit/extend tools require videos to be on with `video_gen.provider` set to `xai`: " +
+			"the user turns on Make videos and picks xAI with /videos.", "error_type": "provider_not_configured", "provider": xaiconfig.Name})
 	}
 	result := do(&generation.Job{Config: call.Env.Config}, prompt, video)
 	if !result.OK {
 		result.Prompt = strs.Filled(result.Prompt, prompt)
 	}
 	return tools.JSON(result.Envelope(generation.Video))
+}
+
+// What the xAI video tools lack to run: videos on, xAI chosen as their service, and set up
+func lacks(*tools.Env) string {
+	return "It needs Make videos on, with xAI as the video service and its account connected."
 }

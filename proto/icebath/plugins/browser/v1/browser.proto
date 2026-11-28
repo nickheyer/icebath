@@ -6,13 +6,71 @@ package icebath.plugins.browser.v1;
 service BrowserService {
   // The endpoint the profile's browser tools attach to, none when they launch their own browser
   rpc Status(StatusRequest) returns (StatusResponse);
-  // Reaches, finds or launches a debuggable browser at the address and attaches the profile's browser tools to it, each step told as it
-  // goes and the outcome last
+  // Reaches, finds or launches a debuggable browser at the address and attaches the profile's browser tools to it, keeping the address in
+  // its settings so every session uses it; each step told as it goes and the outcome last
   rpc Connect(ConnectRequest) returns (stream ConnectEvent);
-  // Detaches the profile's browser tools from the endpoint they were attached to
+  // Detaches the profile's browser tools from the endpoint they were attached to and forgets its address
   rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
   // Ends the browser that holds the user's own profile, so its logins can be copied for the agent
   rpc CloseProfile(CloseProfileRequest) returns (CloseProfileResponse);
+  // Where pages can open: this computer, the cloud services and the browsers that hold pages of their own, each with how it stands
+  rpc Services(ServicesRequest) returns (ServicesResponse);
+  // Browsers installed on the machine the server runs on, and the profiles of the default one, which your own profile is copied from
+  rpc Installed(InstalledRequest) returns (InstalledResponse);
+}
+
+message InstalledRequest {}
+
+// A browser installed on this computer
+message Program {
+  string title = 1;
+  string path = 2;
+}
+
+// A profile of your own browser
+message OwnProfile {
+  // Folder of the profile inside the browser's data, such as Default or Profile 2
+  string folder = 1;
+  // Name the browser shows for it
+  string name = 2;
+  // The one the browser used last
+  bool last = 3;
+}
+
+message InstalledResponse {
+  repeated Program programs = 1;
+  // Title of the default browser, empty when it is none icebath knows
+  string browser = 2;
+  repeated OwnProfile profiles = 3;
+}
+
+message ServicesRequest {
+  string profile = 1;
+}
+
+// One place pages can open
+message Service {
+  // Value of browser.cloud_provider that picks it
+  string name = 1;
+  string title = 2;
+  string about = 3;
+  // How it stands in the state words, such as Ready or Needs an API key
+  string state = 4;
+  bool ready = 5;
+  // Key of the section of its own settings, empty when it has none
+  string section = 6;
+  // Pages open there now
+  bool chosen = 7;
+  // Settings that keep its keys outside its own section, such as the key of an account it shares
+  repeated string keys = 8;
+  // Heading it is listed under: this computer, the cloud services, or the browsers that bring tools of their own
+  string group = 9;
+}
+
+message ServicesResponse {
+  repeated Service services = 1;
+  // Value of browser.cloud_provider kept, empty while none was chosen and the keys decide
+  string chosen = 2;
 }
 
 message StatusRequest {
@@ -24,6 +82,8 @@ message StatusResponse {
   bool connected = 1;
   // Endpoint attached, its credentials masked
   string url = 2;
+  // Environment variable that names the endpoint over the settings, empty when none does
+  string variable = 3;
 }
 
 message ConnectRequest {
@@ -51,13 +111,20 @@ message Connected {
   bool connected = 1;
   // Endpoint attached, or the one that was tried
   string url = 2;
+  // What happened, in one or two sentences
+  string note = 3;
 }
 
 message DisconnectRequest {
   string profile = 1;
 }
 
-message DisconnectResponse {}
+message DisconnectResponse {
+  // What happened, in one or two sentences
+  string note = 1;
+  // Still attached to the endpoint a variable of the environment names
+  bool held = 2;
+}
 
 message CloseProfileRequest {
   string profile = 1;

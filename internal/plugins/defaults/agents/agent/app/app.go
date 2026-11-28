@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/internal/sessions"
 	sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
 	"github.com/nickheyer/icebath/internal/speech"
+	speechapp "github.com/nickheyer/icebath/internal/speech/app"
 	speechconfig "github.com/nickheyer/icebath/internal/speech/config"
 	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
@@ -42,6 +43,8 @@ type desk struct {
 	views     *toolsapp.Registry
 	// What plugins dock above the prompt of a chat for its session
 	docks []toolsapp.Dock
+	// What runs a line a person types after a mark of its own, such as a line of their shell after !
+	liners []toolsapp.Liner
 	// Values of the settings the tool views read, by key
 	shown  map[string]string
 	chats  []*chat
@@ -64,7 +67,7 @@ type desk struct {
 	asked    *agentlaunch.Asked
 	mu       sync.Mutex
 	launched map[string]bool
-	// Speech of this machine, whose players and wake engines voice mode runs on, and voice mode itself
+	// Speech of this machine, whose players and wake engines voice input runs on, and voice input itself
 	speech *speech.Speech
 	voice  *voicing
 }
@@ -83,12 +86,12 @@ func (d *desk) Screens(conn *connect.Client) []tui.Screen {
 	d.tools = toolsv1connect.NewToolServiceClient(conn)
 	d.client = windowID()
 	d.docks = d.views.Docks(conn)
+	d.liners = d.views.Lines(conn)
 	d.left, d.phases, d.shown = map[string]string{}, map[string]string{}, map[string]string{}
 	d.voice = d.voicing(conn, d.speech)
 	follows := map[string]func(*tui.Kit, string) tea.Cmd{sessionsconfig.TerminalContinue: d.follow,
-		speechconfig.RecordKey: func(kit *tui.Kit, value string) tea.Cmd { return d.at(kit).voice.bind(value) },
-		speechconfig.Input:     func(kit *tui.Kit, value string) tea.Cmd { return d.at(kit).voice.follow(value) }}
-	// Voice mode follows the settings it reads as they change
+		speechconfig.Input: func(kit *tui.Kit, value string) tea.Cmd { return d.at(kit).voice.follow(value) }}
+	// Voice input follows the settings it reads as they change
 	for _, key := range []string{speechconfig.SpeakReplies, speechconfig.SubmitMode, speechconfig.BargeIn, speechconfig.BargeInGrace,
 		speechconfig.BargeInMultiplier, speechconfig.Beep, speechconfig.BeepVolume, speechconfig.Debug, speechconfig.MaxRecording,
 		speechconfig.SilenceDuration, speechconfig.SilenceThreshold, speechconfig.StopPhrases, speechconfig.ThinkingSound, speechconfig.TTSProvider,
@@ -104,7 +107,7 @@ func (d *desk) Screens(conn *connect.Client) []tui.Screen {
 		}
 	}
 	chatPlaces := map[string]string{approvalContext: "approvals", questionContext: "agent's questions", rewindContext: "rewind list",
-		pickerContext: "model choice", spawnContext: "spawn tree"}
+		spawnContext: "spawn tree"}
 	return []tui.Screen{
 		{
 			ID:      "chat",
@@ -112,10 +115,8 @@ func (d *desk) Screens(conn *connect.Client) []tui.Screen {
 			Order:   10,
 			Title:   "New chat",
 			Short:   "Open a new chat on this profile or another",
-			Slash:   []string{"new"},
-			Usage:   "[@profile]",
 			Keys:    []string{"alt+n"},
-			Actions: slices.Concat(approvalKeys, questionKeys, rewindKeys, dockKeys, compactKeys, pickerKeys, spawnKeys, voiceKeys),
+			Actions: slices.Concat(approvalKeys, questionKeys, rewindKeys, dockKeys, compactKeys, spawnKeys, voiceKeys),
 			Where:   chatPlaces,
 			Startup: true,
 			Suggest: true,
@@ -130,25 +131,37 @@ func (d *desk) Screens(conn *connect.Client) []tui.Screen {
 				return tea.Batch(d.begin(), kit.WM.OpenHere(d.start(nil, name)))
 			},
 		},
+		// The page of Voice, which the voice input of this app is shown and set up on
+		speechapp.Screen(conn, d.speech, d.voice.mode),
+		// The commands of Voice, whose area the palette lists: /voice and /wake, then /recognition and /speech, more names of /voice that
+		// the slash list leaves out and that open their pages
 		{
-			ID:    "voice",
-			Group: tui.GroupVoice,
-			Order: 10,
-			Title: "Voice mode",
+			ID:    "voice.command",
 			Short: "Talk to the agent and hear its replies",
 			Slash: []string{"voice"},
-			Usage: "[on|off|tts|status|setup]",
+			Usage: "[on|off|tts]",
 			Open:  func(kit *tui.Kit, argument string) tea.Cmd { return d.at(kit).voice.command(kit, argument) },
 		},
 		{
-			ID:    "wake",
-			Group: tui.GroupVoice,
-			Order: 20,
-			Title: "Wake word",
-			Short: "Turn listening for the wake word on or off",
+			ID:    "wake.command",
+			Short: "Say a phrase to start talking, hands-free",
 			Slash: []string{"wake"},
-			Usage: "[on|off|status]",
+			Usage: "[on|off]",
 			Open:  func(kit *tui.Kit, argument string) tea.Cmd { return d.at(kit).voice.wake(kit, argument) },
+		},
+		{
+			ID:      "voice.recognition",
+			Aliases: []string{"recognition"},
+			Open: func(kit *tui.Kit, argument string) tea.Cmd {
+				return d.at(kit).voice.pageOf(argument, speechapp.AtRecognition)
+			},
+		},
+		{
+			ID:      "voice.speech",
+			Aliases: []string{"speech"},
+			Open: func(kit *tui.Kit, argument string) tea.Cmd {
+				return d.at(kit).voice.pageOf(argument, speechapp.AtSpeech)
+			},
 		},
 		{
 			ID:      sessionsScreen,
@@ -177,19 +190,20 @@ func (d *desk) Screens(conn *connect.Client) []tui.Screen {
 			Group: tui.GroupModels,
 			Order: 10,
 			Title: "Model",
-			Short: "Change the model for this chat",
+			Short: "Switch the model of this chat",
 			Keys:  []string{"alt+m"},
-			Ready: func(kit *tui.Kit) bool {
-				_, focused := kit.Focused().(*chat)
-				return focused
-			},
+			// The job /model opens: the model of the chat in hand, or of new chats with no chat in hand
 			Open: func(kit *tui.Kit, _ string) tea.Cmd {
 				if target, ok := kit.Focused().(*chat); ok {
-					return target.pick()
+					cmd, _ := target.model("")
+					return cmd
 				}
-				return nil
+				return kit.Open(agentScreen, jobModel)
 			},
 		},
+		d.agentArea(),
+		d.helperArea(),
+		d.subagentArea(),
 	}
 }
 
@@ -211,11 +225,8 @@ func (d *desk) start(session *sessionsv1.Session, profile string) *chat {
 
 func (d *desk) closed(c *chat) tea.Cmd {
 	d.chats = slices.DeleteFunc(d.chats, func(open *chat) bool { return open == c })
-	// Voice mode ends with the window of the session it belongs to, its setting kept
-	if d.voice.owner == c {
-		return d.voice.off(false, false)
-	}
-	return nil
+	// Voice lets go of the window: a recording into it ends with its setting kept, and its reply is no longer read aloud
+	return d.voice.closed(c)
 }
 
 // Lets go of what the app holds as it exits: the microphone, the speakers and the wake word

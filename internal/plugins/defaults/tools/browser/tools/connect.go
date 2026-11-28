@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/internal/browser"
+	browserconfig "github.com/nickheyer/icebath/internal/browser/config"
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/pkg/fsx"
@@ -178,7 +179,7 @@ func hint(attempts []*attempt) string {
 		if a.state == "exited" && a.code != nil && *a.code == 0 {
 			name := filepath.Base(a.binary)
 			return name + " closed at once without opening its debugging port, most likely because a copy of it was already running. Close every " +
-				name + " window, including any left running in the background, then run /browser connect again."
+				name + " window, including any left running in the background, then connect again."
 		}
 	}
 	for _, a := range attempts {
@@ -345,12 +346,12 @@ func (b *Browser) localDefault(ctx context.Context, cfg *config.Config, port int
 	}
 	var lines []string
 	if command := manualCommand(cfg, launch); command != "" {
-		lines = []string{"Start a browser with remote debugging with this command, then run /browser connect again:", command}
+		lines = []string{"Start a browser with remote debugging with this command, then connect again:", command}
 	} else {
 		lines = []string{"No Chrome, Edge, Brave or other Chromium browser was found on this computer.",
-			fmt.Sprintf("Install one, or start one with --remote-debugging-port=%d, then run /browser connect again.", launch)}
+			fmt.Sprintf("Install one, or start one with --remote-debugging-port=%d, then connect again.", launch)}
 	}
-	lines = append(lines, "The browser is not connected yet. Start one with remote debugging, then run /browser connect again.")
+	lines = append(lines, "The browser is not connected yet.")
 	for _, line := range lines {
 		say(line, "error")
 	}
@@ -425,5 +426,33 @@ func (b *Browser) Connect(ctx context.Context, cfg *config.Config, address strin
 		normalized = bare.String()
 	}
 	b.Attach(ctx, cfg, normalized)
+	if err := cfg.Set(browserconfig.CDPURL, normalized); err != nil {
+		return true, normalized, fmt.Errorf("Connected for now, but the address was not kept for later sessions. %w", err)
+	}
 	return true, normalized, nil
+}
+
+// Detaches the profile's browser tools from the browser they were attached to and forgets its address, answering what happened; held when
+// an environment variable still names an address, which wins
+func (b *Browser) Disconnect(ctx context.Context, cfg *config.Config) (string, bool, error) {
+	b.Attach(ctx, cfg, "")
+	if err := cfg.Set(browserconfig.CDPURL, nil); err != nil {
+		return "", false, err
+	}
+	if variable := b.Holder(cfg); variable != "" {
+		return "Disconnected, but " + variable + " still names a browser, which the agent uses while it is set.", true, nil
+	}
+	return "Disconnected. The agent opens a browser of its own again.", false, nil
+}
+
+// Environment variable that names the address of the browser over the settings, empty when none does
+func (b *Browser) Holder(cfg *config.Config) string {
+	_, setting, ok := cfg.Setting(browserconfig.CDPURL)
+	if !ok {
+		return ""
+	}
+	if source, variable := cfg.Source(setting); source == config.FromEnvironment {
+		return variable
+	}
+	return ""
 }

@@ -54,16 +54,7 @@ var remedies = map[Failure]string{
 	AuthFailed:    "Run icebath secrets {name} setup to sign in again.",
 	AuthExpired:   "The sign-in has expired. Run icebath secrets {name} setup to sign in again.",
 	Network:       "Check your network connection, then run icebath secrets status --reload.",
-	Timeout:       "If the store is only slow, raise its Time limit in /settings under Secret stores.",
-}
-
-// Text that ends as a sentence: trimmed, with a period added when it ends in no mark of its own
-func Sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?") {
-		return text
-	}
-	return text + "."
+	Timeout:       "If the store is only slow, raise its time limit with icebath config set secrets.{name}.timeout_seconds 300.",
 }
 
 // What a store is, fixed for it
@@ -73,8 +64,9 @@ type Spec struct {
 	// Name in status lines, and the short one variables are said to come from
 	Label, Short string
 	Shape        string
-	// Scheme of the references it resolves, such as op for op://, owned by one store only
-	Scheme string
+	// Scheme of the references it resolves, such as op for op://, owned by one store only, a reference of it a person reads as an example,
+	// and a sentence saying where a person finds one
+	Scheme, Example, Find string
 	// Setting of its section naming the variable that holds its own credential, and that variable unless the setting names another; no
 	// store may overwrite it
 	TokenSetting, TokenEnv string
@@ -182,6 +174,7 @@ func New(cfg *config.Config) *Secrets {
 	secretsconfig.Register(cfg)
 	h := &Secrets{config: cfg, written: map[string]written{}, scopes: map[string]*scope{}, warned: map[string]bool{}}
 	cfg.UseEnvironment(h)
+	h.guard(cfg)
 	return h
 }
 
@@ -260,6 +253,20 @@ func (h *Secrets) Ordered(cfg *config.Config) []Source {
 		}
 	}
 	return order
+}
+
+// Every store in the order a fetch asks them: those that fill named variables first, so a variable bound to a reference wins over one a store
+// holds among all its secrets, then the others, each kind in its place in Ordered
+func (h *Secrets) Asked(cfg *config.Config) []Source {
+	var out []Source
+	for _, shape := range []string{Mapped, Bulk} {
+		for _, source := range h.Ordered(cfg) {
+			if source.Spec().Shape == shape {
+				out = append(out, source)
+			}
+		}
+	}
+	return out
 }
 
 // Whether the store has every setting it fetches with, its credential aside, and the key of the first one missing when it has not

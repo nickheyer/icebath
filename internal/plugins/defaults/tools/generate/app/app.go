@@ -1,33 +1,34 @@
+// Pages of Images and Videos in the settings menu: whether videos are made, Automatic and the services with how each stands, the page of each
+// with its model and its key or account, and the options of images
 package app
 
 import (
-	"cmp"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect/v2"
-	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/internal/app"
 	configapp "github.com/nickheyer/icebath/internal/config/app"
 	generationconfig "github.com/nickheyer/icebath/internal/generation/config"
 	"github.com/nickheyer/icebath/internal/profile"
-	providerapp "github.com/nickheyer/icebath/internal/provider/app"
 	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
 	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
 	generatev1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/generate/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/generate/v1/generatev1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Screens of the image and video services
+// Screens of the image and video services, the pages of their areas
 const (
-	Images = "imagegen"
-	Videos = "videogen"
+	Images = "images"
+	Videos = "videos"
 )
 
 type screens struct{}
@@ -37,231 +38,365 @@ func Register(registry *app.Registry, shown *toolsapp.Registry) {
 	shown.Register(&views{rows: map[string][]string{}})
 }
 
-// What each screen chooses the service of
+// What each page chooses the service of
 type kind struct {
 	id, title, short string
+	// Names the page answered to before, which no list shows
+	aliases []string
 	// What the service makes, plural and lower case: images, videos
 	noun string
-	// Line above the services saying what is chosen
-	intro           string
-	proto           generatev1.Kind
-	provider, model string
+	// Area of the page and the kind of thing the model settings of its services name
+	area, models string
+	proto        generatev1.Kind
 }
 
 var kinds = []kind{
-	{id: Images, title: "Images", short: "Choose which service makes images for the agent", noun: "images",
-		intro: "Choose the service that makes images when the agent asks for one.", proto: generatev1.Kind_KIND_IMAGE,
-		provider: generationconfig.ImageProvider, model: generationconfig.ImageModel},
-	{id: Videos, title: "Videos", short: "Choose which service makes videos for the agent", noun: "videos",
-		intro: "Choose the service that makes videos when the agent asks for one.", proto: generatev1.Kind_KIND_VIDEO,
-		provider: generationconfig.VideoProvider, model: generationconfig.VideoModel},
+	{id: Images, title: "Images", short: "Choose which service makes images for the agent", aliases: []string{"imagegen"}, noun: "images",
+		area: generationconfig.ImageKey, models: generationconfig.ImageModels, proto: generatev1.Kind_KIND_IMAGE},
+	{id: Videos, title: "Videos", short: "Choose which service makes videos for the agent", aliases: []string{"videogen"}, noun: "videos",
+		area: generationconfig.VideoKey, models: generationconfig.VideoModels, proto: generatev1.Kind_KIND_VIDEO},
 }
 
 func (screens) Screens(conn *connect.Client) []tui.Screen {
 	service := generatev1connect.NewGenerateServiceClient(conn)
 	settings := configv1connect.NewConfigServiceClient(conn)
+	titles := newTitles()
 	var out []tui.Screen
 	for i, k := range kinds {
 		out = append(out, tui.Screen{
-			ID:    k.id,
-			Group: tui.GroupMedia,
-			Order: 10 * (i + 1),
-			Title: k.title,
-			Short: k.short,
-			Slash: []string{k.id},
-			Usage: "[@profile] [words to search]",
+			ID:      k.id,
+			Group:   tui.GroupMedia,
+			Order:   10 * (i + 1),
+			Title:   k.title,
+			Short:   k.short,
+			Slash:   []string{k.id},
+			Aliases: k.aliases,
+			Usage:   "[@profile] [service or words to search]",
+			Area:    k.area,
+			Pickers: map[string]tui.Picker{k.models: modelPicker(service, k, titles)},
+			Pages:   func(kit *tui.Kit, name string) []tui.Page { return servicePages(kit, service, k, name) },
 			Open: func(kit *tui.Kit, argument string) tea.Cmd {
-				name, search := profile.Split(argument)
-				return (&picker{kit: kit, kind: k, service: service, settings: settings, profile: name}).open(search)
+				name, target := profile.Split(argument)
+				return (&page{kit: kit, kind: k, service: service, settings: settings, titles: titles, profile: name}).open(target)
 			},
 		})
 	}
 	return out
 }
 
-type picker struct {
+// The page of Images or Videos for one profile, and what every page inside it reads
+type page struct {
 	kit      *tui.Kit
 	kind     kind
 	service  generatev1connect.GenerateServiceClient
 	settings configv1connect.ConfigServiceClient
+	titles   *titles
 	// Profile whose services are shown, the one in use when empty
 	profile string
 	hub     *cards.Hub
-	list    *cards.List
-	// Lists open over the hub, read again once the services are
-	views  []*cards.List
-	state  *generatev1.ListResponse
-	loaded bool
-	err    error
-	rows   []row
+	root    *cards.List
+	options *configapp.Rows
+	views   cards.Watched
+	state   *generatev1.ListResponse
+	loaded  bool
+	err     error
+	// A view was opened over the first view, which reads again once it is back on top
+	opened bool
 }
 
-// Row of the list of services: a service, the choice of the first service that is ready, or for videos none at all
+// Row of the first view: the switch of videos, Automatic, a service, an option, or the row of the advanced options
 type row struct {
-	service *generatev1.Service
-	auto    bool
-	off     bool
+	videos   bool
+	auto     bool
+	service  *generatev1.Service
+	setting  *configv1.Setting
+	advanced bool
 }
 
-func (p *picker) open(search string) tea.Cmd {
+func (p *page) open(target string) tea.Cmd {
 	t := p.kit.Env.Theme
-	p.list = cards.NewList(p.kit.Env, cards.ListSpec{
-		Title:   p.title(),
+	var shown []row
+	p.root = cards.NewList(p.kit.Env, cards.ListSpec{
+		Title:   p.kind.title,
 		Glyph:   t.Glyphs.Write,
 		Key:     p.kind.id,
 		Context: cards.HubContext,
 		Primary: "hub.use",
-		Pick:    true,
-		Search:  "Search services",
-		Intro: func() []string {
-			lines := []string{p.kind.intro}
-			if p.state != nil && !p.state.GetOffered() && p.state.GetReason() != "" {
-				lines = append(lines, sentence(p.state.GetReason()))
-			}
-			return lines
-		},
-		Columns: []render.Column{{}, {}, {}, {Flex: 1, Whole: true}},
+		Intro:   p.intro,
+		Columns: configapp.Columns,
 		Rows: func() [][]string {
-			p.rows = p.entries()
-			cells := make([][]string, len(p.rows))
-			for i, r := range p.rows {
-				cells[i] = []string{p.kit.Mark(true, p.marked(r)), p.name(r), p.status(r), render.Dim(p.about(r), t)}
+			shown = p.rows()
+			cells := make([][]string, len(shown))
+			for i, r := range shown {
+				cells[i] = p.cells(r)
 			}
 			return cells
 		},
+		Group: func(i int) string {
+			switch r := shown[i]; {
+			case r.videos:
+				return ""
+			case r.auto || r.service != nil:
+				return "Services"
+			}
+			return "Options"
+		},
 		Words: func(i int) string {
-			if s := p.rows[i].service; s != nil {
-				return s.GetName() + " " + s.GetBadge()
+			if s := shown[i].service; s != nil {
+				return s.GetName() + " " + s.GetDescription()
 			}
 			return ""
 		},
-		Detail: func(i int) []string { return p.describe(p.rows[i]) },
-		Empty:  p.empty,
-		Free:   map[string]bool{"hub.refresh": true},
-		Hints: func(_ *cards.List, i int) []wm.Hint {
-			if i < 0 || i >= len(p.rows) {
+		Detail: func(i int) []string { return p.detail(shown[i], p.root.Cut(i, 2)) },
+		Empty: func() string {
+			return tui.Waiting(p.loaded, p.err, "No services that make "+p.kind.noun+" are installed.")
+		},
+		Free: map[string]bool{"hub.refresh": true},
+		// Read again as a view over it closes, which may have changed how the services stand, such as a key kept
+		OnFocus: func(*cards.List) tea.Cmd {
+			if !p.opened || p.hub.Depth() > 0 {
 				return nil
 			}
-			r := p.rows[i]
-			var out []wm.Hint
-			if verb := p.verb(r); verb != "" {
-				out = append(out, wm.Hint{Action: "hub.use", Label: verb})
+			p.opened = false
+			return p.load(nil)
+		},
+		Hints: func(_ *cards.List, i int) []wm.Hint {
+			if i < 0 || i >= len(shown) {
+				return nil
 			}
-			if r.service != nil && p.verb(r) == "choose" {
-				out = append(out, wm.Hint{Action: "hub.edit", Label: "set up"})
-			}
-			return out
+			return p.hints(shown[i])
 		},
 		Actions: map[string]func(*cards.List, int) tea.Cmd{
 			"hub.use": func(_ *cards.List, i int) tea.Cmd {
-				r := p.rows[i]
-				switch p.verb(r) {
-				case "choose":
-					return p.choose(r, "")
-				case "set up":
-					return p.setup(r.service.GetName())
+				switch r := shown[i]; {
+				case r.videos:
+					return p.makeVideos(!p.state.GetOn())
+				case r.auto:
+					if p.state.GetChosen() == "" {
+						return nil
+					}
+					return p.choose("")
+				case r.service != nil && ready(r.service) && !r.service.GetChosen():
+					return p.choose(r.service.GetName())
+				case r.service != nil:
+					p.opened = true
+					return p.servicePage(r.service.GetName())
+				case r.setting != nil:
+					p.opened = true
+					return p.options.Change(r.setting)
+				}
+				if _, _, open := p.kindOptions(); open != nil {
+					p.opened = true
+					return open()
 				}
 				return nil
 			},
 			"hub.edit": func(_ *cards.List, i int) tea.Cmd {
-				if r := p.rows[i]; r.service != nil {
-					return p.setup(r.service.GetName())
+				if s := shown[i].service; s != nil {
+					p.opened = true
+					return p.servicePage(s.GetName())
 				}
 				return nil
 			},
-			"hub.refresh": func(*cards.List, int) tea.Cmd { return p.load() },
+			"hub.remove": func(l *cards.List, i int) tea.Cmd {
+				if setting := shown[i].setting; setting != nil {
+					return p.options.Reset(l, setting)
+				}
+				return nil
+			},
+			"hub.refresh": func(*cards.List, int) tea.Cmd { return p.load(nil) },
 		},
 	})
-	p.list.ToggleDetail()
-	p.views = append(p.views, p.list)
-	p.hub = p.kit.Hub(p.kind.id, p.list)
-	if search != "" {
-		p.list.Filter(search)
-	}
-	return tea.Batch(p.kit.WM.ShowOverlay(p.hub), p.load())
+	p.root.ToggleDetail()
+	hub, cmd := p.kit.Show(p.kind.id, p.root)
+	p.hub = hub
+	p.options = configapp.NewRows(p.kit, hub, p.settings, p.profile)
+	p.watch(p.root)
+	return tea.Batch(cmd, p.load(func() tea.Cmd { return p.reach(target) }))
 }
 
-// Rows of the list: the first service that is ready, for videos none at all, then each service
-func (p *picker) entries() []row {
-	if p.state == nil {
+// What the area is, then in the warm color what keeps the agent from making them
+func (p *page) intro() []string {
+	lines := []string{"Which service makes " + p.kind.noun + " for the agent."}
+	if p.loaded && p.err == nil && p.state.GetHindrance() != "" {
+		lines = append(lines, render.Warm(p.state.GetHindrance(), p.kit.Env.Theme))
+	}
+	return lines
+}
+
+// Rows of the first view
+func (p *page) rows() []row {
+	if !p.loaded || p.err != nil {
 		return nil
 	}
-	rows := []row{{auto: true}}
+	var rows []row
 	if p.kind.id == Videos {
-		rows = append(rows, row{off: true})
+		rows = append(rows, row{videos: true})
 	}
-	for _, s := range p.services() {
+	rows = append(rows, row{auto: true})
+	for _, s := range p.state.GetServices() {
 		rows = append(rows, row{service: s})
+	}
+	shown, advanced, _ := p.kindOptions()
+	for _, setting := range shown {
+		rows = append(rows, row{setting: setting})
+	}
+	if advanced != nil {
+		rows = append(rows, row{advanced: true})
 	}
 	return rows
 }
 
-// Whether the row is the choice the settings hold
-func (p *picker) marked(r row) bool {
-	chosen := p.state.GetChosen()
+// Options of the area, and the cells of the row of the advanced ones with what it opens; the advanced ones in place, no row, while they are
+// few
+func (p *page) kindOptions() (shown []*configv1.Setting, advanced []string, open func() tea.Cmd) {
+	everyday, rare := p.options.Section(p.kind.area)
+	if cells, open, ok := p.options.Advanced(p.kind.area); ok {
+		return everyday, cells, open
+	}
+	return append(everyday, rare...), nil, nil
+}
+
+// Whether the service has its key or account
+func ready(s *generatev1.Service) bool {
+	switch s.GetState() {
+	case generatev1.State_STATE_IN_USE, generatev1.State_STATE_READY, generatev1.State_STATE_FREE:
+		return true
+	}
+	return false
+}
+
+func (p *page) cells(r row) []string {
+	t := p.kit.Env.Theme
 	switch {
+	case r.videos:
+		if setting := p.options.Setting(generationconfig.VideoEnabled); setting != nil {
+			return p.options.Cells(setting)
+		}
+		return []string{"Make videos", "", onOff(p.state.GetOn())}
 	case r.auto:
-		return chosen == "" && (p.kind.id != Videos || p.state.GetEnabled())
-	case r.off:
-		return chosen == "" && !p.state.GetEnabled()
+		return []string{"Automatic", p.kit.Mark(true, p.state.GetChosen() == ""), ""}
+	case r.service != nil:
+		return []string{r.service.GetTitle(), p.kit.Mark(true, r.service.GetChosen()), stateWords(r.service, t)}
+	case r.setting != nil:
+		return p.options.Cells(r.setting)
 	}
-	return r.service.GetName() == chosen
+	_, advanced, _ := p.kindOptions()
+	return advanced
 }
 
-// Name of a row
-func (p *picker) name(r row) string {
+// On or Off
+func onOff(on bool) string {
+	if on {
+		return "On"
+	}
+	return "Off"
+}
+
+// State of a service in its words, in the color of how it stands
+func stateWords(s *generatev1.Service, t theme.Theme) string {
 	switch {
+	case s.GetState() == generatev1.State_STATE_IN_USE:
+		return render.Good(s.GetWords(), t)
+	case ready(s):
+		return s.GetWords()
+	}
+	return render.Warm(s.GetWords(), t)
+}
+
+// Lines under the rows about the row in hand: what the switch does, what Automatic does and which service it takes now, what a service is
+func (p *page) detail(r row, cut bool) []string {
+	t := p.kit.Env.Theme
+	switch {
+	case r.videos:
+		return []string{"Let the agent make videos from text, a still image or reference images."}
 	case r.auto:
-		return "Automatic"
-	case r.off:
-		return "Off"
+		lines := []string{"The first service in this list that is ready."}
+		if serving := p.state.GetServing(); serving != "" && p.state.GetChosen() == "" {
+			lines = append(lines, render.Dim(serving+" makes "+p.kind.noun+" now.", t))
+		}
+		return lines
+	case r.service != nil:
+		lines := []string{strs.Full(r.service.GetDescription())}
+		for _, note := range r.service.GetNotes() {
+			lines = append(lines, render.Dim(strs.Full(note), t))
+		}
+		return lines
+	case r.setting != nil:
+		return p.options.Detail(r.setting, cut)
 	}
-	return r.service.GetTitle()
+	return []string{"Settings of " + p.kind.title + " that few people change."}
 }
 
-// What a row is, in a phrase
-func (p *picker) about(r row) string {
+func (p *page) hints(r row) []wm.Hint {
 	switch {
+	case r.videos && p.state.GetOn():
+		return []wm.Hint{{Action: "hub.use", Label: "turn off"}}
+	case r.videos:
+		return []wm.Hint{{Action: "hub.use", Label: "turn on"}}
+	case r.auto && p.state.GetChosen() == "":
+		return nil
 	case r.auto:
-		return "The first service that is ready"
-	case r.off:
-		return "The agent does not make videos"
+		return []wm.Hint{{Action: "hub.use", Label: "use"}}
+	case r.service != nil && ready(r.service) && !r.service.GetChosen():
+		return []wm.Hint{{Action: "hub.use", Label: "use"}, {Action: "hub.edit", Label: "open"}}
+	case r.service != nil, r.advanced:
+		return []wm.Hint{{Action: "hub.use", Label: "open"}}
 	}
-	return r.service.GetDescription()
+	return p.options.Hints(r.setting)
 }
 
-// What enter does on a row: choosing it when it is ready and not the choice held, else setting it up; nothing on a choice held that has
-// nothing to set up
-func (p *picker) verb(r row) string {
-	switch {
-	case r.service == nil && p.marked(r):
-		return ""
-	case r.service == nil:
-		return "choose"
-	case r.service.GetReady() && !p.marked(r):
-		return "choose"
+// Goes where the page was opened at: the page of a service named by its name or title, else the services searched for the words
+func (p *page) reach(target string) tea.Cmd {
+	if target = strings.TrimSpace(target); target == "" {
+		return nil
 	}
-	return "set up"
+	for _, s := range p.state.GetServices() {
+		if strings.EqualFold(s.GetName(), target) || strings.EqualFold(s.GetTitle(), target) {
+			p.opened = true
+			return p.servicePage(s.GetName())
+		}
+	}
+	p.root.Filter(target)
+	return nil
 }
 
-// What the list says while it has no rows
-func (p *picker) empty() string {
-	switch {
-	case p.err != nil:
-		return "Could not read the services. " + sentence(tui.Reason(p.err)) + " " + p.kit.Env.Keys.Display("hub.refresh") + " tries again."
-	case !p.loaded:
-		return "Reading the services…"
-	}
-	return "No services that make " + p.kind.noun + " are installed."
+// Reads the services, then the option rows, then draws every list again and runs then
+func (p *page) load(then func() tea.Cmd) tea.Cmd {
+	return tui.Async(func() func() tea.Cmd {
+		response, err := p.service.List(p.kit.Env.Ctx, &generatev1.ListRequest{Profile: p.profile, Kind: p.kind.proto})
+		return func() tea.Cmd {
+			// What was read of the services shows whether or not the options can be read after it
+			p.loaded, p.err = true, err
+			if err == nil {
+				p.state = response
+			}
+			p.refresh()
+			return p.options.Load(func() tea.Cmd {
+				p.refresh()
+				if then == nil || err != nil {
+					return nil
+				}
+				return then()
+			})
+		}
+	})
 }
 
-func (p *picker) services() []*generatev1.Service {
-	return p.state.GetServices()
+// Draws every list of the page again
+func (p *page) refresh() {
+	p.views.Refresh()
+}
+
+// Keeps a list among those drawn again on every read
+func (p *page) watch(view *cards.List) {
+	p.views.Add(view)
+	p.options.Watch(view)
 }
 
 // Service of the name as last read, nil when it is gone
-func (p *picker) find(name string) *generatev1.Service {
-	for _, s := range p.services() {
+func (p *page) find(name string) *generatev1.Service {
+	for _, s := range p.state.GetServices() {
 		if s.GetName() == name {
 			return s
 		}
@@ -269,313 +404,40 @@ func (p *picker) find(name string) *generatev1.Service {
 	return nil
 }
 
-func (p *picker) load() tea.Cmd {
-	return tui.Async(func() func() tea.Cmd {
-		response, err := p.service.List(p.kit.Env.Ctx, &generatev1.ListRequest{Profile: p.profile, Kind: p.kind.proto})
-		return func() tea.Cmd {
-			if err == nil {
-				p.state = response
-			}
-			p.err, p.loaded = err, true
-			for _, view := range p.views {
-				view.Refresh()
-			}
-			return nil
-		}
+// Uses a service, its model kept, or Automatic for none, saying what makes them now, and tells the screens that follow the settings
+func (p *page) choose(name string) tea.Cmd {
+	p.hub.Busy("Saving…")
+	return tui.Call(p.hub, func() (*generatev1.ChooseResponse, error) {
+		return p.service.Choose(p.kit.Env.Ctx, &generatev1.ChooseRequest{Profile: p.profile, Kind: p.kind.proto, Service: name})
+	}, func(response *generatev1.ChooseResponse) tea.Cmd {
+		return tea.Batch(p.hub.Done(response.GetNote()), p.load(p.changed))
 	})
 }
 
-// How a service stands in a few words: in use when the first ready one is used, else whether it is ready and free or what it still needs
-func (p *picker) status(r row) string {
-	t := p.kit.Env.Theme
-	s := r.service
-	switch {
-	case s == nil:
-		return ""
-	case p.state.GetChosen() == "" && s.GetActive() && p.state.GetOffered():
-		return render.Good("In use", t)
-	case s.GetReady() && s.GetBadge() == "free":
-		return render.Good("Free", t)
-	case s.GetReady():
-		return render.Good("Ready", t)
-	case s.GetKey() != "":
-		return render.Warm("Needs an API key", t)
-	case s.GetProvider() != "":
-		return render.Warm("Not connected", t)
-	}
-	return render.Warm("Not ready", t)
+// Turns the making of videos on or off
+func (p *page) makeVideos(on bool) tea.Cmd {
+	p.hub.Busy("Saving…")
+	return tui.Call(p.hub, func() (*generatev1.ChooseResponse, error) {
+		return p.service.Videos(p.kit.Env.Ctx, &generatev1.VideosRequest{Profile: p.profile, On: on})
+	}, func(response *generatev1.ChooseResponse) tea.Cmd {
+		return tea.Batch(p.hub.Done(response.GetNote()), p.load(p.changed))
+	})
 }
 
-// Lines under the list about a row: what it is when the row can't show it, then its model, its cost, how to get its API key or connect
-// it, and what it says of itself
-func (p *picker) describe(r row) []string {
-	t := p.kit.Env.Theme
-	var lines []string
-	if !p.list.Shows(3) {
-		lines = append(lines, sentence(p.about(r)))
-	}
-	s := r.service
-	if s == nil {
-		return lines
-	}
-	var facts []string
-	if model := s.GetModel(); model != "" {
-		facts = append(facts, "Model: "+model)
-	} else {
-		facts = append(facts, "Model: its default")
-	}
-	if badge := s.GetBadge(); badge != "" {
-		facts = append(facts, strings.ToUpper(badge[:1])+badge[1:])
-	}
-	lines = append(lines, render.Dim(strings.Join(facts, " · "), t))
-	switch {
-	case s.GetKey() != "" && !s.GetReady():
-		key := "Needs " + cmp.Or(s.GetPrompt(), "an API key") + "."
-		if link := s.GetLink(); link != "" {
-			key += " Get one at " + link
-		}
-		lines = append(lines, render.Dim(key, t))
-	case s.GetProvider() != "" && !s.GetReady():
-		lines = append(lines, render.Dim("Uses your "+s.GetProvider()+" account. Connect it on the Providers screen.", t))
-	}
-	for _, note := range s.GetNotes() {
-		lines = append(lines, render.Dim(sentence(note), t))
-	}
-	return lines
-}
-
-// Sentence of a reason a server gave: capital first letter, ending in a period
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	text = strings.ToUpper(text[:1]) + text[1:]
-	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
-		text += "."
-	}
-	return text
-}
-
-// Chooses the row: a service with the model, its default for none, asking for its API key when it has none yet; the first service that
-// is ready; or for videos none at all
-func (p *picker) choose(r row, model string) tea.Cmd {
-	noun := strings.ToUpper(p.kind.noun[:1]) + p.kind.noun[1:]
-	switch {
-	case r.auto && p.kind.id == Videos:
-		return p.write(noun+" now come from the first service that is ready.", write{p.kind.provider, ""}, write{p.kind.model, ""},
-			write{generationconfig.VideoEnabled, true})
-	case r.auto:
-		return p.write(noun+" now come from the first service that is ready.", write{p.kind.provider, ""}, write{p.kind.model, ""})
-	case r.off:
-		return p.write("The agent no longer makes videos.", write{p.kind.provider, ""}, write{generationconfig.VideoEnabled, false})
-	}
-	s := r.service
-	note := noun + " now come from " + s.GetTitle()
-	if model != "" {
-		note += ", with the model " + model
-	}
-	done := p.write(note+".", write{p.kind.provider, s.GetName()}, write{cmp.Or(s.GetModelSetting(), p.kind.model), model})
-	if !s.GetReady() && s.GetKey() != "" {
-		return tea.Batch(done, p.kit.Open(configapp.Edit, profile.Join(p.profile, s.GetKey())))
-	}
-	return done
-}
-
-// Something to do in the setup of a service
-type step struct {
-	title, state, about string
-	// Word on the button that does it
-	verb string
-	run  func() tea.Cmd
-}
-
-// Steps of the setup of the service as it stands now: choosing it, its model, its API key or account, and its settings
-func (p *picker) steps(name string) []step {
-	t := p.kit.Env.Theme
-	s := p.find(name)
-	if s == nil {
+// Tells the screens that follow the settings of the area what they hold now, for the profile in use
+func (p *page) changed() tea.Cmd {
+	if p.profile != "" {
 		return nil
 	}
-	use := step{title: "Use " + s.GetTitle(), about: "Make " + p.kind.noun + " with " + s.GetTitle() + " and the model below", verb: "choose",
-		run: func() tea.Cmd { return p.choose(row{service: p.find(name)}, p.find(name).GetModel()) }}
-	if s.GetName() == p.state.GetChosen() {
-		use.state, use.verb, use.run = render.Good("In use", t), "", nil
+	keys := []string{generationconfig.ImageProvider}
+	if p.kind.id == Videos {
+		keys = []string{generationconfig.VideoProvider, generationconfig.VideoEnabled}
 	}
-	model := s.GetModel()
-	if model == "" {
-		model = render.Dim("Default", t)
-	}
-	steps := []step{use, {title: "Model", state: model, about: "One of the models of " + s.GetTitle(), verb: "change",
-		run: func() tea.Cmd { return p.models(name) }}}
-	switch {
-	case s.GetKey() != "":
-		state := render.Warm("Not set", t)
-		if s.GetReady() {
-			state = render.Good("Set", t)
-		}
-		about := cmp.Or(s.GetPrompt(), "The API key of "+s.GetTitle())
-		if link := s.GetLink(); link != "" {
-			about += ", from " + link
-		}
-		steps = append(steps, step{title: "API key", state: state, about: about, verb: "change",
-			run: func() tea.Cmd {
-				return tea.Batch(p.kit.WM.DismissCard(p.hub), p.kit.Open(configapp.Edit, profile.Join(p.profile, s.GetKey())))
-			}})
-	case s.GetProvider() != "":
-		state := render.Warm("Not connected", t)
-		if s.GetReady() {
-			state = render.Good("Connected", t)
-		}
-		steps = append(steps, step{title: "Account", state: state, about: "Your " + s.GetProvider() + " account, on the Providers screen", verb: "connect",
-			run: func() tea.Cmd {
-				return tea.Batch(p.kit.WM.DismissCard(p.hub), p.kit.Open(providerapp.Screen, profile.Join(p.profile, providerapp.LoginsOf+s.GetProvider())))
-			}})
-	}
-	return append(steps, step{title: "All settings", about: "Open every setting of " + s.GetTitle(), verb: "open",
-		run: func() tea.Cmd { return p.configure(name) }})
-}
-
-// Opens the setup of the service over the list: choosing it, its model, its API key or account and its settings
-func (p *picker) setup(name string) tea.Cmd {
-	t := p.kit.Env.Theme
-	s := p.find(name)
-	if s == nil {
-		return nil
-	}
-	var steps []step
-	var view *cards.List
-	view = cards.NewList(p.kit.Env, cards.ListSpec{
-		Title:   s.GetTitle(),
-		Glyph:   t.Glyphs.Write,
-		Key:     p.kind.id + ":" + name,
-		Context: cards.HubContext,
-		Primary: "hub.use",
-		Intro:   func() []string { return []string{"Set up " + s.GetTitle() + ", then choose it."} },
-		Columns: []render.Column{{}, {}, {Flex: 1, Whole: true}},
-		Rows: func() [][]string {
-			steps = p.steps(name)
-			rows := make([][]string, len(steps))
-			for i, step := range steps {
-				rows[i] = []string{step.title, step.state, render.Dim(step.about, t)}
-			}
-			return rows
-		},
-		Detail: func(i int) []string {
-			if view.Shows(2) {
-				return nil
-			}
-			return []string{steps[i].about}
-		},
-		Empty: func() string { return s.GetTitle() + " is no longer installed." },
-		Hints: func(_ *cards.List, i int) []wm.Hint {
-			if i < 0 || i >= len(steps) || steps[i].verb == "" {
-				return nil
-			}
-			return []wm.Hint{{Action: "hub.use", Label: steps[i].verb}}
-		},
-		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"hub.use": func(_ *cards.List, i int) tea.Cmd {
-				if steps[i].run == nil {
-					return nil
-				}
-				return steps[i].run()
-			},
-		},
-	})
-	view.ToggleDetail()
-	p.views = append(p.views, view)
-	return p.hub.Push(view)
-}
-
-// Lists the models of the service to choose one from, the service then chosen with it
-func (p *picker) models(name string) tea.Cmd {
-	s := p.find(name)
-	if s == nil {
-		return nil
-	}
-	return tui.Call(p.hub, func() (*generatev1.ModelsResponse, error) {
-		return p.service.Models(p.kit.Env.Ctx, &generatev1.ModelsRequest{Profile: p.profile, Kind: p.kind.proto, Service: name})
-	}, func(response *generatev1.ModelsResponse) tea.Cmd {
-		var choices []tui.Choice
-		for _, m := range response.GetModels() {
-			var facts []string
-			if m.GetId() == response.GetDefault() {
-				facts = append(facts, "The default")
-			}
-			choices = append(choices, tui.Choice{ID: m.GetId(), Title: cmp.Or(m.GetTitle(), m.GetId()),
-				Detail: strings.Join(filled(append(facts, m.GetStrengths(), m.GetSpeed(), m.GetPrice())...), " · ")})
-		}
-		if len(choices) == 0 {
-			return p.hub.Say(s.GetTitle()+" lists no models now, so it uses its default model.", cards.NoteInfo)
-		}
-		return p.kit.Pick(p.hub, "Model of "+s.GetTitle(), "choose", choices, cmp.Or(s.GetModel(), response.GetDefault()), func(choice tui.Choice) tea.Cmd {
-			return p.choose(row{service: s}, choice.ID)
-		})
-	})
-}
-
-// Texts that are not empty
-func filled(texts ...string) []string {
-	var out []string
-	for _, text := range texts {
-		if text = strings.TrimSpace(text); text != "" {
-			out = append(out, text)
+	var cmds []tea.Cmd
+	for _, key := range keys {
+		if setting := p.options.Setting(key); setting != nil {
+			cmds = append(cmds, p.kit.Changed(key, setting.GetValue()))
 		}
 	}
-	return out
-}
-
-// Opens the settings of the service in place of this screen
-func (p *picker) configure(name string) tea.Cmd {
-	section := p.kind.provider[:strings.Index(p.kind.provider, ".")]
-	if s := p.find(name); s != nil && len(s.GetSettings()) > 0 {
-		section = s.GetSettings()[0]
-		if i := strings.LastIndex(section, "."); i > 0 {
-			section = section[:i]
-		}
-	}
-	return tea.Batch(p.kit.WM.DismissCard(p.hub), p.kit.Open(configapp.Settings, profile.Join(p.profile, section)))
-}
-
-type write struct {
-	key   string
-	value any
-}
-
-// Saves the settings in order, tells the screens that follow them, then reads the services again
-func (p *picker) write(note string, writes ...write) tea.Cmd {
-	type saved struct{ key, value string }
-	return tui.Call(p.hub, func() ([]saved, error) {
-		ctx := p.kit.Env.Ctx
-		var out []saved
-		for _, w := range writes {
-			value, err := yaml.Marshal(w.value)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := p.settings.Set(ctx, &configv1.SetRequest{Key: w.key, Value: string(value), Profile: p.profile}); err != nil {
-				return nil, err
-			}
-			out = append(out, saved{w.key, strings.TrimSpace(string(value))})
-		}
-		return out, nil
-	}, func(done []saved) tea.Cmd {
-		cmds := []tea.Cmd{p.hub.Done(note), p.load()}
-		// Screens follow the settings of the profile in use
-		if p.profile == "" {
-			for _, s := range done {
-				cmds = append(cmds, p.kit.Changed(s.key, s.value))
-			}
-		}
-		return tea.Batch(cmds...)
-	})
-}
-
-// Title of the screen, naming the profile when it was opened on one
-func (p *picker) title() string {
-	if p.profile == "" {
-		return p.kind.title
-	}
-	return p.kind.title + " · " + p.profile
+	return tea.Batch(cmds...)
 }

@@ -32,7 +32,8 @@ type Status struct {
 	Plugin   string
 	OAuth    bool
 	SignedIn bool
-	// Values its settings name as ${NAME} that are not set
+	// Values its settings name as ${NAME}, and those of them that are not set
+	Reads       []string
 	Missing     []string
 	Sampling    map[string]int
 	Elicitation map[string]int
@@ -65,6 +66,7 @@ func (m *Manager) Status(cfg *config.Config) []Status {
 			}
 		}
 		sort.Strings(status.Missing)
+		status.Reads = reads(s.Raw)
 		p.mu.Lock()
 		srv, connecting, failure := p.servers[name], p.connecting[name], p.failures[name]
 		p.mu.Unlock()
@@ -300,14 +302,13 @@ func statusOf(err error) int {
 func NextStep(name string, err error) string {
 	switch class := failureClass(err); {
 	case class == "auth_required":
-		return "The server turned down the sign-in. Sign in again with icebath mcp login " + name + "."
+		return "The server turned down the sign-in, so sign in to " + name + " again."
 	case errors.As(err, new(*abiError)):
-		return "Once it is rebuilt, run icebath mcp test " + name + "."
+		return "Once it is rebuilt, test " + name + " again."
 	case missing(err) != "" || strings.Contains(err.Error(), notFound):
-		return "Install that program, or give its full path as the command of " + name + " in /settings under Tools › MCP servers › Your servers."
+		return "Install that program, or give its full path as the command of " + name + "."
 	}
-	return "Check that the server is running and that its address or command is right in /settings under Tools › MCP servers › Your servers, then " +
-		"run icebath mcp test " + name + "."
+	return "Check that the server runs and that its address or command is right, then test " + name + " again."
 }
 
 // Sign in to a server in progress, reached by its id
@@ -346,8 +347,8 @@ func (m *Manager) loginWith(cfg *config.Config, name string, raw map[string]any,
 		return nil, fmt.Errorf("The MCP server %s runs on this computer and has no address, so it has no sign-in.", name)
 	}
 	if s.Auth != "oauth" {
-		return nil, fmt.Errorf("The MCP server %s does not sign in with OAuth, as its Sign-in is %s. Set its Sign-in to OAuth in /settings under "+
-			"Tools › MCP servers › Your servers.", name, cmp.Or(s.Auth, "Headers only"))
+		return nil, fmt.Errorf("The MCP server %s is reached at an address with no sign-in. Change how it connects to an address with sign-in "+
+			"first.", name)
 	}
 	flow = cmp.Or(flow, s.OAuth.Flow)
 	if flow != "browser" && flow != "device" {

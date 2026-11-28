@@ -14,11 +14,11 @@ func Register(cfg *config.Config) {
 		Group: config.GroupSafety,
 		Order: 20,
 		Settings: []config.Setting{
-			{Key: Endpoint, Title: "Service address", About: "The address of the OSV service that is asked whether a package is known malware.",
+			{Key: Endpoint, Title: "Service address", About: "The address of the OSV service that says whether a package is known malware.",
 				Default: "https://api.osv.dev/v1/query", Help: "Packages that MCP servers start with npx, uvx or pipx, and those that skills install, are checked.",
-				Env: []string{"OSV_ENDPOINT"}, Advanced: true},
-			{Key: CacheTTL, Title: "Keep answers for", About: "How long an answer of the malware check is kept.", Default: time.Hour,
-				Env: []string{"OSV_CHECK_CACHE_TTL"}, Advanced: true},
+				Env: []string{"OSV_ENDPOINT"}, Starts: []string{"https://", "http://"}, Advanced: true},
+			{Key: CacheTTL, Title: "Keep answers for", About: "How long icebath keeps an answer of the malware check before it asks again.",
+				Default: time.Hour, Zero: "Not kept", Min: config.Bound(0), Env: []string{"OSV_CHECK_CACHE_TTL"}, Advanced: true},
 		},
 	}})
 }

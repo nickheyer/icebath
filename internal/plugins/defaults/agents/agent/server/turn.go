@@ -674,7 +674,7 @@ func (a *Agent) summarize(ctx context.Context, r *run, store sessions.Store, set
 			}
 			slog.Warn("Failed to get summary response", "session", r.sessionID(), "error", err)
 			text = fmt.Sprintf("I used all %s I may take for one reply before finishing, and couldn't sum up my work. Send “continue” to keep "+
-				"going, or raise Max steps in /settings under Agent.", strs.Count(limit, "step"))
+				"going, or raise Max steps with /settings max steps.", strs.Count(limit, "step"))
 			break
 		}
 		if text = strings.TrimSpace(thinkBlocks.ReplaceAllString(response.Message.GetText(), "")); text != "" {

@@ -21,6 +21,432 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type InstalledRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstalledRequest) Reset() {
+	*x = InstalledRequest{}
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstalledRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstalledRequest) ProtoMessage() {}
+
+func (x *InstalledRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstalledRequest.ProtoReflect.Descriptor instead.
+func (*InstalledRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{0}
+}
+
+// A browser installed on this computer
+type Program struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Title         string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Program) Reset() {
+	*x = Program{}
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Program) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Program) ProtoMessage() {}
+
+func (x *Program) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Program.ProtoReflect.Descriptor instead.
+func (*Program) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Program) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Program) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+// A profile of your own browser
+type OwnProfile struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Folder of the profile inside the browser's data, such as Default or Profile 2
+	Folder string `protobuf:"bytes,1,opt,name=folder,proto3" json:"folder,omitempty"`
+	// Name the browser shows for it
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// The one the browser used last
+	Last          bool `protobuf:"varint,3,opt,name=last,proto3" json:"last,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OwnProfile) Reset() {
+	*x = OwnProfile{}
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OwnProfile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OwnProfile) ProtoMessage() {}
+
+func (x *OwnProfile) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OwnProfile.ProtoReflect.Descriptor instead.
+func (*OwnProfile) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *OwnProfile) GetFolder() string {
+	if x != nil {
+		return x.Folder
+	}
+	return ""
+}
+
+func (x *OwnProfile) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *OwnProfile) GetLast() bool {
+	if x != nil {
+		return x.Last
+	}
+	return false
+}
+
+type InstalledResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Programs []*Program             `protobuf:"bytes,1,rep,name=programs,proto3" json:"programs,omitempty"`
+	// Title of the default browser, empty when it is none icebath knows
+	Browser       string        `protobuf:"bytes,2,opt,name=browser,proto3" json:"browser,omitempty"`
+	Profiles      []*OwnProfile `protobuf:"bytes,3,rep,name=profiles,proto3" json:"profiles,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstalledResponse) Reset() {
+	*x = InstalledResponse{}
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstalledResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstalledResponse) ProtoMessage() {}
+
+func (x *InstalledResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstalledResponse.ProtoReflect.Descriptor instead.
+func (*InstalledResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *InstalledResponse) GetPrograms() []*Program {
+	if x != nil {
+		return x.Programs
+	}
+	return nil
+}
+
+func (x *InstalledResponse) GetBrowser() string {
+	if x != nil {
+		return x.Browser
+	}
+	return ""
+}
+
+func (x *InstalledResponse) GetProfiles() []*OwnProfile {
+	if x != nil {
+		return x.Profiles
+	}
+	return nil
+}
+
+type ServicesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServicesRequest) Reset() {
+	*x = ServicesRequest{}
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServicesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServicesRequest) ProtoMessage() {}
+
+func (x *ServicesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServicesRequest.ProtoReflect.Descriptor instead.
+func (*ServicesRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ServicesRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+// One place pages can open
+type Service struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Value of browser.cloud_provider that picks it
+	Name  string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	About string `protobuf:"bytes,3,opt,name=about,proto3" json:"about,omitempty"`
+	// How it stands in the state words, such as Ready or Needs an API key
+	State string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	Ready bool   `protobuf:"varint,5,opt,name=ready,proto3" json:"ready,omitempty"`
+	// Key of the section of its own settings, empty when it has none
+	Section string `protobuf:"bytes,6,opt,name=section,proto3" json:"section,omitempty"`
+	// Pages open there now
+	Chosen bool `protobuf:"varint,7,opt,name=chosen,proto3" json:"chosen,omitempty"`
+	// Settings that keep its keys outside its own section, such as the key of an account it shares
+	Keys []string `protobuf:"bytes,8,rep,name=keys,proto3" json:"keys,omitempty"`
+	// Heading it is listed under: this computer, the cloud services, or the browsers that bring tools of their own
+	Group         string `protobuf:"bytes,9,opt,name=group,proto3" json:"group,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Service) Reset() {
+	*x = Service{}
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Service) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Service) ProtoMessage() {}
+
+func (x *Service) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Service.ProtoReflect.Descriptor instead.
+func (*Service) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Service) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Service) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Service) GetAbout() string {
+	if x != nil {
+		return x.About
+	}
+	return ""
+}
+
+func (x *Service) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Service) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *Service) GetSection() string {
+	if x != nil {
+		return x.Section
+	}
+	return ""
+}
+
+func (x *Service) GetChosen() bool {
+	if x != nil {
+		return x.Chosen
+	}
+	return false
+}
+
+func (x *Service) GetKeys() []string {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
+func (x *Service) GetGroup() string {
+	if x != nil {
+		return x.Group
+	}
+	return ""
+}
+
+type ServicesResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Services []*Service             `protobuf:"bytes,1,rep,name=services,proto3" json:"services,omitempty"`
+	// Value of browser.cloud_provider kept, empty while none was chosen and the keys decide
+	Chosen        string `protobuf:"bytes,2,opt,name=chosen,proto3" json:"chosen,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServicesResponse) Reset() {
+	*x = ServicesResponse{}
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServicesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServicesResponse) ProtoMessage() {}
+
+func (x *ServicesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServicesResponse.ProtoReflect.Descriptor instead.
+func (*ServicesResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ServicesResponse) GetServices() []*Service {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
+func (x *ServicesResponse) GetChosen() string {
+	if x != nil {
+		return x.Chosen
+	}
+	return ""
+}
+
 type StatusRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Profile asked about, the one in use when empty
@@ -31,7 +457,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[0]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -43,7 +469,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[0]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -56,7 +482,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{0}
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *StatusRequest) GetProfile() string {
@@ -70,14 +496,16 @@ type StatusResponse struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Connected bool                   `protobuf:"varint,1,opt,name=connected,proto3" json:"connected,omitempty"`
 	// Endpoint attached, its credentials masked
-	Url           string `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	Url string `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	// Environment variable that names the endpoint over the settings, empty when none does
+	Variable      string `protobuf:"bytes,3,opt,name=variable,proto3" json:"variable,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[1]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -89,7 +517,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[1]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -102,7 +530,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{1}
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *StatusResponse) GetConnected() bool {
@@ -119,6 +547,13 @@ func (x *StatusResponse) GetUrl() string {
 	return ""
 }
 
+func (x *StatusResponse) GetVariable() string {
+	if x != nil {
+		return x.Variable
+	}
+	return ""
+}
+
 type ConnectRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
@@ -130,7 +565,7 @@ type ConnectRequest struct {
 
 func (x *ConnectRequest) Reset() {
 	*x = ConnectRequest{}
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[2]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -142,7 +577,7 @@ func (x *ConnectRequest) String() string {
 func (*ConnectRequest) ProtoMessage() {}
 
 func (x *ConnectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[2]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -155,7 +590,7 @@ func (x *ConnectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectRequest.ProtoReflect.Descriptor instead.
 func (*ConnectRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{2}
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ConnectRequest) GetProfile() string {
@@ -186,7 +621,7 @@ type ConnectEvent struct {
 
 func (x *ConnectEvent) Reset() {
 	*x = ConnectEvent{}
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[3]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -198,7 +633,7 @@ func (x *ConnectEvent) String() string {
 func (*ConnectEvent) ProtoMessage() {}
 
 func (x *ConnectEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[3]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -211,7 +646,7 @@ func (x *ConnectEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectEvent.ProtoReflect.Descriptor instead.
 func (*ConnectEvent) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{3}
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ConnectEvent) GetEvent() isConnectEvent_Event {
@@ -266,7 +701,7 @@ type Progress struct {
 
 func (x *Progress) Reset() {
 	*x = Progress{}
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[4]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -278,7 +713,7 @@ func (x *Progress) String() string {
 func (*Progress) ProtoMessage() {}
 
 func (x *Progress) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[4]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -291,7 +726,7 @@ func (x *Progress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Progress.ProtoReflect.Descriptor instead.
 func (*Progress) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{4}
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Progress) GetMessage() string {
@@ -313,14 +748,16 @@ type Connected struct {
 	// Whether the browser tools are attached now
 	Connected bool `protobuf:"varint,1,opt,name=connected,proto3" json:"connected,omitempty"`
 	// Endpoint attached, or the one that was tried
-	Url           string `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	Url string `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	// What happened, in one or two sentences
+	Note          string `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Connected) Reset() {
 	*x = Connected{}
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[5]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -332,7 +769,7 @@ func (x *Connected) String() string {
 func (*Connected) ProtoMessage() {}
 
 func (x *Connected) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[5]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -345,7 +782,7 @@ func (x *Connected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Connected.ProtoReflect.Descriptor instead.
 func (*Connected) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{5}
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Connected) GetConnected() bool {
@@ -362,6 +799,13 @@ func (x *Connected) GetUrl() string {
 	return ""
 }
 
+func (x *Connected) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
 type DisconnectRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
@@ -371,7 +815,7 @@ type DisconnectRequest struct {
 
 func (x *DisconnectRequest) Reset() {
 	*x = DisconnectRequest{}
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[6]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -383,7 +827,7 @@ func (x *DisconnectRequest) String() string {
 func (*DisconnectRequest) ProtoMessage() {}
 
 func (x *DisconnectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[6]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -396,7 +840,7 @@ func (x *DisconnectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectRequest.ProtoReflect.Descriptor instead.
 func (*DisconnectRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{6}
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DisconnectRequest) GetProfile() string {
@@ -407,14 +851,18 @@ func (x *DisconnectRequest) GetProfile() string {
 }
 
 type DisconnectResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What happened, in one or two sentences
+	Note string `protobuf:"bytes,1,opt,name=note,proto3" json:"note,omitempty"`
+	// Still attached to the endpoint a variable of the environment names
+	Held          bool `protobuf:"varint,2,opt,name=held,proto3" json:"held,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DisconnectResponse) Reset() {
 	*x = DisconnectResponse{}
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[7]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -426,7 +874,7 @@ func (x *DisconnectResponse) String() string {
 func (*DisconnectResponse) ProtoMessage() {}
 
 func (x *DisconnectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[7]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -439,7 +887,21 @@ func (x *DisconnectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisconnectResponse.ProtoReflect.Descriptor instead.
 func (*DisconnectResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{7}
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *DisconnectResponse) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *DisconnectResponse) GetHeld() bool {
+	if x != nil {
+		return x.Held
+	}
+	return false
 }
 
 type CloseProfileRequest struct {
@@ -453,7 +915,7 @@ type CloseProfileRequest struct {
 
 func (x *CloseProfileRequest) Reset() {
 	*x = CloseProfileRequest{}
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[8]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -465,7 +927,7 @@ func (x *CloseProfileRequest) String() string {
 func (*CloseProfileRequest) ProtoMessage() {}
 
 func (x *CloseProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[8]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -478,7 +940,7 @@ func (x *CloseProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseProfileRequest.ProtoReflect.Descriptor instead.
 func (*CloseProfileRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{8}
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CloseProfileRequest) GetProfile() string {
@@ -505,7 +967,7 @@ type CloseProfileResponse struct {
 
 func (x *CloseProfileResponse) Reset() {
 	*x = CloseProfileResponse{}
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[9]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -517,7 +979,7 @@ func (x *CloseProfileResponse) String() string {
 func (*CloseProfileResponse) ProtoMessage() {}
 
 func (x *CloseProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[9]
+	mi := &file_icebath_plugins_browser_v1_browser_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -530,7 +992,7 @@ func (x *CloseProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseProfileResponse.ProtoReflect.Descriptor instead.
 func (*CloseProfileResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{9}
+	return file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CloseProfileResponse) GetClosed() bool {
@@ -551,12 +1013,41 @@ var File_icebath_plugins_browser_v1_browser_proto protoreflect.FileDescriptor
 
 const file_icebath_plugins_browser_v1_browser_proto_rawDesc = "" +
 	"\n" +
-	"(icebath/plugins/browser/v1/browser.proto\x12\x1aicebath.plugins.browser.v1\")\n" +
+	"(icebath/plugins/browser/v1/browser.proto\x12\x1aicebath.plugins.browser.v1\"\x12\n" +
+	"\x10InstalledRequest\"3\n" +
+	"\aProgram\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"L\n" +
+	"\n" +
+	"OwnProfile\x12\x16\n" +
+	"\x06folder\x18\x01 \x01(\tR\x06folder\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04last\x18\x03 \x01(\bR\x04last\"\xb2\x01\n" +
+	"\x11InstalledResponse\x12?\n" +
+	"\bprograms\x18\x01 \x03(\v2#.icebath.plugins.browser.v1.ProgramR\bprograms\x12\x18\n" +
+	"\abrowser\x18\x02 \x01(\tR\abrowser\x12B\n" +
+	"\bprofiles\x18\x03 \x03(\v2&.icebath.plugins.browser.v1.OwnProfileR\bprofiles\"+\n" +
+	"\x0fServicesRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"\xd1\x01\n" +
+	"\aService\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
+	"\x05about\x18\x03 \x01(\tR\x05about\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x12\x14\n" +
+	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x18\n" +
+	"\asection\x18\x06 \x01(\tR\asection\x12\x16\n" +
+	"\x06chosen\x18\a \x01(\bR\x06chosen\x12\x12\n" +
+	"\x04keys\x18\b \x03(\tR\x04keys\x12\x14\n" +
+	"\x05group\x18\t \x01(\tR\x05group\"k\n" +
+	"\x10ServicesResponse\x12?\n" +
+	"\bservices\x18\x01 \x03(\v2#.icebath.plugins.browser.v1.ServiceR\bservices\x12\x16\n" +
+	"\x06chosen\x18\x02 \x01(\tR\x06chosen\")\n" +
 	"\rStatusRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"@\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"\\\n" +
 	"\x0eStatusResponse\x12\x1c\n" +
 	"\tconnected\x18\x01 \x01(\bR\tconnected\x12\x10\n" +
-	"\x03url\x18\x02 \x01(\tR\x03url\"<\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\x12\x1a\n" +
+	"\bvariable\x18\x03 \x01(\tR\bvariable\"<\n" +
 	"\x0eConnectRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\"\xa2\x01\n" +
@@ -566,25 +1057,30 @@ const file_icebath_plugins_browser_v1_browser_proto_rawDesc = "" +
 	"\x05event\":\n" +
 	"\bProgress\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x14\n" +
-	"\x05level\x18\x02 \x01(\tR\x05level\";\n" +
+	"\x05level\x18\x02 \x01(\tR\x05level\"O\n" +
 	"\tConnected\x12\x1c\n" +
 	"\tconnected\x18\x01 \x01(\bR\tconnected\x12\x10\n" +
-	"\x03url\x18\x02 \x01(\tR\x03url\"-\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\x12\x12\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\"-\n" +
 	"\x11DisconnectRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"\x14\n" +
-	"\x12DisconnectResponse\"I\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"<\n" +
+	"\x12DisconnectResponse\x12\x12\n" +
+	"\x04note\x18\x01 \x01(\tR\x04note\x12\x12\n" +
+	"\x04held\x18\x02 \x01(\bR\x04held\"I\n" +
 	"\x13CloseProfileRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x18\n" +
 	"\abrowser\x18\x02 \x01(\tR\abrowser\"H\n" +
 	"\x14CloseProfileResponse\x12\x16\n" +
 	"\x06closed\x18\x01 \x01(\bR\x06closed\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage2\xb4\x03\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage2\x85\x05\n" +
 	"\x0eBrowserService\x12_\n" +
 	"\x06Status\x12).icebath.plugins.browser.v1.StatusRequest\x1a*.icebath.plugins.browser.v1.StatusResponse\x12a\n" +
 	"\aConnect\x12*.icebath.plugins.browser.v1.ConnectRequest\x1a(.icebath.plugins.browser.v1.ConnectEvent0\x01\x12k\n" +
 	"\n" +
 	"Disconnect\x12-.icebath.plugins.browser.v1.DisconnectRequest\x1a..icebath.plugins.browser.v1.DisconnectResponse\x12q\n" +
-	"\fCloseProfile\x12/.icebath.plugins.browser.v1.CloseProfileRequest\x1a0.icebath.plugins.browser.v1.CloseProfileResponseB\x84\x02\n" +
+	"\fCloseProfile\x12/.icebath.plugins.browser.v1.CloseProfileRequest\x1a0.icebath.plugins.browser.v1.CloseProfileResponse\x12e\n" +
+	"\bServices\x12+.icebath.plugins.browser.v1.ServicesRequest\x1a,.icebath.plugins.browser.v1.ServicesResponse\x12h\n" +
+	"\tInstalled\x12,.icebath.plugins.browser.v1.InstalledRequest\x1a-.icebath.plugins.browser.v1.InstalledResponseB\x84\x02\n" +
 	"\x1ecom.icebath.plugins.browser.v1B\fBrowserProtoP\x01ZIgithub.com/nickheyer/icebath/pkg/gen/icebath/plugins/browser/v1;browserv1\xa2\x02\x03IPB\xaa\x02\x1aIcebath.Plugins.Browser.V1\xca\x02\x1aIcebath\\Plugins\\Browser\\V1\xe2\x02&Icebath\\Plugins\\Browser\\V1\\GPBMetadata\xea\x02\x1dIcebath::Plugins::Browser::V1b\x06proto3"
 
 var (
@@ -599,35 +1095,49 @@ func file_icebath_plugins_browser_v1_browser_proto_rawDescGZIP() []byte {
 	return file_icebath_plugins_browser_v1_browser_proto_rawDescData
 }
 
-var file_icebath_plugins_browser_v1_browser_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_icebath_plugins_browser_v1_browser_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_icebath_plugins_browser_v1_browser_proto_goTypes = []any{
-	(*StatusRequest)(nil),        // 0: icebath.plugins.browser.v1.StatusRequest
-	(*StatusResponse)(nil),       // 1: icebath.plugins.browser.v1.StatusResponse
-	(*ConnectRequest)(nil),       // 2: icebath.plugins.browser.v1.ConnectRequest
-	(*ConnectEvent)(nil),         // 3: icebath.plugins.browser.v1.ConnectEvent
-	(*Progress)(nil),             // 4: icebath.plugins.browser.v1.Progress
-	(*Connected)(nil),            // 5: icebath.plugins.browser.v1.Connected
-	(*DisconnectRequest)(nil),    // 6: icebath.plugins.browser.v1.DisconnectRequest
-	(*DisconnectResponse)(nil),   // 7: icebath.plugins.browser.v1.DisconnectResponse
-	(*CloseProfileRequest)(nil),  // 8: icebath.plugins.browser.v1.CloseProfileRequest
-	(*CloseProfileResponse)(nil), // 9: icebath.plugins.browser.v1.CloseProfileResponse
+	(*InstalledRequest)(nil),     // 0: icebath.plugins.browser.v1.InstalledRequest
+	(*Program)(nil),              // 1: icebath.plugins.browser.v1.Program
+	(*OwnProfile)(nil),           // 2: icebath.plugins.browser.v1.OwnProfile
+	(*InstalledResponse)(nil),    // 3: icebath.plugins.browser.v1.InstalledResponse
+	(*ServicesRequest)(nil),      // 4: icebath.plugins.browser.v1.ServicesRequest
+	(*Service)(nil),              // 5: icebath.plugins.browser.v1.Service
+	(*ServicesResponse)(nil),     // 6: icebath.plugins.browser.v1.ServicesResponse
+	(*StatusRequest)(nil),        // 7: icebath.plugins.browser.v1.StatusRequest
+	(*StatusResponse)(nil),       // 8: icebath.plugins.browser.v1.StatusResponse
+	(*ConnectRequest)(nil),       // 9: icebath.plugins.browser.v1.ConnectRequest
+	(*ConnectEvent)(nil),         // 10: icebath.plugins.browser.v1.ConnectEvent
+	(*Progress)(nil),             // 11: icebath.plugins.browser.v1.Progress
+	(*Connected)(nil),            // 12: icebath.plugins.browser.v1.Connected
+	(*DisconnectRequest)(nil),    // 13: icebath.plugins.browser.v1.DisconnectRequest
+	(*DisconnectResponse)(nil),   // 14: icebath.plugins.browser.v1.DisconnectResponse
+	(*CloseProfileRequest)(nil),  // 15: icebath.plugins.browser.v1.CloseProfileRequest
+	(*CloseProfileResponse)(nil), // 16: icebath.plugins.browser.v1.CloseProfileResponse
 }
 var file_icebath_plugins_browser_v1_browser_proto_depIdxs = []int32{
-	4, // 0: icebath.plugins.browser.v1.ConnectEvent.progress:type_name -> icebath.plugins.browser.v1.Progress
-	5, // 1: icebath.plugins.browser.v1.ConnectEvent.connected:type_name -> icebath.plugins.browser.v1.Connected
-	0, // 2: icebath.plugins.browser.v1.BrowserService.Status:input_type -> icebath.plugins.browser.v1.StatusRequest
-	2, // 3: icebath.plugins.browser.v1.BrowserService.Connect:input_type -> icebath.plugins.browser.v1.ConnectRequest
-	6, // 4: icebath.plugins.browser.v1.BrowserService.Disconnect:input_type -> icebath.plugins.browser.v1.DisconnectRequest
-	8, // 5: icebath.plugins.browser.v1.BrowserService.CloseProfile:input_type -> icebath.plugins.browser.v1.CloseProfileRequest
-	1, // 6: icebath.plugins.browser.v1.BrowserService.Status:output_type -> icebath.plugins.browser.v1.StatusResponse
-	3, // 7: icebath.plugins.browser.v1.BrowserService.Connect:output_type -> icebath.plugins.browser.v1.ConnectEvent
-	7, // 8: icebath.plugins.browser.v1.BrowserService.Disconnect:output_type -> icebath.plugins.browser.v1.DisconnectResponse
-	9, // 9: icebath.plugins.browser.v1.BrowserService.CloseProfile:output_type -> icebath.plugins.browser.v1.CloseProfileResponse
-	6, // [6:10] is the sub-list for method output_type
-	2, // [2:6] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	1,  // 0: icebath.plugins.browser.v1.InstalledResponse.programs:type_name -> icebath.plugins.browser.v1.Program
+	2,  // 1: icebath.plugins.browser.v1.InstalledResponse.profiles:type_name -> icebath.plugins.browser.v1.OwnProfile
+	5,  // 2: icebath.plugins.browser.v1.ServicesResponse.services:type_name -> icebath.plugins.browser.v1.Service
+	11, // 3: icebath.plugins.browser.v1.ConnectEvent.progress:type_name -> icebath.plugins.browser.v1.Progress
+	12, // 4: icebath.plugins.browser.v1.ConnectEvent.connected:type_name -> icebath.plugins.browser.v1.Connected
+	7,  // 5: icebath.plugins.browser.v1.BrowserService.Status:input_type -> icebath.plugins.browser.v1.StatusRequest
+	9,  // 6: icebath.plugins.browser.v1.BrowserService.Connect:input_type -> icebath.plugins.browser.v1.ConnectRequest
+	13, // 7: icebath.plugins.browser.v1.BrowserService.Disconnect:input_type -> icebath.plugins.browser.v1.DisconnectRequest
+	15, // 8: icebath.plugins.browser.v1.BrowserService.CloseProfile:input_type -> icebath.plugins.browser.v1.CloseProfileRequest
+	4,  // 9: icebath.plugins.browser.v1.BrowserService.Services:input_type -> icebath.plugins.browser.v1.ServicesRequest
+	0,  // 10: icebath.plugins.browser.v1.BrowserService.Installed:input_type -> icebath.plugins.browser.v1.InstalledRequest
+	8,  // 11: icebath.plugins.browser.v1.BrowserService.Status:output_type -> icebath.plugins.browser.v1.StatusResponse
+	10, // 12: icebath.plugins.browser.v1.BrowserService.Connect:output_type -> icebath.plugins.browser.v1.ConnectEvent
+	14, // 13: icebath.plugins.browser.v1.BrowserService.Disconnect:output_type -> icebath.plugins.browser.v1.DisconnectResponse
+	16, // 14: icebath.plugins.browser.v1.BrowserService.CloseProfile:output_type -> icebath.plugins.browser.v1.CloseProfileResponse
+	6,  // 15: icebath.plugins.browser.v1.BrowserService.Services:output_type -> icebath.plugins.browser.v1.ServicesResponse
+	3,  // 16: icebath.plugins.browser.v1.BrowserService.Installed:output_type -> icebath.plugins.browser.v1.InstalledResponse
+	11, // [11:17] is the sub-list for method output_type
+	5,  // [5:11] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_icebath_plugins_browser_v1_browser_proto_init() }
@@ -635,7 +1145,7 @@ func file_icebath_plugins_browser_v1_browser_proto_init() {
 	if File_icebath_plugins_browser_v1_browser_proto != nil {
 		return
 	}
-	file_icebath_plugins_browser_v1_browser_proto_msgTypes[3].OneofWrappers = []any{
+	file_icebath_plugins_browser_v1_browser_proto_msgTypes[10].OneofWrappers = []any{
 		(*ConnectEvent_Progress)(nil),
 		(*ConnectEvent_Connected)(nil),
 	}
@@ -645,7 +1155,7 @@ func file_icebath_plugins_browser_v1_browser_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_plugins_browser_v1_browser_proto_rawDesc), len(file_icebath_plugins_browser_v1_browser_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

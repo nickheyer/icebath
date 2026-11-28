@@ -10,6 +10,7 @@ import (
 
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -248,11 +249,14 @@ func (c *chat) resend(text string) tea.Cmd {
 			if err != nil {
 				c.quiet = false
 				c.editing = picked
-				c.log.note("**The changed message was not sent.** " + tui.Reason(err) + " Your text is back in the message box.")
-				if c.composer.Empty() {
-					return c.composer.SetValue(text)
+				said := "**The changed message was not sent.** " + strs.Sentence(tui.Reason(err))
+				// The text goes back only into an empty message box, and only then is it said to be there
+				if !c.composer.Empty() {
+					c.log.note(said)
+					return nil
 				}
-				return nil
+				c.log.note(said + " Your text is back in the message box.")
+				return c.composer.SetValue(text)
 			}
 			c.log.note(fmt.Sprintf("Went back to message %d and took back %s.", picked.number, render.Count(int(response.GetRemoved()), "message")))
 			return nil

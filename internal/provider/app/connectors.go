@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 
 	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect/v2"
@@ -10,6 +9,7 @@ import (
 	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
+	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 // Account a way to connect signs in to, of one provider of the profile
@@ -17,47 +17,26 @@ type Target struct {
 	// Profile the provider is of, the one in use when empty
 	Profile  string
 	Provider *providerv1.Provider
-	// Account signed in to, nil for one made only once the way to connect it succeeds
+	// Account signed in to again, nil for a new one
 	Account *providerv1.Account
-	// Name and title of the account made once the way succeeds, while Account is nil
-	Name, Title string
-	// Whether the person gave the title, which a sign-in otherwise replaces with who it signed in as
-	Titled bool
-	// Makes the account named, nil when Account is set
-	make func(ctx context.Context, name, title string) (*providerv1.Account, error)
-	// Dialog of the screen that started the way, which a way shows its page in so the trail goes on and the person comes back to where
-	// they were, and what that screen does once the account is connected. A way opens a dialog of its own when Hub is nil
+	// Name the person gave a new account, empty for the one the server gives it after who signed in or the way it signs in
+	Title string
+	// Dialog of the page that started the way, and how the way shows its page there: as the next step of the job it is part of, so the
+	// trail goes on and esc goes back a step
 	Hub  *cards.Hub
-	Done func() tea.Cmd
+	Next func(step wm.Card) tea.Cmd
+	// Keeps what the way gave in the account, adding the provider first when the job adds it: the account as kept
+	Keep func(ctx context.Context, fields map[string]any, identity string) (*providerv1.Account, error)
+	// What the page does once the account is kept, such as ending its job and saying so
+	Done func(account *providerv1.Account) tea.Cmd
 }
 
-// Key of a field the account keeps
-func (t Target) Key(field string) string {
-	return t.Account.GetSection() + "." + field
-}
-
-// Name the account is shown by, the one it will have while it is not made yet
+// Name the account is shown by, the one the person gave a new one while it is not made yet
 func (t Target) Label() string {
 	if t.Account != nil {
 		return t.Account.GetTitle()
 	}
 	return t.Title
-}
-
-// Target whose account exists, made now when it was waiting for the way to succeed
-func (t Target) Ready(ctx context.Context) (Target, error) {
-	if t.Account != nil {
-		return t, nil
-	}
-	if t.make == nil {
-		return t, errors.New("There is no account to keep what the sign-in gave.")
-	}
-	account, err := t.make(ctx, t.Name, t.Title)
-	if err != nil {
-		return t, err
-	}
-	t.Account, t.make = account, nil
-	return t, nil
 }
 
 // Way to sign an account in from the app besides pasting an API key, such as a browser sign in

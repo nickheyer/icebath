@@ -14,13 +14,18 @@ import (
 // Provider a request goes to when nothing names one, in the order icebath looks: a kind taken first whose credential is found, such as an
 // OpenRouter key; the provider of the profile signed in first, in the order the kinds are registered, unless a key of another kind is set
 // in the environment, which wins with a warning; the first kind of the registry order with a key in the environment; a provider of the
-// profile whose credential is found anywhere; a kind taken last whose credential is found outside icebath, such as AWS's. Only kinds a wire serves are taken, and none on this machine, which a person
-// connects in /providers
+// profile ready with a credential found anywhere; a kind taken last whose credential is found outside icebath, such as AWS's. Only providers
+// ready by the test the providers page uses are taken, and none on this machine, which a person adds themselves. With none, why the first
+// provider of the profile is not ready, else what to connect
 func (r *Registry) Auto(cfg *config.Config, providers *provider.Registry, wires map[provider.APIMode]provider.Factory) (provider.Instance, error) {
 	instances := providers.Instances(cfg)
-	served := func(instance provider.Instance) bool {
-		_, wired := wires[instance.Spec.Mode]
-		return wired && instance.Known && !instance.Spec.Local && instance.Spec.Auth != provider.AuthNone
+	// The credential a provider sends requests with now, false while it is not ready, runs on this machine or needs none
+	ready := func(instance provider.Instance) (Credential, bool) {
+		if instance.Spec.Local || instance.Spec.Auth == provider.AuthNone {
+			return Credential{}, false
+		}
+		_, credential, err := r.Ready(instance, wires)
+		return credential, err == nil && (credential.APIKey != "" || credential.Sign != nil)
 	}
 	// The profile's provider of the kind, else one set up as the kind's plugin has it
 	of := func(spec provider.Spec) provider.Instance {
@@ -37,14 +42,19 @@ func (r *Registry) Auto(cfg *config.Config, providers *provider.Registry, wires 
 	}
 	specs := providers.Specs()
 	for _, spec := range specs {
-		if instance := of(spec); spec.AutoFirst && served(instance) && r.has(instance) {
-			return instance, nil
+		if instance := of(spec); spec.AutoFirst {
+			if _, ok := ready(instance); ok {
+				return instance, nil
+			}
 		}
 	}
 	signedIn, found := provider.Instance{}, false
 	for _, spec := range specs {
 		for _, instance := range instances {
-			if instance.Spec.Name == spec.Name && served(instance) && r.signedIn(instance) {
+			if instance.Spec.Name != spec.Name {
+				continue
+			}
+			if credential, ok := ready(instance); ok && (credential.Origin == Saved || credential.Origin == External) {
 				signedIn, found = instance, true
 				break
 			}
@@ -59,7 +69,10 @@ func (r *Registry) Auto(cfg *config.Config, providers *provider.Registry, wires 
 		}
 		instance := of(spec)
 		variable := keyed(cfg, spec)
-		if variable == "" || !served(instance) || !r.has(instance) {
+		if variable == "" {
+			continue
+		}
+		if _, ok := ready(instance); !ok {
 			continue
 		}
 		if found && signedIn.Spec.Name != spec.Name {
@@ -74,36 +87,33 @@ func (r *Registry) Auto(cfg *config.Config, providers *provider.Registry, wires 
 	// A provider the profile has whose credential comes from somewhere else, such as a key file a variable names
 	for _, spec := range specs {
 		for _, instance := range instances {
-			if instance.Spec.Name == spec.Name && served(instance) && r.has(instance) {
+			if instance.Spec.Name != spec.Name {
+				continue
+			}
+			if _, ok := ready(instance); ok {
 				return instance, nil
 			}
 		}
 	}
 	for _, spec := range specs {
-		if instance := of(spec); spec.AutoLast && served(instance) && r.has(instance) {
-			return instance, nil
+		if instance := of(spec); spec.AutoLast {
+			if _, ok := ready(instance); ok {
+				return instance, nil
+			}
 		}
 	}
-	return provider.Instance{}, errors.New("icebath is not connected to any AI provider yet. Add one with /providers or " +
-		"`icebath auth add <provider>`, including a model that runs on this computer.\nYou can also put an API key such as OPENROUTER_API_KEY " +
-		"in your keys file, which /settings opens under Settings files.")
-}
-
-// Whether the provider has a credential it can use now
-func (r *Registry) has(instance provider.Instance) bool {
-	credential, ok := r.Credential(Of(instance, ""))
-	return ok && (credential.APIKey != "" || credential.Sign != nil)
-}
-
-// Whether the provider is signed in: a credential kept in one of its accounts or taken from another program's sign-in, which still works
-func (r *Registry) signedIn(instance provider.Instance) bool {
-	account := Of(instance, "")
-	credential, ok := r.Credential(account)
-	if !ok || credential.Origin != Saved && credential.Origin != External {
-		return false
+	for _, spec := range specs {
+		for _, instance := range instances {
+			if instance.Spec.Name != spec.Name || instance.Spec.Local || instance.Spec.Auth == provider.AuthNone {
+				continue
+			}
+			if _, _, err := r.Ready(instance, wires); err != nil {
+				return provider.Instance{}, fmt.Errorf("No provider of yours is ready. %w", err)
+			}
+		}
 	}
-	state, _ := r.State(account)
-	return state == Ready || state == Limited
+	return provider.Instance{}, errors.New("icebath is not connected to any provider yet. Type /providers in icebath to add one, such as a " +
+		"server on this computer, or run `icebath auth add <provider>`.")
 }
 
 // Variable of the kind's keys the profile sets with a usable key, empty when it sets none

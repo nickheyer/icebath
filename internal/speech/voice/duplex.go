@@ -189,7 +189,11 @@ func (m *Mode) listen(ctx context.Context) {
 			m.duplex = false
 			m.mu.Unlock()
 		}()
+		// Talking over a reply is part of voice input, so the listener gives up the microphone once voice input is off
 		live := func() bool {
+			if !m.mode().GetInput() {
+				return false
+			}
 			if m.speaking() {
 				return true
 			}

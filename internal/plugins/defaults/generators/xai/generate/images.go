@@ -118,22 +118,17 @@ func (s *Services) imageModels(ctx context.Context, cfg *config.Config) []genera
 	return out
 }
 
-// Model the call draws with: the one image_gen.xai.model names, else Image model, when the catalog has it; else the default
-func (s *Services) model(c catalog, cfg *config.Config, asked string) string {
-	for _, candidate := range []string{cfg.GetString(xaiconfig.ImageModel), asked} {
-		if _, ok := c.models[strings.TrimSpace(candidate)]; ok && strings.TrimSpace(candidate) != "" {
-			return strings.TrimSpace(candidate)
-		}
+// Model the call draws with: the one image_gen.xai.model names when the catalog has it, else the default
+func (s *Services) model(c catalog, name string) string {
+	if _, ok := c.models[strings.TrimSpace(name)]; ok && strings.TrimSpace(name) != "" {
+		return strings.TrimSpace(name)
 	}
 	return defaultImageModel
 }
 
-// Model an edit takes: the one chosen when it reads pictures, else the quality model
-func (s *Services) editing(c catalog, cfg *config.Config, asked string) string {
-	chosen := strings.TrimSpace(cfg.GetString(xaiconfig.ImageModel))
-	if chosen == "" {
-		chosen = strings.TrimSpace(asked)
-	}
+// Model an edit takes: the one image_gen.xai.model names when it reads pictures, else the quality model
+func (s *Services) editing(c catalog, name string) string {
+	chosen := strings.TrimSpace(name)
 	if p, ok := c.models[chosen]; ok && slices.Contains(p.inputs, "image") {
 		return chosen
 	}
@@ -194,7 +189,7 @@ func (s *Services) draw(ctx context.Context, job *generation.Job, request genera
 		return generation.Call{Provider: source, Aspect: strings.TrimSpace(request.Aspect)}.Fail(noKey, "missing_api_key")
 	}
 	c := s.catalog(ctx, cfg)
-	model := s.model(c, cfg, request.Model)
+	model := s.model(c, request.Model)
 	sources := request.Sources(-1)
 	refused := generation.Call{Provider: source, Model: editModel, Prompt: request.Prompt, Aspect: aspect}
 	if len(sources) > maxSources {
@@ -216,7 +211,7 @@ func (s *Services) draw(ctx context.Context, job *generation.Job, request genera
 	var payload map[string]any
 	endpoint := bearer.BaseURL + "/images/generations"
 	if edit {
-		model = s.editing(c, cfg, request.Model)
+		model = s.editing(c, request.Model)
 		var fields []any
 		for _, ref := range sources {
 			f, err := field(job, ref)

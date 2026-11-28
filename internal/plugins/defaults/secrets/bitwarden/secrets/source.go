@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/internal/packages"
 	bitwardenconfig "github.com/nickheyer/icebath/internal/plugins/defaults/secrets/bitwarden/config"
 	"github.com/nickheyer/icebath/internal/secrets"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 const authRemedy = "Make a new access token in the Bitwarden web app under Secrets Manager › Machine accounts › Access tokens, then run icebath " +
@@ -34,7 +35,7 @@ func (s *Store) Host() *secrets.Secrets {
 }
 
 func (s *Store) Spec() secrets.Spec {
-	return secrets.Spec{Name: bitwardenconfig.Name, Label: "Bitwarden Secrets Manager", Short: "Bitwarden", Shape: secrets.Bulk, Scheme: "bws",
+	return secrets.Spec{Name: bitwardenconfig.Name, Label: "Bitwarden", Short: "Bitwarden", Shape: secrets.Bulk, Scheme: "bws",
 		TokenSetting: bitwardenconfig.TokenSetting, TokenEnv: bitwardenconfig.DefaultTokenEnv,
 		Hints: map[secrets.Failure]string{secrets.AuthFailed: authRemedy, secrets.AuthExpired: authRemedy}}
 }
@@ -45,6 +46,21 @@ func (s *Store) Unconfigured(cfg *config.Config) string {
 		return bitwardenconfig.ProjectID
 	}
 	return ""
+}
+
+// What keeps Bitwarden from filling anything: its access token, a project, then its program while it may not install it
+func (s *Store) Needs(ctx context.Context, f secrets.Fetch) (string, string) {
+	cfg := f.Config
+	tokenEnv := s.TokenEnv(cfg)
+	switch {
+	case strings.TrimSpace(f.Env[tokenEnv]) == "":
+		return "Needs an access token", "No access token is kept in " + tokenEnv + "."
+	case s.Unconfigured(cfg) != "":
+		return "Needs a project", "No Bitwarden project is chosen."
+	case !cfg.GetBool(bitwardenconfig.AutoInstall) && s.Find(ctx, cfg, false) == "":
+		return "Needs the bws program", "bws is not installed, and Install bws is off."
+	}
+	return "", ""
 }
 
 // Variable holding the access token for the profile
@@ -70,8 +86,7 @@ func (s *Store) Fetch(ctx context.Context, f secrets.Fetch) secrets.Result {
 	project := strings.TrimSpace(cfg.GetString(bitwardenconfig.ProjectID))
 	binary := s.Find(ctx, cfg, cfg.GetBool(bitwardenconfig.AutoInstall))
 	if binary == "" {
-		result := secrets.Failed("bws is not installed, and Install bws is off in /settings under Secret stores › Bitwarden.", secrets.BinaryMissing)
-		return result
+		return secrets.Failed("bws is not installed, and Install bws of Bitwarden is off.", secrets.BinaryMissing)
 	}
 	got, warnings, err := s.Pull(ctx, cfg, Pull{Token: token, Project: project, Server: strings.TrimSpace(cfg.GetString(bitwardenconfig.ServerURL)),
 		Binary: binary, Dir: cfg.ProfileDir(cfg.Profile()), TTL: seconds(cfg, bitwardenconfig.CacheTTL), Cache: !f.Fresh,
@@ -81,7 +96,7 @@ func (s *Store) Fetch(ctx context.Context, f secrets.Fetch) secrets.Result {
 		result.Binary = binary
 		if result.Kind == secrets.AuthFailed {
 			result.Error = fmt.Sprintf("Bitwarden refused the access token in %s, which may be revoked, expired or for another region. Bitwarden said: %s",
-				tokenEnv, secrets.Sentence(err.Error()))
+				tokenEnv, strs.Sentence(err.Error()))
 		}
 		return result
 	}

@@ -17,6 +17,7 @@ import (
 	sshconfig "github.com/nickheyer/icebath/internal/plugins/defaults/terminals/ssh/config"
 	"github.com/nickheyer/icebath/internal/skills"
 	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -39,9 +40,9 @@ func (r registrant) Backends() []terminal.Backend {
 		Cwd:     "~",
 		Remap:   remap,
 		Check:   check,
-		Setup:   setup,
 		Doctor:  doctor,
 		Prepare: prepare,
+		Readies: "Tests the connection with your key, the way commands make it.",
 		Streams: true,
 		Create: func(ctx context.Context, spec *terminal.Spec) (terminal.Environment, error) {
 			return create(ctx, spec, r.skills)
@@ -60,14 +61,14 @@ type target struct {
 func targetOf(cfg *config.Config) (target, error) {
 	port, err := cast.ToIntE(cfg.Get(sshconfig.Port))
 	if err != nil {
-		return target{}, fmt.Errorf("Port in /settings under Terminal › SSH is set to %q, which is not a whole number. Change it there.", cfg.GetString(sshconfig.Port))
+		return target{}, fmt.Errorf("Port on the SSH page of /sandbox is set to %q, which is not a whole number. Change it there.", cfg.GetString(sshconfig.Port))
 	}
 	if port < 1 || port > 65535 {
-		return target{}, fmt.Errorf("Port in /settings under Terminal › SSH is %s, which is not a port from 1 to 65,535. Change it there.", strs.Number(float64(port)))
+		return target{}, fmt.Errorf("Port on the SSH page of /sandbox is %s, which is not a port from 1 to 65,535. Change it there.", strs.Number(float64(port)))
 	}
 	t := target{host: strings.TrimSpace(cfg.GetString(sshconfig.Host)), user: strings.TrimSpace(cfg.GetString(sshconfig.User)), port: port}
 	if key := strings.TrimSpace(cfg.GetString(sshconfig.KeyFile)); key != "" {
-		t.key = terminal.ExpandPath(key)
+		t.key = fsx.ExpandHome(key)
 	}
 	return t, nil
 }
@@ -83,40 +84,45 @@ func client() error {
 }
 
 func check(cfg *config.Config) error {
+	if err := client(); err != nil {
+		return err
+	}
 	t, err := targetOf(cfg)
 	if err != nil {
 		return err
 	}
 	if t.host == "" || t.user == "" {
-		return errors.New("The SSH host and user are not set. Enter them in /settings under Terminal › SSH, or choose another place to run commands in /backends.")
+		return errors.New("The SSH host and user are not set. Enter them on the SSH page of /sandbox, or choose another place to run commands there.")
 	}
-	return client()
+	return nil
 }
 
-func setup(*config.Config) []string {
-	return []string{
-		"Runs the agent's commands on another computer over SSH.",
-		"Set Host and User in /settings under Terminal › SSH, and Port and Key file when they differ from the defaults.",
-		"Preparing SSH on this screen tests the connection with your key, the way commands make it.",
-		"Secret variables reach the other computer only when its SSH server accepts their names with AcceptEnv.",
-	}
-}
-
+// The SSH client, the host and user, and a connection made the way commands make it
 func doctor(cfg *config.Config) []terminal.Check {
-	t, err := targetOf(cfg)
-	if err != nil {
-		return []terminal.Check{{OK: false, Label: "The SSH port is not valid.", Detail: err.Error()}}
-	}
-	if t.host == "" {
-		return []terminal.Check{{OK: false, Label: "The SSH host is not set.", Detail: "Commands run over SSH only once it is."}}
-	}
 	if err := client(); err != nil {
-		return []terminal.Check{{OK: false, Label: "The SSH client is not installed.", Detail: "Install OpenSSH, such as with `apt install openssh-client`."}}
+		return []terminal.Check{{Label: "SSH client", State: "Not installed", Detail: "The ssh program is not on your PATH.",
+			Fix: "Install the OpenSSH client, such as with `apt install openssh-client`."}}
+	}
+	checks := []terminal.Check{{OK: true, Label: "SSH client", State: "Installed"}}
+	t, err := targetOf(cfg)
+	switch {
+	case err != nil:
+		return append(checks, terminal.Check{Label: "Connection", State: "Not tried", Detail: "The port is not a number from 1 to 65,535.",
+			Fix: "Set Port to the port the SSH server listens on, 22 for most.", Setting: sshconfig.Port})
+	case t.host == "":
+		return append(checks, terminal.Check{Label: "Connection", State: "Not tried", Detail: "The computer that commands run on is not set.",
+			Fix: "Set Host to the name or address of the computer, and User to your account there.", Setting: sshconfig.Host})
+	case t.user == "":
+		return append(checks, terminal.Check{Label: "Connection", State: "Not tried", Detail: "The account that commands sign in as is not set.",
+			Fix: "Set User to your account on " + t.host + ".", Setting: sshconfig.User})
 	}
 	if ok, detail := probe(context.Background(), t); !ok {
-		return []terminal.Check{{OK: false, Label: "Could not connect to " + t.host + " over SSH.", Detail: "It said: " + reason(detail) + "."}}
+		return append(checks, terminal.Check{Label: "Connection", State: "Failed", Detail: "Could not connect to " + t.host + " over SSH. It said: " +
+			reason(detail) + ".", Fix: "Check Host, User and Key file, and that " + t.host + " takes your key.", Setting: sshconfig.Host})
 	}
-	return []terminal.Check{{OK: true, Label: "Connected to " + t.host + " over SSH."}}
+	checks = append(checks, terminal.Check{OK: true, Label: "Connection", State: "Connected", Detail: "Connected to " + t.login() + " over SSH."})
+	return append(checks, terminal.Check{OK: true, Label: "Secret variables", State: "Sent", Detail: "Secret variables reach " + t.host +
+		" only when its SSH server accepts their names with AcceptEnv."})
 }
 
 // Tests the connection the way commands make it
@@ -127,7 +133,7 @@ func prepare(ctx context.Context, cfg *config.Config, say func(string)) error {
 	t, _ := targetOf(cfg)
 	say("Testing the SSH connection to " + t.host + "…")
 	if ok, detail := probe(ctx, t); !ok {
-		return fmt.Errorf("Could not connect to %s over SSH: %s. Check Host, User and Key file in /settings under Terminal › SSH.", t.host, reason(detail))
+		return fmt.Errorf("Could not connect to %s over SSH: %s. Check Host, User and Key file on the SSH page of /sandbox.", t.host, reason(detail))
 	}
 	say("Connected to " + t.host + " over SSH.")
 	return nil

@@ -283,6 +283,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if s := m.sheetEntry(msg.Addressee()); s != nil {
 			return m, m.after(m.send(s, msg))
 		}
+		if o := m.overlayOf(msg.Addressee()); o != nil {
+			return m, m.after(m.send(o, msg))
+		}
 		if c := msg.Addressee(); c != nil {
 			c.Update(msg)
 		}
@@ -1055,6 +1058,22 @@ func (m *Model) focused() *entry {
 		return nil
 	}
 	return ws.focus
+}
+
+// Overlay on top or held beneath it that is the card or holds it, such as a dialog with views stacked in it, nil for none
+func (m *Model) overlayOf(c Card) *entry {
+	if c == nil {
+		return nil
+	}
+	for _, e := range append([]*entry{m.overlay}, m.covered...) {
+		if e == nil {
+			continue
+		}
+		if h, ok := e.card.(Holder); e.card == c || ok && h.Holds(c) {
+			return e
+		}
+	}
+	return nil
 }
 
 func (m *Model) entryOf(c Card) *entry {

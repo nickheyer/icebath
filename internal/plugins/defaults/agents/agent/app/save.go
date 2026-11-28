@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/internal/profile"
 	"github.com/nickheyer/icebath/internal/sessions/export"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	"github.com/nickheyer/icebath/pkg/tui"
@@ -22,7 +23,7 @@ var savedFolder = filepath.Join("sessions", "saved")
 func saveUsage() string {
 	folder := "the saved sessions folder"
 	if path, err := export.Folder(savedFolder); err == nil {
-		folder = tilde(path)
+		folder = profile.Tilde(path)
 	}
 	return "/save writes this session to a file.\n" +
 		"Usage: /save " + saveUsageLine + "\n\n" +

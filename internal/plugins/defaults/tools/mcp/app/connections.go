@@ -12,6 +12,7 @@ import (
 
 	mcpv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/mcp/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/mcp/v1/mcpv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -123,7 +124,7 @@ func (c *connections) update(op *mcpv1.Operation) tea.Cmd {
 				return nil
 			}
 			card.hidden = true
-			return c.kit.WM.Toast("The agent is waiting for you to finish connecting. /connections shows it again.", wm.Info, wm.DefaultToastTTL)
+			return c.kit.WM.Toast("The agent waits until you finish connecting. Type /connections to see what it waits on.", wm.Info, wm.DefaultToastTTL)
 		})
 		return c.kit.WM.ShowOverlay(card.hub)
 	}
@@ -182,6 +183,10 @@ func (c *connections) lines(op *mcpv1.Operation) []string {
 			line = render.Dim(line, t)
 		}
 		out = append(out, line)
+	}
+	// When the agent stops waiting and goes on with the servers it has
+	if at := op.GetDeadlineUnix(); at > 0 && op.GetSettled() == "" {
+		out = append(out, "", render.Dim("The agent waits until "+time.Unix(at, 0).Local().Format("15:04")+", then goes on with the servers it has.", t))
 	}
 	return out
 }
@@ -291,7 +296,7 @@ func (c *connections) view(card *connection) (wm.Card, string) {
 		if spec.GetSecret() {
 			kind = cards.FieldSecret
 		}
-		help := sentence(spec.GetPrompt())
+		help := cmp.Or(strs.Full(spec.GetPrompt()), "The value "+name+" asks for.")
 		if !spec.GetRequired() {
 			help = strings.TrimSpace(help + "\nLeave empty to go without it.")
 		}

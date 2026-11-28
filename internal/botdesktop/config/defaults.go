@@ -24,11 +24,11 @@ func Register(cfg *config.Config) {
 			{Key: Geometry, Title: "Screen size", About: "The width and height of the desktop screen.", Help: "Written as width x height, such as 1440x900.",
 				Default: DefaultGeometry, Zero: DefaultGeometry},
 			{Key: IdleStop, Title: "Stop when idle", About: "How long the agent desktop may go unused before it stops.", Default: DefaultIdleStop * time.Minute,
-				Unit: time.Minute, Zero: "Never", Advanced: true},
+				Unit: time.Minute, Zero: "Never"},
 			{Key: MinFreeMemory, Title: "Memory needed", About: "The free memory that the agent desktop needs before it starts.",
 				Help: "With less free memory than this, the desktop does not start. " +
 					"A little above this amount, the desktop starts with a warning.", Default: DefaultMinFreeMemory, Zero: "No check", Counts: "MB",
-				Least: config.Num(0), Advanced: true},
+				Least: config.Num(0)},
 		},
 	}})
 }

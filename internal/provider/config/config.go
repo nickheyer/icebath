@@ -78,6 +78,8 @@ const (
 	Priority = "priority"
 	// Environment variable the account reads its key from, for a key kept outside icebath
 	KeyEnv = "key_env"
+	// Program whose sign-in on this computer the account uses, such as Claude Code, for a sign-in another program keeps and renews
+	Program = "program"
 	// What icebath last found of the account's limits
 	Status = "status"
 	// Requests made with the account, and when the last one went out in Unix milliseconds, which least_used and round_robin read
@@ -97,31 +99,39 @@ func Strategies() []config.Option {
 	return slices.Clone(strategies)
 }
 
-// Settings of a provider for the accounts it rotates through and the places its credential may not come from
+// Settings of a provider for the accounts it rotates through and the places its credential may not come from, each changed on the
+// provider's page
 func Rotations() []config.Setting {
 	return []config.Setting{
-		{Key: Strategy, Title: "Rotation order", About: "Which account is used next when several take turns.", Default: FillFirst, Options: Strategies},
-		{Key: OnExhausted, Title: "When accounts run out", About: "What happens when the account in use reaches its limit.", Default: Fail,
-			Options: config.Options(config.Option{Value: Fail, Title: "Stop", About: "Stop and say so"},
+		{Key: Strategy, Title: "Rotation order", About: "Which account is used next when several take turns.", Default: FillFirst, Options: Strategies,
+			Custom: true},
+		{Key: OnExhausted, Title: "When an account runs out", About: "What happens when the account in use reaches its limit.", Default: Fail,
+			Custom: true, Options: config.Options(config.Option{Value: Fail, Title: "Stop", About: "Stop and say so"},
 				config.Option{Value: Rotate, Title: "Move on", About: "Go on with the other accounts"})},
-		{Key: Ignored, Title: "Ignored sources", About: "Variables and programs that the provider never takes a key or sign-in from.", Default: []string{},
-			Internal: true},
+		{Key: Ignored, Title: "Left out", About: "Variables and programs that the provider takes no key or sign-in from.", Default: []string{},
+			Internal: true, Custom: true},
 	}
 }
 
-// Fields every account keeps besides those of its kind: its place in the rotation and what icebath found of its limits
+// Fields every account keeps besides those of its kind: its taking turns, its place, what icebath found of its limits, and the program
+// whose sign-in it uses when it uses one, each changed on the account's page
 func Kept(keyed bool) []config.Setting {
 	settings := []config.Setting{
-		{Key: InRotation, Title: "In rotation", About: "Take turns with the other accounts of this provider that are in rotation.", Default: false},
-		{Key: Priority, Title: "Order", About: "The place among the accounts of this provider, lowest tried first.", Default: 0, Internal: true},
-		{Key: Status, Title: "Limits", About: "What icebath last found out about the limits of this account.", Default: map[string]any{}, Internal: true},
-		{Key: Requests, Title: "Requests", About: "How many requests were made with this account.", Default: 0, Counts: "requests", Internal: true},
+		{Key: InRotation, Title: "Takes turns", About: "Take turns with the other accounts of this provider that take turns.", Default: false, Custom: true},
+		{Key: Program, Title: "Sign-in from", About: "The program whose sign-in on this computer this account uses.", Default: "", Zero: "None",
+			Internal: true, Custom: true},
+		{Key: Priority, Title: "Order", About: "The place among the accounts of this provider, lowest tried first.", Default: 0, Internal: true,
+			Custom: true},
+		{Key: Status, Title: "Limits", About: "What icebath last found out about the limits of this account.", Default: map[string]any{},
+			Internal: true, Custom: true},
+		{Key: Requests, Title: "Requests", About: "How many requests were made with this account.", Default: 0, Counts: "requests", Internal: true,
+			Custom: true},
 		{Key: Used, Title: "Last used", About: "When the last request with this account went out.", Help: "A time in Unix milliseconds.", Default: 0,
-			Internal: true},
+			Internal: true, Custom: true},
 	}
 	if keyed {
 		settings = append(settings, config.Setting{Key: KeyEnv, Title: "Key variable", About: "The environment variable that holds the API key.",
-			Help: "Read in place of an API key kept here.", Default: "", Advanced: true})
+			Help: "Read in place of an API key kept here, such as ANTHROPIC_API_KEY.", Default: "", Custom: true})
 	}
 	return settings
 }
@@ -151,26 +161,27 @@ func Under(prefix string, settings []config.Setting) []config.Setting {
 	return out
 }
 
-// Settings every provider keeps, with the defaults of its kind
-func Instance(kind, title, base, baseEnv, model string, accounts []string) []config.Setting {
+// Settings every provider keeps, with the defaults of its kind; own says its address is the person's to give, as a server of their own's
+// is, which its page then shows among its options. accounts gives the provider's accounts by name with their titles
+func Instance(kind, title, base, baseEnv, model string, own bool, accounts func() []config.Option) []config.Setting {
 	var env []string
 	if baseEnv != "" {
 		env = []string{baseEnv}
 	}
 	return []config.Setting{
-		{Key: Type, Title: "Kind", About: "The kind of provider this is.", Default: kind, Internal: true},
-		{Key: Title, Title: "Name", About: "The name this provider is shown by.", Default: title},
-		{Key: DefaultModel, Title: "Default model", About: "The model used when no other is picked.", Default: model},
-		{Key: Models, Title: "Models", About: "The models offered when you pick one with /model.", Default: []string{}, Zero: "Every listed model"},
-		{Key: Account, Title: "Account", About: "Which account requests are made with.", Default: "", Options: func() []config.Option {
-			options := []config.Option{{Title: "Every account in order", About: "The first that works, then the next when one runs out"},
-				{Value: Rotation, Title: "Take turns", About: "The accounts in rotation, in the rotation order"}}
-			for _, name := range slices.Clone(accounts) {
-				options = append(options, config.Option{Value: name, Title: name})
-			}
-			return options
-		}},
-		{Key: BaseURL, Title: "Base URL", About: "The address that requests to this provider are sent to.", Default: base, Env: env, Advanced: true},
+		{Key: Type, Title: "Kind", About: "The kind of provider this is.", Default: kind, Internal: true, Custom: true},
+		{Key: Title, Title: "Name", About: "The name this provider is shown by.", Default: title, Custom: true},
+		{Key: DefaultModel, Title: "Default model", About: "The model used when no other is picked.", Default: model, Picks: PickModel, Custom: true},
+		{Key: Models, Title: "Models offered", About: "The models of this provider that the model list offers.", Default: []string{}, Zero: "All",
+			Picks: PickModel, Custom: true},
+		{Key: Account, Title: "Account used", About: "Which account requests are made with.", Default: "", Names: accounts, Picks: PickAccount,
+			Custom: true, Options: func() []config.Option {
+				return append([]config.Option{{Title: "Every account in order", About: "The first that works, then the next when one runs out"},
+					{Value: Rotation, Title: "Take turns", About: "The accounts that take turns, in the rotation order"}}, accounts()...)
+			}},
+		{Key: BaseURL, Title: "Address", About: "The address that requests to this provider are sent to.",
+			Help: "It starts with http:// or https://. The server's own documentation may call it the Base URL.", Default: base, Env: env,
+			Custom: own, Advanced: !own},
 		{Key: APIMode, Title: "Request format", About: "Which API the requests to this provider use.", Default: "", Options: Modes, Advanced: true},
 		{Key: ContextLength, Title: "Context window", About: "How much text the models of this provider can read at once.",
 			Help: "Set this only when icebath gets the size wrong.", Default: 0, Zero: "Automatic", Counts: "tokens", Least: config.Num(0), Advanced: true},
@@ -179,19 +190,19 @@ func Instance(kind, title, base, baseEnv, model string, accounts []string) []con
 		{Key: StaleTimeout, Title: "Silence limit", About: "How long a reply may stay silent before the request is sent again.", Default: time.Duration(0),
 			Zero: "As in Connections", Advanced: true},
 		{Key: ModelTimeouts, Title: "Limits by model", About: "Time limits for single models of this provider.", Default: map[string]any{}, Advanced: true,
-			Entry: &config.Entry{Noun: "model", Name: "Model ID", Fields: []config.Setting{
+			Custom: true, Entry: &config.Entry{Noun: "model", Name: "Model", Fields: []config.Setting{
 				{Key: ModelRequestTimeout, Title: "Request time limit", About: "How long one request to this model may take.", Default: 0,
 					Zero: "As the provider", Counts: "seconds"},
 				{Key: ModelStaleTimeout, Title: "Silence limit", About: "How long a reply of this model may stay silent.", Default: 0,
 					Zero: "As the provider", Counts: "seconds"},
 			}}},
 		{Key: CACert, Title: "CA certificate", About: "A PEM file of authorities that the server's certificate is checked against.",
-			Help: "Used besides the authorities this computer trusts.", Default: "", Advanced: true},
+			Help: "Used besides the authorities this computer trusts.", Default: "", Advanced: true, Path: &config.Path{Kind: config.PathFile, Exists: true}},
 		{Key: VerifyTLS, Title: "Check certificate", About: "Check the TLS certificate of the server.",
 			Help: "Turn this off only for a server of your own whose certificate nothing vouches for.", Default: true, Advanced: true},
 		{Key: ExtraHeaders, Title: "Extra headers", About: "Headers sent with every request to this provider.",
 			Help: "A header set here goes over the built-in one of the same name.", Default: map[string]any{}, Advanced: true,
-			Entry: &config.Entry{Noun: "header", Name: "Header name", Fields: []config.Setting{
+			Entry: &config.Entry{Noun: "header", Name: "Header name", IgnoreCase: true, Fields: []config.Setting{
 				{Title: "Value", About: "The text the header carries.", Default: ""}}}},
 		{Key: AffinityHeader, Title: "Session header", About: "The header that tells the session ID to a server that keeps each session in one place.",
 			Default: "", Zero: "Not sent", Advanced: true},
@@ -210,12 +221,12 @@ func Modes() []config.Option {
 	}
 }
 
-// Title every account keeps
+// Title every account keeps, changed by renaming the account on its page
 func AccountTitle(name string) config.Setting {
-	return config.Setting{Key: Title, Title: "Name", About: "The name this account is shown by.", Default: name}
+	return config.Setting{Key: Title, Title: "Name", About: "The name this account is shown by.", Default: name, Custom: true}
 }
 
-// API key of an account, the field an account keeps when its kind names none
+// API key of an account, the field an account keeps when its kind names none, changed on the account's page
 func APIKey() config.Setting {
-	return config.Setting{Key: APIKeyField, Title: "API key", About: "Your API key for this account.", Default: "", Secret: true}
+	return config.Setting{Key: APIKeyField, Title: "API key", About: "Your API key for this account.", Default: "", Secret: true, Custom: true}
 }

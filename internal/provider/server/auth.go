@@ -21,8 +21,9 @@ import (
 // Most characters of a refusal shown with an account
 const reasonLength = 160
 
-// Account of the provider as a listing shows it: where its credential comes from, what stands against it and its place in the rotation
-func (s *service) account(instance provider.Instance, name string) *providerv1.Account {
+// Account of the provider as a listing shows it: where its credential comes from or why it has none, what stands against it, whether
+// requests go out with it now, the one named by using, and its place in the rotation
+func (s *service) account(instance provider.Instance, name, using string) *providerv1.Account {
 	account := credentials.Of(instance, name)
 	found, _ := s.credentials.Credential(account)
 	state, resets := s.credentials.State(account)
@@ -36,12 +37,13 @@ func (s *service) account(instance provider.Instance, name string) *providerv1.A
 	}
 	message := &providerv1.Account{
 		Name:             name,
-		Title:            cmp.Or(account.Fields.GetString(providerconfig.Title), name),
+		Title:            instance.AccountTitle(name),
 		Section:          account.Fields.Prefix(),
-		Active:           name == instance.Account,
+		Active:           using != "" && name == using,
 		CredentialOrigin: origins[found.Origin],
 		CredentialSource: found.Source,
-		Auth:             string(cmp.Or(found.Auth, instance.Spec.Auth)),
+		Auth:             string(signsIn(instance, found)),
+		Missing:          s.credentials.Missing(account),
 		Status:           state,
 		Reason:           strings.TrimPrefix(reason, ": "),
 		Identity:         found.Identity,
@@ -51,6 +53,7 @@ func (s *service) account(instance provider.Instance, name string) *providerv1.A
 		KeyEnv:           account.Fields.GetString(providerconfig.KeyEnv),
 		Requests:         int64(account.Fields.GetInt(providerconfig.Requests)),
 		Renewable:        !found.Expires.IsZero(),
+		Program:          account.Program(),
 	}
 	if !resets.IsZero() {
 		message.Resets = timestamppb.New(resets)
@@ -58,10 +61,11 @@ func (s *service) account(instance provider.Instance, name string) *providerv1.A
 	if !found.Expires.IsZero() {
 		message.Expires = timestamppb.New(found.Expires)
 	}
+	message.State, message.Standing = accountState(instance, message, found)
 	return message
 }
 
-// Account of the provider by name, the one in use for none
+// Account of the provider by name; for none, the one that requests go out with now, else the one its choice names
 func (s *service) named(profile, name, account string) (provider.Instance, credentials.Account, error) {
 	instance, err := s.instance(profile, name)
 	if err != nil {
@@ -69,6 +73,11 @@ func (s *service) named(profile, name, account string) (provider.Instance, crede
 	}
 	if account != "" && !slices.Contains(instance.Accounts, account) {
 		return instance, credentials.Account{}, connect.NewError(connect.CodeNotFound, instance.Label()+" has no account named "+account+".")
+	}
+	if account == "" {
+		if using, _, err := s.credentials.Ready(instance, s.transports.Factories()); err == nil {
+			return instance, using, nil
+		}
 	}
 	return instance, credentials.Of(instance, account), nil
 }
@@ -97,7 +106,7 @@ func (s *service) Renew(ctx context.Context, request *providerv1.RenewRequest) (
 	if account.Name == "" {
 		return &providerv1.RenewResponse{}, nil
 	}
-	return &providerv1.RenewResponse{Account: s.account(instance, account.Name)}, nil
+	return &providerv1.RenewResponse{Account: s.account(instance, account.Name, s.inUse(instance))}, nil
 }
 
 func (s *service) Reset(_ context.Context, request *providerv1.ResetRequest) (*providerv1.ResetResponse, error) {
@@ -137,22 +146,27 @@ func (s *service) MoveAccount(_ context.Context, request *providerv1.MoveAccount
 	return &providerv1.MoveAccountResponse{Priority: int32(place)}, nil
 }
 
-func (s *service) RenameAccount(_ context.Context, request *providerv1.RenameAccountRequest) (*providerv1.RenameAccountResponse, error) {
+func (s *service) RenameAccount(ctx context.Context, request *providerv1.RenameAccountRequest) (*providerv1.RenameAccountResponse, error) {
 	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
-	}
-	if err := s.providers.RenameAccount(cfg, request.GetProvider(), request.GetAccount(), request.GetName()); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 	}
 	instance, err := s.instance(request.GetProfile(), request.GetProvider())
 	if err != nil {
 		return nil, err
 	}
-	return &providerv1.RenameAccountResponse{Account: s.account(instance, strings.ToLower(strings.TrimSpace(request.GetName())))}, nil
+	name, err := s.providers.RenameAccount(ctx, cfg, instance.ID, request.GetAccount(), request.GetName())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
+	}
+	if instance, err = s.instance(request.GetProfile(), instance.ID); err != nil {
+		return nil, err
+	}
+	return &providerv1.RenameAccountResponse{Account: s.account(instance, name, s.inUse(instance))}, nil
 }
 
-// Whether the provider's account in use is signed in: how, from where, as whom, until when, and what its kind adds
+// Whether the provider is ready, by the one test every screen and the agent use, and with what: how it signs in, the account and where its
+// credential comes from, as whom, until when, and what its kind adds; why not when it is not
 func (s *service) Status(ctx context.Context, request *providerv1.StatusRequest) (*providerv1.StatusResponse, error) {
 	instance, err := s.instance(request.GetProfile(), request.GetProvider())
 	if err != nil {
@@ -165,24 +179,29 @@ func (s *service) Status(ctx context.Context, request *providerv1.StatusRequest)
 			response.Details = append(response.Details, &providerv1.Detail{Name: name, Value: value})
 		}
 	}
-	route, err := s.credentials.Route(instance, "")
-	found, ok := s.credentials.Credential(credentials.Of(instance, route.Account))
-	switch {
-	case err != nil:
-		response.Error = err.Error()
-	case !ok && !instance.Spec.Local:
-		response.Error = "No API key or sign-in was found."
-	default:
-		response.LoggedIn = true
-		account = credentials.Of(instance, route.Account)
-		detail("Sign-in", authWords[cmp.Or(found.Auth, instance.Spec.Auth)])
-		detail("Account", route.Account)
-		detail("Key from", found.Source)
-		detail("Signed in as", found.Identity)
-		if !found.Expires.IsZero() {
-			detail("Expires", found.Expires.Local().Format("2006-01-02 15:04"))
+	using, found, err := s.credentials.Ready(instance, s.transports.Factories())
+	if err == nil {
+		var route provider.Route
+		route, err = s.credentials.Route(instance, "")
+		using = credentials.Carried(instance, route)
+		found, _ = s.credentials.Credential(using)
+		if err == nil {
+			account = using
+			response.LoggedIn = true
+			detail("Sign-in", authWords[cmp.Or(signsIn(instance, found), provider.AuthNone)])
+			if using.Name != "" {
+				detail("Account", instance.AccountTitle(using.Name))
+			}
+			detail("Key from", found.Source)
+			detail("Signed in as", found.Identity)
+			if !found.Expires.IsZero() {
+				detail("Expires", found.Expires.Local().Format("2006-01-02 15:04"))
+			}
+			detail("Address", route.BaseURL)
 		}
-		detail("Address", route.BaseURL)
+	}
+	if err != nil {
+		response.Error = err.Error()
 	}
 	reportCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -195,6 +214,10 @@ func (s *service) Status(ctx context.Context, request *providerv1.StatusRequest)
 }
 
 func (s *service) KeepKey(_ context.Context, request *providerv1.KeepKeyRequest) (*providerv1.KeepKeyResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
 	instance, account, err := s.named(request.GetProfile(), request.GetProvider(), request.GetAccount())
 	if err != nil {
 		return nil, err
@@ -207,13 +230,29 @@ func (s *service) KeepKey(_ context.Context, request *providerv1.KeepKeyRequest)
 	if !ok || strings.TrimSpace(found.APIKey) == "" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, variable+" is empty, so there is nothing to keep.")
 	}
-	if err := account.Fields.Set(providerconfig.APIKeyField, strings.TrimSpace(found.APIKey)); err != nil {
+	if err := s.providers.KeepKey(cfg, instance.ID, account.Name, strings.TrimSpace(found.APIKey)); err != nil {
 		return nil, err
 	}
-	if err := account.Fields.Set(providerconfig.KeyEnv, nil); err != nil {
+	if instance, err = s.instance(request.GetProfile(), instance.ID); err != nil {
 		return nil, err
 	}
-	return &providerv1.KeepKeyResponse{Account: s.account(instance, account.Name)}, nil
+	return &providerv1.KeepKeyResponse{Account: s.account(instance, account.Name, s.inUse(instance))}, nil
+}
+
+// How a credential of the provider signs in: as it says, else as the provider's kind does, a key on a kind that needs none being an API
+// key; empty for no credential
+func signsIn(instance provider.Instance, found credentials.Credential) provider.AuthKind {
+	switch {
+	case found.APIKey == "" && found.Sign == nil:
+		return ""
+	case found.Origin == credentials.Unneeded:
+		return provider.AuthNone
+	case found.Auth != "":
+		return found.Auth
+	case instance.Spec.Auth == provider.AuthNone:
+		return provider.AuthAPIKey
+	}
+	return instance.Spec.Auth
 }
 
 // How an account signs in, in words

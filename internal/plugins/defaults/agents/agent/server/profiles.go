@@ -12,7 +12,7 @@ func (a *Agent) Pinnable(settings *config.Config, name string) string {
 	if _, ok := a.provider(settings, name); ok {
 		return ""
 	}
-	return fmt.Sprintf("The model was not set, because the profile has no provider named %s. Add it in /providers, then pick the model with /model.", name)
+	return fmt.Sprintf("The model was not set, because the profile has no provider named %s. /providers adds it, and the Agent page of the profile picks the model.", name)
 }
 
 // A reply being written on the profile holds its folder in place until it ends

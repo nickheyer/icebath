@@ -102,7 +102,7 @@ func (m manager) Unlock(ctx context.Context, master string) (string, error) {
 		if detail == "" {
 			detail = "bw gave no session key."
 		}
-		return "", fmt.Errorf("Bitwarden did not unlock: %s", secrets.Sentence(detail))
+		return "", fmt.Errorf("Bitwarden did not unlock: %s", strs.Sentence(detail))
 	}
 	return token, nil
 }
@@ -126,7 +126,7 @@ func (m manager) run(ctx context.Context, session string, args ...string) (strin
 		if lowered := strings.ToLower(detail); strings.Contains(lowered, "locked") || strings.Contains(lowered, "session") {
 			return "", vault.ErrLocked
 		}
-		return "", fmt.Errorf("bw stopped with an error: %s", secrets.Sentence(strs.Head(strings.TrimSpace(detail), 200)))
+		return "", fmt.Errorf("bw stopped with an error: %s", strs.Sentence(strs.Head(strings.TrimSpace(detail), 200)))
 	}
 	return out.Stdout, nil
 }

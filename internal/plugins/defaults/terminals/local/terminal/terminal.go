@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/internal/skills"
 	"github.com/nickheyer/icebath/internal/terminal"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 const windows = runtime.GOOS == "windows"
@@ -47,13 +48,29 @@ func (r registrant) Backends() []terminal.Backend {
 		About: "Commands run right on this computer",
 		Where: "the local machine",
 		Check: func(*config.Config) error {
-			_, err := r.bash.find()
-			return err
+			if _, err := r.bash.find(); err != nil {
+				return &terminal.MissingError{Reason: err.Error()}
+			}
+			return nil
 		},
+		Doctor: r.doctor,
 		Create: func(ctx context.Context, spec *terminal.Spec) (terminal.Environment, error) {
 			return create(ctx, spec, r.bash, r.skills, r.packages)
 		},
 	}}
+}
+
+// The Bash that commands run with
+func (r registrant) doctor(*config.Config) []terminal.Check {
+	path, err := r.bash.find()
+	if err != nil {
+		fix := "Install Bash so it is on your PATH."
+		if windows {
+			fix = "Run `icebath pm install git`, or install Git for Windows."
+		}
+		return []terminal.Check{{Label: "Bash", State: "Not found", Detail: "This computer has no Bash, which icebath runs commands with.", Fix: fix}}
+	}
+	return []terminal.Check{{OK: true, Label: "Bash", State: "Found", Detail: "Commands run with " + path + "."}}
 }
 
 // Bash commands run with, looked for again only once it is gone
@@ -252,7 +269,7 @@ func (r *runner) initFiles() []string {
 	}
 	var files []string
 	for _, candidate := range candidates {
-		if path := terminal.ExpandPath(candidate); path != "" {
+		if path := fsx.ExpandHome(candidate); path != "" {
 			if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() {
 				files = append(files, path)
 			}
@@ -336,7 +353,7 @@ func uid() string {
 
 // The folder a new environment starts in as an absolute path, a relative one that names the tail of the working folder meaning it
 func initialCwd(cwd string) string {
-	expanded := terminal.ExpandUser(cwd)
+	expanded := fsx.ExpandHome(cwd)
 	if cwd == "" {
 		expanded, _ = os.Getwd()
 	}

@@ -9,13 +9,13 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect/v2"
-	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/internal/credentials"
-	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/pkg/browser"
 	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
+	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/clip"
@@ -117,8 +117,8 @@ func (s *signing) lines(w int) []string {
 	return out
 }
 
-// Opens the page and runs the sign-in behind it; closing the page stops the sign-in. The page shows in the dialog the sign-in was started
-// from, which then says how it ended and reads the provider again, and in a dialog of its own when it was started from none
+// Opens the page as the next step of the job that started it and runs the sign-in behind it; going back from the page stops the sign-in.
+// Once it signs in, what it gave is kept and the job goes on as the target says
 func (s *signing) run() tea.Cmd {
 	ctx, cancel := context.WithCancel(s.kit.Env.Ctx)
 	hub := s.target.Hub
@@ -151,11 +151,9 @@ func (s *signing) run() tea.Cmd {
 		},
 	})
 	show := func() tea.Cmd { return hub.Push(page) }
-	if hub == nil {
-		own := s.kit.Hub("providers.signin", page)
-		hub, show = own, func() tea.Cmd { return s.kit.WM.ShowOverlay(own) }
+	if s.target.Next != nil {
+		show = func() tea.Cmd { return s.target.Next(page) }
 	}
-	shared := s.target.Hub != nil
 	prompter := &credentials.Prompter{
 		Ctx: ctx,
 		Out: s,
@@ -171,33 +169,32 @@ func (s *signing) run() tea.Cmd {
 		Options:  map[string]string{},
 		Settings: s.values(ctx),
 	}
-	was := connected(s.target.Provider.GetCredentialOrigin())
 	return tea.Batch(show(), tui.Async(func() func() tea.Cmd {
 		signed, err := s.way.Run(prompter)
+		// A sign-in the person left is dropped. One that finished while they stayed is kept to the end even if they leave meanwhile, so
+		// neither a provider nor an account is left half made
 		left := ctx.Err() != nil
-		if err == nil {
-			err = s.save(ctx, signed)
+		var account *providerv1.Account
+		if err == nil && !left {
+			account, err = s.target.Keep(context.WithoutCancel(ctx), signed.Fields, signed.Identity)
 		}
 		return func() tea.Cmd {
 			cancel()
 			switch {
+			case err == nil && !left:
+				return s.target.Done(account)
 			case left:
-				return nil
-			case err != nil:
-				reason := failure(err, s.target.Provider.GetDisplayName())
+				// The page is told it closed when its dialog leaves the screen too, and a menu shows it again as it was left
 				s.mu.Lock()
-				s.failed = reason
+				s.failed = "The sign-in stopped when this page closed. Go back and try again."
 				s.mu.Unlock()
-				return hub.Fail(reason)
+				return nil
 			}
-			if shared {
-				var read tea.Cmd
-				if s.target.Done != nil {
-					read = s.target.Done()
-				}
-				return tea.Batch(hub.Close(page), hub.Done(connectedNote(s.target, was, false)), read)
-			}
-			return tea.Batch(s.kit.WM.DismissCard(hub), s.kit.WM.Toast(connectedNote(s.target, was, true), wm.Success, wm.DefaultToastTTL))
+			reason := failure(err, s.target.Provider.GetDisplayName())
+			s.mu.Lock()
+			s.failed = reason
+			s.mu.Unlock()
+			return hub.Fail(reason)
 		}
 	}))
 }
@@ -206,22 +203,22 @@ func (s *signing) run() tea.Cmd {
 func failure(err error, name string) string {
 	switch {
 	case credentials.Cancelled(err):
-		return "The sign-in stopped before it finished. Close this and connect again to retry."
+		return "The sign-in stopped before it finished. Go back and try again."
 	case credentials.Unreachable(err):
-		return "icebath could not reach " + name + ". Check your internet connection or proxy, then connect again."
+		return "icebath could not reach " + name + ". Check your internet connection or proxy, then go back and try again."
 	}
 	reason := strings.TrimSuffix(strings.TrimSpace(tui.Reason(err)), ".")
 	if refused, ok := errors.AsType[*credentials.AuthError](err); ok {
 		reason = strings.TrimSuffix(strings.TrimSpace(refused.Message), ".")
 		if refused.Code == credentials.Expired {
-			return reason + ". Close this and connect again for a new code."
+			return reason + ". Go back and try again for a new code."
 		}
 	}
 	// The reason is a sentence of its own
 	if reason != "" {
-		reason = " " + strings.ToUpper(reason[:1]) + reason[1:] + "."
+		reason = " " + strs.Capital(reason) + "."
 	}
-	return "The sign-in failed." + reason + " Close this and try again, or pick another way to connect."
+	return "The sign-in failed." + reason + " Go back and try again, or pick another way to connect."
 }
 
 // Link or code shown on the page
@@ -236,7 +233,8 @@ func (s *signing) shown(link bool) string {
 
 // Asks for a line in a form over the page, waiting until it is sent or the sign-in stops
 func (s *signing) ask(ctx context.Context, hub *cards.Hub, label string, secret bool) (string, bool) {
-	answer := make(chan string, 1)
+	// The answer, or nil once the form closed with none given, which nothing can answer any more
+	answer := make(chan *string, 1)
 	field := cards.Field{Label: strings.TrimRight(strings.TrimSpace(label), ":")}
 	if secret {
 		field.Kind = cards.FieldSecret
@@ -245,14 +243,20 @@ func (s *signing) ask(ctx context.Context, hub *cards.Hub, label string, secret 
 		if ctx.Err() != nil {
 			return nil
 		}
-		return s.kit.Ask(hub, s.way.Title, field, "Continue", func(text string) tea.Cmd {
-			answer <- text
+		return s.kit.AskOr(hub, s.way.Title, field, "Continue", func(text string) tea.Cmd {
+			answer <- &text
+			return nil
+		}, func() tea.Cmd {
+			answer <- nil
 			return nil
 		})
 	})
 	select {
 	case text := <-answer:
-		return text, true
+		if text == nil {
+			return "", false
+		}
+		return *text, true
 	case <-ctx.Done():
 		return "", false
 	}
@@ -289,9 +293,12 @@ func (s *signing) copy(hub *cards.Hub, text, what string) tea.Cmd {
 	})
 }
 
-// Settings of the provider by their names below it, as the profile has them
+// Settings of the provider by their names below it, as the profile has them; none for a provider not added yet
 func (s *signing) values(ctx context.Context) map[string]string {
 	values := map[string]string{}
+	if s.target.Provider.GetSection() == "" {
+		return values
+	}
 	listed, err := s.settings.List(ctx, &configv1.ListRequest{Profile: s.target.Profile})
 	if err != nil {
 		return values
@@ -303,54 +310,4 @@ func (s *signing) values(ctx context.Context) map[string]string {
 		}
 	}
 	return values
-}
-
-// Keeps the fields the sign-in gave in the account, made now when it was waiting for the sign-in, clearing what the account last ran into
-func (s *signing) save(ctx context.Context, signed credentials.Signed) error {
-	if s.target.Account == nil && !s.target.Titled && signed.Identity != "" {
-		s.target.Title = signed.Identity
-	}
-	target, err := s.target.Ready(ctx)
-	if err != nil {
-		return err
-	}
-	s.target = target
-	return Store(ctx, s.settings, target, signed.Fields)
-}
-
-// Keeps fields in the account of the target, made first when it was waiting, each as YAML, nil putting its default back, and clears the
-// limits the account ran into
-func Store(ctx context.Context, settings configv1connect.ConfigServiceClient, target Target, fields map[string]any) error {
-	target, err := target.Ready(ctx)
-	if err != nil {
-		return err
-	}
-	fields[providerconfig.Status] = nil
-	for field, value := range fields {
-		text := "null"
-		if value != nil {
-			encoded, err := yaml.Marshal(value)
-			if err != nil {
-				return err
-			}
-			text = strings.TrimSuffix(string(encoded), "\n")
-		}
-		if _, err := settings.Set(ctx, &configv1.SetRequest{Profile: target.Profile, Key: target.Key(field), Value: text}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Note once an account connected: the provider ready to use when it was not before, else the account connected. Closed when the screen
-// that connected it has closed already
-func connectedNote(target Target, was, closed bool) string {
-	name := target.Provider.GetDisplayName()
-	switch {
-	case was:
-		return target.Label() + " of " + name + " is connected."
-	case closed:
-		return name + " is connected. Send a message to start."
-	}
-	return name + " is connected. Close this and send a message to start."
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/provider"
 	speechconfig "github.com/nickheyer/icebath/internal/speech/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Told the model before a message that follows a spoken reply the person talked over
@@ -219,8 +220,8 @@ func (a *Agent) warnVoice(r *run, name, model string, live provider.Route, reaso
 		return
 	}
 	r.warnedVoice = true
-	a.notify(r, fmt.Sprintf("⚠ The voice chat model %s on %s can't be used, so what you say is answered by %s. %s Check Voice chat in /settings "+
-		"under Helper models.", model, name, live.Model, sentence(reason)))
+	a.notify(r, fmt.Sprintf("⚠ The voice chat model %s on %s can't be used, so what you say is answered by %s. %s Check its model "+
+		"with /settings voice chat.", model, name, live.Model, strs.Full(reason)))
 }
 
 // Puts the session's own route, fallback state, effort and what its route refused of reasoning back after a turn the person spoke; the

@@ -33,7 +33,7 @@ const (
 	overflowRetryHint = "Type /new to start a new session, or /compress to try summarizing again."
 	// Reply of a turn whose compression timed out while the request was over the window
 	compressionTimeoutReply = "Summarizing older messages took too long and made no room, but no message was lost. Start a new session with " +
-		"/new, or check Summaries in /settings under Helper models, then try /compress."
+		"/new, or check the summary model with /settings summaries, then try /compress."
 	// Reply of a turn whose compaction left only the reference handoff to answer
 	handoffSkipReply = "Older messages were summarized. The last reply was already complete, so the agent waits for your next message."
 	// Failure texts a turn ends with when the conversation can't be made to fit
@@ -41,7 +41,7 @@ const (
 		"which keeps this one, or try /compress again.\nA model with a bigger context window also works."
 	tooLargeCopy = "This session, its attachments included, has grown too large to send to %s, and icebath couldn't make it small enough. " +
 		"Start a new session with /new, which keeps this one, or try /compress again."
-	disabledCopy = "This session is too long for %s, and Shorten long sessions is off in /settings under Long sessions › Summaries. Type " +
+	disabledCopy = "This session is too long for %s, and Shorten long sessions is off, which /settings shorten long sessions turns on. Type " +
 		"/compress to summarize it now, /new to start a new session, or pick a model with a bigger context window."
 	rejectionCopy = "The model server refused this request as too large, though the session holds only about %s of the %s tokens icebath " +
 		"expects %s to read, so summarizing would not help. Another request on the same server may have been using its room, or the server " +
@@ -244,7 +244,7 @@ func (a *Agent) raisedNotice(r *run, env *contexts.Env, engine contexts.Engine) 
 		limit = "128,000"
 	}
 	a.tell(r, fmt.Sprintf("Codex %s reads at most %s tokens, so this session is summarized at %d%% of it instead of %d%%, to use more of "+
-		"the window first. Turn off Later for Codex in /settings under Long sessions › Summaries to go back.", model, limit,
+		"the window first. Turn off Later for Codex with /settings later for codex to go back.", model, limit,
 		int(math.RoundToEven(raised[1]*100)), int(math.RoundToEven(raised[0]*100))))
 	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err == nil {
 		if err := os.WriteFile(marker, []byte(state), 0o644); err != nil {

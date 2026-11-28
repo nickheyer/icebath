@@ -25,3 +25,9 @@ const (
 
 // Port of the tunnel unless the settings name another; the plain http one is after it, the management one after that
 const DefaultTunnelPort = 9090
+
+// Kind of the picker of the key proxy: its page, which sets the proxy up as hiding the keys turns on
+const Proxy = "proxy"
+
+// Settings of the key proxy besides its switch, which its page changes and its row on Sandbox covers
+var Options = []string{Enforce, Source, Fallback, AutoInstall, TunnelPort, ExtraHosts, DenyCIDRs}

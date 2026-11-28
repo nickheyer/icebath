@@ -36,14 +36,15 @@ type Backend struct {
 	Mount func(cfg *config.Config, dir string) (host, sandbox string)
 	// Folder of the sandbox a host folder stands for, such as one under ~ for a path in the host's home on a remote machine
 	Remap func(cfg *config.Config, cwd string) string
-	// Why the backend can't run with the settings and what to do about it, nil when it can
+	// Why the backend can't run with the settings and what to do about it, nil when it can; a *MissingError when this computer lacks what
+	// it needs, such as its program
 	Check func(cfg *config.Config) error
-	// What the user does to make the backend usable, as lines to read
-	Setup func(cfg *config.Config) []string
-	// Health of what the backend needs on this machine, as the backends screen lists it
+	// What was checked of what the backend needs, as its page in Sandbox lists it
 	Doctor func(cfg *config.Config) []Check
 	// Readies the backend ahead of its first command, such as building its image, saying how it goes line by line
 	Prepare func(ctx context.Context, cfg *config.Config, say func(line string)) error
+	// What Prepare does, a sentence its page says of it
+	Readies string
 	// Its environments keep processes running between commands and reach them through a command of this machine, so they can host the
 	// Agent desktop
 	Streams bool
@@ -62,12 +63,19 @@ type Switch struct {
 	Sandboxes       []string
 }
 
-// One health check of a backend
+// One thing checked of what a backend needs
 type Check struct {
-	OK    bool
+	OK bool
+	// What was checked, in a few words, such as Docker daemon
 	Label string
-	// What was found or what is missing, such as "(daemon running)"
+	// How it stands in a word or two, such as Running or Not set
+	State string
+	// What was found, a sentence; empty when the state says it all
 	Detail string
+	// What to do about it when it failed, in a person's words
+	Fix string
+	// Key of the setting that fixes it, empty when the fix is outside icebath
+	Setting string
 }
 
 // What an environment is made for

@@ -1,5 +1,5 @@
-// Text helpers every part of icebath shares: cuts by characters, numbers, sizes and lengths of time in words, first filled values, sets and
-// random tokens
+// Text helpers every part of icebath shares: cuts by characters, sentences, numbers, sizes and lengths of time in words, first filled values,
+// sets and random tokens
 package strs
 
 import (
@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -48,6 +49,77 @@ func Filled(texts ...string) string {
 		}
 	}
 	return ""
+}
+
+// Text that ends as a sentence: trimmed, with a period added when it ends in no mark of its own; empty for none
+func Sentence(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?") {
+		return text
+	}
+	return text + "."
+}
+
+// Text as a sentence of its own: trimmed, its first letter a capital as Capital gives it, and an end mark as Sentence gives it; empty for
+// none
+func Full(text string) string {
+	return Capital(Sentence(text))
+}
+
+// Text that starts a sentence: its first letter a capital, unless its first word is a name that keeps its own case, such as icebath or
+// openWakeWord
+func Capital(text string) string {
+	word, _, _ := strings.Cut(text, " ")
+	first, size := utf8.DecodeRuneInString(word)
+	if size == 0 || strings.HasPrefix(word, "icebath") || strings.ToLower(word[size:]) != word[size:] {
+		return text
+	}
+	return string(unicode.ToUpper(first)) + text[size:]
+}
+
+// Text that reads inside a sentence: its first letter in lower case, unless its first word is an acronym or a name with capitals of its own,
+// such as MCP or iOS
+func Lower(text string) string {
+	word, _, _ := strings.Cut(text, " ")
+	first, size := utf8.DecodeRuneInString(word)
+	if size == 0 || strings.ToLower(word[size:]) != word[size:] {
+		return text
+	}
+	return string(unicode.ToLower(first)) + text[size:]
+}
+
+// Word of a switch: On or Off
+func OnOff(on bool) string {
+	if on {
+		return "On"
+	}
+	return "Off"
+}
+
+// Items as a person lists them, the last after "and": a, b and c
+func And(items []string) string { return joined(items, "and") }
+
+// Items as a person lists them, the last after "or": a, b or c
+func Or(items []string) string { return joined(items, "or") }
+
+// Items as a person lists them in at most the parts given: all of them when they fit, else the first ones and how many more, such as a,
+// b and 6 more
+func AndMore(items []string, parts int) string {
+	if len(items) <= parts || parts < 2 {
+		return And(items)
+	}
+	return strings.Join(items[:parts-1], ", ") + " and " + Number(float64(len(items)-parts+1)) + " more"
+}
+
+// Items joined by commas, the last after the word
+func joined(items []string, word string) string {
+	switch len(items) {
+	case 0:
+		return ""
+	case 1:
+		return items[0]
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " " + word + " " + items[len(items)-1]
 }
 
 // Whole number with commas between its thousands

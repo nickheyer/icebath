@@ -20,6 +20,3 @@ const (
 	// When the access token expires, in Unix milliseconds
 	Expiry = "expiry"
 )
-
-// Settings of a provider, below its name
-const AdoptExternalLogins = "adopt_external_logins"

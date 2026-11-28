@@ -591,13 +591,24 @@ var lifecycleSources = []string{"agent_close", "session_end"}
 
 // Kills the running jobs of the session, every session's when it is empty, answering how many it stopped
 func (r *Jobs) KillAll(ctx context.Context, session, source string, consume bool) int {
+	return r.killWhere(ctx, func(j *Job) bool { return session == "" || j.Session == session }, source, consume)
+}
+
+// Kills the running jobs started in the session, those started outside every session for none, as the processes screen kills the
+// processes of one session; answers how many it stopped
+func (r *Jobs) KillIn(ctx context.Context, session string) int {
+	return r.killWhere(ctx, func(j *Job) bool { return j.Session == session }, "process.stop", false)
+}
+
+// Kills the running jobs that match, answering how many it stopped
+func (r *Jobs) killWhere(ctx context.Context, match func(*Job) bool, source string, consume bool) int {
 	source = cmp.Or(source, "kill_all")
 	lifecycle := slices.Contains(lifecycleSources, source)
 	var targets []*Job
 	r.mu.Lock()
 	for _, table := range []map[string]*Job{r.running, r.finished} {
 		for _, j := range table {
-			if (session == "" || j.Session == session) && (!j.Exited() || j.scopePending) && !(lifecycle && j.Persist) {
+			if match(j) && (!j.Exited() || j.scopePending) && !(lifecycle && j.Persist) {
 				targets = append(targets, j)
 			}
 		}
@@ -660,20 +671,35 @@ func (r *Jobs) Views(session string) []View {
 		if j = r.refresh(j); j == nil || session != "" && j.Session != session {
 			continue
 		}
-		r.reconcile(j)
-		j.mu.Lock()
-		view := View{ID: j.ID, Command: j.Command, Session: j.Session, Status: "running", Reason: j.reason, Code: j.code, Cwd: j.Cwd, Pid: j.Pid,
-			Started: j.StartedAt, Ended: j.exitedAt, Tail: j.tailLocked(2000)}
-		if j.exited {
-			view.Status = "exited"
-		}
-		if j.Config != nil {
-			view.Profile = j.Config.Profile()
-		}
-		j.mu.Unlock()
-		views = append(views, view)
+		views = append(views, r.view(j))
 	}
 	return views
+}
+
+// The job of the id, or the one job whose id starts with it, in whichever session it runs, as the processes screen and /processes find
+// one
+func (r *Jobs) Find(id string) (View, bool) {
+	j := r.Get(nil, "", id)
+	if j == nil {
+		return View{}, false
+	}
+	return r.view(j), true
+}
+
+// What the processes screen shows of the job, its exit read first
+func (r *Jobs) view(j *Job) View {
+	r.reconcile(j)
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	view := View{ID: j.ID, Command: j.Command, Session: j.Session, Status: "running", Reason: j.reason, Code: j.code, Cwd: j.Cwd, Pid: j.Pid,
+		Started: j.StartedAt, Ended: j.exitedAt, Tail: j.tailLocked(2000)}
+	if j.exited {
+		view.Status = "exited"
+	}
+	if j.Config != nil {
+		view.Profile = j.Config.Profile()
+	}
+	return view
 }
 
 // Kills every job of the deleted profile, and drops it from the list

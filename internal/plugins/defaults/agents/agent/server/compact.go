@@ -178,7 +178,7 @@ func (a *Agent) compactNow(ctx context.Context, r *run, job *compactJob) error {
 	env := a.contextEnv(ctx, r, settings, instance, route, aux)
 	engine := a.engine(r, env)
 	if engine == nil {
-		return errors.New("This session can't be summarized, because no way of summarizing is set up. Check Method in /settings under Long sessions.")
+		return errors.New("This session can't be summarized, because no way of summarizing is set up. Check Method with /settings long sessions.")
 	}
 	history, err := store.Messages(ctx, env.Session, sessions.Model)
 	if err != nil {
@@ -190,7 +190,7 @@ func (a *Agent) compactNow(ctx context.Context, r *run, job *compactJob) error {
 	}
 	if !engine.Compressible(history) && job.keep == 0 && !job.aggressive {
 		a.tell(r, "There is nothing to summarize yet, because every message is still among those always kept. First messages kept and Last "+
-			"messages kept in /settings under Long sessions › Summaries set how many.")
+			"messages kept, which /settings messages kept changes, set how many.")
 		return nil
 	}
 	before := requestTokens(nil, sent(history), nil)
@@ -201,7 +201,7 @@ func (a *Agent) compactNow(ctx context.Context, r *run, job *compactJob) error {
 		if ctx.Err() != nil {
 			return err
 		}
-		return errors.New("The summary failed, so nothing changed. " + sentence(maskedFailure(err.Error())))
+		return errors.New("The summary failed, so nothing changed. " + strs.Full(maskedFailure(err.Error())))
 	}
 	switch done.reason {
 	case "lock":
@@ -266,14 +266,14 @@ func (a *Agent) feedback(done compressed, before, after int, focus string) strin
 		lines = append(lines, note)
 	}
 	if failure := strings.TrimSpace(result.Failure); failure != "" && (result.Aborted || result.Fallback) {
-		lines = append(lines, "Reason: "+sentence(maskedFailure(failure)))
+		lines = append(lines, "Reason: "+strs.Full(maskedFailure(failure)))
 	}
 	switch {
 	case result.Aborted:
-		lines = append(lines, "⚠ Type /compress to try again, /new for a new session, or check Summaries in /settings under Helper models.")
+		lines = append(lines, "⚠ Type /compress to try again, /new for a new session, or check the summary model with /settings summaries.")
 	case result.AuxModel != "":
-		lines = append(lines, fmt.Sprintf("⚠ The summary model `%s` failed, so your main model made the summary and nothing was lost. Check Model in "+
-			"/settings under Helper models › Summaries.", result.AuxModel), "Reason: "+sentence(maskedFailure(cmp.Or(result.AuxFailure, "none given"))))
+		lines = append(lines, fmt.Sprintf("⚠ The summary model `%s` failed, so your main model made the summary and nothing was lost. Check its model "+
+			"with /settings summaries.", result.AuxModel), "Reason: "+strs.Full(maskedFailure(cmp.Or(result.AuxFailure, "none given"))))
 	}
 	return strings.Join(lines, "\n")
 }

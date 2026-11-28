@@ -10,6 +10,8 @@ import (
 	"github.com/nickheyer/icebath/internal/credentials"
 	"github.com/nickheyer/icebath/internal/generation"
 	openaiconfig "github.com/nickheyer/icebath/internal/plugins/defaults/generators/openai/config"
+	openaiprovider "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/openaiapi/config"
+	codexprovider "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/openaicodex/config"
 	"github.com/nickheyer/icebath/internal/provider"
 )
 
@@ -49,16 +51,14 @@ var models = func() []tier {
 	return out
 }()
 
-// Tier of the list the first of the names names, else one the provider's own setting names that no tier is when passthrough, else the
-// default
-func pick(list []tier, own string, passthrough bool, names ...string) tier {
-	for _, name := range append([]string{own}, names...) {
-		if i := slices.IndexFunc(list, func(t tier) bool { return t.id == strings.TrimSpace(name) }); i >= 0 && strings.TrimSpace(name) != "" {
-			return list[i]
-		}
+// Tier of the list the model names, else when passthrough a model of OpenAI's that no tier is, else the default
+func pick(list []tier, model string, passthrough bool) tier {
+	model = strings.TrimSpace(model)
+	if i := slices.IndexFunc(list, func(t tier) bool { return t.id == model }); i >= 0 && model != "" {
+		return list[i]
 	}
-	if own = strings.TrimSpace(own); passthrough && own != "" {
-		return tier{id: own, title: own, api: own}
+	if passthrough && model != "" {
+		return tier{id: model, title: model, api: model}
 	}
 	return list[slices.IndexFunc(list, func(t tier) bool { return t.id == defaultTier })]
 }
@@ -89,10 +89,11 @@ func (s services) Services() []generation.Service {
 			Name:  openaiconfig.Name,
 			Title: "OpenAI",
 			Ready: func(cfg *config.Config) bool { return s.endpoint(cfg).APIKey != "" },
-			Setup: generation.Setup{Badge: "paid", Prompt: "OpenAI API key", Link: "https://platform.openai.com/api-keys", Provider: "openai-api"},
+			Setup: generation.Setup{Badge: "paid", Prompt: "OpenAI API key", Link: "https://platform.openai.com/api-keys",
+				Providers: []string{openaiprovider.Name}},
 			Images: &generation.Images{
 				About:    "Images and edits from OpenAI, needs an OpenAI API key",
-				Settings: []string{openaiconfig.Model, openaiconfig.Provider, openaiconfig.BaseURL, openaiconfig.KeyEnv},
+				Section:  openaiconfig.Key,
 				Model:    openaiconfig.Model,
 				Models:   func(context.Context, *config.Config) []generation.Model { return rows(models) },
 				Default:  fixed,
@@ -104,10 +105,10 @@ func (s services) Services() []generation.Service {
 			Name:  openaiconfig.Codex,
 			Title: "OpenAI via ChatGPT",
 			Ready: func(cfg *config.Config) bool { _, ok := s.codex(cfg); return ok },
-			Setup: generation.Setup{Badge: "free", Provider: "openai-codex"},
+			Setup: generation.Setup{Badge: "free", Providers: []string{codexprovider.Name}},
 			Images: &generation.Images{
 				About:    "Images from OpenAI with your ChatGPT sign-in, no API key needed",
-				Settings: []string{openaiconfig.CodexModel},
+				Section:  openaiconfig.CodexKey,
 				Model:    openaiconfig.CodexModel,
 				Models:   func(context.Context, *config.Config) []generation.Model { return rows(tiers) },
 				Default:  fixed,

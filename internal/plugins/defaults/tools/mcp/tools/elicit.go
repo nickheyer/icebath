@@ -104,20 +104,6 @@ func summary(params *mcp.ElicitParams, server string) string {
 	return fmt.Sprintf("The MCP server %s asks for:\n%s", server, strings.Join(lines, "\n"))
 }
 
-// Text as a sentence: capital first letter, a period at the end
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	runes := []rune(text)
-	text = strings.ToUpper(string(runes[:1])) + string(runes[1:])
-	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
-		text += "."
-	}
-	return text
-}
-
 // Property names in the order the server wrote them, any it left out of that order last by name
 func order(props map[string]any, written []string) []string {
 	out := slices.DeleteFunc(slices.Clone(written), func(n string) bool { _, ok := props[n]; return !ok })
@@ -260,7 +246,7 @@ func (f *formField) question(problem string) string {
 	}
 	parts := []string{label + "."}
 	if description, _ := f.spec["description"].(string); description != "" {
-		parts = append(parts, sentence(description))
+		parts = append(parts, strs.Full(description))
 	}
 	var limits []string
 	for _, rule := range []struct{ key, words string }{{"minLength", "at least %v characters"}, {"maxLength", "at most %v characters"},

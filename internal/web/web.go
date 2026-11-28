@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	webconfig "github.com/nickheyer/icebath/internal/web/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // What a backend is asked to do
@@ -114,6 +115,8 @@ type Plan struct {
 	Key    string
 	Prompt string
 	Link   string
+	// Kind of provider whose sign-in it runs on, empty for none
+	SignIn string
 }
 
 // Free plan of a backend that the free ring goes round: anonymous search and page reading
@@ -370,13 +373,10 @@ func (r *Registry) readers() string {
 			names = append(names, backend.Name)
 		}
 	}
-	switch len(names) {
-	case 0:
+	if len(names) == 0 {
 		return "a backend that reads pages."
-	case 1:
-		return names[0] + "."
 	}
-	return strings.Join(names[:len(names)-1], ", ") + ", or " + names[len(names)-1] + "."
+	return strs.Or(names) + "."
 }
 
 // Backends of the free ring in registration order, turned to start at the index given, at a random one for a negative index

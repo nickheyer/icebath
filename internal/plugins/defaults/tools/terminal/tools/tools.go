@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/internal/hooks"
 	"github.com/nickheyer/icebath/internal/skills"
 	"github.com/nickheyer/icebath/internal/terminal"
+	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
 	"github.com/nickheyer/icebath/internal/tools"
 )
 
@@ -55,6 +56,7 @@ func (r *registrant) Tools() []tools.Def {
 			Schema:         r.terminalSchema(),
 			Handler:        r.terminal,
 			Check:          func(env *tools.Env) bool { return r.host.Check(env.Config) == nil },
+			Lacks:          r.lacks,
 			MaxResultChars: 100_000,
 			// A command that exits non zero is ordinary output, and one that succeeds is progress
 			Effect:   tools.Mutates,
@@ -99,4 +101,17 @@ func deliver(env *tools.Env) terminal.Deliver {
 		return nil
 	}
 	return func(text, title string) error { return env.Notify(tools.Notice{Text: text, Title: title}) }
+}
+
+// What the terminal tools lack to run: the reason the profile's terminal backend can't run
+func (r *registrant) lacks(env *tools.Env) string {
+	if err := r.host.Check(env.Config); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// The group of the terminal tools, whose options are the area of where commands run
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: group, Area: terminalconfig.Key, Order: 20}}
 }

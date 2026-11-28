@@ -20,7 +20,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/speech"
 	speechconfig "github.com/nickheyer/icebath/internal/speech/config"
-	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -47,7 +47,6 @@ type programs struct{}
 type program struct {
 	name, command, format, voice, model, language string
 	speed                                         float64
-	speedSet                                      bool
 	timeout                                       time.Duration
 	compatible, normalize                         bool
 	limit                                         int
@@ -70,11 +69,10 @@ func parse(name string, raw any, format string, formats map[string]bool, timeout
 			p.format = v
 		}
 	}
-	p.voice, p.model, p.language = cast.ToString(entry["voice"]), cast.ToString(entry["model"]), cast.ToString(entry["language"])
-	if v, ok := entry["speed"]; ok && v != nil {
-		if speed, err := cast.ToFloat64E(v); err == nil {
-			p.speed, p.speedSet = speed, true
-		}
+	p.voice, p.model, p.language = strings.TrimSpace(cast.ToString(entry["voice"])), strings.TrimSpace(cast.ToString(entry["model"])),
+		strings.TrimSpace(cast.ToString(entry["language"]))
+	if speed, err := cast.ToFloat64E(entry["speed"]); err == nil {
+		p.speed = max(0, speed)
 	}
 	for _, key := range []string{"timeout_seconds", "timeout"} {
 		if value, ok := entry[key]; ok && value != nil {
@@ -120,7 +118,8 @@ func declared(cfg *config.Config, section, providers, format string, formats map
 	return out
 }
 
-// Speech programs, a program that names no voice, model or format taking the one tts.voice, tts.model or tts.output_format sets
+// Speech programs, the voice, model and format of every program in place of those a program names none of, by the one rule of values
+// kept both ways
 func (programs) Voices(cfg *config.Config) []speech.Voice {
 	format := strings.ToLower(strings.TrimSpace(cfg.GetString(speechconfig.OutputFormat)))
 	if !audioFormats[format] {
@@ -129,14 +128,9 @@ func (programs) Voices(cfg *config.Config) []speech.Voice {
 	voice, model := strings.TrimSpace(cfg.GetString(speechconfig.PluginVoice)), strings.TrimSpace(cfg.GetString(speechconfig.PluginModel))
 	var out []speech.Voice
 	for _, p := range declared(cfg, speechconfig.TTS, speechconfig.TTSCommands, format, audioFormats, 120*time.Second, builtinVoices...) {
-		if strings.TrimSpace(p.voice) == "" {
-			p.voice = voice
-		}
-		if strings.TrimSpace(p.model) == "" {
-			p.model = model
-		}
+		p.voice, p.model = speech.Either(p.voice, voice), speech.Either(p.model, model)
 		v := speech.Voice{Name: p.name, Title: p.name, About: "A speech program of yours, run on this computer", Label: "command TTS provider '" + p.name + "'",
-			Limit: func(*speech.Job) int { return p.limit }, Format: p.format,
+			Local: true, Program: true, Limit: func(*speech.Job) int { return p.limit }, Format: p.format,
 			Synthesize: func(ctx context.Context, job *speech.Job, request speech.Request) (string, error) {
 				return p.synthesize(ctx, job, request)
 			},
@@ -165,6 +159,7 @@ func (programs) Recognizers(cfg *config.Config) []speech.Recognizer {
 	var out []speech.Recognizer
 	for _, p := range declared(cfg, speechconfig.STT, speechconfig.STTCommands, "txt", textFormats, 300*time.Second, builtinRecognizers...) {
 		out = append(out, speech.Recognizer{Name: p.name, Title: p.name, About: "A speech to text program of yours, run on this computer", Label: "command: " + p.name,
+			Program:  true,
 			Model:    func(job *speech.Job, model string) string { return strs.Filled(model, p.model) },
 			Language: func(*speech.Job) string { return p.language },
 			Transcribe: func(ctx context.Context, job *speech.Job, path string, hints speech.Hints) speech.Transcript {
@@ -186,15 +181,12 @@ func pythonFloat(v float64) string {
 	return text
 }
 
-// Speed the program is handed: the call's own, then its setting, then tts.speed; empty when none is set
+// Speed the program is handed: the call's own, else its own or tts.speed by the one rule of values kept both ways; empty when none is set
 func (p program) speedText(job *speech.Job, request speech.Request) string {
-	switch {
-	case request.Speed > 0:
+	if request.Speed > 0 {
 		return pythonFloat(request.Speed)
-	case p.speedSet:
-		return pythonFloat(p.speed)
 	}
-	if speed, set := job.Speed(speech.Request{}, ""); set {
+	if speed := speech.Either(p.speed, max(0, job.Float(speechconfig.Speed))); speed > 0 {
 		return pythonFloat(speed)
 	}
 	return ""
@@ -209,7 +201,7 @@ func (p program) formatFor(path string) string {
 }
 
 func (p program) synthesize(ctx context.Context, job *speech.Job, request speech.Request) (string, error) {
-	output := terminal.ExpandUser(request.Path)
+	output := fsx.ExpandHome(request.Path)
 	if err := os.MkdirAll(filepath.Dir(output), 0o777); err != nil {
 		return "", err
 	}
@@ -260,7 +252,7 @@ func (p program) transcribe(ctx context.Context, job *speech.Job, path string, h
 	if hints.Prompt != "" {
 		speech.PromptIgnored(fmt.Sprintf("Command STT provider '%s'", p.name))
 	}
-	audio := terminal.ExpandUser(path)
+	audio := fsx.ExpandHome(path)
 	if _, err := os.Stat(audio); err != nil {
 		return r.Failure("Audio file not found: " + path)
 	}

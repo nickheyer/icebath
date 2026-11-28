@@ -1,10 +1,6 @@
 package server
 
 import (
-	"strings"
-	"unicode"
-	"unicode/utf8"
-
 	"github.com/nickheyer/icebath/internal/auxiliary"
 	"github.com/nickheyer/icebath/internal/config"
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
@@ -38,20 +34,4 @@ func (a *Agent) helpers(r *run, settings *config.Config, main provider.Route) *a
 		client.MainSees = new(false)
 	}
 	return client
-}
-
-// Text as a sentence: its first letter in capitals, icebath left in lower case, and a period at its end unless it ends a sentence already;
-// empty for none
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	if first, size := utf8.DecodeRuneInString(text); !strings.HasPrefix(text, "icebath") {
-		text = string(unicode.ToUpper(first)) + text[size:]
-	}
-	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
-		text += "."
-	}
-	return text
 }

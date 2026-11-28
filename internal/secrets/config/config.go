@@ -15,6 +15,8 @@ const (
 	Enabled  = "enabled"
 	Override = "override_existing"
 	Timeout  = "timeout_seconds"
+	// Variables a store that fills named ones fills, each with the reference in the store its value comes from
+	Env = "env"
 )
 
 // Section of the secret store with the name

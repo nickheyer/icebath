@@ -66,7 +66,7 @@ func (h *Hub) Publish(ctx context.Context, scope *skills.Scope, skillPath, targe
 			return false, nil
 		}
 		if !r.gh.auth.signedIn(ctx) {
-			r.fail("Publishing to GitHub needs a sign-in. Set GITHUB_TOKEN or GitHub token in /settings under Skills › Skills hub, or run gh auth login.")
+			r.fail("Publishing to GitHub needs a sign-in. Set the GitHub token of the skills hub, or run gh auth login.")
 			return false, nil
 		}
 		r.line(Heading, "Publishing %s to %s…", name, repo)

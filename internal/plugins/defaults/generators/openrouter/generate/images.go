@@ -313,8 +313,8 @@ func references(job *generation.Job, request generation.ImageRequest) (parts, un
 }
 
 // Chain of models the call tries: the one image_gen.openrouter.model names, else Image model, else the default chain
-func chain(cfg *config.Config, asked string) []string {
-	if model := strs.Filled(cfg.GetString(openrouterconfig.Model), asked); model != "" {
+func chain(model string) []string {
+	if model = strings.TrimSpace(model); model != "" {
 		return []string{model}
 	}
 	return []string{chatDefault, chatFallback}
@@ -381,7 +381,7 @@ func accessHint(model string, status int, message string) string {
 	if !gated {
 		return ""
 	}
-	return fmt.Sprintf("%s can't reach image model '%s' (%d) — enable OpenAI image access in your %s account, or choose %s as the image model with /imagegen.",
+	return fmt.Sprintf("%s can't reach image model '%s' (%d) — enable OpenAI image access in your %s account, or the user chooses %s as the model of OpenRouter with /images.",
 		label, model, status, label, chatFallback)
 }
 
@@ -568,7 +568,7 @@ func (s *Services) draw(ctx context.Context, job *generation.Job, request genera
 		return generation.Call{Provider: openrouterconfig.Name, Aspect: strs.Filled(request.Aspect, generation.DefaultAspect)}.Fail(
 			fmt.Sprintf("No %s credentials found. Connect %s in /providers or set OPENROUTER_API_KEY.", label, label), "missing_api_key")
 	}
-	ladder := chain(cfg, request.Model)
+	ladder := chain(request.Model)
 	shape := generation.Aspect(request.Aspect)
 	parts, unreadable, err := references(job, request)
 	call := generation.Call{Provider: openrouterconfig.Name, Model: ladder[0], Prompt: request.Prompt, Aspect: shape}
@@ -700,7 +700,7 @@ func (s *Services) imageModels(ctx context.Context, cfg *config.Config) []genera
 // What the first model of the chain takes: pictures of both kinds, as many references as it reads
 func imageTakes(cfg *config.Config) generation.ImageTakes {
 	most := chatRefs
-	if k, ok := imageAPI[chain(cfg, generation.Named(cfg, generation.Image))[0]]; ok && k.maxRefs > 0 {
+	if k, ok := imageAPI[chain(cfg.GetString(openrouterconfig.Model))[0]]; ok && k.maxRefs > 0 {
 		most = k.maxRefs
 	}
 	return generation.ImageTakes{Edits: true, References: most}

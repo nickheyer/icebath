@@ -24,7 +24,9 @@ const (
 type SourcesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Profile whose stores are read, the one in use when empty
-	Profile       string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Profile string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Only what each store is, its name, label, shape and section, with nothing that asks a store or a program
+	Bare          bool `protobuf:"varint,2,opt,name=bare,proto3" json:"bare,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -64,6 +66,13 @@ func (x *SourcesRequest) GetProfile() string {
 		return x.Profile
 	}
 	return ""
+}
+
+func (x *SourcesRequest) GetBare() bool {
+	if x != nil {
+		return x.Bare
+	}
+	return false
 }
 
 type ReloadRequest struct {
@@ -110,7 +119,7 @@ func (x *ReloadRequest) GetProfile() string {
 	return ""
 }
 
-type EnableRequest struct {
+type SwitchRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
@@ -119,20 +128,20 @@ type EnableRequest struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *EnableRequest) Reset() {
-	*x = EnableRequest{}
+func (x *SwitchRequest) Reset() {
+	*x = SwitchRequest{}
 	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *EnableRequest) String() string {
+func (x *SwitchRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*EnableRequest) ProtoMessage() {}
+func (*SwitchRequest) ProtoMessage() {}
 
-func (x *EnableRequest) ProtoReflect() protoreflect.Message {
+func (x *SwitchRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -144,33 +153,529 @@ func (x *EnableRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use EnableRequest.ProtoReflect.Descriptor instead.
-func (*EnableRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use SwitchRequest.ProtoReflect.Descriptor instead.
+func (*SwitchRequest) Descriptor() ([]byte, []int) {
 	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *EnableRequest) GetProfile() string {
+func (x *SwitchRequest) GetProfile() string {
 	if x != nil {
 		return x.Profile
 	}
 	return ""
 }
 
-func (x *EnableRequest) GetName() string {
+func (x *SwitchRequest) GetName() string {
 	if x != nil {
 		return x.Name
 	}
 	return ""
 }
 
-func (x *EnableRequest) GetOn() bool {
+func (x *SwitchRequest) GetOn() bool {
 	if x != nil {
 		return x.On
 	}
 	return false
 }
 
-// One store and what its last fetch did
+type BindRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Variable      string                 `protobuf:"bytes,3,opt,name=variable,proto3" json:"variable,omitempty"`
+	Reference     string                 `protobuf:"bytes,4,opt,name=reference,proto3" json:"reference,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BindRequest) Reset() {
+	*x = BindRequest{}
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindRequest) ProtoMessage() {}
+
+func (x *BindRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindRequest.ProtoReflect.Descriptor instead.
+func (*BindRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *BindRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *BindRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *BindRequest) GetVariable() string {
+	if x != nil {
+		return x.Variable
+	}
+	return ""
+}
+
+func (x *BindRequest) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+type UnbindRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Variable      string                 `protobuf:"bytes,3,opt,name=variable,proto3" json:"variable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnbindRequest) Reset() {
+	*x = UnbindRequest{}
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnbindRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnbindRequest) ProtoMessage() {}
+
+func (x *UnbindRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnbindRequest.ProtoReflect.Descriptor instead.
+func (*UnbindRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *UnbindRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *UnbindRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *UnbindRequest) GetVariable() string {
+	if x != nil {
+		return x.Variable
+	}
+	return ""
+}
+
+type ReorderRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Names of the stores in the order they are asked
+	Names         []string `protobuf:"bytes,2,rep,name=names,proto3" json:"names,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReorderRequest) Reset() {
+	*x = ReorderRequest{}
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReorderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReorderRequest) ProtoMessage() {}
+
+func (x *ReorderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReorderRequest.ProtoReflect.Descriptor instead.
+func (*ReorderRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ReorderRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ReorderRequest) GetNames() []string {
+	if x != nil {
+		return x.Names
+	}
+	return nil
+}
+
+type ForgetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForgetRequest) Reset() {
+	*x = ForgetRequest{}
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForgetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForgetRequest) ProtoMessage() {}
+
+func (x *ForgetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForgetRequest.ProtoReflect.Descriptor instead.
+func (*ForgetRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ForgetRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ForgetRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// What a change says once it is kept
+type ChangeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Note          string                 `protobuf:"bytes,1,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangeResponse) Reset() {
+	*x = ChangeResponse{}
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeResponse) ProtoMessage() {}
+
+func (x *ChangeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeResponse.ProtoReflect.Descriptor instead.
+func (*ChangeResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ChangeResponse) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type PreviewRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Apply         bool                   `protobuf:"varint,3,opt,name=apply,proto3" json:"apply,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PreviewRequest) Reset() {
+	*x = PreviewRequest{}
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreviewRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreviewRequest) ProtoMessage() {}
+
+func (x *PreviewRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreviewRequest.ProtoReflect.Descriptor instead.
+func (*PreviewRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *PreviewRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *PreviewRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PreviewRequest) GetApply() bool {
+	if x != nil {
+		return x.Apply
+	}
+	return false
+}
+
+// What a fetch does with one variable: export, override, skip_set, skip_token or unresolved; exported or overrode once set
+type Outcome struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Action        string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Outcome) Reset() {
+	*x = Outcome{}
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Outcome) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Outcome) ProtoMessage() {}
+
+func (x *Outcome) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Outcome.ProtoReflect.Descriptor instead.
+func (*Outcome) Descriptor() ([]byte, []int) {
+	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Outcome) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Outcome) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+type PreviewResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Outcomes      []*Outcome             `protobuf:"bytes,1,rep,name=outcomes,proto3" json:"outcomes,omitempty"`
+	Warnings      []string               `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PreviewResponse) Reset() {
+	*x = PreviewResponse{}
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreviewResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreviewResponse) ProtoMessage() {}
+
+func (x *PreviewResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreviewResponse.ProtoReflect.Descriptor instead.
+func (*PreviewResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *PreviewResponse) GetOutcomes() []*Outcome {
+	if x != nil {
+		return x.Outcomes
+	}
+	return nil
+}
+
+func (x *PreviewResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
+// A variable a store fills from one of its references
+type Binding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Variable      string                 `protobuf:"bytes,1,opt,name=variable,proto3" json:"variable,omitempty"`
+	Reference     string                 `protobuf:"bytes,2,opt,name=reference,proto3" json:"reference,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Binding) Reset() {
+	*x = Binding{}
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Binding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Binding) ProtoMessage() {}
+
+func (x *Binding) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Binding.ProtoReflect.Descriptor instead.
+func (*Binding) Descriptor() ([]byte, []int) {
+	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *Binding) GetVariable() string {
+	if x != nil {
+		return x.Variable
+	}
+	return ""
+}
+
+func (x *Binding) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+// One store, how it stands and what its last fetch did
 type Source struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -185,18 +690,33 @@ type Source struct {
 	Claimed   []string `protobuf:"bytes,7,rep,name=claimed,proto3" json:"claimed,omitempty"`
 	Protected []string `protobuf:"bytes,8,rep,name=protected,proto3" json:"protected,omitempty"`
 	Invalid   []string `protobuf:"bytes,9,rep,name=invalid,proto3" json:"invalid,omitempty"`
-	// Why the fetch failed, its kind and how to fix it, empty when it did not
-	Error         string   `protobuf:"bytes,10,opt,name=error,proto3" json:"error,omitempty"`
-	Kind          string   `protobuf:"bytes,11,opt,name=kind,proto3" json:"kind,omitempty"`
-	Remedy        string   `protobuf:"bytes,12,opt,name=remedy,proto3" json:"remedy,omitempty"`
-	Warnings      []string `protobuf:"bytes,13,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	// Why the fetch failed, its kind and how to fix it from the command line, empty when it did not
+	Error    string   `protobuf:"bytes,10,opt,name=error,proto3" json:"error,omitempty"`
+	Kind     string   `protobuf:"bytes,11,opt,name=kind,proto3" json:"kind,omitempty"`
+	Remedy   string   `protobuf:"bytes,12,opt,name=remedy,proto3" json:"remedy,omitempty"`
+	Warnings []string `protobuf:"bytes,13,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	// What keeps it from filling anything, in a few words and as a sentence, empty when nothing does
+	Needs string `protobuf:"bytes,14,opt,name=needs,proto3" json:"needs,omitempty"`
+	Lacks string `protobuf:"bytes,15,opt,name=lacks,proto3" json:"lacks,omitempty"`
+	// Variables it fills
+	Fills int32 `protobuf:"varint,16,opt,name=fills,proto3" json:"fills,omitempty"`
+	// Section of its settings, whose page is its page
+	Section string `protobuf:"bytes,17,opt,name=section,proto3" json:"section,omitempty"`
+	// For a store that fills named variables: those it fills, the scheme of its references, one of them as an example and where one is found
+	Bindings []*Binding `protobuf:"bytes,18,rep,name=bindings,proto3" json:"bindings,omitempty"`
+	Scheme   string     `protobuf:"bytes,19,opt,name=scheme,proto3" json:"scheme,omitempty"`
+	Example  string     `protobuf:"bytes,20,opt,name=example,proto3" json:"example,omitempty"`
+	Find     string     `protobuf:"bytes,23,opt,name=find,proto3" json:"find,omitempty"`
+	// Variable of the credential it signs in with and whether one is kept, for a store that has one
+	TokenEnv      string `protobuf:"bytes,21,opt,name=token_env,json=tokenEnv,proto3" json:"token_env,omitempty"`
+	TokenSet      bool   `protobuf:"varint,22,opt,name=token_set,json=tokenSet,proto3" json:"token_set,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Source) Reset() {
 	*x = Source{}
-	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[3]
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -208,7 +728,7 @@ func (x *Source) String() string {
 func (*Source) ProtoMessage() {}
 
 func (x *Source) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[3]
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -221,7 +741,7 @@ func (x *Source) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Source.ProtoReflect.Descriptor instead.
 func (*Source) Descriptor() ([]byte, []int) {
-	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{3}
+	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Source) GetName() string {
@@ -315,6 +835,76 @@ func (x *Source) GetWarnings() []string {
 	return nil
 }
 
+func (x *Source) GetNeeds() string {
+	if x != nil {
+		return x.Needs
+	}
+	return ""
+}
+
+func (x *Source) GetLacks() string {
+	if x != nil {
+		return x.Lacks
+	}
+	return ""
+}
+
+func (x *Source) GetFills() int32 {
+	if x != nil {
+		return x.Fills
+	}
+	return 0
+}
+
+func (x *Source) GetSection() string {
+	if x != nil {
+		return x.Section
+	}
+	return ""
+}
+
+func (x *Source) GetBindings() []*Binding {
+	if x != nil {
+		return x.Bindings
+	}
+	return nil
+}
+
+func (x *Source) GetScheme() string {
+	if x != nil {
+		return x.Scheme
+	}
+	return ""
+}
+
+func (x *Source) GetExample() string {
+	if x != nil {
+		return x.Example
+	}
+	return ""
+}
+
+func (x *Source) GetFind() string {
+	if x != nil {
+		return x.Find
+	}
+	return ""
+}
+
+func (x *Source) GetTokenEnv() string {
+	if x != nil {
+		return x.TokenEnv
+	}
+	return ""
+}
+
+func (x *Source) GetTokenSet() bool {
+	if x != nil {
+		return x.TokenSet
+	}
+	return false
+}
+
 type SourcesResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Sources []*Source              `protobuf:"bytes,1,rep,name=sources,proto3" json:"sources,omitempty"`
@@ -326,7 +916,7 @@ type SourcesResponse struct {
 
 func (x *SourcesResponse) Reset() {
 	*x = SourcesResponse{}
-	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[4]
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -338,7 +928,7 @@ func (x *SourcesResponse) String() string {
 func (*SourcesResponse) ProtoMessage() {}
 
 func (x *SourcesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[4]
+	mi := &file_icebath_secrets_v1_secrets_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -351,7 +941,7 @@ func (x *SourcesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourcesResponse.ProtoReflect.Descriptor instead.
 func (*SourcesResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{4}
+	return file_icebath_secrets_v1_secrets_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SourcesResponse) GetSources() []*Source {
@@ -372,15 +962,46 @@ var File_icebath_secrets_v1_secrets_proto protoreflect.FileDescriptor
 
 const file_icebath_secrets_v1_secrets_proto_rawDesc = "" +
 	"\n" +
-	" icebath/secrets/v1/secrets.proto\x12\x12icebath.secrets.v1\"*\n" +
+	" icebath/secrets/v1/secrets.proto\x12\x12icebath.secrets.v1\">\n" +
 	"\x0eSourcesRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\")\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04bare\x18\x02 \x01(\bR\x04bare\")\n" +
 	"\rReloadRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\"M\n" +
-	"\rEnableRequest\x12\x18\n" +
+	"\rSwitchRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x0e\n" +
-	"\x02on\x18\x03 \x01(\bR\x02on\"\xc8\x02\n" +
+	"\x02on\x18\x03 \x01(\bR\x02on\"u\n" +
+	"\vBindRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1a\n" +
+	"\bvariable\x18\x03 \x01(\tR\bvariable\x12\x1c\n" +
+	"\treference\x18\x04 \x01(\tR\treference\"Y\n" +
+	"\rUnbindRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1a\n" +
+	"\bvariable\x18\x03 \x01(\tR\bvariable\"@\n" +
+	"\x0eReorderRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x14\n" +
+	"\x05names\x18\x02 \x03(\tR\x05names\"=\n" +
+	"\rForgetRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"$\n" +
+	"\x0eChangeResponse\x12\x12\n" +
+	"\x04note\x18\x01 \x01(\tR\x04note\"T\n" +
+	"\x0ePreviewRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05apply\x18\x03 \x01(\bR\x05apply\"5\n" +
+	"\aOutcome\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\"f\n" +
+	"\x0fPreviewResponse\x127\n" +
+	"\boutcomes\x18\x01 \x03(\v2\x1b.icebath.secrets.v1.OutcomeR\boutcomes\x12\x1a\n" +
+	"\bwarnings\x18\x02 \x03(\tR\bwarnings\"C\n" +
+	"\aBinding\x12\x1a\n" +
+	"\bvariable\x18\x01 \x01(\tR\bvariable\x12\x1c\n" +
+	"\treference\x18\x02 \x01(\tR\treference\"\xdd\x04\n" +
 	"\x06Source\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x14\n" +
@@ -395,14 +1016,29 @@ const file_icebath_secrets_v1_secrets_proto_rawDesc = "" +
 	" \x01(\tR\x05error\x12\x12\n" +
 	"\x04kind\x18\v \x01(\tR\x04kind\x12\x16\n" +
 	"\x06remedy\x18\f \x01(\tR\x06remedy\x12\x1a\n" +
-	"\bwarnings\x18\r \x03(\tR\bwarnings\"e\n" +
+	"\bwarnings\x18\r \x03(\tR\bwarnings\x12\x14\n" +
+	"\x05needs\x18\x0e \x01(\tR\x05needs\x12\x14\n" +
+	"\x05lacks\x18\x0f \x01(\tR\x05lacks\x12\x14\n" +
+	"\x05fills\x18\x10 \x01(\x05R\x05fills\x12\x18\n" +
+	"\asection\x18\x11 \x01(\tR\asection\x127\n" +
+	"\bbindings\x18\x12 \x03(\v2\x1b.icebath.secrets.v1.BindingR\bbindings\x12\x16\n" +
+	"\x06scheme\x18\x13 \x01(\tR\x06scheme\x12\x18\n" +
+	"\aexample\x18\x14 \x01(\tR\aexample\x12\x12\n" +
+	"\x04find\x18\x17 \x01(\tR\x04find\x12\x1b\n" +
+	"\ttoken_env\x18\x15 \x01(\tR\btokenEnv\x12\x1b\n" +
+	"\ttoken_set\x18\x16 \x01(\bR\btokenSet\"e\n" +
 	"\x0fSourcesResponse\x124\n" +
 	"\asources\x18\x01 \x03(\v2\x1a.icebath.secrets.v1.SourceR\asources\x12\x1c\n" +
-	"\tconflicts\x18\x02 \x03(\tR\tconflicts2\x87\x02\n" +
+	"\tconflicts\x18\x02 \x03(\tR\tconflicts2\x9c\x05\n" +
 	"\rSecretService\x12R\n" +
 	"\aSources\x12\".icebath.secrets.v1.SourcesRequest\x1a#.icebath.secrets.v1.SourcesResponse\x12P\n" +
-	"\x06Reload\x12!.icebath.secrets.v1.ReloadRequest\x1a#.icebath.secrets.v1.SourcesResponse\x12P\n" +
-	"\x06Enable\x12!.icebath.secrets.v1.EnableRequest\x1a#.icebath.secrets.v1.SourcesResponseB\xd3\x01\n" +
+	"\x06Reload\x12!.icebath.secrets.v1.ReloadRequest\x1a#.icebath.secrets.v1.SourcesResponse\x12O\n" +
+	"\x06Switch\x12!.icebath.secrets.v1.SwitchRequest\x1a\".icebath.secrets.v1.ChangeResponse\x12K\n" +
+	"\x04Bind\x12\x1f.icebath.secrets.v1.BindRequest\x1a\".icebath.secrets.v1.ChangeResponse\x12O\n" +
+	"\x06Unbind\x12!.icebath.secrets.v1.UnbindRequest\x1a\".icebath.secrets.v1.ChangeResponse\x12Q\n" +
+	"\aReorder\x12\".icebath.secrets.v1.ReorderRequest\x1a\".icebath.secrets.v1.ChangeResponse\x12O\n" +
+	"\x06Forget\x12!.icebath.secrets.v1.ForgetRequest\x1a\".icebath.secrets.v1.ChangeResponse\x12R\n" +
+	"\aPreview\x12\".icebath.secrets.v1.PreviewRequest\x1a#.icebath.secrets.v1.PreviewResponseB\xd3\x01\n" +
 	"\x16com.icebath.secrets.v1B\fSecretsProtoP\x01ZAgithub.com/nickheyer/icebath/pkg/gen/icebath/secrets/v1;secretsv1\xa2\x02\x03ISX\xaa\x02\x12Icebath.Secrets.V1\xca\x02\x12Icebath\\Secrets\\V1\xe2\x02\x1eIcebath\\Secrets\\V1\\GPBMetadata\xea\x02\x14Icebath::Secrets::V1b\x06proto3"
 
 var (
@@ -417,27 +1053,48 @@ func file_icebath_secrets_v1_secrets_proto_rawDescGZIP() []byte {
 	return file_icebath_secrets_v1_secrets_proto_rawDescData
 }
 
-var file_icebath_secrets_v1_secrets_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_icebath_secrets_v1_secrets_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_icebath_secrets_v1_secrets_proto_goTypes = []any{
 	(*SourcesRequest)(nil),  // 0: icebath.secrets.v1.SourcesRequest
 	(*ReloadRequest)(nil),   // 1: icebath.secrets.v1.ReloadRequest
-	(*EnableRequest)(nil),   // 2: icebath.secrets.v1.EnableRequest
-	(*Source)(nil),          // 3: icebath.secrets.v1.Source
-	(*SourcesResponse)(nil), // 4: icebath.secrets.v1.SourcesResponse
+	(*SwitchRequest)(nil),   // 2: icebath.secrets.v1.SwitchRequest
+	(*BindRequest)(nil),     // 3: icebath.secrets.v1.BindRequest
+	(*UnbindRequest)(nil),   // 4: icebath.secrets.v1.UnbindRequest
+	(*ReorderRequest)(nil),  // 5: icebath.secrets.v1.ReorderRequest
+	(*ForgetRequest)(nil),   // 6: icebath.secrets.v1.ForgetRequest
+	(*ChangeResponse)(nil),  // 7: icebath.secrets.v1.ChangeResponse
+	(*PreviewRequest)(nil),  // 8: icebath.secrets.v1.PreviewRequest
+	(*Outcome)(nil),         // 9: icebath.secrets.v1.Outcome
+	(*PreviewResponse)(nil), // 10: icebath.secrets.v1.PreviewResponse
+	(*Binding)(nil),         // 11: icebath.secrets.v1.Binding
+	(*Source)(nil),          // 12: icebath.secrets.v1.Source
+	(*SourcesResponse)(nil), // 13: icebath.secrets.v1.SourcesResponse
 }
 var file_icebath_secrets_v1_secrets_proto_depIdxs = []int32{
-	3, // 0: icebath.secrets.v1.SourcesResponse.sources:type_name -> icebath.secrets.v1.Source
-	0, // 1: icebath.secrets.v1.SecretService.Sources:input_type -> icebath.secrets.v1.SourcesRequest
-	1, // 2: icebath.secrets.v1.SecretService.Reload:input_type -> icebath.secrets.v1.ReloadRequest
-	2, // 3: icebath.secrets.v1.SecretService.Enable:input_type -> icebath.secrets.v1.EnableRequest
-	4, // 4: icebath.secrets.v1.SecretService.Sources:output_type -> icebath.secrets.v1.SourcesResponse
-	4, // 5: icebath.secrets.v1.SecretService.Reload:output_type -> icebath.secrets.v1.SourcesResponse
-	4, // 6: icebath.secrets.v1.SecretService.Enable:output_type -> icebath.secrets.v1.SourcesResponse
-	4, // [4:7] is the sub-list for method output_type
-	1, // [1:4] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	9,  // 0: icebath.secrets.v1.PreviewResponse.outcomes:type_name -> icebath.secrets.v1.Outcome
+	11, // 1: icebath.secrets.v1.Source.bindings:type_name -> icebath.secrets.v1.Binding
+	12, // 2: icebath.secrets.v1.SourcesResponse.sources:type_name -> icebath.secrets.v1.Source
+	0,  // 3: icebath.secrets.v1.SecretService.Sources:input_type -> icebath.secrets.v1.SourcesRequest
+	1,  // 4: icebath.secrets.v1.SecretService.Reload:input_type -> icebath.secrets.v1.ReloadRequest
+	2,  // 5: icebath.secrets.v1.SecretService.Switch:input_type -> icebath.secrets.v1.SwitchRequest
+	3,  // 6: icebath.secrets.v1.SecretService.Bind:input_type -> icebath.secrets.v1.BindRequest
+	4,  // 7: icebath.secrets.v1.SecretService.Unbind:input_type -> icebath.secrets.v1.UnbindRequest
+	5,  // 8: icebath.secrets.v1.SecretService.Reorder:input_type -> icebath.secrets.v1.ReorderRequest
+	6,  // 9: icebath.secrets.v1.SecretService.Forget:input_type -> icebath.secrets.v1.ForgetRequest
+	8,  // 10: icebath.secrets.v1.SecretService.Preview:input_type -> icebath.secrets.v1.PreviewRequest
+	13, // 11: icebath.secrets.v1.SecretService.Sources:output_type -> icebath.secrets.v1.SourcesResponse
+	13, // 12: icebath.secrets.v1.SecretService.Reload:output_type -> icebath.secrets.v1.SourcesResponse
+	7,  // 13: icebath.secrets.v1.SecretService.Switch:output_type -> icebath.secrets.v1.ChangeResponse
+	7,  // 14: icebath.secrets.v1.SecretService.Bind:output_type -> icebath.secrets.v1.ChangeResponse
+	7,  // 15: icebath.secrets.v1.SecretService.Unbind:output_type -> icebath.secrets.v1.ChangeResponse
+	7,  // 16: icebath.secrets.v1.SecretService.Reorder:output_type -> icebath.secrets.v1.ChangeResponse
+	7,  // 17: icebath.secrets.v1.SecretService.Forget:output_type -> icebath.secrets.v1.ChangeResponse
+	10, // 18: icebath.secrets.v1.SecretService.Preview:output_type -> icebath.secrets.v1.PreviewResponse
+	11, // [11:19] is the sub-list for method output_type
+	3,  // [3:11] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_icebath_secrets_v1_secrets_proto_init() }
@@ -451,7 +1108,7 @@ func file_icebath_secrets_v1_secrets_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_secrets_v1_secrets_proto_rawDesc), len(file_icebath_secrets_v1_secrets_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

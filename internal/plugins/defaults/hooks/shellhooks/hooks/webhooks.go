@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,13 +39,18 @@ const (
 
 // One target of the outbound setting: where events are posted, which events, and how
 type Target struct {
+	// Its key among the targets of the setting
+	Key    string
 	URL    string
 	Events []string
 	Name   string
 	// Key the posts are signed with, empty for unsigned posts
-	Secret  string
-	Matcher Matcher
-	Timeout int
+	Secret string
+	// Variable named to hold the secret, and whether that variable is not set, which leaves the posts unsigned
+	SecretEnv string
+	Missing   bool
+	Matcher   Matcher
+	Timeout   int
 }
 
 // Name of the target, its address when it has none
@@ -72,37 +79,47 @@ func (r *Registrant) Targets(cfg *config.Config) []*Target {
 	return targets
 }
 
-// Targets of the outbound setting, each malformed one warned about and left out
+// Target of the key, nil when the setting holds none that can be used
+func (r *Registrant) Target(cfg *config.Config, key string) *Target {
+	for _, target := range r.Targets(cfg) {
+		if target.Key == key {
+			return target
+		}
+	}
+	return nil
+}
+
+// Targets of the outbound setting by key, each malformed one warned about and left out
 func (r *Registrant) parseTargets(cfg *config.Config) []*Target {
 	raw := cfg.Get(shellconfig.Outbound)
 	if raw == nil {
 		return nil
 	}
-	list, ok := raw.([]any)
+	table, ok := raw.(map[string]any)
 	if !ok {
-		r.warn(cfg.Profile(), fmt.Sprintf("%s must be a list of webhook targets; got %s", shellconfig.Outbound, kindOf(raw)))
+		r.warn(cfg.Profile(), fmt.Sprintf("%s must be a mapping of webhook targets by name; got %s", shellconfig.Outbound, kindOf(raw)))
 		return nil
 	}
 	var out []*Target
-	for i, entry := range list {
-		if t := r.target(cfg, i, entry); t != nil {
+	for _, key := range slices.Sorted(maps.Keys(table)) {
+		if t := r.target(cfg, key, table[key]); t != nil {
 			out = append(out, t)
 		}
 	}
 	return out
 }
 
-// One target of the list, nil with a warning when it is malformed
-func (r *Registrant) target(cfg *config.Config, index int, raw any) *Target {
+// One target of the table, nil with a warning when it is malformed
+func (r *Registrant) target(cfg *config.Config, key string, raw any) *Target {
 	warn := func(format string, args ...any) {
-		r.warn(cfg.Profile(), fmt.Sprintf("%s[%d]", shellconfig.Outbound, index)+fmt.Sprintf(format, args...))
+		r.warn(cfg.Profile(), shellconfig.Outbound+"."+key+fmt.Sprintf(format, args...))
 	}
 	entry, ok := raw.(map[string]any)
 	if !ok {
 		warn(" must be a mapping with 'url' and 'events' keys; got %s", kindOf(raw))
 		return nil
 	}
-	url, _ := entry["url"].(string)
+	url, _ := entry[shellconfig.URL].(string)
 	if url = strings.TrimSpace(url); url == "" {
 		warn(" is missing a non-empty 'url'")
 		return nil
@@ -116,7 +133,7 @@ func (r *Registrant) target(cfg *config.Config, index int, raw any) *Target {
 		warn(".url uses plain http:// — payloads (including tool inputs) travel unencrypted. Prefer https.")
 	}
 	valid := strings.Join(hooks.Points(), ", ")
-	listed, _ := entry["events"].([]any)
+	listed, _ := entry[shellconfig.Posted].([]any)
 	if len(listed) == 0 {
 		warn(" needs a non-empty 'events' list (valid: %s)", valid)
 		return nil
@@ -136,45 +153,48 @@ func (r *Registrant) target(cfg *config.Config, index int, raw any) *Target {
 		return nil
 	}
 	matcher := ""
-	if value, given := entry["matcher"]; given && value != nil {
+	if value, given := entry[shellconfig.Matcher]; given && value != nil {
 		if text, ok := value.(string); ok {
 			matcher = text
 		} else {
 			warn(".matcher must be a string regex; ignoring")
 		}
 	}
-	if matcher != "" {
-		scoped := false
-		for _, event := range events {
-			if point, _ := hooks.PointOf(event); point.Tool {
-				scoped = true
-			}
-		}
-		if !scoped {
-			warn(".matcher=%s will be ignored — matcher is only honored for pre_tool_call / post_tool_call.", show(matcher))
-			matcher = ""
-		}
+	if matcher != "" && !toolScoped(events) {
+		warn(".matcher=%s will be ignored — matcher is only honored for pre_tool_call / post_tool_call.", show(matcher))
+		matcher = ""
 	}
 	timeout := DefaultPostTimeout
-	if value, given := entry["timeout"]; given {
+	if value, given := entry[shellconfig.Timeout]; given {
 		if n, whole := config.Whole(value); whole {
 			timeout = n
 		} else {
 			warn(".timeout must be an int (got %s); using default %ds", show(value), DefaultPostTimeout)
 		}
 	}
-	name, _ := entry["name"].(string)
-	secret := ""
-	if variable, _ := entry["secret_env"].(string); strings.TrimSpace(variable) != "" {
-		variable = strings.TrimSpace(variable)
-		if secret = cfg.Getenv(variable); secret == "" {
-			warn(".secret_env=%s is not set in the environment — deliveries will be UNSIGNED", show(variable))
-		}
-	} else if text, ok := entry["secret"].(string); ok {
-		secret = text
-	}
-	return &Target{URL: url, Events: events, Name: strings.TrimSpace(name), Secret: secret, Matcher: r.matcher(cfg.Profile(), "outbound webhook", matcher),
+	name, _ := entry[shellconfig.Name].(string)
+	t := &Target{Key: key, URL: url, Events: events, Name: strings.TrimSpace(name), Matcher: r.matcher(cfg.Profile(), "outbound webhook", matcher),
 		Timeout: max(1, min(timeout, MaxPostTimeout))}
+	if variable, _ := entry[shellconfig.SecretEnv].(string); strings.TrimSpace(variable) != "" {
+		t.SecretEnv = strings.TrimSpace(variable)
+		if t.Secret = cfg.Getenv(t.SecretEnv); t.Secret == "" {
+			t.Missing = true
+			warn(".secret_env=%s is not set in the environment — deliveries will be UNSIGNED", show(t.SecretEnv))
+		}
+	} else if text, ok := entry[shellconfig.Secret].(string); ok {
+		t.Secret = text
+	}
+	return t
+}
+
+// Whether one of the events is fired for each tool call, so a matcher of tools applies
+func toolScoped(events []string) bool {
+	for _, event := range events {
+		if point, _ := hooks.PointOf(event); point.Tool {
+			return true
+		}
+	}
+	return false
 }
 
 // Callbacks of the profile's outbound webhooks, one for each event of each address, which queue a post and answer nothing
@@ -206,14 +226,7 @@ func (r *Registrant) post(cfg *config.Config, event string, target *Target) func
 			}
 		}
 		id := strs.Random(16)
-		body := ordered{{"hook_event_name", event}, {"profile", cfg.Profile()}}
-		for _, f := range common(ctx, cfg, fields) {
-			if f.key != "profile" {
-				body = append(body, f)
-			}
-		}
-		body = append(body, field{"delivery_id", id}, field{"timestamp", stamp(time.Now())})
-		text, err := encode(body, false)
+		text, err := postBody(ctx, cfg, event, fields, id)
 		if err != nil {
 			slog.Warn(fmt.Sprintf("outbound webhook payload serialization failed (event=%s target=%s)", event, target.Label()), "error", err)
 			return nil, nil
@@ -221,6 +234,18 @@ func (r *Registrant) post(cfg *config.Config, event string, target *Target) func
 		r.outbound.put(delivery(event, target, []byte(text), id))
 		return nil, nil
 	}
+}
+
+// Body of a post of the event: its name, the profile, the fields of the event, then the id and the time of the delivery
+func postBody(ctx context.Context, cfg *config.Config, event string, fields map[string]any, id string) (string, error) {
+	body := ordered{{"hook_event_name", event}, {"profile", cfg.Profile()}}
+	for _, f := range common(ctx, cfg, fields) {
+		if f.key != "profile" {
+			body = append(body, f)
+		}
+	}
+	body = append(body, field{"delivery_id", id}, field{"timestamp", stamp(time.Now())})
+	return encode(body, false)
 }
 
 // One post waiting to be delivered

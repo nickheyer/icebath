@@ -16,22 +16,41 @@ const (
 	BrokenRetry = Key + ".broken_retry_seconds"
 	// Glob patterns of the folders no server runs in
 	ExcludeRoots = Key + ".exclude_roots"
-	// Missing servers are installed when a file needs them, or only used once installed
-	InstallStrategy = Key + ".install_strategy"
+	// A missing server is installed the first time a file needs it, else only servers already installed are used
+	InstallWhenNeeded = Key + ".install_when_needed"
 	// npm, pnpm or yarn, which installs the servers written for Node
 	PackageManager = Key + ".package_manager"
 	// Seconds an unused server runs before it is stopped
 	IdleTimeout = Key + ".idle_timeout"
-	// By server: its command, variables, initialization options, or disabled; a new name with extensions declares a server
+	// By server: its command, variables, start options, whether it is off, and for one a person added its file types and project files
 	Servers = Key + ".servers"
 	// Folder of the PowerShellEditorServices bundle the PowerShell server runs
 	PowerShellBundle = Key + ".powershell_bundle"
 )
 
+// Fields of one server under Servers
+const (
+	Command     = "command"
+	Extensions  = "extensions"
+	RootMarkers = "root_markers"
+	LanguageID  = "language_id"
+	Description = "description"
+	Env         = "env"
+	Init        = "initialization_options"
+	Disabled    = "disabled"
+)
+
+// States of a server, in the words every page, command and message says them
+const (
+	Running      = "Running"
+	Installed    = "Installed"
+	NotInstalled = "Not installed"
+	Off          = "Off"
+	Failed       = "Failed"
+)
+
 // Values of the choice settings
 const (
-	WaitDocument  = "document"
-	WaitFull      = "full"
-	InstallAuto   = "auto"
-	InstallManual = "manual"
+	WaitDocument = "document"
+	WaitFull     = "full"
 )

@@ -453,7 +453,7 @@ func sees(entry map[string]any) bool {
 
 // Context window of the route's model in the registry as held, explicit overrides first and the _default override filling what it misses
 func (m *Models) devContext(cfg *config.Config, route provider.Route) (int, bool) {
-	if n, ok := m.overrideInt(cfg, m.explicit(cfg, route), "context_window"); ok {
+	if n, ok := m.overrideInt(cfg, m.explicit(cfg, route), modelsconfig.OverrideContext); ok {
 		return n, true
 	}
 	if n, ok := m.overrideInt(cfg, m.Spec(route).ModelCapabilities[route.Model], "context_window"); ok {
@@ -464,7 +464,7 @@ func (m *Models) devContext(cfg *config.Config, route provider.Route) (int, bool
 			return n, true
 		}
 	}
-	return m.overrideInt(cfg, m.fallback(cfg, route), "context_window")
+	return m.overrideInt(cfg, m.fallback(cfg, route), modelsconfig.OverrideContext)
 }
 
 // Ids not meant for agents: speech, embeddings, dated previews and image only models
@@ -499,4 +499,21 @@ func (m *Models) Agentic(cfg *config.Config, route provider.Route, network bool)
 		out = append(out, id)
 	}
 	return out
+}
+
+// Families the models.dev registry held now sorts models into, in order of the alphabet; none when nothing of it is held
+func (m *Models) Families(cfg *config.Config) []string {
+	seen := map[string]bool{}
+	for _, entry := range m.registry(cfg, false) {
+		p, _ := entry.(map[string]any)
+		models, _ := p["models"].(map[string]any)
+		for _, model := range models {
+			if row, ok := model.(map[string]any); ok {
+				if family := strings.TrimSpace(text(row["family"])); family != "" {
+					seen[family] = true
+				}
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
 }

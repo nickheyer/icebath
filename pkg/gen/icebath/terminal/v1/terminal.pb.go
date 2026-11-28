@@ -169,7 +169,10 @@ func (x *Process) GetPid() int32 {
 type ListRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Session whose processes to list, every session's when empty
-	SessionId     string `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SessionId string `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// One process alone, in whichever session it runs: the one of this id, or the one whose id starts with it; none when no process or
+	// several match
+	Id            string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -207,6 +210,13 @@ func (*ListRequest) Descriptor() ([]byte, []int) {
 func (x *ListRequest) GetSessionId() string {
 	if x != nil {
 		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ListRequest) GetId() string {
+	if x != nil {
+		return x.Id
 	}
 	return ""
 }
@@ -257,10 +267,8 @@ func (x *ListResponse) GetProcesses() []*Process {
 
 type KillRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Id of the process, or the start of one
-	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Session the process must belong to, any session's when empty
-	SessionId     string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// Id of the process, or the start of one, in whichever session it runs
+	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -298,13 +306,6 @@ func (*KillRequest) Descriptor() ([]byte, []int) {
 func (x *KillRequest) GetId() string {
 	if x != nil {
 		return x.Id
-	}
-	return ""
-}
-
-func (x *KillRequest) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
 	}
 	return ""
 }
@@ -364,7 +365,7 @@ func (x *KillResponse) GetError() string {
 
 type StopRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Session whose processes to stop, every session's when empty
+	// Session whose running processes stop, those started outside a session when empty
 	SessionId     string `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -454,9 +455,16 @@ func (x *StopResponse) GetKilled() int32 {
 type Check struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Ok    bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
-	Label string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
-	// What was found or what is missing
-	Detail        string `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
+	// What was checked, in a few words, such as Docker daemon
+	Label string `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	// What was found, a sentence; empty when the state says it all
+	Detail string `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
+	// How it stands in a word or two, such as Running or Not set
+	State string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	// What to do about it when it failed, in a person's words
+	Fix string `protobuf:"bytes,5,opt,name=fix,proto3" json:"fix,omitempty"`
+	// Key of the setting that fixes it, empty when the fix is outside icebath
+	Setting       string `protobuf:"bytes,6,opt,name=setting,proto3" json:"setting,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -512,6 +520,27 @@ func (x *Check) GetDetail() string {
 	return ""
 }
 
+func (x *Check) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Check) GetFix() string {
+	if x != nil {
+		return x.Fix
+	}
+	return ""
+}
+
+func (x *Check) GetSetting() string {
+	if x != nil {
+		return x.Setting
+	}
+	return ""
+}
+
 type Backend struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Value of terminal.backend that picks it
@@ -519,16 +548,22 @@ type Backend struct {
 	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	About string `protobuf:"bytes,3,opt,name=about,proto3" json:"about,omitempty"`
 	// The profile's commands run on it
-	Selected bool `protobuf:"varint,4,opt,name=selected,proto3" json:"selected,omitempty"`
-	// Why it can't run with the profile's settings, empty when it can
-	Unavailable string   `protobuf:"bytes,5,opt,name=unavailable,proto3" json:"unavailable,omitempty"`
-	Checks      []*Check `protobuf:"bytes,6,rep,name=checks,proto3" json:"checks,omitempty"`
-	// What the user does to make it usable
-	Setup []string `protobuf:"bytes,7,rep,name=setup,proto3" json:"setup,omitempty"`
+	Selected bool     `protobuf:"varint,4,opt,name=selected,proto3" json:"selected,omitempty"`
+	Checks   []*Check `protobuf:"bytes,6,rep,name=checks,proto3" json:"checks,omitempty"`
 	// Key of the section of its own settings, empty when it has none
 	Section string `protobuf:"bytes,8,opt,name=section,proto3" json:"section,omitempty"`
 	// Has something to get ready before commands run there, such as an image to build
-	Prepares      bool `protobuf:"varint,9,opt,name=prepares,proto3" json:"prepares,omitempty"`
+	Prepares bool `protobuf:"varint,9,opt,name=prepares,proto3" json:"prepares,omitempty"`
+	// How it stands in the state words: Ready, Needs setup or Can't run
+	State string `protobuf:"bytes,10,opt,name=state,proto3" json:"state,omitempty"`
+	// Commands can run there now
+	Ready bool `protobuf:"varint,11,opt,name=ready,proto3" json:"ready,omitempty"`
+	// This computer lacks what it needs, such as its program, so nothing on its page makes it run
+	Missing bool `protobuf:"varint,12,opt,name=missing,proto3" json:"missing,omitempty"`
+	// What keeps it from running, a sentence; empty while it is ready
+	Why string `protobuf:"bytes,13,opt,name=why,proto3" json:"why,omitempty"`
+	// What getting it ready does, a sentence; empty when it needs nothing readied
+	Readies       string `protobuf:"bytes,14,opt,name=readies,proto3" json:"readies,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -591,23 +626,9 @@ func (x *Backend) GetSelected() bool {
 	return false
 }
 
-func (x *Backend) GetUnavailable() string {
-	if x != nil {
-		return x.Unavailable
-	}
-	return ""
-}
-
 func (x *Backend) GetChecks() []*Check {
 	if x != nil {
 		return x.Checks
-	}
-	return nil
-}
-
-func (x *Backend) GetSetup() []string {
-	if x != nil {
-		return x.Setup
 	}
 	return nil
 }
@@ -624,6 +645,41 @@ func (x *Backend) GetPrepares() bool {
 		return x.Prepares
 	}
 	return false
+}
+
+func (x *Backend) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Backend) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *Backend) GetMissing() bool {
+	if x != nil {
+		return x.Missing
+	}
+	return false
+}
+
+func (x *Backend) GetWhy() string {
+	if x != nil {
+		return x.Why
+	}
+	return ""
+}
+
+func (x *Backend) GetReadies() string {
+	if x != nil {
+		return x.Readies
+	}
+	return ""
 }
 
 type BackendsRequest struct {
@@ -672,9 +728,11 @@ func (x *BackendsRequest) GetProfile() string {
 }
 
 type BackendsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	Backends      []*Backend             `protobuf:"bytes,2,rep,name=backends,proto3" json:"backends,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Profile  string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Backends []*Backend             `protobuf:"bytes,2,rep,name=backends,proto3" json:"backends,omitempty"`
+	// Environment variable that names the backend in use over the settings, empty when none does
+	Variable      string `protobuf:"bytes,3,opt,name=variable,proto3" json:"variable,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -723,6 +781,120 @@ func (x *BackendsResponse) GetBackends() []*Backend {
 	return nil
 }
 
+func (x *BackendsResponse) GetVariable() string {
+	if x != nil {
+		return x.Variable
+	}
+	return ""
+}
+
+type UseRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Backend string                 `protobuf:"bytes,1,opt,name=backend,proto3" json:"backend,omitempty"`
+	// Profile whose commands run there, the one in use when empty
+	Profile       string `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UseRequest) Reset() {
+	*x = UseRequest{}
+	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UseRequest) ProtoMessage() {}
+
+func (x *UseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UseRequest.ProtoReflect.Descriptor instead.
+func (*UseRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_terminal_v1_terminal_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *UseRequest) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
+func (x *UseRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type UseResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What changed, in one or two sentences
+	Note string `protobuf:"bytes,1,opt,name=note,proto3" json:"note,omitempty"`
+	// A variable of the environment names another backend, which the profile's commands still run on
+	Held          bool `protobuf:"varint,2,opt,name=held,proto3" json:"held,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UseResponse) Reset() {
+	*x = UseResponse{}
+	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UseResponse) ProtoMessage() {}
+
+func (x *UseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UseResponse.ProtoReflect.Descriptor instead.
+func (*UseResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_terminal_v1_terminal_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *UseResponse) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *UseResponse) GetHeld() bool {
+	if x != nil {
+		return x.Held
+	}
+	return false
+}
+
 type PrepareRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Backend string                 `protobuf:"bytes,1,opt,name=backend,proto3" json:"backend,omitempty"`
@@ -734,7 +906,7 @@ type PrepareRequest struct {
 
 func (x *PrepareRequest) Reset() {
 	*x = PrepareRequest{}
-	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[11]
+	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -746,7 +918,7 @@ func (x *PrepareRequest) String() string {
 func (*PrepareRequest) ProtoMessage() {}
 
 func (x *PrepareRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[11]
+	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -759,7 +931,7 @@ func (x *PrepareRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareRequest.ProtoReflect.Descriptor instead.
 func (*PrepareRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_terminal_v1_terminal_proto_rawDescGZIP(), []int{11}
+	return file_icebath_terminal_v1_terminal_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *PrepareRequest) GetBackend() string {
@@ -789,7 +961,7 @@ type PrepareResponse struct {
 
 func (x *PrepareResponse) Reset() {
 	*x = PrepareResponse{}
-	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[12]
+	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -801,7 +973,7 @@ func (x *PrepareResponse) String() string {
 func (*PrepareResponse) ProtoMessage() {}
 
 func (x *PrepareResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[12]
+	mi := &file_icebath_terminal_v1_terminal_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -814,7 +986,7 @@ func (x *PrepareResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareResponse.ProtoReflect.Descriptor instead.
 func (*PrepareResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_terminal_v1_terminal_proto_rawDescGZIP(), []int{12}
+	return file_icebath_terminal_v1_terminal_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *PrepareResponse) GetLine() string {
@@ -859,16 +1031,15 @@ const file_icebath_terminal_v1_terminal_proto_rawDesc = "" +
 	"\voutput_tail\x18\v \x01(\tR\n" +
 	"outputTail\x12\x10\n" +
 	"\x03cwd\x18\f \x01(\tR\x03cwd\x12\x10\n" +
-	"\x03pid\x18\r \x01(\x05R\x03pid\",\n" +
+	"\x03pid\x18\r \x01(\x05R\x03pid\"<\n" +
 	"\vListRequest\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\"J\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\"J\n" +
 	"\fListResponse\x12:\n" +
-	"\tprocesses\x18\x01 \x03(\v2\x1c.icebath.terminal.v1.ProcessR\tprocesses\"<\n" +
+	"\tprocesses\x18\x01 \x03(\v2\x1c.icebath.terminal.v1.ProcessR\tprocesses\"#\n" +
 	"\vKillRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\"<\n" +
+	"\x02id\x18\x01 \x01(\tR\x02idJ\x04\b\x02\x10\x03\"<\n" +
 	"\fKillResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\",\n" +
@@ -876,26 +1047,41 @@ const file_icebath_terminal_v1_terminal_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"&\n" +
 	"\fStopResponse\x12\x16\n" +
-	"\x06killed\x18\x01 \x01(\x05R\x06killed\"E\n" +
+	"\x06killed\x18\x01 \x01(\x05R\x06killed\"\x87\x01\n" +
 	"\x05Check\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x16\n" +
-	"\x06detail\x18\x03 \x01(\tR\x06detail\"\x87\x02\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detail\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x12\x10\n" +
+	"\x03fix\x18\x05 \x01(\tR\x03fix\x12\x18\n" +
+	"\asetting\x18\x06 \x01(\tR\asetting\"\xcd\x02\n" +
 	"\aBackend\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
 	"\x05about\x18\x03 \x01(\tR\x05about\x12\x1a\n" +
-	"\bselected\x18\x04 \x01(\bR\bselected\x12 \n" +
-	"\vunavailable\x18\x05 \x01(\tR\vunavailable\x122\n" +
-	"\x06checks\x18\x06 \x03(\v2\x1a.icebath.terminal.v1.CheckR\x06checks\x12\x14\n" +
-	"\x05setup\x18\a \x03(\tR\x05setup\x12\x18\n" +
+	"\bselected\x18\x04 \x01(\bR\bselected\x122\n" +
+	"\x06checks\x18\x06 \x03(\v2\x1a.icebath.terminal.v1.CheckR\x06checks\x12\x18\n" +
 	"\asection\x18\b \x01(\tR\asection\x12\x1a\n" +
-	"\bprepares\x18\t \x01(\bR\bprepares\"+\n" +
+	"\bprepares\x18\t \x01(\bR\bprepares\x12\x14\n" +
+	"\x05state\x18\n" +
+	" \x01(\tR\x05state\x12\x14\n" +
+	"\x05ready\x18\v \x01(\bR\x05ready\x12\x18\n" +
+	"\amissing\x18\f \x01(\bR\amissing\x12\x10\n" +
+	"\x03why\x18\r \x01(\tR\x03why\x12\x18\n" +
+	"\areadies\x18\x0e \x01(\tR\areadiesJ\x04\b\x05\x10\x06J\x04\b\a\x10\b\"+\n" +
 	"\x0fBackendsRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"f\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"\x82\x01\n" +
 	"\x10BackendsResponse\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x128\n" +
-	"\bbackends\x18\x02 \x03(\v2\x1c.icebath.terminal.v1.BackendR\bbackends\"D\n" +
+	"\bbackends\x18\x02 \x03(\v2\x1c.icebath.terminal.v1.BackendR\bbackends\x12\x1a\n" +
+	"\bvariable\x18\x03 \x01(\tR\bvariable\"@\n" +
+	"\n" +
+	"UseRequest\x12\x18\n" +
+	"\abackend\x18\x01 \x01(\tR\abackend\x12\x18\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\"5\n" +
+	"\vUseResponse\x12\x12\n" +
+	"\x04note\x18\x01 \x01(\tR\x04note\x12\x12\n" +
+	"\x04held\x18\x02 \x01(\bR\x04held\"D\n" +
 	"\x0ePrepareRequest\x12\x18\n" +
 	"\abackend\x18\x01 \x01(\tR\abackend\x12\x18\n" +
 	"\aprofile\x18\x02 \x01(\tR\aprofile\"O\n" +
@@ -906,10 +1092,11 @@ const file_icebath_terminal_v1_terminal_proto_rawDesc = "" +
 	"\x0eProcessService\x12K\n" +
 	"\x04List\x12 .icebath.terminal.v1.ListRequest\x1a!.icebath.terminal.v1.ListResponse\x12K\n" +
 	"\x04Kill\x12 .icebath.terminal.v1.KillRequest\x1a!.icebath.terminal.v1.KillResponse\x12K\n" +
-	"\x04Stop\x12 .icebath.terminal.v1.StopRequest\x1a!.icebath.terminal.v1.StopResponse2\xc1\x01\n" +
+	"\x04Stop\x12 .icebath.terminal.v1.StopRequest\x1a!.icebath.terminal.v1.StopResponse2\x8b\x02\n" +
 	"\x0eBackendService\x12W\n" +
 	"\bBackends\x12$.icebath.terminal.v1.BackendsRequest\x1a%.icebath.terminal.v1.BackendsResponse\x12V\n" +
-	"\aPrepare\x12#.icebath.terminal.v1.PrepareRequest\x1a$.icebath.terminal.v1.PrepareResponse0\x01B\xdb\x01\n" +
+	"\aPrepare\x12#.icebath.terminal.v1.PrepareRequest\x1a$.icebath.terminal.v1.PrepareResponse0\x01\x12H\n" +
+	"\x03Use\x12\x1f.icebath.terminal.v1.UseRequest\x1a .icebath.terminal.v1.UseResponseB\xdb\x01\n" +
 	"\x17com.icebath.terminal.v1B\rTerminalProtoP\x01ZCgithub.com/nickheyer/icebath/pkg/gen/icebath/terminal/v1;terminalv1\xa2\x02\x03ITX\xaa\x02\x13Icebath.Terminal.V1\xca\x02\x13Icebath\\Terminal\\V1\xe2\x02\x1fIcebath\\Terminal\\V1\\GPBMetadata\xea\x02\x15Icebath::Terminal::V1b\x06proto3"
 
 var (
@@ -924,7 +1111,7 @@ func file_icebath_terminal_v1_terminal_proto_rawDescGZIP() []byte {
 	return file_icebath_terminal_v1_terminal_proto_rawDescData
 }
 
-var file_icebath_terminal_v1_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_icebath_terminal_v1_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_icebath_terminal_v1_terminal_proto_goTypes = []any{
 	(*Process)(nil),          // 0: icebath.terminal.v1.Process
 	(*ListRequest)(nil),      // 1: icebath.terminal.v1.ListRequest
@@ -937,8 +1124,10 @@ var file_icebath_terminal_v1_terminal_proto_goTypes = []any{
 	(*Backend)(nil),          // 8: icebath.terminal.v1.Backend
 	(*BackendsRequest)(nil),  // 9: icebath.terminal.v1.BackendsRequest
 	(*BackendsResponse)(nil), // 10: icebath.terminal.v1.BackendsResponse
-	(*PrepareRequest)(nil),   // 11: icebath.terminal.v1.PrepareRequest
-	(*PrepareResponse)(nil),  // 12: icebath.terminal.v1.PrepareResponse
+	(*UseRequest)(nil),       // 11: icebath.terminal.v1.UseRequest
+	(*UseResponse)(nil),      // 12: icebath.terminal.v1.UseResponse
+	(*PrepareRequest)(nil),   // 13: icebath.terminal.v1.PrepareRequest
+	(*PrepareResponse)(nil),  // 14: icebath.terminal.v1.PrepareResponse
 }
 var file_icebath_terminal_v1_terminal_proto_depIdxs = []int32{
 	0,  // 0: icebath.terminal.v1.ListResponse.processes:type_name -> icebath.terminal.v1.Process
@@ -948,14 +1137,16 @@ var file_icebath_terminal_v1_terminal_proto_depIdxs = []int32{
 	3,  // 4: icebath.terminal.v1.ProcessService.Kill:input_type -> icebath.terminal.v1.KillRequest
 	5,  // 5: icebath.terminal.v1.ProcessService.Stop:input_type -> icebath.terminal.v1.StopRequest
 	9,  // 6: icebath.terminal.v1.BackendService.Backends:input_type -> icebath.terminal.v1.BackendsRequest
-	11, // 7: icebath.terminal.v1.BackendService.Prepare:input_type -> icebath.terminal.v1.PrepareRequest
-	2,  // 8: icebath.terminal.v1.ProcessService.List:output_type -> icebath.terminal.v1.ListResponse
-	4,  // 9: icebath.terminal.v1.ProcessService.Kill:output_type -> icebath.terminal.v1.KillResponse
-	6,  // 10: icebath.terminal.v1.ProcessService.Stop:output_type -> icebath.terminal.v1.StopResponse
-	10, // 11: icebath.terminal.v1.BackendService.Backends:output_type -> icebath.terminal.v1.BackendsResponse
-	12, // 12: icebath.terminal.v1.BackendService.Prepare:output_type -> icebath.terminal.v1.PrepareResponse
-	8,  // [8:13] is the sub-list for method output_type
-	3,  // [3:8] is the sub-list for method input_type
+	13, // 7: icebath.terminal.v1.BackendService.Prepare:input_type -> icebath.terminal.v1.PrepareRequest
+	11, // 8: icebath.terminal.v1.BackendService.Use:input_type -> icebath.terminal.v1.UseRequest
+	2,  // 9: icebath.terminal.v1.ProcessService.List:output_type -> icebath.terminal.v1.ListResponse
+	4,  // 10: icebath.terminal.v1.ProcessService.Kill:output_type -> icebath.terminal.v1.KillResponse
+	6,  // 11: icebath.terminal.v1.ProcessService.Stop:output_type -> icebath.terminal.v1.StopResponse
+	10, // 12: icebath.terminal.v1.BackendService.Backends:output_type -> icebath.terminal.v1.BackendsResponse
+	14, // 13: icebath.terminal.v1.BackendService.Prepare:output_type -> icebath.terminal.v1.PrepareResponse
+	12, // 14: icebath.terminal.v1.BackendService.Use:output_type -> icebath.terminal.v1.UseResponse
+	9,  // [9:15] is the sub-list for method output_type
+	3,  // [3:9] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name
@@ -972,7 +1163,7 @@ func file_icebath_terminal_v1_terminal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_terminal_v1_terminal_proto_rawDesc), len(file_icebath_terminal_v1_terminal_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

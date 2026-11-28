@@ -21,22 +21,26 @@ func Register(cfg *config.Config) {
 		Key:    ImageKey,
 		Parent: generationconfig.ImageKey,
 		Title:  "xAI",
-		About:  "Grok images and edits, with an xAI API key or sign-in",
+		About:  "Grok images and edits, with an xAI account",
 		Order:  50,
 		Settings: append([]config.Setting{
-			{Key: ImageModel, Title: "Model", About: "The xAI model that makes images.", Help: "When neither model is set, xAI's default image model is used.",
-				Default: "", Zero: "The general model", Env: []string{"XAI_IMAGE_MODEL"}},
+			{Key: ImageModel, Title: "Model", About: "The xAI model that makes images.", Default: "", Zero: "xAI's default", Env: []string{"XAI_IMAGE_MODEL"},
+				Picks: generationconfig.ImageModelOf(Name)},
 			{Key: Resolution, Title: "Resolution", About: "Which size xAI makes images at.", Default: "1k",
 				Options: config.Options(config.Option{Value: "1k", Title: "1K", About: "About one megapixel"}, config.Option{Value: "2k", Title: "2K",
 					About: "About four megapixels"})},
 		}, storage(ImageKey, "images")...),
 	}})
 	cfg.Register(config.Sections{{
-		Key:      VideoKey,
-		Parent:   generationconfig.VideoKey,
-		Title:    "xAI",
-		About:    "Grok videos you can edit and extend, with an xAI API key",
-		Order:    20,
-		Settings: storage(VideoKey, "videos"),
+		Key:    VideoKey,
+		Parent: generationconfig.VideoKey,
+		Title:  "xAI",
+		About:  "Grok videos you can edit and extend, with an xAI account",
+		Order:  20,
+		Settings: append([]config.Setting{
+			{Key: VideoModel, Title: "Model", About: "The xAI model that makes videos from text.",
+				Help: "A video made from a still always uses Grok Imagine Video 1.5.", Default: "", Zero: "Grok Imagine Video",
+				Picks: generationconfig.VideoModelOf(Name)},
+		}, storage(VideoKey, "videos")...),
 	}})
 }

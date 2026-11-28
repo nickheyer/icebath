@@ -7,12 +7,18 @@ service ApprovalsService {
   rpc Test(TestRequest) returns (TestResponse);
   // Allowlist entries proposed from the flagged commands the user kept approving
   rpc Suggest(SuggestRequest) returns (SuggestResponse);
-  // The allowlist and the kinds of risky action it can hold
+  // The allowlist as every page shows it, the kinds of risky action it can hold, and whether a session skips asking
   rpc List(ListRequest) returns (ListResponse);
   // Adds entries to the allowlist
   rpc Allow(AllowRequest) returns (AllowResponse);
   // Takes entries out of the allowlist
   rpc Disallow(DisallowRequest) returns (DisallowResponse);
+  // Puts one allowed command or pattern in the place of another
+  rpc Change(ChangeRequest) returns (ChangeResponse);
+  // Sets when the agent asks before risky commands, for every session of the profile
+  rpc Mode(ModeRequest) returns (ModeResponse);
+  // Skips asking in one session, or asks again
+  rpc Skip(SkipRequest) returns (SkipResponse);
 }
 
 message TestRequest {
@@ -71,6 +77,8 @@ message SuggestResponse {
 
 message ListRequest {
   string profile = 1;
+  // Session asked whether it skips asking, none when empty
+  string session = 2;
 }
 
 // Kind of risky action the allowlist can hold, and the tool or rule that asks about it
@@ -79,9 +87,30 @@ message Kind {
   string about = 2;
 }
 
+// One entry of the allowlist as every page shows it
+message Entry {
+  string value = 1;
+  // kind for a kind of risky action, pattern for a pattern of commands, command for one command exactly
+  string kind = 2;
+  // How a person reads it
+  string title = 3;
+  // What it lets through, in a few words
+  string through = 4;
+  // What asks about it, for a kind of risky action
+  string about = 5;
+}
+
 message ListResponse {
+  // Entries in the order the allowlist keeps them: kinds of risky action, then patterns, then commands
   repeated string allowed = 1;
   repeated Kind kinds = 2;
+  repeated Entry entries = 3;
+  // The session asked about skips asking
+  bool skipped = 4;
+  // What wins over When to ask now, as a sentence, empty while nothing does
+  string winning = 5;
+  // Every session runs without asking since icebath started with ICEBATH_YOLO_MODE set
+  bool launched = 6;
 }
 
 message AllowRequest {
@@ -102,3 +131,31 @@ message DisallowRequest {
 }
 
 message DisallowResponse {}
+
+message ChangeRequest {
+  string profile = 1;
+  string old = 2;
+  string new = 3;
+}
+
+message ChangeResponse {}
+
+message ModeRequest {
+  string profile = 1;
+  // manual, smart or off
+  string mode = 2;
+}
+
+message ModeResponse {
+  // What the row of When to ask says once it changed, and what wins over it
+  string note = 1;
+}
+
+message SkipRequest {
+  string session = 1;
+  bool on = 2;
+}
+
+message SkipResponse {
+  string note = 1;
+}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/nickheyer/icebath/internal/credentials"
@@ -55,15 +54,12 @@ func signInEntra(p *credentials.Prompter) (credentials.Signed, error) {
 			if path == "" {
 				return credentials.Signed{}, errors.New("A service principal needs its client secret or its certificate.")
 			}
-			if rest, ok := strings.CutPrefix(path, "~"); ok {
-				if home, err := os.UserHomeDir(); err == nil {
-					path = filepath.Join(home, rest)
-				}
+			// The one rule of a path: the whole path, ~ the home folder, the file there
+			located, err := azurefoundryconfig.CertificateFile.Located(path)
+			if err != nil {
+				return credentials.Signed{}, err
 			}
-			if absolute, err := filepath.Abs(path); err == nil {
-				path = absolute
-			}
-			fields[azurefoundryconfig.CertificatePath] = path
+			fields[azurefoundryconfig.CertificatePath] = located
 			password, err := ask("Certificate password, or empty for none: ", true)
 			if err != nil {
 				return credentials.Signed{}, err

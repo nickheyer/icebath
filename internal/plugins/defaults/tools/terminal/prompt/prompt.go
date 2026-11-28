@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/internal/prompt"
 	"github.com/nickheyer/icebath/internal/terminal"
 	hostconfig "github.com/nickheyer/icebath/internal/terminal/config"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 // Heading and end marker of the runtime environment block
@@ -112,7 +113,7 @@ func local(env *prompt.Env) []string {
 func cwd(env *prompt.Env) string {
 	configured := strings.TrimSpace(env.Config.GetString(hostconfig.Cwd))
 	if !terminal.Placeholder(configured) {
-		path := terminal.ExpandUser(configured)
+		path := fsx.ExpandHome(configured)
 		if st, err := os.Stat(path); err == nil && st.IsDir() {
 			return path
 		}

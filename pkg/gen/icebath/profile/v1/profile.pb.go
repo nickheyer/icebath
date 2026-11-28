@@ -46,8 +46,12 @@ type Profile struct {
 	DisplayName     string   `protobuf:"bytes,16,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	BotTitle        string   `protobuf:"bytes,17,opt,name=bot_title,json=botTitle,proto3" json:"bot_title,omitempty"`
 	PreviousNames   []string `protobuf:"bytes,18,rep,name=previous_names,json=previousNames,proto3" json:"previous_names,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// It gets every skill that comes with icebath, not only the essential ones
+	Bundled bool `protobuf:"varint,19,opt,name=bundled,proto3" json:"bundled,omitempty"`
+	// It keeps pulling what another profile imports from other agents
+	SyncImports   bool `protobuf:"varint,20,opt,name=sync_imports,json=syncImports,proto3" json:"sync_imports,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Profile) Reset() {
@@ -204,6 +208,20 @@ func (x *Profile) GetPreviousNames() []string {
 		return x.PreviousNames
 	}
 	return nil
+}
+
+func (x *Profile) GetBundled() bool {
+	if x != nil {
+		return x.Bundled
+	}
+	return false
+}
+
+func (x *Profile) GetSyncImports() bool {
+	if x != nil {
+		return x.SyncImports
+	}
+	return false
 }
 
 type ListRequest struct {
@@ -397,7 +415,7 @@ type CreateRequest struct {
 	NoSkills    bool   `protobuf:"varint,7,opt,name=no_skills,json=noSkills,proto3" json:"no_skills,omitempty"`
 	Description string `protobuf:"bytes,8,opt,name=description,proto3" json:"description,omitempty"`
 	Soul        string `protobuf:"bytes,9,opt,name=soul,proto3" json:"soul,omitempty"`
-	// Takes no keys, logins or model from the profile in use
+	// Takes no keys, sign-ins or model: from the profile in use for a fresh one, from the source for a copy
 	NoCredentials bool   `protobuf:"varint,10,opt,name=no_credentials,json=noCredentials,proto3" json:"no_credentials,omitempty"`
 	Model         string `protobuf:"bytes,11,opt,name=model,proto3" json:"model,omitempty"`
 	Provider      string `protobuf:"bytes,12,opt,name=provider,proto3" json:"provider,omitempty"`
@@ -672,13 +690,14 @@ func (x *DeleteRequest) GetName() string {
 type DeleteResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Path  string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	// What the delete did, line by line: before the profile's alias is removed, and after
-	Lines []string `protobuf:"bytes,2,rep,name=lines,proto3" json:"lines,omitempty"`
-	Later []string `protobuf:"bytes,5,rep,name=later,proto3" json:"later,omitempty"`
-	// Every feature removed what it keeps of the profile
-	Settled bool `protobuf:"varint,3,opt,name=settled,proto3" json:"settled,omitempty"`
+	// What the delete did besides deleting, each a sentence
+	Done []string `protobuf:"bytes,2,rep,name=done,proto3" json:"done,omitempty"`
+	// What failed, each a sentence, the profile deleted all the same
+	Failed []string `protobuf:"bytes,3,rep,name=failed,proto3" json:"failed,omitempty"`
+	// Every feature removed what it keeps of the profile; PurgeIdentity removes the rest
+	Settled bool `protobuf:"varint,4,opt,name=settled,proto3" json:"settled,omitempty"`
 	// Why the folder would not go, the rest done all the same
-	Failure       string `protobuf:"bytes,4,opt,name=failure,proto3" json:"failure,omitempty"`
+	Failure       string `protobuf:"bytes,5,opt,name=failure,proto3" json:"failure,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -720,16 +739,16 @@ func (x *DeleteResponse) GetPath() string {
 	return ""
 }
 
-func (x *DeleteResponse) GetLines() []string {
+func (x *DeleteResponse) GetDone() []string {
 	if x != nil {
-		return x.Lines
+		return x.Done
 	}
 	return nil
 }
 
-func (x *DeleteResponse) GetLater() []string {
+func (x *DeleteResponse) GetFailed() []string {
 	if x != nil {
-		return x.Later
+		return x.Failed
 	}
 	return nil
 }
@@ -891,11 +910,14 @@ func (x *RenameRequest) GetNew() string {
 type RenameResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Path  string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	// What the rename did, line by line: before the profile's alias follows it, and after
-	Lines []string `protobuf:"bytes,2,rep,name=lines,proto3" json:"lines,omitempty"`
-	Later []string `protobuf:"bytes,4,rep,name=later,proto3" json:"later,omitempty"`
-	// Every feature moved what it keeps under the old name
-	Settled       bool `protobuf:"varint,3,opt,name=settled,proto3" json:"settled,omitempty"`
+	// Name the profile has now, or the name the default profile shows
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// What the rename did besides renaming, each a sentence
+	Done []string `protobuf:"bytes,3,rep,name=done,proto3" json:"done,omitempty"`
+	// What failed, each a sentence, the profile renamed all the same
+	Failed []string `protobuf:"bytes,4,rep,name=failed,proto3" json:"failed,omitempty"`
+	// Every feature moved what it keeps under the old name; MigrateIdentity moves the rest
+	Settled       bool `protobuf:"varint,5,opt,name=settled,proto3" json:"settled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -937,16 +959,23 @@ func (x *RenameResponse) GetPath() string {
 	return ""
 }
 
-func (x *RenameResponse) GetLines() []string {
+func (x *RenameResponse) GetName() string {
 	if x != nil {
-		return x.Lines
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RenameResponse) GetDone() []string {
+	if x != nil {
+		return x.Done
 	}
 	return nil
 }
 
-func (x *RenameResponse) GetLater() []string {
+func (x *RenameResponse) GetFailed() []string {
 	if x != nil {
-		return x.Later
+		return x.Failed
 	}
 	return nil
 }
@@ -1214,8 +1243,8 @@ func (x *PurgeIdentityRequest) GetName() string {
 
 type PurgeIdentityResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// What failed again, line by line
-	Lines         []string `protobuf:"bytes,1,rep,name=lines,proto3" json:"lines,omitempty"`
+	// What failed again, each a sentence
+	Failed        []string `protobuf:"bytes,1,rep,name=failed,proto3" json:"failed,omitempty"`
 	Settled       bool     `protobuf:"varint,2,opt,name=settled,proto3" json:"settled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1251,9 +1280,9 @@ func (*PurgeIdentityResponse) Descriptor() ([]byte, []int) {
 	return file_icebath_profile_v1_profile_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *PurgeIdentityResponse) GetLines() []string {
+func (x *PurgeIdentityResponse) GetFailed() []string {
 	if x != nil {
-		return x.Lines
+		return x.Failed
 	}
 	return nil
 }
@@ -1319,9 +1348,10 @@ func (x *MigrateIdentityRequest) GetNew() string {
 
 type MigrateIdentityResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// What moved and what failed again, line by line
-	Lines         []string `protobuf:"bytes,1,rep,name=lines,proto3" json:"lines,omitempty"`
-	Settled       bool     `protobuf:"varint,2,opt,name=settled,proto3" json:"settled,omitempty"`
+	// What moved, and what failed again, each a sentence
+	Done          []string `protobuf:"bytes,1,rep,name=done,proto3" json:"done,omitempty"`
+	Failed        []string `protobuf:"bytes,2,rep,name=failed,proto3" json:"failed,omitempty"`
+	Settled       bool     `protobuf:"varint,3,opt,name=settled,proto3" json:"settled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1356,9 +1386,16 @@ func (*MigrateIdentityResponse) Descriptor() ([]byte, []int) {
 	return file_icebath_profile_v1_profile_proto_rawDescGZIP(), []int{19}
 }
 
-func (x *MigrateIdentityResponse) GetLines() []string {
+func (x *MigrateIdentityResponse) GetDone() []string {
 	if x != nil {
-		return x.Lines
+		return x.Done
+	}
+	return nil
+}
+
+func (x *MigrateIdentityResponse) GetFailed() []string {
+	if x != nil {
+		return x.Failed
 	}
 	return nil
 }
@@ -2262,11 +2299,204 @@ func (x *InfoResponse) GetManifest() *Manifest {
 	return nil
 }
 
+type BundledRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	On            bool                   `protobuf:"varint,2,opt,name=on,proto3" json:"on,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BundledRequest) Reset() {
+	*x = BundledRequest{}
+	mi := &file_icebath_profile_v1_profile_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BundledRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BundledRequest) ProtoMessage() {}
+
+func (x *BundledRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_profile_v1_profile_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BundledRequest.ProtoReflect.Descriptor instead.
+func (*BundledRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_profile_v1_profile_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *BundledRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *BundledRequest) GetOn() bool {
+	if x != nil {
+		return x.On
+	}
+	return false
+}
+
+type BundledResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What changed, as a sentence
+	Note          string `protobuf:"bytes,1,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BundledResponse) Reset() {
+	*x = BundledResponse{}
+	mi := &file_icebath_profile_v1_profile_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BundledResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BundledResponse) ProtoMessage() {}
+
+func (x *BundledResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_profile_v1_profile_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BundledResponse.ProtoReflect.Descriptor instead.
+func (*BundledResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_profile_v1_profile_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *BundledResponse) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type SyncImportsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	On            bool                   `protobuf:"varint,2,opt,name=on,proto3" json:"on,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SyncImportsRequest) Reset() {
+	*x = SyncImportsRequest{}
+	mi := &file_icebath_profile_v1_profile_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncImportsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncImportsRequest) ProtoMessage() {}
+
+func (x *SyncImportsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_profile_v1_profile_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncImportsRequest.ProtoReflect.Descriptor instead.
+func (*SyncImportsRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_profile_v1_profile_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *SyncImportsRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SyncImportsRequest) GetOn() bool {
+	if x != nil {
+		return x.On
+	}
+	return false
+}
+
+type SyncImportsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Note          string                 `protobuf:"bytes,1,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SyncImportsResponse) Reset() {
+	*x = SyncImportsResponse{}
+	mi := &file_icebath_profile_v1_profile_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SyncImportsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SyncImportsResponse) ProtoMessage() {}
+
+func (x *SyncImportsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_profile_v1_profile_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SyncImportsResponse.ProtoReflect.Descriptor instead.
+func (*SyncImportsResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_profile_v1_profile_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *SyncImportsResponse) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
 var File_icebath_profile_v1_profile_proto protoreflect.FileDescriptor
 
 const file_icebath_profile_v1_profile_proto_rawDesc = "" +
 	"\n" +
-	" icebath/profile/v1/profile.proto\x12\x12icebath.profile.v1\"\xb5\x04\n" +
+	" icebath/profile/v1/profile.proto\x12\x12icebath.profile.v1\"\xf2\x04\n" +
 	"\aProfile\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06active\x18\x02 \x01(\bR\x06active\x12\x18\n" +
@@ -2286,7 +2516,9 @@ const file_icebath_profile_v1_profile_proto_rawDesc = "" +
 	"\x10description_auto\x18\x0f \x01(\bR\x0fdescriptionAuto\x12!\n" +
 	"\fdisplay_name\x18\x10 \x01(\tR\vdisplayName\x12\x1b\n" +
 	"\tbot_title\x18\x11 \x01(\tR\bbotTitle\x12%\n" +
-	"\x0eprevious_names\x18\x12 \x03(\tR\rpreviousNames\"\r\n" +
+	"\x0eprevious_names\x18\x12 \x03(\tR\rpreviousNames\x12\x18\n" +
+	"\abundled\x18\x13 \x01(\bR\abundled\x12!\n" +
+	"\fsync_imports\x18\x14 \x01(\bR\vsyncImports\"\r\n" +
 	"\vListRequest\"_\n" +
 	"\fListResponse\x127\n" +
 	"\bprofiles\x18\x01 \x03(\v2\x1b.icebath.profile.v1.ProfileR\bprofiles\x12\x16\n" +
@@ -2321,11 +2553,11 @@ const file_icebath_profile_v1_profile_proto_rawDesc = "" +
 	"\rDeleteRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"\x84\x01\n" +
 	"\x0eDeleteResponse\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\x12\x14\n" +
-	"\x05lines\x18\x02 \x03(\tR\x05lines\x12\x14\n" +
-	"\x05later\x18\x05 \x03(\tR\x05later\x12\x18\n" +
-	"\asettled\x18\x03 \x01(\bR\asettled\x12\x18\n" +
-	"\afailure\x18\x04 \x01(\tR\afailure\" \n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
+	"\x04done\x18\x02 \x03(\tR\x04done\x12\x16\n" +
+	"\x06failed\x18\x03 \x03(\tR\x06failed\x12\x18\n" +
+	"\asettled\x18\x04 \x01(\bR\asettled\x12\x18\n" +
+	"\afailure\x18\x05 \x01(\tR\afailure\" \n" +
 	"\n" +
 	"UseRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"D\n" +
@@ -2333,12 +2565,13 @@ const file_icebath_profile_v1_profile_proto_rawDesc = "" +
 	"\aprofile\x18\x01 \x01(\v2\x1b.icebath.profile.v1.ProfileR\aprofile\"3\n" +
 	"\rRenameRequest\x12\x10\n" +
 	"\x03old\x18\x01 \x01(\tR\x03old\x12\x10\n" +
-	"\x03new\x18\x02 \x01(\tR\x03new\"j\n" +
+	"\x03new\x18\x02 \x01(\tR\x03new\"~\n" +
 	"\x0eRenameResponse\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\x12\x14\n" +
-	"\x05lines\x18\x02 \x03(\tR\x05lines\x12\x14\n" +
-	"\x05later\x18\x04 \x03(\tR\x05later\x12\x18\n" +
-	"\asettled\x18\x03 \x01(\bR\asettled\"}\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04done\x18\x03 \x03(\tR\x04done\x12\x16\n" +
+	"\x06failed\x18\x04 \x03(\tR\x06failed\x12\x18\n" +
+	"\asettled\x18\x05 \x01(\bR\asettled\"}\n" +
 	"\x0fDescribeRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12\x12\n" +
@@ -2355,16 +2588,17 @@ const file_icebath_profile_v1_profile_proto_rawDesc = "" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12)\n" +
 	"\x10description_auto\x18\x03 \x01(\bR\x0fdescriptionAuto\"*\n" +
 	"\x14PurgeIdentityRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"G\n" +
-	"\x15PurgeIdentityResponse\x12\x14\n" +
-	"\x05lines\x18\x01 \x03(\tR\x05lines\x12\x18\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"I\n" +
+	"\x15PurgeIdentityResponse\x12\x16\n" +
+	"\x06failed\x18\x01 \x03(\tR\x06failed\x12\x18\n" +
 	"\asettled\x18\x02 \x01(\bR\asettled\"<\n" +
 	"\x16MigrateIdentityRequest\x12\x10\n" +
 	"\x03old\x18\x01 \x01(\tR\x03old\x12\x10\n" +
-	"\x03new\x18\x02 \x01(\tR\x03new\"I\n" +
-	"\x17MigrateIdentityResponse\x12\x14\n" +
-	"\x05lines\x18\x01 \x03(\tR\x05lines\x12\x18\n" +
-	"\asettled\x18\x02 \x01(\bR\asettled\"#\n" +
+	"\x03new\x18\x02 \x01(\tR\x03new\"_\n" +
+	"\x17MigrateIdentityResponse\x12\x12\n" +
+	"\x04done\x18\x01 \x03(\tR\x04done\x12\x16\n" +
+	"\x06failed\x18\x02 \x03(\tR\x06failed\x12\x18\n" +
+	"\asettled\x18\x03 \x01(\bR\asettled\"#\n" +
 	"\rExportRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"[\n" +
 	"\x0eExportResponse\x12\x18\n" +
@@ -2425,7 +2659,17 @@ const file_icebath_profile_v1_profile_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"^\n" +
 	"\fInfoResponse\x12\x14\n" +
 	"\x05found\x18\x01 \x01(\bR\x05found\x128\n" +
-	"\bmanifest\x18\x02 \x01(\v2\x1c.icebath.profile.v1.ManifestR\bmanifest2\xe7\t\n" +
+	"\bmanifest\x18\x02 \x01(\v2\x1c.icebath.profile.v1.ManifestR\bmanifest\"4\n" +
+	"\x0eBundledRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
+	"\x02on\x18\x02 \x01(\bR\x02on\"%\n" +
+	"\x0fBundledResponse\x12\x12\n" +
+	"\x04note\x18\x01 \x01(\tR\x04note\"8\n" +
+	"\x12SyncImportsRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
+	"\x02on\x18\x02 \x01(\bR\x02on\")\n" +
+	"\x13SyncImportsResponse\x12\x12\n" +
+	"\x04note\x18\x01 \x01(\tR\x04note2\x9b\v\n" +
 	"\x0eProfileService\x12I\n" +
 	"\x04List\x12\x1f.icebath.profile.v1.ListRequest\x1a .icebath.profile.v1.ListResponse\x12I\n" +
 	"\x04Show\x12\x1f.icebath.profile.v1.ShowRequest\x1a .icebath.profile.v1.ShowResponse\x12O\n" +
@@ -2441,7 +2685,9 @@ const file_icebath_profile_v1_profile_proto_rawDesc = "" +
 	"\x04Plan\x12\x1f.icebath.profile.v1.PlanRequest\x1a .icebath.profile.v1.PlanResponse\x12R\n" +
 	"\aInstall\x12\".icebath.profile.v1.InstallRequest\x1a#.icebath.profile.v1.InstallResponse\x12O\n" +
 	"\x06Update\x12!.icebath.profile.v1.UpdateRequest\x1a\".icebath.profile.v1.UpdateResponse\x12I\n" +
-	"\x04Info\x12\x1f.icebath.profile.v1.InfoRequest\x1a .icebath.profile.v1.InfoResponseB\xd3\x01\n" +
+	"\x04Info\x12\x1f.icebath.profile.v1.InfoRequest\x1a .icebath.profile.v1.InfoResponse\x12R\n" +
+	"\aBundled\x12\".icebath.profile.v1.BundledRequest\x1a#.icebath.profile.v1.BundledResponse\x12^\n" +
+	"\vSyncImports\x12&.icebath.profile.v1.SyncImportsRequest\x1a'.icebath.profile.v1.SyncImportsResponseB\xd3\x01\n" +
 	"\x16com.icebath.profile.v1B\fProfileProtoP\x01ZAgithub.com/nickheyer/icebath/pkg/gen/icebath/profile/v1;profilev1\xa2\x02\x03IPX\xaa\x02\x12Icebath.Profile.V1\xca\x02\x12Icebath\\Profile\\V1\xe2\x02\x1eIcebath\\Profile\\V1\\GPBMetadata\xea\x02\x14Icebath::Profile::V1b\x06proto3"
 
 var (
@@ -2456,7 +2702,7 @@ func file_icebath_profile_v1_profile_proto_rawDescGZIP() []byte {
 	return file_icebath_profile_v1_profile_proto_rawDescData
 }
 
-var file_icebath_profile_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_icebath_profile_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
 var file_icebath_profile_v1_profile_proto_goTypes = []any{
 	(*Profile)(nil),                 // 0: icebath.profile.v1.Profile
 	(*ListRequest)(nil),             // 1: icebath.profile.v1.ListRequest
@@ -2493,6 +2739,10 @@ var file_icebath_profile_v1_profile_proto_goTypes = []any{
 	(*UpdateResponse)(nil),          // 32: icebath.profile.v1.UpdateResponse
 	(*InfoRequest)(nil),             // 33: icebath.profile.v1.InfoRequest
 	(*InfoResponse)(nil),            // 34: icebath.profile.v1.InfoResponse
+	(*BundledRequest)(nil),          // 35: icebath.profile.v1.BundledRequest
+	(*BundledResponse)(nil),         // 36: icebath.profile.v1.BundledResponse
+	(*SyncImportsRequest)(nil),      // 37: icebath.profile.v1.SyncImportsRequest
+	(*SyncImportsResponse)(nil),     // 38: icebath.profile.v1.SyncImportsResponse
 }
 var file_icebath_profile_v1_profile_proto_depIdxs = []int32{
 	0,  // 0: icebath.profile.v1.ListResponse.profiles:type_name -> icebath.profile.v1.Profile
@@ -2521,23 +2771,27 @@ var file_icebath_profile_v1_profile_proto_depIdxs = []int32{
 	29, // 23: icebath.profile.v1.ProfileService.Install:input_type -> icebath.profile.v1.InstallRequest
 	31, // 24: icebath.profile.v1.ProfileService.Update:input_type -> icebath.profile.v1.UpdateRequest
 	33, // 25: icebath.profile.v1.ProfileService.Info:input_type -> icebath.profile.v1.InfoRequest
-	2,  // 26: icebath.profile.v1.ProfileService.List:output_type -> icebath.profile.v1.ListResponse
-	4,  // 27: icebath.profile.v1.ProfileService.Show:output_type -> icebath.profile.v1.ShowResponse
-	6,  // 28: icebath.profile.v1.ProfileService.Create:output_type -> icebath.profile.v1.CreateResponse
-	8,  // 29: icebath.profile.v1.ProfileService.Delete:output_type -> icebath.profile.v1.DeleteResponse
-	10, // 30: icebath.profile.v1.ProfileService.Use:output_type -> icebath.profile.v1.UseResponse
-	12, // 31: icebath.profile.v1.ProfileService.Rename:output_type -> icebath.profile.v1.RenameResponse
-	15, // 32: icebath.profile.v1.ProfileService.Describe:output_type -> icebath.profile.v1.DescribeResponse
-	17, // 33: icebath.profile.v1.ProfileService.PurgeIdentity:output_type -> icebath.profile.v1.PurgeIdentityResponse
-	19, // 34: icebath.profile.v1.ProfileService.MigrateIdentity:output_type -> icebath.profile.v1.MigrateIdentityResponse
-	21, // 35: icebath.profile.v1.ProfileService.Export:output_type -> icebath.profile.v1.ExportResponse
-	23, // 36: icebath.profile.v1.ProfileService.Import:output_type -> icebath.profile.v1.ImportResponse
-	28, // 37: icebath.profile.v1.ProfileService.Plan:output_type -> icebath.profile.v1.PlanResponse
-	30, // 38: icebath.profile.v1.ProfileService.Install:output_type -> icebath.profile.v1.InstallResponse
-	32, // 39: icebath.profile.v1.ProfileService.Update:output_type -> icebath.profile.v1.UpdateResponse
-	34, // 40: icebath.profile.v1.ProfileService.Info:output_type -> icebath.profile.v1.InfoResponse
-	26, // [26:41] is the sub-list for method output_type
-	11, // [11:26] is the sub-list for method input_type
+	35, // 26: icebath.profile.v1.ProfileService.Bundled:input_type -> icebath.profile.v1.BundledRequest
+	37, // 27: icebath.profile.v1.ProfileService.SyncImports:input_type -> icebath.profile.v1.SyncImportsRequest
+	2,  // 28: icebath.profile.v1.ProfileService.List:output_type -> icebath.profile.v1.ListResponse
+	4,  // 29: icebath.profile.v1.ProfileService.Show:output_type -> icebath.profile.v1.ShowResponse
+	6,  // 30: icebath.profile.v1.ProfileService.Create:output_type -> icebath.profile.v1.CreateResponse
+	8,  // 31: icebath.profile.v1.ProfileService.Delete:output_type -> icebath.profile.v1.DeleteResponse
+	10, // 32: icebath.profile.v1.ProfileService.Use:output_type -> icebath.profile.v1.UseResponse
+	12, // 33: icebath.profile.v1.ProfileService.Rename:output_type -> icebath.profile.v1.RenameResponse
+	15, // 34: icebath.profile.v1.ProfileService.Describe:output_type -> icebath.profile.v1.DescribeResponse
+	17, // 35: icebath.profile.v1.ProfileService.PurgeIdentity:output_type -> icebath.profile.v1.PurgeIdentityResponse
+	19, // 36: icebath.profile.v1.ProfileService.MigrateIdentity:output_type -> icebath.profile.v1.MigrateIdentityResponse
+	21, // 37: icebath.profile.v1.ProfileService.Export:output_type -> icebath.profile.v1.ExportResponse
+	23, // 38: icebath.profile.v1.ProfileService.Import:output_type -> icebath.profile.v1.ImportResponse
+	28, // 39: icebath.profile.v1.ProfileService.Plan:output_type -> icebath.profile.v1.PlanResponse
+	30, // 40: icebath.profile.v1.ProfileService.Install:output_type -> icebath.profile.v1.InstallResponse
+	32, // 41: icebath.profile.v1.ProfileService.Update:output_type -> icebath.profile.v1.UpdateResponse
+	34, // 42: icebath.profile.v1.ProfileService.Info:output_type -> icebath.profile.v1.InfoResponse
+	36, // 43: icebath.profile.v1.ProfileService.Bundled:output_type -> icebath.profile.v1.BundledResponse
+	38, // 44: icebath.profile.v1.ProfileService.SyncImports:output_type -> icebath.profile.v1.SyncImportsResponse
+	28, // [28:45] is the sub-list for method output_type
+	11, // [11:28] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
 	11, // [11:11] is the sub-list for extension extendee
 	0,  // [0:11] is the sub-list for field type_name
@@ -2554,7 +2808,7 @@ func file_icebath_profile_v1_profile_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_profile_v1_profile_proto_rawDesc), len(file_icebath_profile_v1_profile_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   35,
+			NumMessages:   39,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

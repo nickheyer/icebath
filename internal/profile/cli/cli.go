@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"connectrpc.com/connect/v2"
@@ -87,21 +86,12 @@ func reason(err error) string {
 
 // Prints why with the mark of a failure and ends the command with status 1
 func fail(w io.Writer, err error) error {
-	fmt.Fprintln(w, "✗ "+sentence(reason(err)))
+	fmt.Fprintln(w, "✗ "+strs.Sentence(reason(err)))
 	return cli.Exit(1)
 }
 
 func say(w io.Writer, format string, args ...any) {
 	fmt.Fprintf(w, format+"\n", args...)
-}
-
-// Text that ends as a sentence: trimmed, with a period added when it ends in no mark of its own
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?") {
-		return text
-	}
-	return text + "."
 }
 
 // Labels and their values, each value after its label padded to the widest
@@ -172,8 +162,10 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 			Long: "Shows the details of one profile, such as where it is kept and the model it uses.", Args: cobra.ExactArgs(1), RunE: c.show},
 		c.alias(),
 		&cobra.Command{Use: "rename <old_name> <new_name>", Short: "Rename a profile",
-			Long: "Renames the profile and its folder. The default profile keeps its folder, so for it rename only changes the name shown.",
-			Args: cobra.ExactArgs(2), RunE: c.rename},
+			Long: "Renames the profile and its folder. The default profile keeps its folder, so for it rename only changes the name shown, and an " +
+				"empty name shows it as default again.",
+			Example: "  icebath profile rename work research\n  icebath profile rename default Home\n  icebath profile rename default \"\"",
+			Args:    cobra.ExactArgs(2), RunE: c.rename},
 		&cobra.Command{Use: "purge-identity <profile_name>", Short: "Finish removing the data of a deleted profile",
 			Long: "Tries again to remove what icebath keeps about a deleted profile elsewhere, such as the routes of its sessions. Run " +
 				"purge-identity when delete says that this part failed.",
@@ -284,7 +276,7 @@ func (c *commandSet) create() *cobra.Command {
 		Short: "Create a profile",
 		Long: "Creates a profile with its own settings, keys, sessions and skills. Unless you pass --no-credentials, the profile takes your " +
 			"API keys, sign-ins and model from the profile in use, so the profile works at once. --clone also copies your settings, and --clone-from " +
-			"copies them from another profile.",
+			"copies them from another profile. A copy with --no-credentials keeps the settings without their keys and sign-ins.",
 		Example: "  icebath profile create work\n  icebath profile create review --clone-from work --description \"Code review\"",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -294,11 +286,6 @@ func (c *commandSet) create() *cobra.Command {
 				return fail(out, errors.New("Name the profile to copy from after --clone-from."))
 			}
 			cloned := clone || cmd.Flags().Changed("clone-from") || all
-			if cloned && noCredentials {
-				fmt.Fprintln(cmd.ErrOrStderr(), "✗ --no-credentials can't go with --clone, --clone-from or --clone-all, because a copy takes the keys of "+
-					"the profile it copies. Leave out one of them.")
-				return cli.Exit(1)
-			}
 			if (startModel == "") != (startProvider == "") {
 				return fail(out, errors.New("--model and --provider go together, because a model is set with the provider that runs it. Give both or neither."))
 			}
@@ -338,7 +325,7 @@ func (c *commandSet) create() *cobra.Command {
 				say(out, "%s", note)
 			}
 			for _, warning := range made.GetWarnings() {
-				say(out, "⚠ %s", sentence(warning))
+				say(out, "⚠ %s", strs.Sentence(warning))
 			}
 			display := profile.Tilde(made.GetPath())
 			// The alias opens the profile when there is one, else the flag does
@@ -371,7 +358,7 @@ func (c *commandSet) create() *cobra.Command {
 	f.BoolVar(&syncImports, "sync-imports", false, "Also copy the record of agents that the copied profile imported from")
 	f.BoolVar(&noAlias, "no-alias", false, "Make no alias command for the profile")
 	f.BoolVar(&isolated, "isolated-auth", false, "Copy the sign-ins of the profile in use once, as create always does")
-	f.BoolVar(&noCredentials, "no-credentials", false, "Take no API keys, sign-ins or model from the profile in use")
+	f.BoolVar(&noCredentials, "no-credentials", false, "Take no API keys, sign-ins or model from the profile in use or the one copied")
 	f.BoolVar(&noSkills, "no-skills", false, "Copy no built-in skills into the profile")
 	f.StringVar(&description, "description", "", "What the profile is for")
 	return cmd
@@ -392,22 +379,36 @@ func clonedPlugins(dir string) []string {
 	return out
 }
 
+// Says what an act did, each line marked done, then what failed, each marked so; empty lines are left out
+func report(out io.Writer, done, failed []string) {
+	for _, line := range done {
+		if line != "" {
+			say(out, "✓ %s", line)
+		}
+	}
+	for _, line := range failed {
+		if line != "" {
+			say(out, "⚠ %s", line)
+		}
+	}
+}
+
 // Writes the alias of a new profile and says where, why none was made, or that its folder is off the PATH; whether the alias opens it now
 func aliasCreated(out io.Writer, name string) bool {
 	collision, err := profile.Collision(name)
 	if err != nil {
-		say(out, "⚠ No alias was made: %s", sentence(err.Error()))
+		say(out, "⚠ No alias was made: %s", strs.Sentence(err.Error()))
 		return false
 	}
 	if collision != "" {
-		say(out, "\n⚠ No alias named %s was made. %s", name, sentence(collision))
+		say(out, "\n⚠ No alias named %s was made. %s", name, strs.Sentence(collision))
 		say(out, "  To give it another name, run icebath profile alias %s --name NAME.", name)
 		say(out, "  Or open the profile with icebath -p %s chat.", name)
 		return false
 	}
 	path, err := profile.MakeAlias(name, "")
 	if err != nil {
-		say(out, "⚠ %s", sentence(err.Error()))
+		say(out, "⚠ %s", strs.Sentence(err.Error()))
 		return false
 	}
 	say(out, "✓ Made the alias %s, a command that opens this profile.", path)
@@ -485,11 +486,10 @@ func (c *commandSet) delete() *cobra.Command {
 			if err != nil {
 				return fail(out, err)
 			}
-			for _, line := range slices.Concat(done.GetLines(), profile.DropAlias(p.GetName()), done.GetLater()) {
-				say(out, "%s", line)
-			}
+			gone, kept := profile.DropAlias(p.GetName())
+			report(out, append(done.GetDone(), gone), append(done.GetFailed(), kept))
 			if done.GetFailure() != "" {
-				say(out, "✗ %s Remove it yourself.", sentence(done.GetFailure()))
+				say(out, "✗ %s Remove it yourself.", strs.Sentence(done.GetFailure()))
 				return cli.Exit(1)
 			}
 			say(out, "\n✓ Deleted the profile %s.", p.GetName())
@@ -506,32 +506,45 @@ func (c *commandSet) delete() *cobra.Command {
 
 func (c *commandSet) describe() *cobra.Command {
 	var text string
-	var auto, overwrite, all bool
+	var auto, overwrite, all, clear bool
 	cmd := &cobra.Command{
 		Use:   "describe [profile_name]",
 		Short: "Show or set what a profile is for",
-		Long: "Shows the description of a profile, or sets it with --text. --auto has the helper model write one from the profile's skills " +
-			"and model. The kanban board reads these descriptions to decide which profile takes a task.",
-		Example: "  icebath profile describe work --text \"Backend work in Go\"\n  icebath profile describe --auto --all",
-		Args:    cobra.MaximumNArgs(1),
+		Long: "Shows the description of a profile, sets it with --text, or takes it away with --clear. --auto has the helper model write one " +
+			"from the profile's skills and model. The kanban board reads these descriptions to decide which profile takes a task.",
+		Example: "  icebath profile describe work --text \"Backend work in Go\"\n  icebath profile describe --auto --all\n" +
+			"  icebath profile describe work --clear",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out, errw := cmd.OutOrStdout(), cmd.ErrOrStderr()
 			name := ""
 			if len(args) > 0 {
 				name = args[0]
 			}
-			described, err := c.service.Describe(cmd.Context(), &profilev1.DescribeRequest{Name: name, Text: text, Auto: auto, Overwrite: overwrite,
-				All: all})
+			// The service takes a description away when it is replaced by no text, so --overwrite never goes out alone
+			switch {
+			case clear && (text != "" || auto || all || overwrite):
+				fmt.Fprintln(errw, "✗ icebath profile describe takes --clear with a profile name and nothing else.")
+				return cli.Exit(2)
+			case overwrite && !auto && text == "":
+				fmt.Fprintln(errw, "✗ icebath profile describe needs --auto with --overwrite.")
+				return cli.Exit(2)
+			}
+			described, err := c.service.Describe(cmd.Context(), &profilev1.DescribeRequest{Name: name, Text: text, Auto: auto,
+				Overwrite: overwrite || clear, All: all})
 			if err != nil {
 				if failure, ok := errors.AsType[*connect.Error](err); ok && failure.Code() == connect.CodeInvalidArgument &&
 					strings.HasPrefix(failure.Message(), "icebath profile describe ") {
 					fmt.Fprintln(errw, "✗ "+failure.Message())
 					return cli.Exit(2)
 				}
-				fmt.Fprintln(errw, "✗ "+sentence(reason(err)))
+				fmt.Fprintln(errw, "✗ "+strs.Sentence(reason(err)))
 				return cli.Exit(1)
 			}
 			switch {
+			case clear:
+				say(out, "✓ %s has no description now.", name)
+				return nil
 			case text == "" && !auto:
 				if described.GetDescription() == "" {
 					say(out, "%s has no description yet. Set one with icebath profile describe %s --text TEXT, or have one written with --auto.", name, name)
@@ -553,7 +566,7 @@ func (c *commandSet) describe() *cobra.Command {
 			ok := 0
 			for _, outcome := range described.GetOutcomes() {
 				if !outcome.GetOk() {
-					fmt.Fprintf(errw, "✗ No description was written for %s. %s\n", outcome.GetName(), sentence(outcome.GetReason()))
+					fmt.Fprintf(errw, "✗ No description was written for %s. %s\n", outcome.GetName(), strs.Sentence(outcome.GetReason()))
 					continue
 				}
 				ok++
@@ -574,6 +587,7 @@ func (c *commandSet) describe() *cobra.Command {
 	f.BoolVar(&auto, "auto", false, "Have the helper model write the description")
 	f.BoolVar(&overwrite, "overwrite", false, "Replace a description that a person wrote")
 	f.BoolVar(&all, "all", false, "With --auto, describe every profile that has no description from a person")
+	f.BoolVar(&clear, "clear", false, "Take the description away")
 	return cmd
 }
 
@@ -668,7 +682,7 @@ func (c *commandSet) alias() *cobra.Command {
 				return err
 			}
 			if collision != "" {
-				say(out, "✗ No alias named %s was made. %s", alias, sentence(collision))
+				say(out, "✗ No alias named %s was made. %s", alias, strs.Sentence(collision))
 				return cli.Exit(1)
 			}
 			target := ""
@@ -677,7 +691,7 @@ func (c *commandSet) alias() *cobra.Command {
 			}
 			path, err := profile.MakeAlias(alias, target)
 			if err != nil {
-				say(out, "⚠ %s", sentence(err.Error()))
+				say(out, "⚠ %s", strs.Sentence(err.Error()))
 				return nil
 			}
 			say(out, "✓ Made the alias %s, a command that opens icebath on %s.", path, name)
@@ -699,17 +713,19 @@ func (c *commandSet) rename(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fail(out, err)
 	}
-	for _, line := range done.GetLines() {
-		say(out, "%s", line)
-	}
+	// The default profile keeps its name: it shows the name given, or default again for none
 	canon, _ := profile.Normalize(args[0])
-	if canon == profile.Default {
+	switch {
+	case canon == profile.Default && done.GetName() == profile.Default:
+		say(out, "✓ The default profile shows as default again.")
+		return nil
+	case canon == profile.Default:
+		say(out, "✓ The default profile now shows as %s. Its name stays default.", done.GetName())
 		return nil
 	}
-	renamed, _ := profile.Canon(args[1])
-	for _, line := range append(profile.FollowAlias(canon, renamed), done.GetLater()...) {
-		say(out, "%s", line)
-	}
+	renamed := done.GetName()
+	followed, broken := profile.FollowAlias(canon, renamed)
+	report(out, append(done.GetDone(), followed), append(done.GetFailed(), broken))
 	if !done.GetSettled() {
 		say(out, "Finish the rename with:\n    icebath profile migrate-identity %s %s", canon, renamed)
 	}
@@ -724,8 +740,8 @@ func (c *commandSet) purge(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fail(out, err)
 	}
-	for _, line := range done.GetLines() {
-		say(errw, "%s", line)
+	for _, line := range done.GetFailed() {
+		say(errw, "⚠ %s", line)
 	}
 	if !done.GetSettled() {
 		say(errw, "✗ Some of what icebath keeps of the profile is still there. Try again with:\n    icebath profile purge-identity %s", args[0])
@@ -741,12 +757,11 @@ func (c *commandSet) migrate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fail(out, err)
 	}
-	for _, line := range done.GetLines() {
-		if strings.HasPrefix(line, "⚠") {
-			say(errw, "%s", line)
-		} else {
-			say(out, "%s", line)
-		}
+	for _, line := range done.GetDone() {
+		say(out, "✓ %s", line)
+	}
+	for _, line := range done.GetFailed() {
+		say(errw, "⚠ %s", line)
 	}
 	if !done.GetSettled() {
 		say(errw, "✗ Some of what icebath keeps under the old name did not move. Try again with:\n    icebath profile migrate-identity %s %s",
@@ -763,7 +778,7 @@ func Export(cmd *cobra.Command, service profilev1connect.ProfileServiceClient, n
 	if err != nil {
 		return "", "", err
 	}
-	path, err := profile.SaveArchive(exported.GetArchive(), exported.GetName(), output)
+	path, err := profile.SaveArchive(exported.GetArchive(), exported.GetFileName(), output)
 	return exported.GetName(), path, err
 }
 
@@ -814,7 +829,7 @@ func (c *commandSet) importArchive() *cobra.Command {
 				if path, err := profile.MakeAlias(imported.GetName(), ""); err == nil {
 					say(out, "  Made the alias %s, a command that opens this profile.", path)
 				} else {
-					say(out, "⚠ %s", sentence(err.Error()))
+					say(out, "⚠ %s", strs.Sentence(err.Error()))
 				}
 			}
 			say(out, "")
@@ -864,6 +879,10 @@ func PlanLines(plan *profilev1.Plan) []string {
 				"    that has the name of one the distribution brings.", "    Your memories, sessions, sign-ins in auth.json and keys file stay,",
 				"    but your own changes to files the distribution owns are lost.")
 		}
+		// An install writes the distribution's settings over the profile's; only an update leaves them
+		if !plan.GetPreservesConfig() {
+			lines = append(lines, "  Its settings file config.yaml is replaced with the distribution's when it brings one.")
+		}
 	}
 	if len(m.GetEnv()) > 0 {
 		lines = append(lines, "", "  Variables:")
@@ -880,7 +899,7 @@ func PlanLines(plan *profilev1.Plan) []string {
 			}
 			line := "    " + r.GetName() + ": " + words + "."
 			if r.GetDescription() != "" {
-				line += " " + sentence(r.GetDescription())
+				line += " " + strs.Sentence(r.GetDescription())
 			}
 			lines = append(lines, line)
 		}
@@ -925,7 +944,7 @@ func (c *commandSet) install() *cobra.Command {
 			if alias {
 				if collision, err := profile.Collision(m.GetName()); err == nil && collision == "" {
 					if _, err := profile.MakeAlias(m.GetName(), ""); err != nil {
-						say(out, "⚠ %s", sentence(err.Error()))
+						say(out, "⚠ %s", strs.Sentence(err.Error()))
 					}
 				}
 			}
@@ -996,6 +1015,11 @@ func (c *commandSet) update() *cobra.Command {
 			}
 			m := updated.GetPlan().GetManifest()
 			say(out, "\n✓ Updated %s to version %s.", m.GetName(), m.GetVersion())
+			if updated.GetPlan().GetPreservesConfig() {
+				say(out, "  Its settings file config.yaml was left as it is.")
+			} else {
+				say(out, "  Its settings file config.yaml was replaced with the distribution's.")
+			}
 			if updated.GetPlan().GetHasCron() {
 				say(out, "  Its scheduled jobs in cron/jobs.json were updated too, and this build of icebath does not run them.")
 			}
@@ -1031,7 +1055,7 @@ func InfoLines(m *profilev1.Manifest) []string {
 	}
 	facts := [][2]string{{"Distribution", m.GetName()}, {"Version", version}}
 	for _, row := range [][2]string{{"Description", m.GetDescription()}, {"Author", m.GetAuthor()}, {"License", m.GetLicense()},
-		{"Needs", m.GetRequires()}, {"Source", m.GetSource()}, {"Installed", m.GetInstalledAt()}} {
+		{"Needs", m.GetRequires()}, {"Source", m.GetSource()}, {"Installed", m.GetInstalledAt()}, {"Owns", strings.Join(m.GetOwned(), ", ")}} {
 		if row[1] != "" {
 			if row[0] == "Needs" {
 				row[1] = "icebath " + row[1]
@@ -1048,7 +1072,7 @@ func InfoLines(m *profilev1.Manifest) []string {
 				line = "  " + r.GetName() + ": Required."
 			}
 			if r.GetDescription() != "" {
-				line += " " + sentence(r.GetDescription())
+				line += " " + strs.Sentence(r.GetDescription())
 			}
 			lines = append(lines, line)
 			if r.GetDefault() != "" {

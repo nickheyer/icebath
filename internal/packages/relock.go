@@ -104,7 +104,7 @@ func (h *Packages) relock(ctx context.Context, cfg *config.Config, r Reporter) (
 		}
 		line += "."
 		if len(entry.Unsupported) > 0 {
-			line += " None for " + joined(slices.Sorted(maps.Keys(entry.Unsupported)), "or") + "."
+			line += " None for " + strs.Or(slices.Sorted(maps.Keys(entry.Unsupported))) + "."
 		}
 		r.Line(line)
 		doc.Extras[name] = &entry

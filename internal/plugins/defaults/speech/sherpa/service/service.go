@@ -36,23 +36,55 @@ func Register(registry *speech.Registry) {
 		Name: config.Name, Aliases: []string{"sherpa-onnx", "kws", "open"}, Title: "Sherpa",
 		About: "Hears any phrase you choose, on this computer", Rank: 2, Open: true,
 		Supported: func(*speech.Speech) bool { return sherpa.Supported() },
-		Installed: func(*speech.Speech) bool { return sherpa.Supported() },
+		Installed: installed,
+		Fetch:     fetch,
 		New:       open,
 	}}})
 }
 
-// Folder of the model: the one set, else one already in the profile's wake word cache, else the bundled one, fetched once
+// Whether the engine's library and a keyword model are on this computer: the model folder set, else the bundled model fetched
+func installed(sp *speech.Speech, settings map[string]string) bool {
+	if !sherpa.Supported() || !sherpa.Fetched(sp) {
+		return false
+	}
+	if own := strings.TrimSpace(settings[config.ModelDir]); own != "" {
+		return fsx.IsFile(filepath.Join(own, "tokens.txt"))
+	}
+	return sp.Fetched(model)
+}
+
+// Downloads the engine's library on the device the profile's Piper setting asks for, as listening loads it, then the bundled keyword model
+// unless a model folder is set
+func fetch(ctx context.Context, wake *speech.Wake, say func(string)) error {
+	if !sherpa.Fetched(wake.Speech) {
+		say("Downloading the speech engine of this computer, about 10 MB…")
+		if err := sherpa.Fetch(ctx, wake.Speech, cuda(wake)); err != nil {
+			return err
+		}
+	}
+	if wake.Setting(config.ModelDir) != "" || wake.Speech.Fetched(model) {
+		return nil
+	}
+	say("Downloading the keyword model, about 17 MB…")
+	_, err := wake.Speech.Tree(ctx, model)
+	return err
+}
+
+// Whether the profile's Piper setting runs the speech engine on the GPU, which every user of the engine follows
+func cuda(wake *speech.Wake) bool {
+	if cfg, err := wake.Speech.Profile(wake.Profile); err == nil {
+		return cfg.GetBool(piperconfig.CUDA)
+	}
+	return false
+}
+
+// Folder of the model: the one set, else the bundled one, fetched once
 func folder(ctx context.Context, wake *speech.Wake) (string, error) {
 	if own := wake.Setting(config.ModelDir); own != "" {
 		if !fsx.IsFile(filepath.Join(own, "tokens.txt")) {
-			return "", fmt.Errorf("%s holds no Sherpa keyword model, because it has no tokens.txt. Fix Model folder in /settings under Wake word › Sherpa.", own)
+			return "", fmt.Errorf("%s holds no Sherpa keyword model, because it has no tokens.txt. Fix Model folder on the page of Sherpa under Listener.", own)
 		}
 		return own, nil
-	}
-	if cfg, err := wake.Speech.Profile(wake.Profile); err == nil {
-		if cached := filepath.Join(cfg.ProfileDir(cfg.Profile()), "cache", "wakewords", modelDir); fsx.IsFile(filepath.Join(cached, "tokens.txt")) {
-			return cached, nil
-		}
 	}
 	if !wake.Speech.Fetched(model) {
 		slog.Info("wake word: downloading the sherpa KWS model (about 17 MB, once)")
@@ -115,10 +147,7 @@ func table(path string) (map[string]bool, error) {
 func open(ctx context.Context, wake *speech.Wake) (speech.Hotword, error) {
 	// The engine of this process on the device the profile's Piper setting asks for, as every user of the engine follows it; the build this
 	// process already runs when Piper loaded the other one here
-	gpu := false
-	if cfg, err := wake.Speech.Profile(wake.Profile); err == nil {
-		gpu = cfg.GetBool(piperconfig.CUDA)
-	}
+	gpu := cuda(wake)
 	module, err := sherpa.Load(ctx, wake.Speech, gpu)
 	if err != nil && strings.Contains(err.Error(), "already runs on the") {
 		module, err = sherpa.Load(ctx, wake.Speech, !gpu)

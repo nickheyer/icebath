@@ -15,8 +15,8 @@ func Register(cfg *config.Config) {
 		About:  "Many image models through one OpenRouter account",
 		Order:  40,
 		Settings: []config.Setting{
-			{Key: Model, Title: "Model", About: "The OpenRouter model that makes images.", Help: "When neither model is set, OpenRouter's own pick is used.",
-				Default: "", Zero: "The general model"},
+			{Key: Model, Title: "Model", About: "The OpenRouter model that makes images.", Help: "Any model ID of OpenRouter works too.", Default: "",
+				Zero: "GPT-5.4 Image 2", Picks: generationconfig.ImageModelOf(Name)},
 			{Key: AspectRatio, Title: "Aspect ratio", About: "The exact shape of image to ask for.", Help: "Such as 16:9.", Default: "", Zero: "The agent's choice"},
 			{Key: Resolution, Title: "Resolution", About: "The resolution of image to ask for.", Help: "Such as 1K or 2K.", Default: "", Zero: "The model's default"},
 			{Key: Quality, Title: "Quality", About: "The image quality to ask for.", Help: "Such as low or high.", Default: "", Zero: "The model's default"},
@@ -35,6 +35,17 @@ func Register(cfg *config.Config) {
 				Zero: "The model's default", ZeroValue: Unset, Least: config.Num(0), Most: config.Num(100), Advanced: true},
 			{Key: Seed, Title: "Seed", About: "The fixed seed that makes the same image again.", Default: Unset, Zero: "New each time", ZeroValue: Unset,
 				Counts: config.Plain, Advanced: true},
+		},
+	}})
+	cfg.Register(config.Sections{{
+		Key:    VideoKey,
+		Parent: generationconfig.VideoKey,
+		Title:  "OpenRouter",
+		About:  "Many video models through one OpenRouter account",
+		Order:  30,
+		Settings: []config.Setting{
+			{Key: VideoModel, Title: "Model", About: "The OpenRouter model that makes videos.", Help: "Any video model ID of OpenRouter works too.", Default: "",
+				Zero: "Hailuo 3 Max", Picks: generationconfig.VideoModelOf(Name)},
 		},
 	}})
 }

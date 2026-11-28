@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 // Binary of the package npx -y would run and the arguments after it, when npx already holds that package in its cache: the server then
@@ -32,7 +32,7 @@ func npxCached(args []string) (string, []string, bool) {
 	}
 	cache := os.Getenv("npm_config_cache")
 	if cache == "" {
-		cache = filepath.Join(terminal.ExpandUser("~"), ".npm")
+		cache = filepath.Join(fsx.ExpandHome("~"), ".npm")
 	}
 	root := filepath.Join(cache, "_npx")
 	entries, err := os.ReadDir(root)

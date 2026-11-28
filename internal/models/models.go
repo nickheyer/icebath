@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	modelsconfig "github.com/nickheyer/icebath/internal/models/config"
 	"github.com/nickheyer/icebath/internal/provider"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 )
 
 // Live model list of the routes of a kind of provider
@@ -238,7 +239,7 @@ type Models struct {
 }
 
 func New(cfg *config.Config, providers *provider.Registry) *Models {
-	modelsconfig.Register(cfg)
+	modelsconfig.Register(cfg, providers.Options(cfg), providerconfig.PickProvider)
 	m := &Models{providers: providers, profiles: map[string]*state{}}
 	m.Registry.host = m
 	return m

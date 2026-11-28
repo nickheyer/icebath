@@ -44,7 +44,7 @@ const (
 	brokerFailure        = "The sign-in broker could not sign in."
 	noUsableAccount      = "The sign-in broker found no account to sign in with."
 	brokerPlatformOnly   = "The sign-in broker works only on Windows and WSL."
-	interactionRequired  = "Getting a token needs you to sign in. Sign in from /providers to begin."
+	interactionRequired  = "Getting a token needs you to sign in with Microsoft Entra ID first."
 )
 
 // Where the VS Code Azure Resources extension keeps the account it signed in, below the home folder

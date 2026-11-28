@@ -13,10 +13,10 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	terminalapp "github.com/nickheyer/icebath/internal/terminal/app"
 	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
 	terminalv1 "github.com/nickheyer/icebath/pkg/gen/icebath/terminal/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/terminal/v1/terminalv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
@@ -50,7 +50,7 @@ type processes struct {
 type row struct {
 	process *terminalv1.Process
 	command string
-	status  string
+	status  standing
 	last    string
 	elapsed time.Duration
 	since   time.Duration
@@ -62,10 +62,10 @@ func (p *processes) rows(now time.Time) []row {
 	passed := max(now.Sub(p.at), 0)
 	var rows []row
 	for _, process := range p.list {
-		r := row{process: process, command: cmp.Or(terminalapp.OneLine(process.GetCommand()), "Background process"), status: terminalapp.Status(process),
-			last: terminalapp.LastLine(process.GetOutputTail())}
+		r := row{process: process, command: cmp.Or(oneLine(process.GetCommand()), "Background process"), status: status(process),
+			last: lastLine(process.GetOutputTail())}
 		uptime := time.Duration(process.GetUptimeSeconds()) * time.Second
-		if r.status == terminalapp.Running {
+		if r.status == running {
 			r.elapsed = uptime + passed
 		} else {
 			r.since = time.Duration(process.GetSinceExitSeconds())*time.Second + passed
@@ -77,13 +77,13 @@ func (p *processes) rows(now time.Time) []row {
 		rows = append(rows, r)
 	}
 	slices.SortStableFunc(rows, func(a, b row) int {
-		if (a.status == terminalapp.Running) != (b.status == terminalapp.Running) {
-			if a.status == terminalapp.Running {
+		if (a.status == running) != (b.status == running) {
+			if a.status == running {
 				return -1
 			}
 			return 1
 		}
-		if a.status == terminalapp.Running {
+		if a.status == running {
 			return cmp.Compare(b.elapsed, a.elapsed)
 		}
 		return cmp.Compare(a.since, b.since)
@@ -97,15 +97,14 @@ func (p *processes) Live(now time.Time) bool {
 
 // What a process is doing, or how it ended: "running for 3 minutes, last said: ready on :3000", "ended 12 seconds ago with exit code 0"
 func (r row) activity() string {
-	if r.status == terminalapp.Running {
-		said := "running for " + terminalapp.Span(r.elapsed)
+	if r.status == running {
+		said := "running for " + span(r.elapsed)
 		if r.last != "" {
 			said += ", last said: " + r.last
 		}
 		return said
 	}
-	ended := terminalapp.Ended(r.process, r.since)
-	return strings.ToLower(ended[:1]) + ended[1:]
+	return strs.Lower(ended(r.process, r.since))
 }
 
 // Head of the processes and a row for each, or one line folded: how many run or ended and what the first is doing
@@ -114,18 +113,18 @@ func (p *processes) Rows(width, limit int, now time.Time, t theme.Theme, folded 
 	if len(rows) == 0 {
 		return nil
 	}
-	running := 0
+	live := 0
 	for _, r := range rows {
-		if r.status == terminalapp.Running {
-			running++
+		if r.status == running {
+			live++
 		}
 	}
 	var counts []string
-	if running > 0 {
-		counts = append(counts, strconv.Itoa(running)+" running")
+	if live > 0 {
+		counts = append(counts, strconv.Itoa(live)+" running")
 	}
-	if ended := len(rows) - running; ended > 0 {
-		counts = append(counts, strconv.Itoa(ended)+" ended")
+	if over := len(rows) - live; over > 0 {
+		counts = append(counts, strconv.Itoa(over)+" ended")
 	}
 	cols := max(width-2, 8)
 	head := func(text string) string {
@@ -163,15 +162,15 @@ func line(r row, width int, t theme.Theme) string {
 }
 
 // Glyph and color of a process's status
-func glyph(status string, t theme.Theme) (string, color.Color) {
-	switch status {
-	case terminalapp.Running:
+func glyph(state standing, t theme.Theme) (string, color.Color) {
+	switch state {
+	case running:
 		return "⚙", t.Accent
-	case terminalapp.Done:
+	case done:
 		return "✔", t.Alive
-	case terminalapp.Failed:
+	case failed:
 		return "✘", t.Alarm
-	case terminalapp.Killed:
+	case killed:
 		return "✘", t.Pulse
 	}
 	return "?", t.TextDim
@@ -179,7 +178,7 @@ func glyph(status string, t theme.Theme) (string, color.Color) {
 
 // Command on one line cut to the width with an ellipsis, the dock row naming the whole of it in /processes
 func compact(text string, width int) string {
-	text = terminalapp.OneLine(text)
+	text = oneLine(text)
 	if ansi.StringWidth(text) > width {
 		return ansi.Truncate(text, max(width-1, 0), "") + "…"
 	}

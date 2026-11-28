@@ -47,6 +47,8 @@ type ListSpec struct {
 	Yield []int
 	// Words the empty filter field shows, such as "Search sessions"
 	Search string
+	// Runs when the words searched change: a search started, its words changed, or the search cleared to none
+	Searched func(l *List, query string) tea.Cmd
 	// A list to pick from: typing filters it from the first key and enter runs Primary on the highlighted row
 	Pick bool
 	// Shows the filter field of a list to pick from at once, rather than once a key is typed or the rows outgrow the room
@@ -78,6 +80,8 @@ type ListInput struct {
 // Table card with a filter bar, detail pane and keymap actions an extension drives through its spec
 type List struct {
 	*lister
+	// Runs when the words searched change, nil for a list whose owner does not follow them
+	searched func(l *List, query string) tea.Cmd
 	// Every column of the spec and the rows of every column, the table showing those that fit
 	all     []render.Column
 	allRows func() [][]string
@@ -92,6 +96,47 @@ type List struct {
 	layout func() []render.Column
 	// Rows of every column as they were last read, which a search reads the columns out of view from
 	full [][]string
+	// What draws the list again with others while it is on a hub, and whether the hub told it that it left since it was last shown
+	watched []*Watched
+	left    bool
+}
+
+// Lists a page draws again whenever what they show changes: each from the time it is added until its hub tells it that it left, so a page
+// never keeps or draws the lists of views that closed. A list still on a hub that shows again, as the pages of a menu do, is drawn again
+// the moment it is back in view and with the others from then on
+type Watched struct {
+	lists []*List
+}
+
+// Draws the list again with the others from now on
+func (w *Watched) Add(list *List) {
+	if !slices.Contains(list.watched, w) {
+		list.watched = append(list.watched, w)
+	}
+	if !slices.Contains(w.lists, list) {
+		w.lists = append(w.lists, list)
+	}
+}
+
+// Recomputes the rows of every list watched now
+func (w *Watched) Refresh() {
+	for _, list := range slices.Clone(w.lists) {
+		list.Refresh()
+	}
+}
+
+// Lists watched now, in the order they were added
+func (w *Watched) Lists() []*List {
+	return slices.Clone(w.lists)
+}
+
+// Told by its hub that it left: what drew it again with other lists forgets it
+func (l *List) Closed() tea.Cmd {
+	for _, w := range l.watched {
+		w.lists = slices.DeleteFunc(w.lists, func(have *List) bool { return have == l })
+	}
+	l.left = len(l.watched) > 0
+	return nil
 }
 
 // Window manager interfaces the list answers through the table it wraps
@@ -106,6 +151,7 @@ var _ interface {
 	wm.Raw
 	wm.Selectable
 	wm.Answerer
+	Closer
 } = (*List)(nil)
 
 // Builds the table from the spec, each action handed the list and the row under the cursor
@@ -146,6 +192,7 @@ func NewList(env *Env, spec ListSpec) *List {
 		l.hints = func(_ *lister, i int) []wm.Hint { return spec.Hints(l, i) }
 	}
 	l.status, l.banner, l.shared = spec.Status, spec.Banner, spec.Shared
+	l.searched = spec.Searched
 	if spec.Typed != nil {
 		l.typed = func(_ *lister, text string, pasted bool) tea.Cmd { return spec.Typed(l, text, pasted) }
 	}
@@ -168,6 +215,29 @@ func NewList(env *Env, spec ListSpec) *List {
 // Hands the message to the table and keeps the list as the card the window manager holds, a pick list picking from its filter bar and
 // moving the cursor to the row whose first cell best matches what was typed
 func (l *List) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
+	// A list back in view after its hub told it that it left missed what changed meanwhile: it reads its rows now, and is drawn again
+	// with the lists it was watched with from here on
+	if focus, ok := msg.(wm.FocusMsg); ok && focus.Focused && l.left {
+		l.left = false
+		for _, w := range l.watched {
+			w.Add(l)
+		}
+		l.refresh()
+	}
+	before := l.bar.Query()
+	card, cmd := l.update(msg)
+	return card, tea.Batch(cmd, l.searchedSince(before))
+}
+
+// What the list's owner runs when the words searched are no longer those of before
+func (l *List) searchedSince(before string) tea.Cmd {
+	if l.searched == nil || l.bar.Query() == before {
+		return nil
+	}
+	return l.searched(l, l.bar.Query())
+}
+
+func (l *List) update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	if l.pick {
 		before := l.bar.Query()
 		defer func() {
@@ -203,14 +273,19 @@ func (l *List) entered() string {
 	return l.primary
 }
 
-// Reports whether the list has a use for the keymap action: one of its own context only while it shows a button for it, or, for a list
-// without buttons of its own, while it has that action and a row for it; any other action always. A key whose action the list has no use
+// Reports whether the list has a use for the keymap action: one of its own context that applies with no row in hand whenever it has it,
+// another only while it shows a button for it, or, for a list without buttons of its own, while it has that action and a row for it; any
+// other action always. A key whose action the list has no use
 // for goes on to the next action bound to it, such as the text keys of its filter
 func (l *List) Answers(id string) bool {
 	if l.ctx == "" {
 		return true
 	}
 	if a, ok := l.env.Keys.Action(id); !ok || a.Context != l.ctx {
+		return true
+	}
+	// An action that applies with no row in hand, such as adding one, applies on every row, its button shown or not
+	if _, has := l.actions[id]; has && l.free[id] {
 		return true
 	}
 	if l.hints != nil {
@@ -386,6 +461,9 @@ func (l *List) Filtered() bool { return l.bar.Query() != "" }
 // Text the filter holds
 func (l *List) Query() string { return l.bar.Query() }
 
+// Names the list anew, as its hub then names it in its trail, once what it shows was renamed
+func (l *List) Retitle(title string) { l.title = title }
+
 // Recomputes the rows now
 func (l *List) Refresh() { l.refresh() }
 
@@ -441,5 +519,14 @@ func (l *List) Capture(asking string, done func(chord string) tea.Cmd) {
 	l.capture = func(_ *lister, chord string) tea.Cmd { return done(chord) }
 }
 
-// Asks a yes or no question along the bottom of the list, yes running the action
-func (l *List) Confirm(text string, yes func() tea.Cmd) { l.confirm(text, yes) }
+// Asks a question along the bottom of the list, its act running yes
+func (l *List) Confirm(q Question, yes func() tea.Cmd) { l.confirm(q, yes) }
+
+// Marks the row in hand rather than lighting it while on, for a list that does not have the keys now
+func (l *List) Rest(on bool) { l.rest = on }
+
+// Whether the list takes no typing of its own now: no question, key being recorded, cell or row being typed into, and nothing typed into
+// its filter
+func (l *List) idle() bool {
+	return l.ask == nil && l.capture == nil && l.edit == nil && !l.typing() && l.Query() == ""
+}

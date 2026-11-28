@@ -2382,9 +2382,11 @@ func (x *TrustRequest) GetUntrust() bool {
 }
 
 type TrustResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Lines         []*Line                `protobuf:"bytes,1,rep,name=lines,proto3" json:"lines,omitempty"`
-	Ok            bool                   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Lines []*Line                `protobuf:"bytes,1,rep,name=lines,proto3" json:"lines,omitempty"`
+	Ok    bool                   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
+	// What was done, in a sentence or two
+	Said          string `protobuf:"bytes,3,opt,name=said,proto3" json:"said,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2431,6 +2433,13 @@ func (x *TrustResponse) GetOk() bool {
 		return x.Ok
 	}
 	return false
+}
+
+func (x *TrustResponse) GetSaid() string {
+	if x != nil {
+		return x.Said
+	}
+	return ""
 }
 
 // What a request is about: the profile and the folder project skills are found in
@@ -2522,7 +2531,11 @@ type Skill struct {
 	State  string `protobuf:"bytes,17,opt,name=state,proto3" json:"state,omitempty"`
 	Pinned bool   `protobuf:"varint,18,opt,name=pinned,proto3" json:"pinned,omitempty"`
 	// The user locked its content from the agent
-	Locked        bool `protobuf:"varint,19,opt,name=locked,proto3" json:"locked,omitempty"`
+	Locked bool `protobuf:"varint,19,opt,name=locked,proto3" json:"locked,omitempty"`
+	// How it stands in the words every page and command shows: On, Off, Off in this app or Always on
+	Shown string `protobuf:"bytes,20,opt,name=shown,proto3" json:"shown,omitempty"`
+	// Its category as a person reads it, Other for none
+	CategoryTitle string `protobuf:"bytes,21,opt,name=category_title,json=categoryTitle,proto3" json:"category_title,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2690,9 +2703,25 @@ func (x *Skill) GetLocked() bool {
 	return false
 }
 
+func (x *Skill) GetShown() string {
+	if x != nil {
+		return x.Shown
+	}
+	return ""
+}
+
+func (x *Skill) GetCategoryTitle() string {
+	if x != nil {
+		return x.CategoryTitle
+	}
+	return ""
+}
+
 type ListRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Scope         *Scope                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Scope *Scope                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	// App whose own turned off skills a state of Off in this app reads, such as tui; none reads every app alone
+	Surface       string `protobuf:"bytes,2,opt,name=surface,proto3" json:"surface,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2734,6 +2763,102 @@ func (x *ListRequest) GetScope() *Scope {
 	return nil
 }
 
+func (x *ListRequest) GetSurface() string {
+	if x != nil {
+		return x.Surface
+	}
+	return ""
+}
+
+// A category of skills and how many of them are on
+type Category struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Folder the skills sit under, empty for those in none
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// As a person reads it
+	Title string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	// In the words every page and command shows: On, Off, or how many of how many are on, such as 3 of 4 on
+	State string `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	On    int32  `protobuf:"varint,4,opt,name=on,proto3" json:"on,omitempty"`
+	Total int32  `protobuf:"varint,5,opt,name=total,proto3" json:"total,omitempty"`
+	// What its skills are for, as the description of its folder says; empty when none does
+	About         string `protobuf:"bytes,6,opt,name=about,proto3" json:"about,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Category) Reset() {
+	*x = Category{}
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Category) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Category) ProtoMessage() {}
+
+func (x *Category) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Category.ProtoReflect.Descriptor instead.
+func (*Category) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *Category) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Category) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Category) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Category) GetOn() int32 {
+	if x != nil {
+		return x.On
+	}
+	return 0
+}
+
+func (x *Category) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *Category) GetAbout() string {
+	if x != nil {
+		return x.About
+	}
+	return ""
+}
+
 type ListResponse struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Skills []*Skill               `protobuf:"bytes,1,rep,name=skills,proto3" json:"skills,omitempty"`
@@ -2743,18 +2868,27 @@ type ListResponse struct {
 	CreateDir string `protobuf:"bytes,3,opt,name=create_dir,json=createDir,proto3" json:"create_dir,omitempty"`
 	// Folder of the profile's own skills
 	SkillsDir string `protobuf:"bytes,4,opt,name=skills_dir,json=skillsDir,proto3" json:"skills_dir,omitempty"`
-	// Untrusted project the folder is in whose skills don't load, and how many it holds
-	UntrustedProject string `protobuf:"bytes,5,opt,name=untrusted_project,json=untrustedProject,proto3" json:"untrusted_project,omitempty"`
-	UntrustedCount   int32  `protobuf:"varint,6,opt,name=untrusted_count,json=untrustedCount,proto3" json:"untrusted_count,omitempty"`
 	// The profile opted out of the bundled skills being copied into it
-	OptedOut      bool `protobuf:"varint,7,opt,name=opted_out,json=optedOut,proto3" json:"opted_out,omitempty"`
+	OptedOut bool `protobuf:"varint,7,opt,name=opted_out,json=optedOut,proto3" json:"opted_out,omitempty"`
+	// Categories of the skills, as they are listed, with how many of each are on
+	Categories []*Category `protobuf:"bytes,8,rep,name=categories,proto3" json:"categories,omitempty"`
+	// Project folders whose own skills load, as the settings keep them
+	Trusted []string `protobuf:"bytes,9,rep,name=trusted,proto3" json:"trusted,omitempty"`
+	// Git project the scope's folder is in, empty for none or one project skills are not read for, whether it is trusted and the skills
+	// it keeps in its own folder
+	Project        string `protobuf:"bytes,10,opt,name=project,proto3" json:"project,omitempty"`
+	ProjectTrusted bool   `protobuf:"varint,11,opt,name=project_trusted,json=projectTrusted,proto3" json:"project_trusted,omitempty"`
+	ProjectSkills  int32  `protobuf:"varint,12,opt,name=project_skills,json=projectSkills,proto3" json:"project_skills,omitempty"`
+	// Secrets the skills ask for and values they read, each a setting of its own
+	Secrets       int32 `protobuf:"varint,13,opt,name=secrets,proto3" json:"secrets,omitempty"`
+	Values        int32 `protobuf:"varint,14,opt,name=values,proto3" json:"values,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListResponse) Reset() {
 	*x = ListResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[40]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2766,7 +2900,7 @@ func (x *ListResponse) String() string {
 func (*ListResponse) ProtoMessage() {}
 
 func (x *ListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[40]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2779,7 +2913,7 @@ func (x *ListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
 func (*ListResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{40}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ListResponse) GetSkills() []*Skill {
@@ -2810,25 +2944,60 @@ func (x *ListResponse) GetSkillsDir() string {
 	return ""
 }
 
-func (x *ListResponse) GetUntrustedProject() string {
-	if x != nil {
-		return x.UntrustedProject
-	}
-	return ""
-}
-
-func (x *ListResponse) GetUntrustedCount() int32 {
-	if x != nil {
-		return x.UntrustedCount
-	}
-	return 0
-}
-
 func (x *ListResponse) GetOptedOut() bool {
 	if x != nil {
 		return x.OptedOut
 	}
 	return false
+}
+
+func (x *ListResponse) GetCategories() []*Category {
+	if x != nil {
+		return x.Categories
+	}
+	return nil
+}
+
+func (x *ListResponse) GetTrusted() []string {
+	if x != nil {
+		return x.Trusted
+	}
+	return nil
+}
+
+func (x *ListResponse) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *ListResponse) GetProjectTrusted() bool {
+	if x != nil {
+		return x.ProjectTrusted
+	}
+	return false
+}
+
+func (x *ListResponse) GetProjectSkills() int32 {
+	if x != nil {
+		return x.ProjectSkills
+	}
+	return 0
+}
+
+func (x *ListResponse) GetSecrets() int32 {
+	if x != nil {
+		return x.Secrets
+	}
+	return 0
+}
+
+func (x *ListResponse) GetValues() int32 {
+	if x != nil {
+		return x.Values
+	}
+	return 0
 }
 
 type Surface struct {
@@ -2841,7 +3010,7 @@ type Surface struct {
 
 func (x *Surface) Reset() {
 	*x = Surface{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[41]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2853,7 +3022,7 @@ func (x *Surface) String() string {
 func (*Surface) ProtoMessage() {}
 
 func (x *Surface) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[41]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2866,7 +3035,7 @@ func (x *Surface) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Surface.ProtoReflect.Descriptor instead.
 func (*Surface) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{41}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *Surface) GetName() string {
@@ -2893,7 +3062,7 @@ type ShowRequest struct {
 
 func (x *ShowRequest) Reset() {
 	*x = ShowRequest{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[42]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2905,7 +3074,7 @@ func (x *ShowRequest) String() string {
 func (*ShowRequest) ProtoMessage() {}
 
 func (x *ShowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[42]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2918,7 +3087,7 @@ func (x *ShowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShowRequest.ProtoReflect.Descriptor instead.
 func (*ShowRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{42}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ShowRequest) GetScope() *Scope {
@@ -2946,7 +3115,7 @@ type Finding struct {
 
 func (x *Finding) Reset() {
 	*x = Finding{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[43]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2958,7 +3127,7 @@ func (x *Finding) String() string {
 func (*Finding) ProtoMessage() {}
 
 func (x *Finding) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[43]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2971,7 +3140,7 @@ func (x *Finding) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Finding.ProtoReflect.Descriptor instead.
 func (*Finding) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{43}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *Finding) GetSeverity() string {
@@ -3022,7 +3191,7 @@ type ShowResponse struct {
 
 func (x *ShowResponse) Reset() {
 	*x = ShowResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[44]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3034,7 +3203,7 @@ func (x *ShowResponse) String() string {
 func (*ShowResponse) ProtoMessage() {}
 
 func (x *ShowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[44]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3047,7 +3216,7 @@ func (x *ShowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShowResponse.ProtoReflect.Descriptor instead.
 func (*ShowResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{44}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ShowResponse) GetSkill() *Skill {
@@ -3146,7 +3315,7 @@ type Blueprint struct {
 
 func (x *Blueprint) Reset() {
 	*x = Blueprint{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[45]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3158,7 +3327,7 @@ func (x *Blueprint) String() string {
 func (*Blueprint) ProtoMessage() {}
 
 func (x *Blueprint) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[45]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3171,7 +3340,7 @@ func (x *Blueprint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Blueprint.ProtoReflect.Descriptor instead.
 func (*Blueprint) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{45}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *Blueprint) GetSchedule() string {
@@ -3236,7 +3405,7 @@ type ToggleRequest struct {
 
 func (x *ToggleRequest) Reset() {
 	*x = ToggleRequest{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[46]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3248,7 +3417,7 @@ func (x *ToggleRequest) String() string {
 func (*ToggleRequest) ProtoMessage() {}
 
 func (x *ToggleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[46]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3261,7 +3430,7 @@ func (x *ToggleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToggleRequest.ProtoReflect.Descriptor instead.
 func (*ToggleRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{46}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ToggleRequest) GetScope() *Scope {
@@ -3295,16 +3464,18 @@ func (x *ToggleRequest) GetSurface() string {
 type ToggleResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Names that were changed; essential skills never are
-	Changed       []string `protobuf:"bytes,1,rep,name=changed,proto3" json:"changed,omitempty"`
-	Enabled       int32    `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	Disabled      int32    `protobuf:"varint,3,opt,name=disabled,proto3" json:"disabled,omitempty"`
+	Changed  []string `protobuf:"bytes,1,rep,name=changed,proto3" json:"changed,omitempty"`
+	Enabled  int32    `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Disabled int32    `protobuf:"varint,3,opt,name=disabled,proto3" json:"disabled,omitempty"`
+	// What was done, in a sentence
+	Said          string `protobuf:"bytes,4,opt,name=said,proto3" json:"said,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ToggleResponse) Reset() {
 	*x = ToggleResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[47]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3316,7 +3487,7 @@ func (x *ToggleResponse) String() string {
 func (*ToggleResponse) ProtoMessage() {}
 
 func (x *ToggleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[47]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3329,7 +3500,7 @@ func (x *ToggleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToggleResponse.ProtoReflect.Descriptor instead.
 func (*ToggleResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{47}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ToggleResponse) GetChanged() []string {
@@ -3353,6 +3524,13 @@ func (x *ToggleResponse) GetDisabled() int32 {
 	return 0
 }
 
+func (x *ToggleResponse) GetSaid() string {
+	if x != nil {
+		return x.Said
+	}
+	return ""
+}
+
 type Synced struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	Copied     []string               `protobuf:"bytes,1,rep,name=copied,proto3" json:"copied,omitempty"`
@@ -3374,7 +3552,7 @@ type Synced struct {
 
 func (x *Synced) Reset() {
 	*x = Synced{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[48]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3386,7 +3564,7 @@ func (x *Synced) String() string {
 func (*Synced) ProtoMessage() {}
 
 func (x *Synced) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[48]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3399,7 +3577,7 @@ func (x *Synced) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Synced.ProtoReflect.Descriptor instead.
 func (*Synced) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{48}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *Synced) GetCopied() []string {
@@ -3498,7 +3676,7 @@ type ResetRequest struct {
 
 func (x *ResetRequest) Reset() {
 	*x = ResetRequest{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[49]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3510,7 +3688,7 @@ func (x *ResetRequest) String() string {
 func (*ResetRequest) ProtoMessage() {}
 
 func (x *ResetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[49]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3523,7 +3701,7 @@ func (x *ResetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetRequest.ProtoReflect.Descriptor instead.
 func (*ResetRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{49}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ResetRequest) GetScope() *Scope {
@@ -3557,7 +3735,7 @@ type ResetResponse struct {
 
 func (x *ResetResponse) Reset() {
 	*x = ResetResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[50]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3569,7 +3747,7 @@ func (x *ResetResponse) String() string {
 func (*ResetResponse) ProtoMessage() {}
 
 func (x *ResetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[50]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3582,7 +3760,7 @@ func (x *ResetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetResponse.ProtoReflect.Descriptor instead.
 func (*ResetResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{50}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ResetResponse) GetMessage() string {
@@ -3608,7 +3786,7 @@ type ModifiedRequest struct {
 
 func (x *ModifiedRequest) Reset() {
 	*x = ModifiedRequest{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[51]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3620,7 +3798,7 @@ func (x *ModifiedRequest) String() string {
 func (*ModifiedRequest) ProtoMessage() {}
 
 func (x *ModifiedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[51]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3633,7 +3811,7 @@ func (x *ModifiedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModifiedRequest.ProtoReflect.Descriptor instead.
 func (*ModifiedRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{51}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ModifiedRequest) GetScope() *Scope {
@@ -3652,7 +3830,7 @@ type ModifiedResponse struct {
 
 func (x *ModifiedResponse) Reset() {
 	*x = ModifiedResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[52]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3664,7 +3842,7 @@ func (x *ModifiedResponse) String() string {
 func (*ModifiedResponse) ProtoMessage() {}
 
 func (x *ModifiedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[52]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3677,7 +3855,7 @@ func (x *ModifiedResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModifiedResponse.ProtoReflect.Descriptor instead.
 func (*ModifiedResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{52}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ModifiedResponse) GetNames() []string {
@@ -3697,7 +3875,7 @@ type DiffRequest struct {
 
 func (x *DiffRequest) Reset() {
 	*x = DiffRequest{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[53]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3709,7 +3887,7 @@ func (x *DiffRequest) String() string {
 func (*DiffRequest) ProtoMessage() {}
 
 func (x *DiffRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[53]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3722,7 +3900,7 @@ func (x *DiffRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiffRequest.ProtoReflect.Descriptor instead.
 func (*DiffRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{53}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *DiffRequest) GetScope() *Scope {
@@ -3752,7 +3930,7 @@ type FileDiff struct {
 
 func (x *FileDiff) Reset() {
 	*x = FileDiff{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[54]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3764,7 +3942,7 @@ func (x *FileDiff) String() string {
 func (*FileDiff) ProtoMessage() {}
 
 func (x *FileDiff) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[54]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3777,7 +3955,7 @@ func (x *FileDiff) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDiff.ProtoReflect.Descriptor instead.
 func (*FileDiff) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{54}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *FileDiff) GetPath() string {
@@ -3810,7 +3988,7 @@ type DiffResponse struct {
 
 func (x *DiffResponse) Reset() {
 	*x = DiffResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[55]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3822,7 +4000,7 @@ func (x *DiffResponse) String() string {
 func (*DiffResponse) ProtoMessage() {}
 
 func (x *DiffResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[55]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3835,7 +4013,7 @@ func (x *DiffResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiffResponse.ProtoReflect.Descriptor instead.
 func (*DiffResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{55}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *DiffResponse) GetFiles() []*FileDiff {
@@ -3862,7 +4040,7 @@ type OptOutRequest struct {
 
 func (x *OptOutRequest) Reset() {
 	*x = OptOutRequest{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[56]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3874,7 +4052,7 @@ func (x *OptOutRequest) String() string {
 func (*OptOutRequest) ProtoMessage() {}
 
 func (x *OptOutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[56]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3887,7 +4065,7 @@ func (x *OptOutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OptOutRequest.ProtoReflect.Descriptor instead.
 func (*OptOutRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{56}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *OptOutRequest) GetScope() *Scope {
@@ -3935,7 +4113,7 @@ type KeptSkill struct {
 
 func (x *KeptSkill) Reset() {
 	*x = KeptSkill{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[57]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3947,7 +4125,7 @@ func (x *KeptSkill) String() string {
 func (*KeptSkill) ProtoMessage() {}
 
 func (x *KeptSkill) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[57]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3960,7 +4138,7 @@ func (x *KeptSkill) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeptSkill.ProtoReflect.Descriptor instead.
 func (*KeptSkill) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{57}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *KeptSkill) GetName() string {
@@ -3978,20 +4156,23 @@ func (x *KeptSkill) GetReason() string {
 }
 
 type OptOutResponse struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Message string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What changed, or that nothing did, in a sentence
+	Message string `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
 	// Marker file of the opt out
-	Marker        string       `protobuf:"bytes,2,opt,name=marker,proto3" json:"marker,omitempty"`
-	Removed       []string     `protobuf:"bytes,3,rep,name=removed,proto3" json:"removed,omitempty"`
-	Kept          []*KeptSkill `protobuf:"bytes,4,rep,name=kept,proto3" json:"kept,omitempty"`
-	Synced        *Synced      `protobuf:"bytes,5,opt,name=synced,proto3" json:"synced,omitempty"`
+	Marker  string       `protobuf:"bytes,2,opt,name=marker,proto3" json:"marker,omitempty"`
+	Removed []string     `protobuf:"bytes,3,rep,name=removed,proto3" json:"removed,omitempty"`
+	Kept    []*KeptSkill `protobuf:"bytes,4,rep,name=kept,proto3" json:"kept,omitempty"`
+	Synced  *Synced      `protobuf:"bytes,5,opt,name=synced,proto3" json:"synced,omitempty"`
+	// The profile was opted out or back in now, as it was not already
+	Changed       bool `protobuf:"varint,6,opt,name=changed,proto3" json:"changed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *OptOutResponse) Reset() {
 	*x = OptOutResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[58]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4003,7 +4184,7 @@ func (x *OptOutResponse) String() string {
 func (*OptOutResponse) ProtoMessage() {}
 
 func (x *OptOutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[58]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4016,7 +4197,7 @@ func (x *OptOutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OptOutResponse.ProtoReflect.Descriptor instead.
 func (*OptOutResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{58}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *OptOutResponse) GetMessage() string {
@@ -4054,6 +4235,13 @@ func (x *OptOutResponse) GetSynced() *Synced {
 	return nil
 }
 
+func (x *OptOutResponse) GetChanged() bool {
+	if x != nil {
+		return x.Changed
+	}
+	return false
+}
+
 type RepairRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Scope *Scope                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
@@ -4066,7 +4254,7 @@ type RepairRequest struct {
 
 func (x *RepairRequest) Reset() {
 	*x = RepairRequest{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[59]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4078,7 +4266,7 @@ func (x *RepairRequest) String() string {
 func (*RepairRequest) ProtoMessage() {}
 
 func (x *RepairRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[59]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4091,7 +4279,7 @@ func (x *RepairRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepairRequest.ProtoReflect.Descriptor instead.
 func (*RepairRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{59}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *RepairRequest) GetScope() *Scope {
@@ -4127,7 +4315,7 @@ type RepairResponse struct {
 
 func (x *RepairResponse) Reset() {
 	*x = RepairResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[60]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4139,7 +4327,7 @@ func (x *RepairResponse) String() string {
 func (*RepairResponse) ProtoMessage() {}
 
 func (x *RepairResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[60]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4152,7 +4340,7 @@ func (x *RepairResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepairResponse.ProtoReflect.Descriptor instead.
 func (*RepairResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{60}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *RepairResponse) GetRestored() []string {
@@ -4192,7 +4380,7 @@ type ReloadRequest struct {
 
 func (x *ReloadRequest) Reset() {
 	*x = ReloadRequest{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[61]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4204,7 +4392,7 @@ func (x *ReloadRequest) String() string {
 func (*ReloadRequest) ProtoMessage() {}
 
 func (x *ReloadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[61]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4217,7 +4405,7 @@ func (x *ReloadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReloadRequest.ProtoReflect.Descriptor instead.
 func (*ReloadRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{61}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *ReloadRequest) GetScope() *Scope {
@@ -4237,7 +4425,7 @@ type Command struct {
 
 func (x *Command) Reset() {
 	*x = Command{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[62]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4249,7 +4437,7 @@ func (x *Command) String() string {
 func (*Command) ProtoMessage() {}
 
 func (x *Command) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[62]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4262,7 +4450,7 @@ func (x *Command) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Command.ProtoReflect.Descriptor instead.
 func (*Command) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{62}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *Command) GetName() string {
@@ -4291,7 +4479,7 @@ type ReloadResponse struct {
 
 func (x *ReloadResponse) Reset() {
 	*x = ReloadResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[63]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4303,7 +4491,7 @@ func (x *ReloadResponse) String() string {
 func (*ReloadResponse) ProtoMessage() {}
 
 func (x *ReloadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[63]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4316,7 +4504,7 @@ func (x *ReloadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReloadResponse.ProtoReflect.Descriptor instead.
 func (*ReloadResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{63}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *ReloadResponse) GetAdded() []*Command {
@@ -4349,7 +4537,7 @@ type BundlesRequest struct {
 
 func (x *BundlesRequest) Reset() {
 	*x = BundlesRequest{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[64]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4361,7 +4549,7 @@ func (x *BundlesRequest) String() string {
 func (*BundlesRequest) ProtoMessage() {}
 
 func (x *BundlesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[64]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4374,7 +4562,7 @@ func (x *BundlesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BundlesRequest.ProtoReflect.Descriptor instead.
 func (*BundlesRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{64}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *BundlesRequest) GetScope() *Scope {
@@ -4399,7 +4587,7 @@ type Bundle struct {
 
 func (x *Bundle) Reset() {
 	*x = Bundle{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[65]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4411,7 +4599,7 @@ func (x *Bundle) String() string {
 func (*Bundle) ProtoMessage() {}
 
 func (x *Bundle) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[65]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4424,7 +4612,7 @@ func (x *Bundle) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Bundle.ProtoReflect.Descriptor instead.
 func (*Bundle) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{65}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *Bundle) GetName() string {
@@ -4480,7 +4668,7 @@ type BundlesResponse struct {
 
 func (x *BundlesResponse) Reset() {
 	*x = BundlesResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[66]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4492,7 +4680,7 @@ func (x *BundlesResponse) String() string {
 func (*BundlesResponse) ProtoMessage() {}
 
 func (x *BundlesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[66]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4505,7 +4693,7 @@ func (x *BundlesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BundlesResponse.ProtoReflect.Descriptor instead.
 func (*BundlesResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{66}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *BundlesResponse) GetBundles() []*Bundle {
@@ -4537,7 +4725,7 @@ type SaveBundleRequest struct {
 
 func (x *SaveBundleRequest) Reset() {
 	*x = SaveBundleRequest{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[67]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4549,7 +4737,7 @@ func (x *SaveBundleRequest) String() string {
 func (*SaveBundleRequest) ProtoMessage() {}
 
 func (x *SaveBundleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[67]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4562,7 +4750,7 @@ func (x *SaveBundleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveBundleRequest.ProtoReflect.Descriptor instead.
 func (*SaveBundleRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{67}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *SaveBundleRequest) GetScope() *Scope {
@@ -4616,7 +4804,7 @@ type SaveBundleResponse struct {
 
 func (x *SaveBundleResponse) Reset() {
 	*x = SaveBundleResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[68]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4628,7 +4816,7 @@ func (x *SaveBundleResponse) String() string {
 func (*SaveBundleResponse) ProtoMessage() {}
 
 func (x *SaveBundleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[68]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4641,7 +4829,7 @@ func (x *SaveBundleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveBundleResponse.ProtoReflect.Descriptor instead.
 func (*SaveBundleResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{68}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *SaveBundleResponse) GetBundle() *Bundle {
@@ -4661,7 +4849,7 @@ type DeleteBundleRequest struct {
 
 func (x *DeleteBundleRequest) Reset() {
 	*x = DeleteBundleRequest{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[69]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4673,7 +4861,7 @@ func (x *DeleteBundleRequest) String() string {
 func (*DeleteBundleRequest) ProtoMessage() {}
 
 func (x *DeleteBundleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[69]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4686,7 +4874,7 @@ func (x *DeleteBundleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBundleRequest.ProtoReflect.Descriptor instead.
 func (*DeleteBundleRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{69}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *DeleteBundleRequest) GetScope() *Scope {
@@ -4713,7 +4901,7 @@ type DeleteBundleResponse struct {
 
 func (x *DeleteBundleResponse) Reset() {
 	*x = DeleteBundleResponse{}
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[70]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4725,7 +4913,7 @@ func (x *DeleteBundleResponse) String() string {
 func (*DeleteBundleResponse) ProtoMessage() {}
 
 func (x *DeleteBundleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[70]
+	mi := &file_icebath_plugins_skills_v1_skills_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4738,7 +4926,7 @@ func (x *DeleteBundleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBundleResponse.ProtoReflect.Descriptor instead.
 func (*DeleteBundleResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{70}
+	return file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *DeleteBundleResponse) GetPath() string {
@@ -4914,13 +5102,14 @@ const file_icebath_plugins_skills_v1_skills_proto_rawDesc = "" +
 	"\fTrustRequest\x126\n" +
 	"\x05scope\x18\x01 \x01(\v2 .icebath.plugins.skills.v1.ScopeR\x05scope\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x18\n" +
-	"\auntrust\x18\x03 \x01(\bR\auntrust\"V\n" +
+	"\auntrust\x18\x03 \x01(\bR\auntrust\"j\n" +
 	"\rTrustResponse\x125\n" +
 	"\x05lines\x18\x01 \x03(\v2\x1f.icebath.plugins.skills.v1.LineR\x05lines\x12\x0e\n" +
-	"\x02ok\x18\x02 \x01(\bR\x02ok\"?\n" +
+	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x12\n" +
+	"\x04said\x18\x03 \x01(\tR\x04said\"?\n" +
 	"\x05Scope\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x1c\n" +
-	"\tdirectory\x18\x02 \x01(\tR\tdirectory\"\x95\x04\n" +
+	"\tdirectory\x18\x02 \x01(\tR\tdirectory\"\xd2\x04\n" +
 	"\x05Skill\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1a\n" +
@@ -4944,19 +5133,37 @@ const file_icebath_plugins_skills_v1_skills_proto_rawDesc = "" +
 	"\rlast_activity\x18\x10 \x01(\tR\flastActivity\x12\x14\n" +
 	"\x05state\x18\x11 \x01(\tR\x05state\x12\x16\n" +
 	"\x06pinned\x18\x12 \x01(\bR\x06pinned\x12\x16\n" +
-	"\x06locked\x18\x13 \x01(\bR\x06locked\"E\n" +
+	"\x06locked\x18\x13 \x01(\bR\x06locked\x12\x14\n" +
+	"\x05shown\x18\x14 \x01(\tR\x05shown\x12%\n" +
+	"\x0ecategory_title\x18\x15 \x01(\tR\rcategoryTitle\"_\n" +
 	"\vListRequest\x126\n" +
-	"\x05scope\x18\x01 \x01(\v2 .icebath.plugins.skills.v1.ScopeR\x05scope\"\xb9\x02\n" +
+	"\x05scope\x18\x01 \x01(\v2 .icebath.plugins.skills.v1.ScopeR\x05scope\x12\x18\n" +
+	"\asurface\x18\x02 \x01(\tR\asurface\"\x86\x01\n" +
+	"\bCategory\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\x0e\n" +
+	"\x02on\x18\x04 \x01(\x05R\x02on\x12\x14\n" +
+	"\x05total\x18\x05 \x01(\x05R\x05total\x12\x14\n" +
+	"\x05about\x18\x06 \x01(\tR\x05about\"\xea\x03\n" +
 	"\fListResponse\x128\n" +
 	"\x06skills\x18\x01 \x03(\v2 .icebath.plugins.skills.v1.SkillR\x06skills\x12>\n" +
 	"\bsurfaces\x18\x02 \x03(\v2\".icebath.plugins.skills.v1.SurfaceR\bsurfaces\x12\x1d\n" +
 	"\n" +
 	"create_dir\x18\x03 \x01(\tR\tcreateDir\x12\x1d\n" +
 	"\n" +
-	"skills_dir\x18\x04 \x01(\tR\tskillsDir\x12+\n" +
-	"\x11untrusted_project\x18\x05 \x01(\tR\x10untrustedProject\x12'\n" +
-	"\x0funtrusted_count\x18\x06 \x01(\x05R\x0euntrustedCount\x12\x1b\n" +
-	"\topted_out\x18\a \x01(\bR\boptedOut\"3\n" +
+	"skills_dir\x18\x04 \x01(\tR\tskillsDir\x12\x1b\n" +
+	"\topted_out\x18\a \x01(\bR\boptedOut\x12C\n" +
+	"\n" +
+	"categories\x18\b \x03(\v2#.icebath.plugins.skills.v1.CategoryR\n" +
+	"categories\x12\x18\n" +
+	"\atrusted\x18\t \x03(\tR\atrusted\x12\x18\n" +
+	"\aproject\x18\n" +
+	" \x01(\tR\aproject\x12'\n" +
+	"\x0fproject_trusted\x18\v \x01(\bR\x0eprojectTrusted\x12%\n" +
+	"\x0eproject_skills\x18\f \x01(\x05R\rprojectSkills\x12\x18\n" +
+	"\asecrets\x18\r \x01(\x05R\asecrets\x12\x16\n" +
+	"\x06values\x18\x0e \x01(\x05R\x06valuesJ\x04\b\x05\x10\x06J\x04\b\x06\x10\a\"3\n" +
 	"\aSurface\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\"Y\n" +
@@ -4993,11 +5200,12 @@ const file_icebath_plugins_skills_v1_skills_proto_rawDesc = "" +
 	"\x05scope\x18\x01 \x01(\v2 .icebath.plugins.skills.v1.ScopeR\x05scope\x12\x14\n" +
 	"\x05names\x18\x02 \x03(\tR\x05names\x12\x18\n" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12\x18\n" +
-	"\asurface\x18\x04 \x01(\tR\asurface\"`\n" +
+	"\asurface\x18\x04 \x01(\tR\asurface\"t\n" +
 	"\x0eToggleResponse\x12\x18\n" +
 	"\achanged\x18\x01 \x03(\tR\achanged\x12\x18\n" +
 	"\aenabled\x18\x02 \x01(\x05R\aenabled\x12\x1a\n" +
-	"\bdisabled\x18\x03 \x01(\x05R\bdisabled\"\xcd\x02\n" +
+	"\bdisabled\x18\x03 \x01(\x05R\bdisabled\x12\x12\n" +
+	"\x04said\x18\x04 \x01(\tR\x04said\"\xcd\x02\n" +
 	"\x06Synced\x12\x16\n" +
 	"\x06copied\x18\x01 \x03(\tR\x06copied\x12\x18\n" +
 	"\aupdated\x18\x02 \x03(\tR\aupdated\x12\x18\n" +
@@ -5044,13 +5252,14 @@ const file_icebath_plugins_skills_v1_skills_proto_rawDesc = "" +
 	"\x04sync\x18\x05 \x01(\bR\x04sync\"7\n" +
 	"\tKeptSkill\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xd1\x01\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xeb\x01\n" +
 	"\x0eOptOutResponse\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x16\n" +
 	"\x06marker\x18\x02 \x01(\tR\x06marker\x12\x18\n" +
 	"\aremoved\x18\x03 \x03(\tR\aremoved\x128\n" +
 	"\x04kept\x18\x04 \x03(\v2$.icebath.plugins.skills.v1.KeptSkillR\x04kept\x129\n" +
-	"\x06synced\x18\x05 \x01(\v2!.icebath.plugins.skills.v1.SyncedR\x06synced\"u\n" +
+	"\x06synced\x18\x05 \x01(\v2!.icebath.plugins.skills.v1.SyncedR\x06synced\x12\x18\n" +
+	"\achanged\x18\x06 \x01(\bR\achanged\"u\n" +
 	"\rRepairRequest\x126\n" +
 	"\x05scope\x18\x01 \x01(\v2 .icebath.plugins.skills.v1.ScopeR\x05scope\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -5156,7 +5365,7 @@ func file_icebath_plugins_skills_v1_skills_proto_rawDescGZIP() []byte {
 }
 
 var file_icebath_plugins_skills_v1_skills_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_icebath_plugins_skills_v1_skills_proto_msgTypes = make([]protoimpl.MessageInfo, 71)
+var file_icebath_plugins_skills_v1_skills_proto_msgTypes = make([]protoimpl.MessageInfo, 72)
 var file_icebath_plugins_skills_v1_skills_proto_goTypes = []any{
 	(Tone)(0),                    // 0: icebath.plugins.skills.v1.Tone
 	(Outcome)(0),                 // 1: icebath.plugins.skills.v1.Outcome
@@ -5200,37 +5409,38 @@ var file_icebath_plugins_skills_v1_skills_proto_goTypes = []any{
 	(*Scope)(nil),                // 39: icebath.plugins.skills.v1.Scope
 	(*Skill)(nil),                // 40: icebath.plugins.skills.v1.Skill
 	(*ListRequest)(nil),          // 41: icebath.plugins.skills.v1.ListRequest
-	(*ListResponse)(nil),         // 42: icebath.plugins.skills.v1.ListResponse
-	(*Surface)(nil),              // 43: icebath.plugins.skills.v1.Surface
-	(*ShowRequest)(nil),          // 44: icebath.plugins.skills.v1.ShowRequest
-	(*Finding)(nil),              // 45: icebath.plugins.skills.v1.Finding
-	(*ShowResponse)(nil),         // 46: icebath.plugins.skills.v1.ShowResponse
-	(*Blueprint)(nil),            // 47: icebath.plugins.skills.v1.Blueprint
-	(*ToggleRequest)(nil),        // 48: icebath.plugins.skills.v1.ToggleRequest
-	(*ToggleResponse)(nil),       // 49: icebath.plugins.skills.v1.ToggleResponse
-	(*Synced)(nil),               // 50: icebath.plugins.skills.v1.Synced
-	(*ResetRequest)(nil),         // 51: icebath.plugins.skills.v1.ResetRequest
-	(*ResetResponse)(nil),        // 52: icebath.plugins.skills.v1.ResetResponse
-	(*ModifiedRequest)(nil),      // 53: icebath.plugins.skills.v1.ModifiedRequest
-	(*ModifiedResponse)(nil),     // 54: icebath.plugins.skills.v1.ModifiedResponse
-	(*DiffRequest)(nil),          // 55: icebath.plugins.skills.v1.DiffRequest
-	(*FileDiff)(nil),             // 56: icebath.plugins.skills.v1.FileDiff
-	(*DiffResponse)(nil),         // 57: icebath.plugins.skills.v1.DiffResponse
-	(*OptOutRequest)(nil),        // 58: icebath.plugins.skills.v1.OptOutRequest
-	(*KeptSkill)(nil),            // 59: icebath.plugins.skills.v1.KeptSkill
-	(*OptOutResponse)(nil),       // 60: icebath.plugins.skills.v1.OptOutResponse
-	(*RepairRequest)(nil),        // 61: icebath.plugins.skills.v1.RepairRequest
-	(*RepairResponse)(nil),       // 62: icebath.plugins.skills.v1.RepairResponse
-	(*ReloadRequest)(nil),        // 63: icebath.plugins.skills.v1.ReloadRequest
-	(*Command)(nil),              // 64: icebath.plugins.skills.v1.Command
-	(*ReloadResponse)(nil),       // 65: icebath.plugins.skills.v1.ReloadResponse
-	(*BundlesRequest)(nil),       // 66: icebath.plugins.skills.v1.BundlesRequest
-	(*Bundle)(nil),               // 67: icebath.plugins.skills.v1.Bundle
-	(*BundlesResponse)(nil),      // 68: icebath.plugins.skills.v1.BundlesResponse
-	(*SaveBundleRequest)(nil),    // 69: icebath.plugins.skills.v1.SaveBundleRequest
-	(*SaveBundleResponse)(nil),   // 70: icebath.plugins.skills.v1.SaveBundleResponse
-	(*DeleteBundleRequest)(nil),  // 71: icebath.plugins.skills.v1.DeleteBundleRequest
-	(*DeleteBundleResponse)(nil), // 72: icebath.plugins.skills.v1.DeleteBundleResponse
+	(*Category)(nil),             // 42: icebath.plugins.skills.v1.Category
+	(*ListResponse)(nil),         // 43: icebath.plugins.skills.v1.ListResponse
+	(*Surface)(nil),              // 44: icebath.plugins.skills.v1.Surface
+	(*ShowRequest)(nil),          // 45: icebath.plugins.skills.v1.ShowRequest
+	(*Finding)(nil),              // 46: icebath.plugins.skills.v1.Finding
+	(*ShowResponse)(nil),         // 47: icebath.plugins.skills.v1.ShowResponse
+	(*Blueprint)(nil),            // 48: icebath.plugins.skills.v1.Blueprint
+	(*ToggleRequest)(nil),        // 49: icebath.plugins.skills.v1.ToggleRequest
+	(*ToggleResponse)(nil),       // 50: icebath.plugins.skills.v1.ToggleResponse
+	(*Synced)(nil),               // 51: icebath.plugins.skills.v1.Synced
+	(*ResetRequest)(nil),         // 52: icebath.plugins.skills.v1.ResetRequest
+	(*ResetResponse)(nil),        // 53: icebath.plugins.skills.v1.ResetResponse
+	(*ModifiedRequest)(nil),      // 54: icebath.plugins.skills.v1.ModifiedRequest
+	(*ModifiedResponse)(nil),     // 55: icebath.plugins.skills.v1.ModifiedResponse
+	(*DiffRequest)(nil),          // 56: icebath.plugins.skills.v1.DiffRequest
+	(*FileDiff)(nil),             // 57: icebath.plugins.skills.v1.FileDiff
+	(*DiffResponse)(nil),         // 58: icebath.plugins.skills.v1.DiffResponse
+	(*OptOutRequest)(nil),        // 59: icebath.plugins.skills.v1.OptOutRequest
+	(*KeptSkill)(nil),            // 60: icebath.plugins.skills.v1.KeptSkill
+	(*OptOutResponse)(nil),       // 61: icebath.plugins.skills.v1.OptOutResponse
+	(*RepairRequest)(nil),        // 62: icebath.plugins.skills.v1.RepairRequest
+	(*RepairResponse)(nil),       // 63: icebath.plugins.skills.v1.RepairResponse
+	(*ReloadRequest)(nil),        // 64: icebath.plugins.skills.v1.ReloadRequest
+	(*Command)(nil),              // 65: icebath.plugins.skills.v1.Command
+	(*ReloadResponse)(nil),       // 66: icebath.plugins.skills.v1.ReloadResponse
+	(*BundlesRequest)(nil),       // 67: icebath.plugins.skills.v1.BundlesRequest
+	(*Bundle)(nil),               // 68: icebath.plugins.skills.v1.Bundle
+	(*BundlesResponse)(nil),      // 69: icebath.plugins.skills.v1.BundlesResponse
+	(*SaveBundleRequest)(nil),    // 70: icebath.plugins.skills.v1.SaveBundleRequest
+	(*SaveBundleResponse)(nil),   // 71: icebath.plugins.skills.v1.SaveBundleResponse
+	(*DeleteBundleRequest)(nil),  // 72: icebath.plugins.skills.v1.DeleteBundleRequest
+	(*DeleteBundleResponse)(nil), // 73: icebath.plugins.skills.v1.DeleteBundleResponse
 }
 var file_icebath_plugins_skills_v1_skills_proto_depIdxs = []int32{
 	0,  // 0: icebath.plugins.skills.v1.Line.tone:type_name -> icebath.plugins.skills.v1.Tone
@@ -5268,88 +5478,89 @@ var file_icebath_plugins_skills_v1_skills_proto_depIdxs = []int32{
 	2,  // 32: icebath.plugins.skills.v1.TrustResponse.lines:type_name -> icebath.plugins.skills.v1.Line
 	39, // 33: icebath.plugins.skills.v1.ListRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
 	40, // 34: icebath.plugins.skills.v1.ListResponse.skills:type_name -> icebath.plugins.skills.v1.Skill
-	43, // 35: icebath.plugins.skills.v1.ListResponse.surfaces:type_name -> icebath.plugins.skills.v1.Surface
-	39, // 36: icebath.plugins.skills.v1.ShowRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
-	40, // 37: icebath.plugins.skills.v1.ShowResponse.skill:type_name -> icebath.plugins.skills.v1.Skill
-	45, // 38: icebath.plugins.skills.v1.ShowResponse.findings:type_name -> icebath.plugins.skills.v1.Finding
-	47, // 39: icebath.plugins.skills.v1.ShowResponse.blueprint:type_name -> icebath.plugins.skills.v1.Blueprint
-	39, // 40: icebath.plugins.skills.v1.ToggleRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
-	39, // 41: icebath.plugins.skills.v1.ResetRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
-	50, // 42: icebath.plugins.skills.v1.ResetResponse.synced:type_name -> icebath.plugins.skills.v1.Synced
-	39, // 43: icebath.plugins.skills.v1.ModifiedRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
-	39, // 44: icebath.plugins.skills.v1.DiffRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
-	56, // 45: icebath.plugins.skills.v1.DiffResponse.files:type_name -> icebath.plugins.skills.v1.FileDiff
-	39, // 46: icebath.plugins.skills.v1.OptOutRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
-	59, // 47: icebath.plugins.skills.v1.OptOutResponse.kept:type_name -> icebath.plugins.skills.v1.KeptSkill
-	50, // 48: icebath.plugins.skills.v1.OptOutResponse.synced:type_name -> icebath.plugins.skills.v1.Synced
-	39, // 49: icebath.plugins.skills.v1.RepairRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
-	39, // 50: icebath.plugins.skills.v1.ReloadRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
-	64, // 51: icebath.plugins.skills.v1.ReloadResponse.added:type_name -> icebath.plugins.skills.v1.Command
-	64, // 52: icebath.plugins.skills.v1.ReloadResponse.removed:type_name -> icebath.plugins.skills.v1.Command
-	39, // 53: icebath.plugins.skills.v1.BundlesRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
-	67, // 54: icebath.plugins.skills.v1.BundlesResponse.bundles:type_name -> icebath.plugins.skills.v1.Bundle
-	39, // 55: icebath.plugins.skills.v1.SaveBundleRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
-	67, // 56: icebath.plugins.skills.v1.SaveBundleResponse.bundle:type_name -> icebath.plugins.skills.v1.Bundle
-	39, // 57: icebath.plugins.skills.v1.DeleteBundleRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
-	41, // 58: icebath.plugins.skills.v1.SkillsService.List:input_type -> icebath.plugins.skills.v1.ListRequest
-	44, // 59: icebath.plugins.skills.v1.SkillsService.Show:input_type -> icebath.plugins.skills.v1.ShowRequest
-	48, // 60: icebath.plugins.skills.v1.SkillsService.Toggle:input_type -> icebath.plugins.skills.v1.ToggleRequest
-	51, // 61: icebath.plugins.skills.v1.SkillsService.Reset:input_type -> icebath.plugins.skills.v1.ResetRequest
-	53, // 62: icebath.plugins.skills.v1.SkillsService.Modified:input_type -> icebath.plugins.skills.v1.ModifiedRequest
-	55, // 63: icebath.plugins.skills.v1.SkillsService.Diff:input_type -> icebath.plugins.skills.v1.DiffRequest
-	58, // 64: icebath.plugins.skills.v1.SkillsService.OptOut:input_type -> icebath.plugins.skills.v1.OptOutRequest
-	61, // 65: icebath.plugins.skills.v1.SkillsService.Repair:input_type -> icebath.plugins.skills.v1.RepairRequest
-	63, // 66: icebath.plugins.skills.v1.SkillsService.Reload:input_type -> icebath.plugins.skills.v1.ReloadRequest
-	66, // 67: icebath.plugins.skills.v1.SkillsService.Bundles:input_type -> icebath.plugins.skills.v1.BundlesRequest
-	69, // 68: icebath.plugins.skills.v1.SkillsService.SaveBundle:input_type -> icebath.plugins.skills.v1.SaveBundleRequest
-	71, // 69: icebath.plugins.skills.v1.SkillsService.DeleteBundle:input_type -> icebath.plugins.skills.v1.DeleteBundleRequest
-	4,  // 70: icebath.plugins.skills.v1.SkillsService.Search:input_type -> icebath.plugins.skills.v1.SearchRequest
-	6,  // 71: icebath.plugins.skills.v1.SkillsService.Browse:input_type -> icebath.plugins.skills.v1.BrowseRequest
-	10, // 72: icebath.plugins.skills.v1.SkillsService.Inspect:input_type -> icebath.plugins.skills.v1.InspectRequest
-	13, // 73: icebath.plugins.skills.v1.SkillsService.Stage:input_type -> icebath.plugins.skills.v1.StageRequest
-	15, // 74: icebath.plugins.skills.v1.SkillsService.Commit:input_type -> icebath.plugins.skills.v1.CommitRequest
-	17, // 75: icebath.plugins.skills.v1.SkillsService.Discard:input_type -> icebath.plugins.skills.v1.DiscardRequest
-	19, // 76: icebath.plugins.skills.v1.SkillsService.Check:input_type -> icebath.plugins.skills.v1.CheckRequest
-	22, // 77: icebath.plugins.skills.v1.SkillsService.Update:input_type -> icebath.plugins.skills.v1.UpdateRequest
-	24, // 78: icebath.plugins.skills.v1.SkillsService.Audit:input_type -> icebath.plugins.skills.v1.AuditRequest
-	26, // 79: icebath.plugins.skills.v1.SkillsService.Uninstall:input_type -> icebath.plugins.skills.v1.UninstallRequest
-	28, // 80: icebath.plugins.skills.v1.SkillsService.Publish:input_type -> icebath.plugins.skills.v1.PublishRequest
-	30, // 81: icebath.plugins.skills.v1.SkillsService.Export:input_type -> icebath.plugins.skills.v1.ExportRequest
-	32, // 82: icebath.plugins.skills.v1.SkillsService.Taps:input_type -> icebath.plugins.skills.v1.TapsRequest
-	35, // 83: icebath.plugins.skills.v1.SkillsService.Tap:input_type -> icebath.plugins.skills.v1.TapRequest
-	37, // 84: icebath.plugins.skills.v1.SkillsService.Trust:input_type -> icebath.plugins.skills.v1.TrustRequest
-	42, // 85: icebath.plugins.skills.v1.SkillsService.List:output_type -> icebath.plugins.skills.v1.ListResponse
-	46, // 86: icebath.plugins.skills.v1.SkillsService.Show:output_type -> icebath.plugins.skills.v1.ShowResponse
-	49, // 87: icebath.plugins.skills.v1.SkillsService.Toggle:output_type -> icebath.plugins.skills.v1.ToggleResponse
-	52, // 88: icebath.plugins.skills.v1.SkillsService.Reset:output_type -> icebath.plugins.skills.v1.ResetResponse
-	54, // 89: icebath.plugins.skills.v1.SkillsService.Modified:output_type -> icebath.plugins.skills.v1.ModifiedResponse
-	57, // 90: icebath.plugins.skills.v1.SkillsService.Diff:output_type -> icebath.plugins.skills.v1.DiffResponse
-	60, // 91: icebath.plugins.skills.v1.SkillsService.OptOut:output_type -> icebath.plugins.skills.v1.OptOutResponse
-	62, // 92: icebath.plugins.skills.v1.SkillsService.Repair:output_type -> icebath.plugins.skills.v1.RepairResponse
-	65, // 93: icebath.plugins.skills.v1.SkillsService.Reload:output_type -> icebath.plugins.skills.v1.ReloadResponse
-	68, // 94: icebath.plugins.skills.v1.SkillsService.Bundles:output_type -> icebath.plugins.skills.v1.BundlesResponse
-	70, // 95: icebath.plugins.skills.v1.SkillsService.SaveBundle:output_type -> icebath.plugins.skills.v1.SaveBundleResponse
-	72, // 96: icebath.plugins.skills.v1.SkillsService.DeleteBundle:output_type -> icebath.plugins.skills.v1.DeleteBundleResponse
-	5,  // 97: icebath.plugins.skills.v1.SkillsService.Search:output_type -> icebath.plugins.skills.v1.SearchResponse
-	9,  // 98: icebath.plugins.skills.v1.SkillsService.Browse:output_type -> icebath.plugins.skills.v1.BrowseResponse
-	11, // 99: icebath.plugins.skills.v1.SkillsService.Inspect:output_type -> icebath.plugins.skills.v1.InspectResponse
-	14, // 100: icebath.plugins.skills.v1.SkillsService.Stage:output_type -> icebath.plugins.skills.v1.StageResponse
-	16, // 101: icebath.plugins.skills.v1.SkillsService.Commit:output_type -> icebath.plugins.skills.v1.CommitResponse
-	18, // 102: icebath.plugins.skills.v1.SkillsService.Discard:output_type -> icebath.plugins.skills.v1.DiscardResponse
-	21, // 103: icebath.plugins.skills.v1.SkillsService.Check:output_type -> icebath.plugins.skills.v1.CheckResponse
-	23, // 104: icebath.plugins.skills.v1.SkillsService.Update:output_type -> icebath.plugins.skills.v1.UpdateResponse
-	25, // 105: icebath.plugins.skills.v1.SkillsService.Audit:output_type -> icebath.plugins.skills.v1.AuditResponse
-	27, // 106: icebath.plugins.skills.v1.SkillsService.Uninstall:output_type -> icebath.plugins.skills.v1.UninstallResponse
-	29, // 107: icebath.plugins.skills.v1.SkillsService.Publish:output_type -> icebath.plugins.skills.v1.PublishResponse
-	31, // 108: icebath.plugins.skills.v1.SkillsService.Export:output_type -> icebath.plugins.skills.v1.ExportResponse
-	34, // 109: icebath.plugins.skills.v1.SkillsService.Taps:output_type -> icebath.plugins.skills.v1.TapsResponse
-	36, // 110: icebath.plugins.skills.v1.SkillsService.Tap:output_type -> icebath.plugins.skills.v1.TapResponse
-	38, // 111: icebath.plugins.skills.v1.SkillsService.Trust:output_type -> icebath.plugins.skills.v1.TrustResponse
-	85, // [85:112] is the sub-list for method output_type
-	58, // [58:85] is the sub-list for method input_type
-	58, // [58:58] is the sub-list for extension type_name
-	58, // [58:58] is the sub-list for extension extendee
-	0,  // [0:58] is the sub-list for field type_name
+	44, // 35: icebath.plugins.skills.v1.ListResponse.surfaces:type_name -> icebath.plugins.skills.v1.Surface
+	42, // 36: icebath.plugins.skills.v1.ListResponse.categories:type_name -> icebath.plugins.skills.v1.Category
+	39, // 37: icebath.plugins.skills.v1.ShowRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
+	40, // 38: icebath.plugins.skills.v1.ShowResponse.skill:type_name -> icebath.plugins.skills.v1.Skill
+	46, // 39: icebath.plugins.skills.v1.ShowResponse.findings:type_name -> icebath.plugins.skills.v1.Finding
+	48, // 40: icebath.plugins.skills.v1.ShowResponse.blueprint:type_name -> icebath.plugins.skills.v1.Blueprint
+	39, // 41: icebath.plugins.skills.v1.ToggleRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
+	39, // 42: icebath.plugins.skills.v1.ResetRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
+	51, // 43: icebath.plugins.skills.v1.ResetResponse.synced:type_name -> icebath.plugins.skills.v1.Synced
+	39, // 44: icebath.plugins.skills.v1.ModifiedRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
+	39, // 45: icebath.plugins.skills.v1.DiffRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
+	57, // 46: icebath.plugins.skills.v1.DiffResponse.files:type_name -> icebath.plugins.skills.v1.FileDiff
+	39, // 47: icebath.plugins.skills.v1.OptOutRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
+	60, // 48: icebath.plugins.skills.v1.OptOutResponse.kept:type_name -> icebath.plugins.skills.v1.KeptSkill
+	51, // 49: icebath.plugins.skills.v1.OptOutResponse.synced:type_name -> icebath.plugins.skills.v1.Synced
+	39, // 50: icebath.plugins.skills.v1.RepairRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
+	39, // 51: icebath.plugins.skills.v1.ReloadRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
+	65, // 52: icebath.plugins.skills.v1.ReloadResponse.added:type_name -> icebath.plugins.skills.v1.Command
+	65, // 53: icebath.plugins.skills.v1.ReloadResponse.removed:type_name -> icebath.plugins.skills.v1.Command
+	39, // 54: icebath.plugins.skills.v1.BundlesRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
+	68, // 55: icebath.plugins.skills.v1.BundlesResponse.bundles:type_name -> icebath.plugins.skills.v1.Bundle
+	39, // 56: icebath.plugins.skills.v1.SaveBundleRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
+	68, // 57: icebath.plugins.skills.v1.SaveBundleResponse.bundle:type_name -> icebath.plugins.skills.v1.Bundle
+	39, // 58: icebath.plugins.skills.v1.DeleteBundleRequest.scope:type_name -> icebath.plugins.skills.v1.Scope
+	41, // 59: icebath.plugins.skills.v1.SkillsService.List:input_type -> icebath.plugins.skills.v1.ListRequest
+	45, // 60: icebath.plugins.skills.v1.SkillsService.Show:input_type -> icebath.plugins.skills.v1.ShowRequest
+	49, // 61: icebath.plugins.skills.v1.SkillsService.Toggle:input_type -> icebath.plugins.skills.v1.ToggleRequest
+	52, // 62: icebath.plugins.skills.v1.SkillsService.Reset:input_type -> icebath.plugins.skills.v1.ResetRequest
+	54, // 63: icebath.plugins.skills.v1.SkillsService.Modified:input_type -> icebath.plugins.skills.v1.ModifiedRequest
+	56, // 64: icebath.plugins.skills.v1.SkillsService.Diff:input_type -> icebath.plugins.skills.v1.DiffRequest
+	59, // 65: icebath.plugins.skills.v1.SkillsService.OptOut:input_type -> icebath.plugins.skills.v1.OptOutRequest
+	62, // 66: icebath.plugins.skills.v1.SkillsService.Repair:input_type -> icebath.plugins.skills.v1.RepairRequest
+	64, // 67: icebath.plugins.skills.v1.SkillsService.Reload:input_type -> icebath.plugins.skills.v1.ReloadRequest
+	67, // 68: icebath.plugins.skills.v1.SkillsService.Bundles:input_type -> icebath.plugins.skills.v1.BundlesRequest
+	70, // 69: icebath.plugins.skills.v1.SkillsService.SaveBundle:input_type -> icebath.plugins.skills.v1.SaveBundleRequest
+	72, // 70: icebath.plugins.skills.v1.SkillsService.DeleteBundle:input_type -> icebath.plugins.skills.v1.DeleteBundleRequest
+	4,  // 71: icebath.plugins.skills.v1.SkillsService.Search:input_type -> icebath.plugins.skills.v1.SearchRequest
+	6,  // 72: icebath.plugins.skills.v1.SkillsService.Browse:input_type -> icebath.plugins.skills.v1.BrowseRequest
+	10, // 73: icebath.plugins.skills.v1.SkillsService.Inspect:input_type -> icebath.plugins.skills.v1.InspectRequest
+	13, // 74: icebath.plugins.skills.v1.SkillsService.Stage:input_type -> icebath.plugins.skills.v1.StageRequest
+	15, // 75: icebath.plugins.skills.v1.SkillsService.Commit:input_type -> icebath.plugins.skills.v1.CommitRequest
+	17, // 76: icebath.plugins.skills.v1.SkillsService.Discard:input_type -> icebath.plugins.skills.v1.DiscardRequest
+	19, // 77: icebath.plugins.skills.v1.SkillsService.Check:input_type -> icebath.plugins.skills.v1.CheckRequest
+	22, // 78: icebath.plugins.skills.v1.SkillsService.Update:input_type -> icebath.plugins.skills.v1.UpdateRequest
+	24, // 79: icebath.plugins.skills.v1.SkillsService.Audit:input_type -> icebath.plugins.skills.v1.AuditRequest
+	26, // 80: icebath.plugins.skills.v1.SkillsService.Uninstall:input_type -> icebath.plugins.skills.v1.UninstallRequest
+	28, // 81: icebath.plugins.skills.v1.SkillsService.Publish:input_type -> icebath.plugins.skills.v1.PublishRequest
+	30, // 82: icebath.plugins.skills.v1.SkillsService.Export:input_type -> icebath.plugins.skills.v1.ExportRequest
+	32, // 83: icebath.plugins.skills.v1.SkillsService.Taps:input_type -> icebath.plugins.skills.v1.TapsRequest
+	35, // 84: icebath.plugins.skills.v1.SkillsService.Tap:input_type -> icebath.plugins.skills.v1.TapRequest
+	37, // 85: icebath.plugins.skills.v1.SkillsService.Trust:input_type -> icebath.plugins.skills.v1.TrustRequest
+	43, // 86: icebath.plugins.skills.v1.SkillsService.List:output_type -> icebath.plugins.skills.v1.ListResponse
+	47, // 87: icebath.plugins.skills.v1.SkillsService.Show:output_type -> icebath.plugins.skills.v1.ShowResponse
+	50, // 88: icebath.plugins.skills.v1.SkillsService.Toggle:output_type -> icebath.plugins.skills.v1.ToggleResponse
+	53, // 89: icebath.plugins.skills.v1.SkillsService.Reset:output_type -> icebath.plugins.skills.v1.ResetResponse
+	55, // 90: icebath.plugins.skills.v1.SkillsService.Modified:output_type -> icebath.plugins.skills.v1.ModifiedResponse
+	58, // 91: icebath.plugins.skills.v1.SkillsService.Diff:output_type -> icebath.plugins.skills.v1.DiffResponse
+	61, // 92: icebath.plugins.skills.v1.SkillsService.OptOut:output_type -> icebath.plugins.skills.v1.OptOutResponse
+	63, // 93: icebath.plugins.skills.v1.SkillsService.Repair:output_type -> icebath.plugins.skills.v1.RepairResponse
+	66, // 94: icebath.plugins.skills.v1.SkillsService.Reload:output_type -> icebath.plugins.skills.v1.ReloadResponse
+	69, // 95: icebath.plugins.skills.v1.SkillsService.Bundles:output_type -> icebath.plugins.skills.v1.BundlesResponse
+	71, // 96: icebath.plugins.skills.v1.SkillsService.SaveBundle:output_type -> icebath.plugins.skills.v1.SaveBundleResponse
+	73, // 97: icebath.plugins.skills.v1.SkillsService.DeleteBundle:output_type -> icebath.plugins.skills.v1.DeleteBundleResponse
+	5,  // 98: icebath.plugins.skills.v1.SkillsService.Search:output_type -> icebath.plugins.skills.v1.SearchResponse
+	9,  // 99: icebath.plugins.skills.v1.SkillsService.Browse:output_type -> icebath.plugins.skills.v1.BrowseResponse
+	11, // 100: icebath.plugins.skills.v1.SkillsService.Inspect:output_type -> icebath.plugins.skills.v1.InspectResponse
+	14, // 101: icebath.plugins.skills.v1.SkillsService.Stage:output_type -> icebath.plugins.skills.v1.StageResponse
+	16, // 102: icebath.plugins.skills.v1.SkillsService.Commit:output_type -> icebath.plugins.skills.v1.CommitResponse
+	18, // 103: icebath.plugins.skills.v1.SkillsService.Discard:output_type -> icebath.plugins.skills.v1.DiscardResponse
+	21, // 104: icebath.plugins.skills.v1.SkillsService.Check:output_type -> icebath.plugins.skills.v1.CheckResponse
+	23, // 105: icebath.plugins.skills.v1.SkillsService.Update:output_type -> icebath.plugins.skills.v1.UpdateResponse
+	25, // 106: icebath.plugins.skills.v1.SkillsService.Audit:output_type -> icebath.plugins.skills.v1.AuditResponse
+	27, // 107: icebath.plugins.skills.v1.SkillsService.Uninstall:output_type -> icebath.plugins.skills.v1.UninstallResponse
+	29, // 108: icebath.plugins.skills.v1.SkillsService.Publish:output_type -> icebath.plugins.skills.v1.PublishResponse
+	31, // 109: icebath.plugins.skills.v1.SkillsService.Export:output_type -> icebath.plugins.skills.v1.ExportResponse
+	34, // 110: icebath.plugins.skills.v1.SkillsService.Taps:output_type -> icebath.plugins.skills.v1.TapsResponse
+	36, // 111: icebath.plugins.skills.v1.SkillsService.Tap:output_type -> icebath.plugins.skills.v1.TapResponse
+	38, // 112: icebath.plugins.skills.v1.SkillsService.Trust:output_type -> icebath.plugins.skills.v1.TrustResponse
+	86, // [86:113] is the sub-list for method output_type
+	59, // [59:86] is the sub-list for method input_type
+	59, // [59:59] is the sub-list for extension type_name
+	59, // [59:59] is the sub-list for extension extendee
+	0,  // [0:59] is the sub-list for field type_name
 }
 
 func init() { file_icebath_plugins_skills_v1_skills_proto_init() }
@@ -5363,7 +5574,7 @@ func file_icebath_plugins_skills_v1_skills_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_plugins_skills_v1_skills_proto_rawDesc), len(file_icebath_plugins_skills_v1_skills_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   71,
+			NumMessages:   72,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

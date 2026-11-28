@@ -280,19 +280,6 @@ func (m *Models) ManifestDefault(cfg *config.Config, kind string) string {
 	return ""
 }
 
-// Whether a provider is left out of the model pickers, by any of its names
-func (m *Models) Hidden(cfg *config.Config, names ...string) bool {
-	excluded := cfg.GetStringSlice(modelsconfig.CatalogExcluded)
-	for _, name := range names {
-		for _, hidden := range excluded {
-			if name != "" && strings.EqualFold(strings.TrimSpace(hidden), name) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // How long a fetched online catalog is used before it is fetched again, at least a minute
 func (m *Models) RefreshInterval(cfg *config.Config) time.Duration {
 	return time.Duration(max(cfg.GetInt(modelsconfig.CatalogTTL), 1)) * time.Minute

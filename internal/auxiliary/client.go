@@ -400,7 +400,7 @@ func (c *Client) discover(model string, vision bool) []candidate {
 	}
 	for _, instance := range instances {
 		if instance.Known && instance.Spec.Keyed() && instance.Spec.DefaultAuxModel != "" {
-			if _, ok := c.Credentials.Credential(credentials.Of(instance, "")); ok {
+			if _, _, err := c.Credentials.Ready(instance, nil); err == nil {
 				add(instance.ID, model)
 				break
 			}
@@ -432,14 +432,14 @@ func (c *Client) named(name, model string, vision, mainModel bool) (provider.Rou
 			model = c.Main.Model
 		}
 		if model == "" {
-			return provider.Route{}, fmt.Errorf("No model is set for %s. Pick one in /settings under Helper models.", instance.Label())
+			return provider.Route{}, fmt.Errorf("No model is set for %s. Pick one for the job under Helper models in /settings.", instance.Label())
 		}
 		if err := c.free(instance.Spec, model); err != nil {
 			return provider.Route{}, err
 		}
 		route, err := c.Credentials.Route(instance, model)
 		if err != nil {
-			return route, missing(instance.ID, instance.Spec)
+			return route, missing(instance.Label(), instance.Spec)
 		}
 		return route, nil
 	}
@@ -448,18 +448,18 @@ func (c *Client) named(name, model string, vision, mainModel bool) (provider.Rou
 	}
 	spec, ok := c.Providers.Spec(name)
 	if !ok || spec.Hidden {
-		return provider.Route{}, fmt.Errorf("The profile %s has no provider named %s. Add it in /providers.", c.Config.Profile(), name)
+		return provider.Route{}, fmt.Errorf("The profile %s has no provider named %s. /providers adds it.", c.Config.Profile(), name)
 	}
 	credential, found := c.Credentials.Detect(c.Config, spec)
 	if !found && !spec.Local && spec.Auth != provider.AuthNone {
-		return provider.Route{}, missing(name, spec)
+		return provider.Route{}, missing(spec.Label(), spec)
 	}
 	model = cmp.Or(model, c.helper(spec, provider.Route{Provider: name, BaseURL: cmp.Or(credential.BaseURL, spec.BaseURL), APIKey: credential.APIKey}, vision))
 	if model == "" && mainModel {
 		model = c.Main.Model
 	}
 	if model == "" {
-		return provider.Route{}, fmt.Errorf("No model is set for %s. Pick one in /settings under Helper models.", spec.Label())
+		return provider.Route{}, fmt.Errorf("No model is set for %s. Pick one for the job under Helper models in /settings.", spec.Label())
 	}
 	if err := c.free(spec, model); err != nil {
 		return provider.Route{}, err
@@ -470,7 +470,7 @@ func (c *Client) named(name, model string, vision, mainModel bool) (provider.Rou
 		route.Mode = cmp.Or(spec.PerModelMode(model), route.Mode)
 	}
 	if route.BaseURL == "" {
-		return route, fmt.Errorf("%s has no address set. Set its Base URL in /providers.", spec.Label())
+		return route, fmt.Errorf("%s has no address set. Set its address in /providers.", spec.Label())
 	}
 	return route, nil
 }
@@ -500,22 +500,22 @@ func (c *Client) free(spec provider.Spec, model string) error {
 	if spec.Name != "openrouter" || !c.Config.GetBool(auxiliaryconfig.FreeOnly) || strings.HasSuffix(model, ":free") || strings.HasPrefix(model, "stealth/") {
 		return nil
 	}
-	return fmt.Errorf("Free models only is on, but the OpenRouter model %s is not free, so OpenRouter is skipped. Set OpenRouter model in "+
-		"/settings under Helper models to a free one, such as %s, or turn off Free models only.", model, freeModel)
+	return fmt.Errorf("Free models only is on, but the OpenRouter model %s is not free, so OpenRouter is skipped. Pick a free one, such as "+
+		"%s, as OpenRouter model under Helper models in /settings, or turn off Free models only there.", model, freeModel)
 }
 
-// Error of a provider the task names that has no credential
+// Error of a provider the task names that has no credential, the provider named as a person knows it
 func missing(name string, spec provider.Spec) error {
 	switch {
 	case spec.Auth == provider.AuthOAuth:
-		return fmt.Errorf("The provider %s is set for this helper job, but it has no account. Sign in with /providers, or pick another provider "+
-			"for the job in /settings under Helper models.", name)
+		return fmt.Errorf("%s is set for this helper job, but it has no account. Sign in with /providers, or pick another model for the job "+
+			"under Helper models in /settings.", name)
 	case len(spec.KeyEnvNames()) > 0:
-		return fmt.Errorf("The provider %s is set for this helper job, but it has no API key. Set %s or add a key with /providers, or pick "+
-			"another provider for the job in /settings under Helper models.", name, spec.KeyEnvNames()[0])
+		return fmt.Errorf("%s is set for this helper job, but it has no API key. Set %s or add a key with /providers, or pick another model "+
+			"for the job under Helper models in /settings.", name, spec.KeyEnvNames()[0])
 	}
-	return fmt.Errorf("The provider %s is set for this helper job, but it has no account. Connect it with /providers, or pick another provider "+
-		"for the job in /settings under Helper models.", name)
+	return fmt.Errorf("%s is set for this helper job, but it has no account. Connect it with /providers, or pick another model for the job "+
+		"under Helper models in /settings.", name)
 }
 
 // Route to the endpoint the task's base URL names, through the provider of the profile it names when there is one
@@ -613,5 +613,5 @@ func (e *NoProvider) Error() string {
 	if e.Job != "" {
 		job = "the helper job " + e.Job
 	}
-	return "No provider can do " + job + ". Connect one with /providers, or set one for the job in /settings under Helper models."
+	return "No provider can do " + job + ". Connect one with /providers, or pick a model for the job under Helper models in /settings."
 }

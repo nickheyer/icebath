@@ -2,6 +2,7 @@ package ironproxy
 
 import (
 	"github.com/nickheyer/icebath/internal/plugins"
+	"github.com/nickheyer/icebath/internal/plugins/defaults/egress/ironproxy/app"
 	"github.com/nickheyer/icebath/internal/plugins/defaults/egress/ironproxy/cli"
 	"github.com/nickheyer/icebath/internal/plugins/defaults/egress/ironproxy/config"
 	"github.com/nickheyer/icebath/internal/plugins/defaults/egress/ironproxy/packages"
@@ -17,4 +18,5 @@ func Register(registries *plugins.Registries) {
 	server.Register(registries.Server, registries.Config, egress, registries.Secrets)
 	slash.Register(registries.Slash, registries.Config, egress, registries.Sessions)
 	cli.Register(registries.CLI)
+	app.Register(registries.App)
 }

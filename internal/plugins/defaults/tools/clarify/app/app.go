@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/tools"
 	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
@@ -42,14 +43,6 @@ type result struct {
 	Notice  string `json:"notice"`
 }
 
-// Head with a capital first letter, the outcome a server names as it is
-func sentence(text string) string {
-	if text == "" {
-		return ""
-	}
-	return strings.ToUpper(text[:1]) + text[1:]
-}
-
 func answers(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 	var settled result
 	if json.Unmarshal([]byte(call.Result), &settled) != nil || len(settled.Responses) == 0 {
@@ -63,7 +56,7 @@ func answers(call toolsapp.Call, _ int, look theme.Theme) *toolsapp.Shown {
 	case tools.TimedOut:
 		shown.Head = "No answer came in time"
 	default:
-		shown.Head = sentence(strings.TrimSpace(settled.Outcome + " " + settled.Notice))
+		shown.Head = strs.Capital(strings.TrimSpace(settled.Outcome + " " + settled.Notice))
 	}
 	for _, response := range settled.Responses {
 		var answer string

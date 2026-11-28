@@ -1,6 +1,7 @@
 package provider_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/nickheyer/icebath/internal/config"
@@ -31,21 +32,21 @@ func setup(t *testing.T) (*config.Config, *provider.Provider, *credentials.Crede
 
 func TestInstancesOfOneKind(t *testing.T) {
 	cfg, p, _ := setup(t)
-	first, err := p.Add(cfg, "acme-ai", "", "")
+	first, err := p.Add(cfg, "acme-ai", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := p.Add(cfg, "acme", "", "Acme two")
+	second, err := p.Add(cfg, "acme", "", "Acme two", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.ID != "acme" || second.ID != "acme-2" || second.Label() != "Acme two" {
+	if first.ID != "acme" || second.ID != "acme-two" || second.Label() != "Acme two" {
 		t.Fatalf("added %q and %q (%q)", first.ID, second.ID, second.Label())
 	}
-	if err := cfg.Set("providers.acme-2.base_url", "https://other.test"); err != nil {
+	if err := cfg.Set("providers.acme-two.base_url", "https://other.test"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := p.Instance(cfg, "acme-2"); got.Spec.BaseURL != "https://other.test" {
+	if got, _ := p.Instance(cfg, "acme-two"); got.Spec.BaseURL != "https://other.test" {
 		t.Fatalf("base URL of the second is %q", got.Spec.BaseURL)
 	}
 	if got, _ := p.Instance(cfg, "acme"); got.Spec.BaseURL != "https://acme.test/v1" || got.Spec.DefaultModel != "a1" {
@@ -54,10 +55,10 @@ func TestInstancesOfOneKind(t *testing.T) {
 	if got, ok := p.Instance(cfg, "acme-ai"); !ok || got.ID != "acme" {
 		t.Fatal("an alias doesn't find the first of its kind")
 	}
-	if _, ok := cfg.Section("providers.acme-2"); !ok {
+	if _, ok := cfg.Section("providers.acme-two"); !ok {
 		t.Fatal("no settings section for the second")
 	}
-	if err := p.Remove(cfg, "acme-2"); err != nil {
+	if _, err := p.Remove(context.Background(), cfg, "acme-two"); err != nil {
 		t.Fatal(err)
 	}
 	if len(p.Instances(cfg)) != 1 {
@@ -67,7 +68,7 @@ func TestInstancesOfOneKind(t *testing.T) {
 
 func TestAccounts(t *testing.T) {
 	cfg, p, creds := setup(t)
-	if _, err := p.Add(cfg, "acme", "", ""); err != nil {
+	if _, err := p.Add(cfg, "acme", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_TEST_ACME_KEY", "from-env")
@@ -75,34 +76,29 @@ func TestAccounts(t *testing.T) {
 	if route, err := creds.Route(instance, ""); err != nil || route.APIKey != "from-env" || route.Model != "a1" {
 		t.Fatalf("with no account: %+v %v", route, err)
 	}
-	work, err := p.AddAccount(cfg, "acme", "work", "Work")
+	work, err := p.Connect(cfg, "acme", "", "Work", "", map[string]any{providerconfig.APIKeyField: "work-key"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	home, err := p.AddAccount(cfg, "acme", "", "")
+	home, err := p.Connect(cfg, "acme", "", "", "", map[string]any{providerconfig.APIKeyField: "home-key"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if work != "work" || home != "default" {
+	if work != "work" || home != "api-key" {
 		t.Fatalf("accounts named %q and %q", work, home)
-	}
-	for name, key := range map[string]string{"work": "work-key", "default": "home-key"} {
-		if err := cfg.Set("providers.acme.accounts."+name+"."+providerconfig.APIKeyField, key); err != nil {
-			t.Fatal(err)
-		}
 	}
 	instance, _ = p.Instance(cfg, "acme")
 	if route, _ := creds.Route(instance, ""); route.APIKey != "work-key" {
 		t.Fatalf("first account added isn't in use: %q", route.APIKey)
 	}
-	if err := p.UseAccount(cfg, "acme", "default"); err != nil {
+	if err := p.UseAccount(cfg, "acme", "api-key"); err != nil {
 		t.Fatal(err)
 	}
 	instance, _ = p.Instance(cfg, "acme")
 	if route, _ := creds.Route(instance, ""); route.APIKey != "home-key" {
 		t.Fatalf("switched account gives %q", route.APIKey)
 	}
-	if _, err := p.RemoveAccount(cfg, "acme", "default"); err != nil {
+	if _, err := p.RemoveAccount(context.Background(), cfg, "acme", "api-key"); err != nil {
 		t.Fatal(err)
 	}
 	instance, _ = p.Instance(cfg, "acme")

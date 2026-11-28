@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/internal/cli"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1/sessionsv1connect"
 	"github.com/nickheyer/icebath/pkg/strs"
@@ -65,7 +66,7 @@ func (c commands) Commands(conn *connect.Client) []*cobra.Command {
 		Args: cobra.NoArgs,
 	}
 	for _, add := range []func(*cobra.Command, func(*cobra.Command) *run){
-		addList, addExport, addDelete, addPrune, addArchive, addOptimize, addCleanMarkers, addOptimizeStorage, addRepair, addJournalMode,
+		addList, addSearch, addExport, addDelete, addPrune, addArchive, addOptimize, addCleanMarkers, addOptimizeStorage, addRepair, addJournalMode,
 		addRepairRouting, addRepairProfiles, addRepairPrompts, addRefreshPrompts, addRecover, addStats, addRename, addDiscard, addAdopt, addPins,
 		addRetitleSkills, addBrowse, addImport,
 	} {
@@ -74,18 +75,66 @@ func (c commands) Commands(conn *connect.Client) []*cobra.Command {
 	return []*cobra.Command{sessions}
 }
 
+// Searches what was written in the stored sessions for words: each match with its session, when it was written, who wrote it and the
+// words around it, the newest first
+func addSearch(parent *cobra.Command, at func(*cobra.Command) *run) {
+	var limit int
+	var oldest bool
+	search := &cobra.Command{Use: "search <words...>", Short: "Search the messages of your sessions",
+		Long: "Searches what you and the agent wrote in every stored session and prints each match: its session, when it was written, who " +
+			"wrote it and the words around it. With -p, only the sessions of that profile are searched. Go on in a session a match is in " +
+			"with icebath chat -r and its id.",
+		Example: "  icebath sessions search login bug\n  icebath sessions search --limit 5 \"rate limit\"",
+		Args:    cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+			r := at(cmd)
+			order := "newest"
+			if oldest {
+				order = "oldest"
+			}
+			response, err := r.service.Search(r.ctx(), &sessionsv1.SearchRequest{Query: strings.Join(args, " "), Limit: int32(limit), Sort: order,
+				ExcludeSources: []string{"tool"}, Profile: picked.Picked(r.ctx())})
+			if err != nil {
+				return err
+			}
+			hits := response.GetHits()
+			if len(hits) == 0 {
+				r.print("No message of your sessions holds those words.")
+				return nil
+			}
+			c := cli.NewConsole(cmd)
+			for i, hit := range hits {
+				if i > 0 {
+					r.print("")
+				}
+				who := map[sessionsv1.Role]string{sessionsv1.Role_ROLE_USER: "You", sessionsv1.Role_ROLE_ASSISTANT: "The agent",
+					sessionsv1.Role_ROLE_SYSTEM: "The system"}[hit.GetRole()]
+				if hit.GetRole() == sessionsv1.Role_ROLE_TOOL {
+					who = strs.Filled("The tool "+hit.GetToolName(), "A tool")
+				}
+				r.print(c.Paint(hit.GetSessionId(), cli.Bold) + c.Paint("  "+shown(hit.GetTime())+" · "+strs.Filled(who, "A message"), cli.Dim))
+				// The match is marked by the store between >>> and <<<
+				snippet := strings.Join(strings.Fields(hit.GetSnippet()), " ")
+				snippet = strings.ReplaceAll(strings.ReplaceAll(snippet, ">>>", "\x00"), "<<<", "\x01")
+				var line strings.Builder
+				for _, part := range strings.SplitAfter(snippet, "\x01") {
+					before, match, marked := strings.Cut(strings.TrimSuffix(part, "\x01"), "\x00")
+					line.WriteString(before)
+					if marked {
+						line.WriteString(c.Paint(match, cli.Bold))
+					}
+				}
+				r.print("  " + line.String())
+			}
+			return nil
+		}}
+	search.Flags().IntVar(&limit, "limit", 20, "The most matches to print")
+	search.Flags().BoolVar(&oldest, "oldest", false, "Print the oldest matches first")
+	parent.AddCommand(search)
+}
+
 // Text when an id names no session
 func notFound(raw string) error {
 	return fmt.Errorf("There is no session %s. Run icebath sessions list to find its id.", raw)
-}
-
-// Text that ends as a sentence: trimmed, with a period added when it ends in no mark of its own
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?") {
-		return text
-	}
-	return text + "."
 }
 
 // Prints labels and their values, each value after its label padded to the widest
@@ -117,7 +166,7 @@ func clip(text string, n int) string {
 
 // Session an id or the unique start of one names
 func (r *run) resolve(raw string) (*sessionsv1.Session, error) {
-	response, err := r.service.Resolve(r.ctx(), &sessionsv1.ResolveRequest{Ref: strings.TrimSpace(raw)})
+	response, err := r.service.Resolve(r.ctx(), &sessionsv1.ResolveRequest{Profile: picked.Picked(r.ctx()), Ref: strings.TrimSpace(raw)})
 	if connect.CodeOf(err) == connect.CodeNotFound {
 		return nil, notFound(raw)
 	}
@@ -297,7 +346,7 @@ func addDelete(parent *cobra.Command, at func(*cobra.Command) *run) {
 				if connect.CodeOf(err) == connect.CodeNotFound {
 					return notFound(args[0])
 				}
-				return errors.New(sentence(tui.Reason(err)))
+				return errors.New(strs.Sentence(tui.Reason(err)))
 			}
 			r.printf("✓ Deleted the session %s.", named(session))
 			return nil
@@ -327,7 +376,7 @@ func addRename(parent *cobra.Command, at func(*cobra.Command) *run) {
 				if connect.CodeOf(err) == connect.CodeNotFound {
 					return notFound(args[0])
 				}
-				return errors.New(sentence(tui.Reason(err)))
+				return errors.New(strs.Sentence(tui.Reason(err)))
 			}
 			r.printf("✓ The session %s is now called %s.", session.GetId(), title)
 			return nil
@@ -342,7 +391,7 @@ func addStats(parent *cobra.Command, at func(*cobra.Command) *run) {
 			stats, err := r.service.Stats(r.ctx(), &sessionsv1.StatsRequest{})
 			if err != nil {
 				return fmt.Errorf("icebath can't open your saved sessions. Run icebath sessions repair to fix them, which makes a backup first.\n%s",
-					sentence(tui.Reason(err)))
+					strs.Sentence(tui.Reason(err)))
 			}
 			r.print("Your saved sessions\n")
 			pairs := [][2]string{{"Sessions", strs.Number(float64(stats.GetSessions()))}, {"Messages", strs.Number(float64(stats.GetMessages()))}}
@@ -464,7 +513,7 @@ func addDiscard(parent *cobra.Command, at func(*cobra.Command) *run) {
 			r := at(cmd)
 			lost, err := r.service.Lost(r.ctx(), &sessionsv1.LostRequest{Session: args[0]})
 			if err != nil {
-				return errors.New(sentence(tui.Reason(err)))
+				return errors.New(strs.Sentence(tui.Reason(err)))
 			}
 			var chosen []string
 			for _, admission := range lost.GetAdmissions() {
@@ -501,7 +550,7 @@ func addDiscard(parent *cobra.Command, at func(*cobra.Command) *run) {
 			}
 			response, err := r.service.Discard(r.ctx(), &sessionsv1.DiscardRequest{Session: lost.GetSessionId(), Admissions: chosen})
 			if err != nil {
-				return errors.New(sentence(tui.Reason(err)))
+				return errors.New(strs.Sentence(tui.Reason(err)))
 			}
 			for _, id := range response.GetDiscarded() {
 				r.print("✓ Discarded " + id + ".")
@@ -574,7 +623,7 @@ func addRepairRouting(parent *cobra.Command, at func(*cobra.Command) *run) {
 					}
 					r.printf("  Can take the route %s of the session %s, %s.", o.GetSessionKey(), o.GetDonorId(), why)
 				} else {
-					r.printf("  ✗ Can't be repaired. %s", sentence(o.GetReason()))
+					r.printf("  ✗ Can't be repaired. %s", strs.Sentence(o.GetReason()))
 				}
 			}
 			switch {
@@ -693,12 +742,12 @@ func addRepairProfiles(parent *cobra.Command, at func(*cobra.Command) *run) {
 					}
 					r.printf("\n%s: %s", cmp.Or(profileLabels[kind], kind), strs.Number(float64(len(group))))
 					for _, f := range group {
-						r.printf("  %s\n      %s", f.GetSubject(), sentence(f.GetDetail()))
+						r.printf("  %s\n      %s", f.GetSubject(), strs.Sentence(f.GetDetail()))
 						switch {
 						case f.GetAction() != "":
-							r.print("      Repair: " + sentence(f.GetAction()))
+							r.print("      Repair: " + strs.Sentence(f.GetAction()))
 						case f.GetReason() != "":
-							r.print("      ✗ Not repaired. " + sentence(f.GetReason()))
+							r.print("      ✗ Not repaired. " + strs.Sentence(f.GetReason()))
 						default:
 							r.print("      ✗ Not repaired.")
 						}
@@ -751,7 +800,7 @@ func addRepairProfiles(parent *cobra.Command, at func(*cobra.Command) *run) {
 					}
 				}
 				for _, failure := range applied.GetFailures() {
-					r.print("  ✗ " + sentence(failure))
+					r.print("  ✗ " + strs.Sentence(failure))
 				}
 				r.print("Run the command again without --apply to check that nothing is left.")
 			}
@@ -811,7 +860,7 @@ func addRepairPrompts(parent *cobra.Command, at func(*cobra.Command) *run) {
 			}
 			if !asJSON {
 				for _, f := range report.GetFindings() {
-					r.printf("  %s, %s: %s", f.GetId(), strs.Counted(float64(f.GetPromptChars()), "characters"), sentence(f.GetReason()))
+					r.printf("  %s, %s: %s", f.GetId(), strs.Counted(float64(f.GetPromptChars()), "characters"), strs.Sentence(f.GetReason()))
 				}
 				if n := len(report.GetUnverifiable()); n > 0 {
 					r.printf("\nSkipped %s that keep too little about their tools to check.", strs.Count(n, "saved prompt"))
@@ -860,7 +909,7 @@ func addRefreshPrompts(parent *cobra.Command, at func(*cobra.Command) *run) {
 			r := at(cmd)
 			response, err := r.service.RefreshPrompts(r.ctx(), &sessionsv1.RefreshPromptsRequest{SessionId: session})
 			if err != nil {
-				return errors.New(sentence(tui.Reason(err)))
+				return errors.New(strs.Sentence(tui.Reason(err)))
 			}
 			if asJSON {
 				var id any
@@ -922,7 +971,7 @@ func addRetitleSkills(parent *cobra.Command, at func(*cobra.Command) *run) {
 				r.printf("  %s\n    %s\n    becomes %s", retitle.GetId(), retitle.GetOldTitle(), retitle.GetNewTitle())
 				switch {
 				case retitle.GetError() != "":
-					r.print("    Skipped. " + sentence(retitle.GetError()))
+					r.print("    Skipped. " + strs.Sentence(retitle.GetError()))
 				case retitle.GetRenamed() != "":
 					r.printf("    It is called %s instead, because that title was taken.", retitle.GetRenamed())
 					changed++

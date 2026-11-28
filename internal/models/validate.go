@@ -97,14 +97,20 @@ func (m *Models) Validate(ctx context.Context, cfg *config.Config, route provide
 	case model == "":
 		return reject("Name the model to use.")
 	case IsKnownNonChatModel(model):
-		return reject("`" + model + "` makes images or other media and can't chat. Pick a chat model, and set image models in /settings under Images.")
+		return reject("`" + model + "` makes images or other media and can't chat. Pick a chat model.")
 	case strings.ContainsFunc(model, unicode.IsSpace) && !spaced(route, spec):
 		return reject("A model name can't hold spaces.")
 	}
 	label := cmp.Or(spec.DisplayName, spec.Name, route.Provider)
+	if instance, ok := m.providers.Instance(cfg, route.Provider); ok {
+		label = instance.Label()
+	}
 	catalog := m.Catalog(ctx, cfg, route, false)
-	if len(catalog.IDs) == 0 {
-		return accept(fmt.Sprintf("icebath could not reach %s to check `%s`. If %s is not down, the model may not exist.", label, model, label))
+	switch {
+	case len(catalog.IDs) == 0 && catalog.Unlisted != nil:
+		return accept(fmt.Sprintf("`%s` was taken without a check. %s", model, catalog.Unlisted.Reason(label)))
+	case len(catalog.IDs) == 0:
+		return accept(fmt.Sprintf("%s gives no list of its models, so `%s` was taken without a check.", label, model))
 	}
 	listed := func(id string) bool {
 		return slices.ContainsFunc(catalog.IDs, func(have string) bool { return strings.EqualFold(have, id) })
@@ -134,5 +140,5 @@ func (m *Models) Validate(ctx context.Context, cfg *config.Config, route provide
 		return accept(fmt.Sprintf("`%s` is not in the list of models on this computer's server. It still works if the server has hidden models "+
 			"or other names for them.", model) + similar)
 	}
-	return reject(fmt.Sprintf("This provider has no model `%s`. Type /model to see the ones it has.%s", model, similar))
+	return reject(fmt.Sprintf("%s has no model `%s`.%s", label, model, similar))
 }

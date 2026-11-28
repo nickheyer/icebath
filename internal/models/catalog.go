@@ -190,6 +190,8 @@ type Catalog struct {
 	Fallback bool
 	// Such as recommended, free or default, by model id
 	Notes map[string]string
+	// Why the provider gave no list of its own, nil when it gave one or was not asked
+	Unlisted *Unlisted
 }
 
 const (
@@ -291,16 +293,25 @@ func (s *state) keepCatalog(key, fp string, catalog Catalog) {
 }
 
 // Models the route's provider offers now: what its plugin makes of them, else what it lists merged with its curated models, else the
-// curated ones with what models.dev knows of the kind; generation models left out
+// curated ones with what models.dev knows of the kind and why the provider listed none, as its requests met it; generation models left out
 func (m *Models) live(ctx context.Context, cfg *config.Config, route provider.Route, refresh bool) Catalog {
 	spec := m.Spec(route)
+	unlisted := &Unlisted{}
+	ctx = noting(ctx, unlisted)
 	if catalog, ok := m.Registry.curated(ctx, m.env(cfg, route, refresh)); ok {
 		catalog.IDs = WithoutGenerationModels(catalog.IDs)
+		if len(catalog.IDs) == 0 && unlisted.URL != "" {
+			catalog.Unlisted = unlisted
+		}
 		return catalog
 	}
 	listed, ok := m.Registry.Models(ctx, route)
 	if !ok || len(listed) == 0 {
-		return m.Curated(cfg, route)
+		catalog := m.Curated(cfg, route)
+		if unlisted.URL != "" {
+			catalog.Unlisted = unlisted
+		}
+		return catalog
 	}
 	curated := spec.StaticModels
 	if len(curated) == 0 {

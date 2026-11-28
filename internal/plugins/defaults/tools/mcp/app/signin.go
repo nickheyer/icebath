@@ -58,8 +58,8 @@ func paste(kit *tui.Kit, hub *cards.Hub, service mcpv1connect.McpServiceClient, 
 	if id == "" {
 		return nil
 	}
-	field := cards.Field{Label: "Address", Placeholder: "http://127.0.0.1:8765/callback?code=abc",
-		Help: "The address your browser showed after you approved, even if the page there failed to load."}
+	field := cards.Field{Label: "Address",
+		Help: "The address your browser showed after you approved, such as http://127.0.0.1:8765/callback?code=abc. It counts even if the page there failed to load."}
 	return kit.Ask(hub, "Paste the address", field, "Send", func(text string) tea.Cmd {
 		return tui.Call(hub, func() (*mcpv1.CallbackResponse, error) {
 			return service.Callback(kit.Env.Ctx, &mcpv1.CallbackRequest{Id: id, Pasted: text})
@@ -80,21 +80,34 @@ type signing struct {
 	id      string
 	link    string
 	code    string
-	ended   bool
-	cancel  context.CancelFunc
+	// Where the browser comes back to once the person approved
+	redirect string
+	ended    bool
+	cancel   context.CancelFunc
+	// Run once the person closed the page before the sign-in ended
+	stopped []func() tea.Cmd
+	// The sign-in was stopped because its page left the screen
+	halted bool
 }
 
 // Signs in to a server on a page pushed on the hub: the link opened in this computer's browser, copied, or the address the browser ended on
-// pasted, until the server approves it or it fails; done gets the last event, closing the page stops it
-func signin(kit *tui.Kit, hub *cards.Hub, service mcpv1connect.McpServiceClient, request *mcpv1.LoginRequest, done func(event *mcpv1.LoginEvent) tea.Cmd) tea.Cmd {
+// pasted, until the server approves it or it fails; done gets the last event, closing the page stops it, and stopped then runs, for a
+// caller with something to take back
+func signin(kit *tui.Kit, hub *cards.Hub, service mcpv1connect.McpServiceClient, request *mcpv1.LoginRequest, done func(event *mcpv1.LoginEvent) tea.Cmd,
+	stopped ...func() tea.Cmd) tea.Cmd {
 	ctx, cancel := context.WithCancel(kit.Env.Ctx)
-	s := &signing{kit: kit, hub: hub, service: service, name: request.GetName(), cancel: cancel}
+	s := &signing{kit: kit, hub: hub, service: service, name: request.GetName(), cancel: cancel, stopped: stopped}
 	t := kit.Env.Theme
 	s.page = cards.NewPage(kit.Env, cards.PageSpec{
 		Title:   "Sign in to " + s.name,
 		Key:     Screen + ":signin:" + s.name,
 		Context: signinContext,
 		Lines: func(int) []string {
+			// The sign-in stopped as this page left the screen; shown again, the page says so in place of waiting for good
+			if s.halted {
+				return []string{render.Warm("Signing in to "+s.name+" stopped when this page left the screen.", t),
+					render.Dim("Go back and sign in again.", t)}
+			}
 			if s.link == "" {
 				return []string{render.Dim("Starting the sign-in…", t)}
 			}
@@ -103,12 +116,19 @@ func signin(kit *tui.Kit, hub *cards.Hub, service mcpv1connect.McpServiceClient,
 				out = []string{"Open this link on any device and enter the code " + render.Good(s.code, t) + " there:"}
 			}
 			wait := "icebath waits for " + s.name + " to approve. If your browser can't reach icebath, paste the address it ended on."
+			if s.redirect != "" {
+				wait = "icebath waits for " + s.name + " to approve, which sends your browser back to " + s.redirect + ". If your browser can't " +
+					"reach that address, paste the address it ended on."
+			}
 			if s.code != "" {
 				wait = "icebath waits for " + s.name + " to approve."
 			}
 			return append(out, render.Warm(s.link, t), "", render.Dim(wait, t))
 		},
 		Hints: func(*cards.Page) []wm.Hint {
+			if s.halted {
+				return nil
+			}
 			hints := []wm.Hint{{Action: "mcp.signin.open"}, {Action: "mcp.signin.copy"}}
 			if s.code == "" {
 				hints = append(hints, wm.Hint{Action: "mcp.signin.paste"})
@@ -116,14 +136,22 @@ func signin(kit *tui.Kit, hub *cards.Hub, service mcpv1connect.McpServiceClient,
 			return hints
 		},
 		Actions: map[string]func(*cards.Page) tea.Cmd{
-			"mcp.signin.open":  func(*cards.Page) tea.Cmd { return open(kit, hub, s.link) },
-			"mcp.signin.copy":  func(*cards.Page) tea.Cmd { return copyLink(kit, hub, s.link) },
-			"mcp.signin.paste": func(*cards.Page) tea.Cmd { return paste(kit, hub, service, s.id) },
+			"mcp.signin.open":  func(*cards.Page) tea.Cmd { return s.live(func() tea.Cmd { return open(kit, hub, s.link) }) },
+			"mcp.signin.copy":  func(*cards.Page) tea.Cmd { return s.live(func() tea.Cmd { return copyLink(kit, hub, s.link) }) },
+			"mcp.signin.paste": func(*cards.Page) tea.Cmd { return s.live(func() tea.Cmd { return paste(kit, hub, service, s.id) }) },
 		},
 	})
 	go s.run(ctx, request, done)
 	go s.watch(ctx)
 	return hub.Push(s.page)
+}
+
+// Runs what a key of the page does while the sign-in still runs, nothing once it stopped
+func (s *signing) live(act func() tea.Cmd) tea.Cmd {
+	if s.halted {
+		return nil
+	}
+	return act()
 }
 
 // Reads the sign in's events: the link shown and opened, the outcome handed to done
@@ -147,7 +175,9 @@ func (s *signing) run(ctx context.Context, request *mcpv1.LoginRequest, done fun
 	for {
 		event, err := stream.Receive()
 		switch {
+		// The server ends a sign-in with how it ended; a stream that just stops left that out
 		case errors.Is(err, io.EOF):
+			finish(&mcpv1.LoginEvent{Done: true, Error: "The sign-in stopped without saying how it ended."})
 			return
 		case err != nil:
 			if ctx.Err() == nil {
@@ -160,7 +190,7 @@ func (s *signing) run(ctx context.Context, request *mcpv1.LoginRequest, done fun
 		}
 		s.kit.Apply(func() tea.Cmd {
 			first := s.link == ""
-			s.id, s.link, s.code = event.GetId(), event.GetLink(), event.GetCode()
+			s.id, s.link, s.code, s.redirect = event.GetId(), event.GetLink(), event.GetCode(), event.GetRedirect()
 			if first && !s.ended {
 				return open(s.kit, s.hub, s.link)
 			}
@@ -183,15 +213,21 @@ func (s *signing) watch(ctx context.Context) {
 			if s.ended || s.hub.Holds(s.page) && s.hub.Shown() {
 				return nil
 			}
-			s.ended = true
+			s.ended, s.halted = true, true
 			s.cancel()
+			var after []tea.Cmd
+			for _, stopped := range s.stopped {
+				after = append(after, stopped())
+			}
 			if s.id == "" {
-				return nil
+				return tea.Batch(after...)
 			}
 			id := s.id
 			return tui.Async(func() func() tea.Cmd {
 				s.service.CancelLogin(context.WithoutCancel(s.kit.Env.Ctx), &mcpv1.CancelLoginRequest{Id: id})
-				return func() tea.Cmd { return s.hub.Done("Stopped signing in to " + s.name + ".") }
+				return func() tea.Cmd {
+					return tea.Batch(append(after, s.hub.Done("Stopped signing in to "+s.name+"."))...)
+				}
 			})
 		})
 	}

@@ -26,6 +26,7 @@ import (
 	launchconfig "github.com/nickheyer/icebath/internal/launch/config"
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
 	agentlaunch "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/launch"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	providercli "github.com/nickheyer/icebath/internal/provider/cli"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
 	"github.com/nickheyer/icebath/internal/tools"
@@ -359,11 +360,7 @@ func trouble(err error) string {
 	if errors.As(err, &path) {
 		err = path.Err
 	}
-	text := strings.TrimSuffix(err.Error(), ".")
-	if text == "" {
-		return ""
-	}
-	return strings.ToUpper(text[:1]) + text[1:] + "."
+	return strs.Full(err.Error())
 }
 
 // Folder the session works in: the one --in names, else this one
@@ -404,7 +401,7 @@ func (o *options) session(ctx context.Context, sessions sessionsv1connect.Sessio
 		ref = title
 	}
 	if ref != "" {
-		found, err := sessions.Resolve(ctx, &sessionsv1.ResolveRequest{Ref: ref, Tip: true})
+		found, err := sessions.Resolve(ctx, &sessionsv1.ResolveRequest{Profile: picked.Picked(ctx), Ref: ref, Tip: true})
 		if err == nil {
 			return found.GetSession(), nil
 		}
@@ -412,7 +409,7 @@ func (o *options) session(ctx context.Context, sessions sessionsv1connect.Sessio
 			return nil, err
 		}
 	}
-	made, err := sessions.Create(ctx, &sessionsv1.CreateRequest{Directory: dir, Source: source, Title: title})
+	made, err := sessions.Create(ctx, &sessionsv1.CreateRequest{Profile: picked.Picked(ctx), Directory: dir, Source: source, Title: title})
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +418,7 @@ func (o *options) session(ctx context.Context, sessions sessionsv1connect.Sessio
 
 // Lists the tools a chat would have, by name, or their toolsets
 func list(ctx context.Context, conn *connect.Client, out io.Writer, sets bool) error {
-	listed, err := toolsv1connect.NewToolServiceClient(conn).List(ctx, &toolsv1.ListRequest{})
+	listed, err := toolsv1connect.NewToolServiceClient(conn).List(ctx, &toolsv1.ListRequest{Profile: picked.Picked(ctx)})
 	if err != nil {
 		return err
 	}
@@ -513,11 +510,9 @@ func (r *runner) ask(parent, ctx context.Context, conn *connect.Client, query st
 	}
 	r.before, r.spent, r.spentOn = len(got.GetMessages()), got.GetSession().GetUsage(), r.id
 	r.profile.Store(new(got.GetSession().GetProfile()))
-	// Settings of this launch alone, as /model sets them for the session
-	if switches := r.switches(); switches != "" {
-		if _, err := r.agents.Send(ctx, &agentv1.SendRequest{SessionId: r.id, Text: switches}); err != nil {
-			return err
-		}
+	// The model and effort of this launch, held by the session as the rows of This chat hold them
+	if err := r.hold(ctx); err != nil {
+		return err
 	}
 	env, host := shell(ctx, conn, got.GetSession().GetProfile())
 	if r.o.format == "stream-json" {
@@ -563,22 +558,19 @@ func (r *runner) interrupt(parent, ctx context.Context, cancel context.CancelFun
 	}
 }
 
-// The /model command that sets the launch's model, provider and reasoning for the session, none when the launch sets none
-func (r *runner) switches() string {
-	if r.o.model == "" && r.o.provider == "" && r.o.reasoning == "" {
-		return ""
-	}
-	parts := []string{"/model"}
-	if r.o.model != "" {
-		parts = append(parts, r.o.model)
-	}
-	if r.o.provider != "" {
-		parts = append(parts, "--provider", r.o.provider)
+// Holds the session to the model, provider and reasoning effort the launch names, through the functions the rows of This chat use
+func (r *runner) hold(ctx context.Context) error {
+	if r.o.model != "" || r.o.provider != "" {
+		if _, err := r.agents.SetModel(ctx, &agentv1.SetModelRequest{SessionId: r.id, Provider: r.o.provider, Model: r.o.model}); err != nil {
+			return err
+		}
 	}
 	if r.o.reasoning != "" {
-		parts = append(parts, "--reasoning", r.o.reasoning)
+		if _, err := r.agents.SetEffort(ctx, &agentv1.SetEffortRequest{SessionId: r.id, Effort: r.o.reasoning}); err != nil {
+			return err
+		}
 	}
-	return strings.Join(append(parts, "--session"), " ")
+	return nil
 }
 
 // Reads the session's events until the turn the query started has ended, printing as they come
@@ -730,8 +722,8 @@ func failureLine(event *agentv1.Subagent) string {
 		after = " after " + strs.Span(time.Duration(max(math.RoundToEven(seconds), 1))*time.Second)
 	}
 	if event.GetStatus() == "timeout" {
-		return fmt.Sprintf("⚠ %s stopped%s without finishing, and the agent goes on without it. Ask the agent to try it again, or raise Idle "+
-			"limit in /settings under Subagents if such tasks take longer.", who, after)
+		return fmt.Sprintf("⚠ %s stopped%s without finishing, and the agent goes on without it. Ask the agent to try it again, or raise "+
+			"Idle limit under Subagents in /settings if such tasks take longer.", who, after)
 	}
 	line := "⚠ " + who + " failed" + after
 	if reason := failureGloss[event.GetFailureReason()]; reason != "" {

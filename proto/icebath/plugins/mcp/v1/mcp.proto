@@ -90,6 +90,11 @@ message Server {
   string settings = 19;
   map<string, int32> sampling = 20;
   map<string, int32> elicitation = 21;
+  // How it stands in the words every page and command says it: Connected, Not connected, Connecting, Failed, Off, Needs values, Not signed
+  // in, Starts on first use or Resting until used
+  string shown = 22;
+  // Values its settings name as ${NAME}, those of the context left out
+  repeated string values = 23;
 }
 
 message ListRequest {

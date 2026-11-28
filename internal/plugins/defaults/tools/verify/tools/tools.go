@@ -17,9 +17,10 @@ type registrant struct {
 	ledger *Ledger
 }
 
-// Registers the ledger with the tools; the ledger, which the verify command records its runs in
-func Register(registry *tools.Registry) *Ledger {
-	r := &registrant{tools: registry, ledger: newLedger()}
+// Registers the ledger with the tools, telling the person through tell when it sets a ledger file aside; the ledger, which the verify
+// command records its runs in
+func Register(registry *tools.Registry, tell func(text string)) *Ledger {
+	r := &registrant{tools: registry, ledger: newLedger(tell)}
 	registry.Register(r)
 	return r.ledger
 }
@@ -97,4 +98,9 @@ func (r *registrant) Finished(call *tools.Call, result string) {
 	if err := r.ledger.edited(context.Background(), env.Config, call.SessionID, dir, paths); err != nil {
 		slog.Debug("verification stale marker failed", "error", err)
 	}
+}
+
+// The agent checks the changes it makes to files, so the options of that check sit with the group of the file tools
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: "Files", Sections: []string{verifyconfig.Key}}}
 }

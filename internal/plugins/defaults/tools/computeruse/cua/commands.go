@@ -25,8 +25,8 @@ func Unknown(cfg *config.Config) error {
 	if name == "" || name == cuconfig.Cua {
 		return nil
 	}
-	return fmt.Errorf("Computer use is set to the driver “%s”, which icebath does not have. Choose cua-driver in /settings under "+
-		"Tools › Computer use › Driver.", name)
+	return fmt.Errorf("Computer use is set to the driver “%s”, which icebath does not have. Choose cua-driver as the Driver of computer use.",
+		name)
 }
 
 // One probe of the driver's own doctor

@@ -101,7 +101,7 @@ func hardlineRefusal(cfg *config.Config, description, command string) *tools.Ref
 
 func sudoRefusal(description string) *tools.Refusal {
 	return &tools.Refusal{Outcome: "hardline", Message: "BLOCKED: " + description + ". Do not pipe passwords to 'sudo -S' — this is a brute-force " +
-		"attack vector. Set the sudo password in /settings under Terminal (or SUDO_PASSWORD in the environment icebath runs in) if the agent " +
+		"attack vector. Set Sudo password in /sandbox (or SUDO_PASSWORD in the environment icebath runs in) if the agent " +
 		"needs passwordless sudo, or run the sudo command manually in your own terminal."}
 }
 

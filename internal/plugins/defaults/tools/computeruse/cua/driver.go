@@ -27,6 +27,7 @@ import (
 	cuconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/computeruse/config"
 	cupackages "github.com/nickheyer/icebath/internal/plugins/defaults/tools/computeruse/packages"
 	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/nickheyer/icebath/pkg/proc"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
@@ -80,7 +81,7 @@ func (d *Driver) Override() string {
 func (d *Driver) Command(given string) (string, error) {
 	configured := cmp.Or(strings.TrimSpace(given), d.Override())
 	if configured != "" {
-		expanded := terminal.ExpandUser(configured)
+		expanded := fsx.ExpandHome(configured)
 		resolved, err := exec.LookPath(expanded)
 		switch {
 		case err != nil:
@@ -407,19 +408,6 @@ func (p Printer) Info(text string)    { fmt.Fprintln(p.Out, p.paint("  "+text, "
 func (p Printer) Success(text string) { fmt.Fprintln(p.Out, p.paint("✓ "+text, "\033[32m")) }
 func (p Printer) Warning(text string) { fmt.Fprintln(p.Out, p.paint("⚠ "+text, "\033[33m")) }
 
-// Text as a sentence: capital first letter, a period at the end
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	text = strings.ToUpper(text[:1]) + text[1:]
-	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
-		text += "."
-	}
-	return text
-}
-
 // Prints the warning and its hints, answering false as a failed step does
 func (p Printer) fail(message string, hints ...string) bool {
 	p.Warning(message)
@@ -458,7 +446,7 @@ func (d *Driver) Install(ctx context.Context, cfg *config.Config, p Printer, pro
 			p.Info("Getting the version of cua-driver that icebath installs.")
 		}
 		if _, err := d.packages.Ensure(ctx, cfg, cupackages.CuaDriver, packages.Ensuring{Explicit: true}); err != nil {
-			return p.fail("Could not install cua-driver. " + sentence(err.Error())), nil
+			return p.fail("Could not install cua-driver. " + strs.Full(err.Error())), nil
 		}
 		if binary, err = d.Command(""); err != nil {
 			return false, err
@@ -489,11 +477,11 @@ func (d *Driver) Install(ctx context.Context, cfg *config.Config, p Printer, pro
 				"The cua-driver that icebath installs must include its signed macOS app."), nil
 		}
 		if err := d.verifyApp(ctx, cfg, app); err != nil {
-			return p.fail("Could not register the CuaDriver app with macOS. " + sentence(err.Error())), nil
+			return p.fail("Could not register the CuaDriver app with macOS. " + strs.Full(err.Error())), nil
 		}
 		out, err := run(ctx, []string{lsregister, "-f", app}, 15*time.Second, nil, nil)
 		if err != nil {
-			return p.fail("Could not register the CuaDriver app with macOS. " + sentence(err.Error())), nil
+			return p.fail("Could not register the CuaDriver app with macOS. " + strs.Full(err.Error())), nil
 		}
 		if out.code != 0 {
 			p.tail(out)

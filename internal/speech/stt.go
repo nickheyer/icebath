@@ -35,58 +35,92 @@ const UploadCap = 25 << 20
 // Last 224 tokens of a prompt are all the whisper family reads, at four characters a token
 const whisperPromptChars = 224 * 4
 
-// Message when nothing can transcribe
-const noRecognizer = "No service can turn speech into text yet. Install faster-whisper for free transcription on this computer, set " +
-	speechconfig.LocalCommandEnv + " or install a whisper program, or set the API key of a service: GROQ_API_KEY for Groq, which is free, " +
-	"MISTRAL_API_KEY for Mistral, XAI_API_KEY or a sign-in for xAI, ELEVENLABS_API_KEY for ElevenLabs, or VOICE_TOOLS_OPENAI_KEY or " +
-	"OPENAI_API_KEY for OpenAI. Then pick the service in /settings under Speech to text."
+// Where speech to text is set up, as a sentence that can't open it says it
+const sttPlace = "Settings › Voice › Speech to text"
 
-// Recognizer in use, its name or None: the one stt.provider names when it can transcribe, its fallback when that can, else none; when
-// stt.provider is unset, the first that can of the local engines and then the cloud services
-func (j *Job) Recognizing(ctx context.Context) string {
+// The recognizer the profile turns speech into text with, and whether it can now
+type Recognition struct {
+	// Recognizer in use: the one stt.provider names, its fallback while that one can't and the fallback can, else the first that is ready
+	// of the local engines and then the cloud services; None when none is named and none is ready
+	Name string
+	// stt.provider as written, empty for Automatic
+	Chosen string
+	// The recognizer of Name, its zero value for a name no recognizer has
+	Recognizer Recognizer
+	// How the recognizer of Name stands
+	Standing Standing
+	// What keeps speech from being turned into text, nil while nothing does
+	Hindrance *Hindrance
+}
+
+// The one answer to which recognizer turns the profile's speech into text and what keeps it from it: speech to text switched off, the
+// service chosen and what it lacks, or none chosen and none ready. A chosen service that can't run stays the one named, so what it lacks is
+// what is said
+func (j *Job) Recognition(ctx context.Context) Recognition {
+	r := j.recognition(ctx)
 	if !j.Config.GetBool(speechconfig.STTEnabled) {
-		return None
+		r.Hindrance = &Hindrance{Cause: "Transcribe speech is off", Lack: LacksSwitch}
 	}
-	if chosen := j.chosenRecognizer(); chosen != "" {
+	return r
+}
+
+func (j *Job) recognition(ctx context.Context) Recognition {
+	chosen := j.chosenRecognizer()
+	if chosen != "" {
 		recognizer, ok := j.Speech.Recognizer(j.Config, chosen)
 		if !ok {
-			return chosen
+			return Recognition{Name: chosen, Chosen: chosen, Standing: Standing{State: CantRun}, Hindrance: &Hindrance{
+				Cause: "no speech to text service is called " + chosen, Lack: LacksService, Service: chosen}}
 		}
-		missing := recognizer.missing(ctx, j)
-		if missing == "" {
-			return chosen
+		standing := j.RecognizerStanding(ctx, recognizer)
+		if standing.Hindrance == nil {
+			return Recognition{Name: chosen, Chosen: chosen, Recognizer: recognizer, Standing: standing}
 		}
-		if fallback, ok := j.Speech.Recognizer(j.Config, recognizer.Fallback); ok && fallback.missing(ctx, j) == "" {
-			if recognizer.Instead != "" {
-				slog.Info(recognizer.Instead)
+		if fallback, ok := j.Speech.Recognizer(j.Config, recognizer.Fallback); ok {
+			if instead := j.RecognizerStanding(ctx, fallback); instead.Hindrance == nil {
+				if recognizer.Instead != "" {
+					slog.Info(recognizer.Instead)
+				}
+				return Recognition{Name: fallback.Name, Chosen: chosen, Recognizer: fallback, Standing: instead}
 			}
-			return fallback.Name
 		}
-		warning := recognizer.Warning
-		if warning == "" {
-			warning = fmt.Sprintf("STT provider '%s' configured but unavailable: %s", chosen, missing)
-		}
-		slog.Warn(warning)
-		return None
+		slog.Warn(cmpOr(recognizer.Warning, fmt.Sprintf("STT provider '%s' configured but unavailable: %s", chosen, cmpOr(standing.Missing, standing.Hindrance.Cause))))
+		return Recognition{Name: chosen, Chosen: chosen, Recognizer: recognizer, Standing: standing, Hindrance: standing.Hindrance}
 	}
+	if recognizer, standing, ok := j.Automatic(ctx); ok {
+		if recognizer.Cloud {
+			slog.Info("No local STT available, using " + cmpOr(recognizer.Detected, recognizer.label()))
+		}
+		return Recognition{Name: recognizer.Name, Recognizer: recognizer, Standing: standing}
+	}
+	return Recognition{Name: None, Hindrance: &Hindrance{Cause: "no speech to text service is ready", Lack: LacksService}}
+}
+
+// Recognizer Automatic stands for now: the first that is ready of the local engines and then the cloud services, by their rank
+func (j *Job) Automatic(ctx context.Context) (Recognizer, Standing, bool) {
 	ranked := slices.DeleteFunc(j.Speech.Recognizers(j.Config), func(r Recognizer) bool { return r.Rank == 0 })
 	slices.SortStableFunc(ranked, func(a, b Recognizer) int { return a.Rank - b.Rank })
 	for _, recognizer := range ranked {
-		if recognizer.missing(ctx, j) == "" {
-			if recognizer.Cloud {
-				slog.Info("No local STT available, using " + cmpOr(recognizer.Detected, recognizer.label()))
-			}
-			return recognizer.Name
+		if standing := j.RecognizerStanding(ctx, recognizer); standing.Hindrance == nil {
+			return recognizer, standing, true
 		}
+	}
+	return Recognizer{}, Standing{}, false
+}
+
+// Recognizer that transcribes now, None while something keeps speech from being turned into text
+func (j *Job) Recognizing(ctx context.Context) string {
+	if r := j.Recognition(ctx); r.Hindrance == nil {
+		return r.Name
 	}
 	return None
 }
 
-// Recognizer stt.provider names, empty when it holds only its default; the default set by the session's layer alone, over a profile that
-// chose none, counts as unset too, so a launch asking for this machine's engine still finds whichever is installed
+// Recognizer stt.provider names, empty for Automatic; this machine's engine set by the session's layer alone, over a profile that chose
+// none, counts as Automatic too, so a launch asking for it still finds whichever local engine is installed
 func (j *Job) chosenRecognizer() string {
 	chosen := Chosen(j.Config, speechconfig.STTProvider)
-	if chosen == speechconfig.DefaultRecognize && Chosen(j.Config.With(nil), speechconfig.STTProvider) == "" {
+	if chosen == speechconfig.LocalRecognizer && Chosen(j.Config.With(nil), speechconfig.STTProvider) == "" {
 		return ""
 	}
 	return chosen
@@ -97,13 +131,17 @@ func (r Recognizer) label() string {
 	return cmpOr(r.Label, r.Title)
 }
 
-// Labelled recognizer in use for the voice requirements, empty when none can transcribe
-func (j *Job) RecognizerLabel(ctx context.Context) string {
-	name := j.Recognizing(ctx)
-	if recognizer, ok := j.Speech.Recognizer(j.Config, name); ok && name != None {
-		return recognizer.label()
+// Short name of the recognizer in use for the logs, empty for none
+func (r Recognition) Label() string {
+	if r.Recognizer.Name == "" {
+		return ""
 	}
-	return ""
+	return r.Recognizer.label()
+}
+
+// Failure of a transcription something keeps from happening: what keeps it, then what to do about it where
+func (h *Hindrance) failure() Transcript {
+	return Failure(strings.TrimSpace(h.Sentence() + " " + h.Remedy(sttPlace)))
 }
 
 // Transcribes an audio file with the recognizer in use: the file checked, a SILK note decoded, Apple's CAF converted for a cloud service,
@@ -129,14 +167,16 @@ func (j *Job) Transcribe(ctx context.Context, path, model, source string) Transc
 	if failure, ok := audioFile(path); !ok {
 		return failure
 	}
-	if !j.Config.GetBool(speechconfig.STTEnabled) {
-		return Failure("Speech to text is off. Turn on Transcribe speech in /settings under Speech to text.")
+	recognition := j.Recognition(ctx)
+	if h := recognition.Hindrance; h != nil {
+		failure := h.failure()
+		failure.Provider = recognition.Chosen
+		if h.Lack == LacksService && recognition.Chosen != "" {
+			failure.Kind = "provider_not_registered"
+		}
+		return failure
 	}
-	name := j.Recognizing(ctx)
-	recognizer, known := j.Speech.Recognizer(j.Config, name)
-	if !known {
-		return j.unclaimed(ctx, name)
-	}
+	recognizer := recognition.Recognizer
 	if !recognizer.Local && strings.ToLower(filepath.Ext(path)) == ".caf" {
 		work, err := os.MkdirTemp("", "icebath-caf-")
 		if err != nil {
@@ -200,48 +240,46 @@ func hinted(value string) *string {
 	return &value
 }
 
-// Model, language and prompt of a transcription: what the pre_transcription hooks set over the call's model, the recognizer's language
-// setting and stt.prompt; then the recognizer's model setting under the model, stt.language under the language, and the prompt cut to what
-// the whisper family reads
-func (j *Job) hints(ctx context.Context, recognizer Recognizer, path, model, source string) Hints {
-	prompt := j.Config.GetString(speechconfig.Prompt)
-	if strings.TrimSpace(prompt) == "" {
-		prompt = ""
-	}
+// Language a recognizer is told: its own, else stt.language, by the one rule of values kept both ways
+func (j *Job) language(recognizer Recognizer) string {
 	own := ""
 	if recognizer.Language != nil {
 		own = strings.TrimSpace(recognizer.Language(j))
 	}
-	var language string
+	return Either(own, j.Text(speechconfig.Language, ""))
+}
+
+// Hint text a recognizer is told: its own, else stt.prompt, by the one rule of values kept both ways
+func (j *Job) prompt(recognizer Recognizer) string {
+	own := ""
+	if recognizer.Prompt != nil {
+		own = strings.TrimSpace(recognizer.Prompt(j))
+	}
+	return Either(own, strings.TrimSpace(j.Config.GetString(speechconfig.Prompt)))
+}
+
+// Model, language and prompt of a transcription: what the pre_transcription hooks set over the call's model, the recognizer's language and
+// its hint text; then the recognizer's model setting under the model, its language under the language, and the prompt cut to what the
+// whisper family reads
+func (j *Job) hints(ctx context.Context, recognizer Recognizer, path, model, source string) Hints {
+	prompt, language := j.prompt(recognizer), j.language(recognizer)
+	own := ""
+	if recognizer.Language != nil {
+		own = strings.TrimSpace(recognizer.Language(j))
+	}
 	if j.Speech.hooks != nil {
-		model, language, prompt = j.Speech.hooks.Transcribe(ctx, j.Config, hooks.Transcription{File: path, Provider: recognizer.Name, Model: hinted(model),
+		var hooked string
+		model, hooked, prompt = j.Speech.hooks.Transcribe(ctx, j.Config, hooks.Transcription{File: path, Provider: recognizer.Name, Model: hinted(model),
 			Language: hinted(own), Prompt: hinted(prompt), Source: hinted(source)})
+		language = cmpOr(strings.TrimSpace(hooked), language)
 	}
-	hints := Hints{Model: j.model(recognizer, model), Language: strings.TrimSpace(language), Prompt: prompt}
-	if hints.Language == "" {
-		hints.Language = cmpOr(own, j.Text(speechconfig.Language, ""))
-	}
+	hints := Hints{Model: j.model(recognizer, model), Language: language, Prompt: prompt}
 	if runes := []rune(hints.Prompt); recognizer.Whisper && len(runes) > whisperPromptChars {
 		slog.Warn(fmt.Sprintf("Transcription prompt is ~%d tokens; whisper-family provider '%s' only uses the final ~224 — truncating to the last %d characters.",
 			len(runes)/4, recognizer.Name, whisperPromptChars))
 		hints.Prompt = string(runes[len(runes)-whisperPromptChars:])
 	}
 	return hints
-}
-
-// Failure of a transcription nothing claimed: a name no recognizer has, else the setup hint
-func (j *Job) unclaimed(ctx context.Context, name string) Transcript {
-	chosen := Chosen(j.Config, speechconfig.STTProvider)
-	if name != None && name != "" {
-		return Transcript{Error: fmt.Sprintf("Speech to text is set to use %s, and no service has that name. Pick another in /settings under "+
-			"Speech to text, or add a program named %s under Programs there.", name, name), Provider: name, Kind: "provider_not_registered"}
-	}
-	if recognizer, ok := j.Speech.Recognizer(j.Config, chosen); ok && recognizer.Explains {
-		if missing := recognizer.missing(ctx, j); missing != "" {
-			return Failure(missing)
-		}
-	}
-	return Failure(noRecognizer)
 }
 
 // Failure of a source file a decoder must not read, or that is too large when the cap applies
@@ -581,17 +619,13 @@ func (j *Job) Listen(ctx context.Context, partial func(string)) (Live, string, e
 	if !j.Config.GetBool(speechconfig.Streaming) {
 		return nil, "", nil
 	}
-	name := j.Recognizing(ctx)
-	recognizer, ok := j.Speech.Recognizer(j.Config, name)
-	if !ok || recognizer.Local || recognizer.Live == nil {
+	recognition := j.Recognition(ctx)
+	recognizer, name := recognition.Recognizer, recognition.Name
+	if recognition.Hindrance != nil || recognizer.Local || recognizer.Live == nil {
 		return nil, "", nil
 	}
-	// Live sessions take no pre_transcription hook: the recognizer's language else stt.language, and stt.prompt
-	hints := Hints{Model: j.model(recognizer, ""), Prompt: strings.TrimSpace(j.Config.GetString(speechconfig.Prompt))}
-	if recognizer.Language != nil {
-		hints.Language = strings.TrimSpace(recognizer.Language(j))
-	}
-	hints.Language = cmpOr(hints.Language, j.Text(speechconfig.Language, ""))
+	// Live sessions take no pre_transcription hook: the recognizer's language and hint text as the one rule gives them
+	hints := Hints{Model: j.model(recognizer, ""), Language: j.language(recognizer), Prompt: j.prompt(recognizer)}
 	live, err := recognizer.Live(ctx, j, hints, partial)
 	if err != nil {
 		slog.Warn(fmt.Sprintf("Live STT session for %s could not open: %s", name, err))

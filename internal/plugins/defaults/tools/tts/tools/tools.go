@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/internal/speech"
+	speechconfig "github.com/nickheyer/icebath/internal/speech/config"
 	"github.com/nickheyer/icebath/internal/tools"
 )
 
@@ -40,6 +41,7 @@ func (r *registrant) Tools() []tools.Def {
 		Dynamic:   r.schema,
 		Handler:   r.speak,
 		Check:     func(env *tools.Env) bool { return r.job(env).CanSpeak() },
+		Lacks:     func(*tools.Env) string { return "It needs a voice that can speak." },
 		Effect:    tools.Mutates,
 		Unfocused: true,
 	}}
@@ -165,4 +167,9 @@ func (r *registrant) find(ctx context.Context, job *speech.Job, query any) strin
 		return failure(err.Error())
 	}
 	return tools.JSON(page)
+}
+
+// The group of the speech tool, whose options are the area of voice
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: "Text to speech", Area: speechconfig.Voice, Order: 100}}
 }

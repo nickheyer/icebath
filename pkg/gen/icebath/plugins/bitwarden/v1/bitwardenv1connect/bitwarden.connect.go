@@ -38,10 +38,6 @@ const (
 	BitwardenServiceSetupProcedure = "/icebath.plugins.bitwarden.v1.BitwardenService/Setup"
 	// BitwardenServiceTokenProcedure is the procedure name of the BitwardenService's Token RPC.
 	BitwardenServiceTokenProcedure = "/icebath.plugins.bitwarden.v1.BitwardenService/Token"
-	// BitwardenServiceSyncProcedure is the procedure name of the BitwardenService's Sync RPC.
-	BitwardenServiceSyncProcedure = "/icebath.plugins.bitwarden.v1.BitwardenService/Sync"
-	// BitwardenServiceDisableProcedure is the procedure name of the BitwardenService's Disable RPC.
-	BitwardenServiceDisableProcedure = "/icebath.plugins.bitwarden.v1.BitwardenService/Disable"
 )
 
 var (
@@ -94,20 +90,6 @@ var (
 			Procedure:  BitwardenServiceTokenProcedure,
 		}
 	})
-	bitwardenServiceSyncSpec = sync.OnceValue(func() connect.Spec {
-		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_plugins_bitwarden_v1_bitwarden_proto.Services().ByName("BitwardenService").Methods().ByName("Sync"),
-			Procedure:  BitwardenServiceSyncProcedure,
-		}
-	})
-	bitwardenServiceDisableSpec = sync.OnceValue(func() connect.Spec {
-		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_plugins_bitwarden_v1_bitwarden_proto.Services().ByName("BitwardenService").Methods().ByName("Disable"),
-			Procedure:  BitwardenServiceDisableProcedure,
-		}
-	})
 )
 
 // BitwardenServiceClient is a client for the icebath.plugins.bitwarden.v1.BitwardenService service.
@@ -127,10 +109,6 @@ type BitwardenServiceClient interface {
 	Setup(context.Context, *v1.SetupRequest) (*v1.Preview, error)
 	// Keeps a new access token once Bitwarden accepts it, or without asking when told not to verify
 	Token(context.Context, *v1.TokenRequest) (*v1.TokenResponse, error)
-	// Pulls the project's secrets now and says what the next start would do with each, setting them for the profile when asked
-	Sync(context.Context, *v1.SyncRequest) (*v1.Preview, error)
-	// Turns the store off, its token staying in the .env
-	Disable(context.Context, *v1.DisableRequest) (*v1.DisableResponse, error)
 }
 
 // NewBitwardenServiceClient constructs a client for the
@@ -158,10 +136,6 @@ type BitwardenServiceHandler interface {
 	Setup(context.Context, *v1.SetupRequest) (*v1.Preview, error)
 	// Keeps a new access token once Bitwarden accepts it, or without asking when told not to verify
 	Token(context.Context, *v1.TokenRequest) (*v1.TokenResponse, error)
-	// Pulls the project's secrets now and says what the next start would do with each, setting them for the profile when asked
-	Sync(context.Context, *v1.SyncRequest) (*v1.Preview, error)
-	// Turns the store off, its token staying in the .env
-	Disable(context.Context, *v1.DisableRequest) (*v1.DisableResponse, error)
 }
 
 // RegisterBitwardenServiceHandler registers svc as the
@@ -176,8 +150,6 @@ func RegisterBitwardenServiceHandler(server *connect.Server, svc BitwardenServic
 		connect.Method{Spec: bitwardenServiceProjectsSpec(), Handler: adapter.projects},
 		connect.Method{Spec: bitwardenServiceSetupSpec(), Handler: adapter.setup},
 		connect.Method{Spec: bitwardenServiceTokenSpec(), Handler: adapter.token},
-		connect.Method{Spec: bitwardenServiceSyncSpec(), Handler: adapter.sync},
-		connect.Method{Spec: bitwardenServiceDisableSpec(), Handler: adapter.disable},
 	)
 }
 
@@ -210,14 +182,6 @@ func (UnimplementedBitwardenServiceHandler) Setup(context.Context, *v1.SetupRequ
 
 func (UnimplementedBitwardenServiceHandler) Token(context.Context, *v1.TokenRequest) (*v1.TokenResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.bitwarden.v1.BitwardenService.Token is not implemented")
-}
-
-func (UnimplementedBitwardenServiceHandler) Sync(context.Context, *v1.SyncRequest) (*v1.Preview, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.bitwarden.v1.BitwardenService.Sync is not implemented")
-}
-
-func (UnimplementedBitwardenServiceHandler) Disable(context.Context, *v1.DisableRequest) (*v1.DisableResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.bitwarden.v1.BitwardenService.Disable is not implemented")
 }
 
 type bitwardenServiceClient struct {
@@ -275,22 +239,6 @@ func (c *bitwardenServiceClient) Setup(ctx context.Context, req *v1.SetupRequest
 func (c *bitwardenServiceClient) Token(ctx context.Context, req *v1.TokenRequest) (*v1.TokenResponse, error) {
 	var res v1.TokenResponse
 	if err := c.client.CallUnary(ctx, bitwardenServiceTokenSpec(), req, &res); err != nil {
-		return nil, err
-	}
-	return &res, nil
-}
-
-func (c *bitwardenServiceClient) Sync(ctx context.Context, req *v1.SyncRequest) (*v1.Preview, error) {
-	var res v1.Preview
-	if err := c.client.CallUnary(ctx, bitwardenServiceSyncSpec(), req, &res); err != nil {
-		return nil, err
-	}
-	return &res, nil
-}
-
-func (c *bitwardenServiceClient) Disable(ctx context.Context, req *v1.DisableRequest) (*v1.DisableResponse, error) {
-	var res v1.DisableResponse
-	if err := c.client.CallUnary(ctx, bitwardenServiceDisableSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -376,30 +324,6 @@ func (h bitwardenServiceHandler) token(ctx context.Context, _ connect.Spec, stre
 		return err
 	}
 	res, err := h.svc.Token(ctx, &req)
-	if err != nil {
-		return err
-	}
-	return stream.Send(res)
-}
-
-func (h bitwardenServiceHandler) sync(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.SyncRequest
-	if err := stream.Receive(&req); err != nil {
-		return err
-	}
-	res, err := h.svc.Sync(ctx, &req)
-	if err != nil {
-		return err
-	}
-	return stream.Send(res)
-}
-
-func (h bitwardenServiceHandler) disable(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.DisableRequest
-	if err := stream.Receive(&req); err != nil {
-		return err
-	}
-	res, err := h.svc.Disable(ctx, &req)
 	if err != nil {
 		return err
 	}

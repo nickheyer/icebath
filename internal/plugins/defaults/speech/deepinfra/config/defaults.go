@@ -11,8 +11,8 @@ func Register(cfg *config.Config) {
 			Settings: []config.Setting{
 				{Key: Voice, Title: "Voice", About: "The DeepInfra voice that speaks.", Default: DefaultVoice},
 				{Key: TTSModel, Title: "Model", About: "The DeepInfra model that speaks.", Default: "", Zero: "DeepInfra's first model"},
-				{Key: Speed, Title: "Speed", About: "The speed the DeepInfra voice speaks at.", Help: "1 is normal speed. The general speed is Speed under Text to speech.",
-					Default: 0.0, Zero: "The general speed", Least: config.Num(0.25), Most: config.Num(4)},
+				{Key: Speed, Title: "Speed", About: "The speed the DeepInfra voice speaks at.", Help: "1 is normal speed.",
+					Default: 0.0, Zero: speechconfig.SameAsVoice, Least: config.Num(0.25), Most: config.Num(4)},
 				{Key: TTSBaseURL, Title: "Base URL", About: "The address DeepInfra speech requests go to.", Help: "The variable " + BaseURLEnv +
 					" wins over DeepInfra's own address when it is set.", Default: "", Zero: "DeepInfra's address", Advanced: true},
 				{Key: MaxTextLength, Title: "Text limit", About: "The most characters one request to DeepInfra takes.",

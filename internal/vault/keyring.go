@@ -1,5 +1,7 @@
 package vault
 
+import "github.com/nickheyer/icebath/pkg/strs"
+
 // Keychain service every vault key is filed under
 const keychainService = "icebath vault key"
 
@@ -39,12 +41,12 @@ func osKeyring() (keyring, error) {
 func KeychainLabel() string {
 	k, err := osKeyring()
 	if err != nil {
-		return sentence(err.Error())
+		return strs.Full(err.Error())
 	}
 	return k.name()
 }
 
 // Line of a keyring failure: what went wrong, then what the keychain said
 func refused(what string, err error) string {
-	return what + " " + sentence(err.Error())
+	return what + " " + strs.Full(err.Error())
 }

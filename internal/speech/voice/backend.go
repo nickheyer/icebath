@@ -18,7 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gen/icebath/speech/v1/speechv1connect"
 )
 
-// Server side of voice mode for one profile: its settings, its recognizer and its voice
+// Server side of voice input for one profile: its settings, its recognizer and its voice
 type backend struct {
 	client  speechv1connect.SpeechServiceClient
 	profile func() string
@@ -59,9 +59,10 @@ const chunkWait = 30 * time.Second
 
 var errFull = errors.New("audio chunk queue stayed full for " + chunkWait.String())
 
-// Speech of text as the server makes it, each clip handed over as it starts with its bytes following on its channel
-func (b *backend) speak(ctx context.Context, text string, live bool, each func(c *clip)) error {
-	stream, err := b.client.Speak(ctx, &speechv1.SpeakRequest{Profile: b.profile(), Text: text, Live: live})
+// Speech of text in the voice of the profile as the server makes it, each clip handed over as it starts with its bytes following on its
+// channel
+func (b *backend) speak(ctx context.Context, profile, text string, live bool, each func(c *clip)) error {
+	stream, err := b.client.Speak(ctx, &speechv1.SpeakRequest{Profile: profile, Text: text, Live: live})
 	if err != nil {
 		return err
 	}

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/internal/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Longest one extra's install may take, a source build on a slow machine included
@@ -138,7 +139,7 @@ func (h *Packages) extraNames() []string {
 
 // Refusal of an extra no feature declares, naming those there are
 func (h *Packages) unknownExtra(name string) *InstallError {
-	return Failure(name, "There is no extra of that name.", "The extras are "+joined(h.extraNames(), "and")+".")
+	return Failure(name, "There is no extra of that name.", "The extras are "+strs.And(h.extraNames())+".")
 }
 
 // Command that provisions an extra
@@ -292,9 +293,9 @@ func preflight(name string, e *Extra, target string, r Reporter) error {
 	if builds := slices.Sorted(slices.Values(e.Build[target])); len(builds) > 0 {
 		if !compilerPresent() {
 			return Failure(name, fmt.Sprintf("%s compiles %s from source on %s, and this computer has no C and C++ compiler.", e.Feature,
-				joined(builds, "and"), target), "Install a compiler, then run `"+installHint(name)+"` again. The usual commands:"+installLines(compilerInstall))
+				strs.And(builds), target), "Install a compiler, then run `"+installHint(name)+"` again. The usual commands:"+installLines(compilerInstall))
 		}
-		r.Line(fmt.Sprintf("  %s builds %s from source with the compiler of this computer.", name, joined(builds, "and")))
+		r.Line(fmt.Sprintf("  %s builds %s from source with the compiler of this computer.", name, strs.And(builds)))
 	}
 	for _, t := range e.Tools {
 		if !(t == Git && runtime.GOOS != "windows") {

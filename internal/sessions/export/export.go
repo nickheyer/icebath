@@ -516,7 +516,7 @@ func Memory(segments []*sessionsv1.Transcript, format string, at time.Time) ([]b
 		}
 		for _, m := range t.GetMessages() {
 			role := Role(m)
-			heading := "### " + strings.ToUpper(role[:1]) + role[1:]
+			heading := "### " + strs.Capital(role)
 			if m.GetRole() == sessionsv1.Role_ROLE_TOOL && m.GetToolName() != "" {
 				heading = "### Tool — " + m.GetToolName()
 			}

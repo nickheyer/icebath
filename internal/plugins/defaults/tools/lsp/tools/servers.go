@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/internal/packages"
 	lspconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/lsp/config"
-	"github.com/nickheyer/icebath/internal/terminal"
 	toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
 	"github.com/nickheyer/icebath/pkg/fsx"
 )
@@ -93,6 +92,8 @@ type server struct {
 	// Names its program goes by on PATH, and the program a declared server runs as written
 	names   []string
 	program string
+	// How a person installs it themselves, for one icebath can't install
+	install string
 }
 
 // Whether the server takes the file, by its extension or its name
@@ -149,7 +150,7 @@ func present(dir string, names []string) bool {
 // First folder up from the file holding a marker, a package folder of Python never one; empty past the ceiling or once an exclude marker
 // is met
 func nearestRoot(file string, markers, excludes []string, ceiling string) string {
-	start, err := filepath.Abs(terminal.ExpandUser(file))
+	start, err := filepath.Abs(fsx.ExpandHome(file))
 	if err != nil {
 		return ""
 	}
@@ -157,7 +158,7 @@ func nearestRoot(file string, markers, excludes []string, ceiling string) string
 		start = filepath.Dir(start)
 	}
 	if ceiling != "" {
-		if abs, err := filepath.Abs(terminal.ExpandUser(ceiling)); err == nil {
+		if abs, err := filepath.Abs(fsx.ExpandHome(ceiling)); err == nil {
 			ceiling = abs
 		}
 	}
@@ -218,7 +219,7 @@ func (b *build) binary(id string, names []string, recipe string) (string, error)
 	if found := which(names...); found != "" || recipe == "" {
 		return found, nil
 	}
-	return b.s.m.install(b.s.m.ctx, b.s.cfg, recipe, b.s.settings.strategy, false)
+	return b.s.m.install(b.s.m.ctx, b.s.cfg, recipe, b.s.settings.auto, false)
 }
 
 // Spec of a command with the settings' initialization options over the base ones, their variables and the package manager's Node
@@ -419,7 +420,7 @@ func (b *build) psesBundle() string {
 		if candidate == "" {
 			continue
 		}
-		candidate = terminal.ExpandUser(candidate)
+		candidate = fsx.ExpandHome(candidate)
 		if fsx.IsFile(filepath.Join(candidate, "PowerShellEditorServices", "Start-EditorServices.ps1")) {
 			return candidate
 		}
@@ -474,6 +475,7 @@ type entryOptions struct {
 	seeds     bool
 	untrusted map[string]any
 	multiRoot bool
+	install   string
 }
 
 // Entry of the table, rooted by markers and spawned as one binary unless it says otherwise
@@ -490,7 +492,8 @@ func entry(id string, extensions []string, about string, o entryOptions) *server
 	if spawn == nil {
 		spawn = simple(id, names, o.args, o.recipe, o.init, o.seeds, o.untrusted)
 	}
-	return &server{id: id, extensions: extensions, root: root, spawn: spawn, seeds: o.seeds, about: about, multiRoot: o.multiRoot, names: names}
+	return &server{id: id, extensions: extensions, root: root, spawn: spawn, seeds: o.seeds, about: about, multiRoot: o.multiRoot, names: names,
+		install: o.install}
 }
 
 var (
@@ -513,52 +516,59 @@ var builtins = []*server{
 	entry("astro-language-server", []string{".astro"}, "Astro — @astrojs/language-server", entryOptions{root: rootTypescript,
 		names: []string{"astro-ls", "astro-language-server"}, args: []string{"--stdio"}, recipe: "@astrojs/language-server"}),
 	entry("gopls", []string{".go"}, "Go — gopls", entryOptions{markers: []string{"go.work", "go.mod", "go.sum"}, recipe: "gopls"}),
-	entry("rust-analyzer", []string{".rs"}, "Rust — rust-analyzer", entryOptions{markers: []string{"Cargo.toml", "Cargo.lock"}, recipe: "rust-analyzer"}),
+	entry("rust-analyzer", []string{".rs"}, "Rust — rust-analyzer", entryOptions{markers: []string{"Cargo.toml", "Cargo.lock"}, recipe: "rust-analyzer",
+		install: "Install rust-analyzer with rustup component add rust-analyzer."}),
 	entry("clangd", []string{".c", ".cpp", ".cc", ".cxx", ".h", ".hh", ".hpp", ".hxx"}, "C/C++ — clangd", entryOptions{
-		markers: []string{"compile_commands.json", "compile_flags.txt", ".clangd"}, args: []string{"--background-index", "--clang-tidy"}, recipe: "clangd"}),
+		markers: []string{"compile_commands.json", "compile_flags.txt", ".clangd"}, args: []string{"--background-index", "--clang-tidy"}, recipe: "clangd",
+		install: "Install clangd from the packages of your system, such as apt install clangd or brew install llvm."}),
 	entry("bash-language-server", []string{".sh", ".bash", ".zsh", ".ksh"}, "Bash — bash-language-server", entryOptions{spawn: spawnBash, names: []string{"bash-language-server"}}),
 	entry("yaml-language-server", []string{".yaml", ".yml"}, "YAML — yaml-language-server", entryOptions{args: []string{"--stdio"},
 		recipe: "yaml-language-server"}),
 	entry("lua-language-server", []string{".lua"}, "Lua — lua-language-server", entryOptions{
 		markers: []string{".luarc.json", ".luarc.jsonc", ".luacheckrc", ".stylua.toml", "stylua.toml", "selene.toml", "selene.yml"},
-		recipe:  "lua-language-server"}),
+		recipe:  "lua-language-server", install: "Install lua-language-server from the packages of your system, such as brew install lua-language-server."}),
 	entry("laravel-lsp", []string{".blade.php"}, "Laravel Blade — laravel-lsp, installed with composer global require laravel/lsp", entryOptions{
-		markers: []string{"artisan", "composer.json", "composer.lock"}, args: []string{"lsp"}}),
+		markers: []string{"artisan", "composer.json", "composer.lock"}, args: []string{"lsp"}, install: "Install laravel-lsp with composer global require laravel/lsp."}),
 	entry("intelephense", []string{".php"}, "PHP — intelephense", entryOptions{markers: []string{"composer.json", "composer.lock", ".php-version"},
 		args: []string{"--stdio"}, recipe: "intelephense", init: map[string]any{"telemetry": map[string]any{"enabled": false}}}),
 	entry("ocaml-lsp", []string{".ml", ".mli"}, "OCaml — ocaml-lsp", entryOptions{markers: []string{"dune-project", "dune-workspace", ".merlin", "opam"},
-		names: []string{"ocamllsp"}}),
+		names: []string{"ocamllsp"}, install: "Install ocaml-lsp with opam install ocaml-lsp-server."}),
 	entry("dockerfile-ls", []string{".dockerfile", "Dockerfile"}, "Dockerfile — dockerfile-language-server-nodejs", entryOptions{
 		names: []string{"docker-langserver"}, args: []string{"--stdio"}, recipe: "dockerfile-language-server-nodejs"}),
 	entry("terraform-ls", []string{".tf", ".tfvars"}, "Terraform — terraform-ls", entryOptions{markers: []string{".terraform.lock.hcl", "terraform.tfstate"},
-		args: []string{"serve"}, init: map[string]any{"experimentalFeatures": map[string]any{"prefillRequiredFields": true, "validateOnSave": true}}}),
+		args: []string{"serve"}, init: map[string]any{"experimentalFeatures": map[string]any{"prefillRequiredFields": true, "validateOnSave": true}},
+		install: "Install terraform-ls from HashiCorp, such as brew install hashicorp/tap/terraform-ls."}),
 	entry("dart", []string{".dart"}, "Dart — built-in language server", entryOptions{markers: []string{"pubspec.yaml", "analysis_options.yaml"},
-		args: []string{"language-server", "--lsp"}}),
+		args: []string{"language-server", "--lsp"}, install: "Install the Dart SDK, which brings the dart language server."}),
 	entry("haskell-language-server", []string{".hs", ".lhs"}, "Haskell — haskell-language-server", entryOptions{
 		markers: []string{"stack.yaml", "cabal.project", "hie.yaml"}, names: []string{"haskell-language-server-wrapper", "haskell-language-server"},
-		args: []string{"--lsp"}}),
+		args: []string{"--lsp"}, install: "Install haskell-language-server with ghcup install hls."}),
 	entry("julia", []string{".jl"}, "Julia — LanguageServer.jl", entryOptions{markers: []string{"Project.toml", "Manifest.toml"},
-		args: []string{"--startup-file=no", "--history-file=no", "-e", "using LanguageServer; runserver()"}}),
+		args:    []string{"--startup-file=no", "--history-file=no", "-e", "using LanguageServer; runserver()"},
+		install: "Install Julia, then add the Julia package LanguageServer."}),
 	entry("clojure-lsp", []string{".clj", ".cljs", ".cljc", ".edn"}, "Clojure — clojure-lsp", entryOptions{
-		markers: []string{"deps.edn", "project.clj", "shadow-cljs.edn", "bb.edn", "build.boot"}, args: []string{"listen"}}),
+		markers: []string{"deps.edn", "project.clj", "shadow-cljs.edn", "bb.edn", "build.boot"}, args: []string{"listen"},
+		install: "Install clojure-lsp with brew install clojure-lsp/brew/clojure-lsp."}),
 	entry("nixd", []string{".nix"}, "Nix — nixd", entryOptions{root: func(file, workspace string) string {
 		if root := nearestRoot(file, []string{"flake.nix"}, nil, ""); root != "" {
 			return root
 		}
 		return workspace
-	}}),
-	entry("zls", []string{".zig", ".zon"}, "Zig — zls", entryOptions{markers: []string{"build.zig"}}),
-	entry("gleam", []string{".gleam"}, "Gleam — built-in language server", entryOptions{markers: []string{"gleam.toml"}, args: []string{"lsp"}}),
+	}, install: "Install nixd with nix profile install nixpkgs#nixd."}),
+	entry("zls", []string{".zig", ".zon"}, "Zig — zls", entryOptions{markers: []string{"build.zig"}, install: "Install zls from the packages of your system, such as brew install zls."}),
+	entry("gleam", []string{".gleam"}, "Gleam — built-in language server", entryOptions{markers: []string{"gleam.toml"}, args: []string{"lsp"}, install: "Install Gleam, which brings the gleam language server."}),
 	entry("elixir-ls", []string{".ex", ".exs"}, "Elixir — elixir-ls", entryOptions{markers: []string{"mix.exs", "mix.lock"},
-		names: []string{"elixir-ls", "language_server.sh"}}),
+		names: []string{"elixir-ls", "language_server.sh"}, install: "Install elixir-ls with brew install elixir-ls, or from the elixir-ls releases on GitHub."}),
 	entry("prisma", []string{".prisma"}, "Prisma — built-in language server", entryOptions{markers: []string{"schema.prisma", "prisma/schema.prisma"},
-		args: []string{"language-server"}}),
+		args: []string{"language-server"}, install: "Install the Prisma command line, which brings the prisma language server, with npm install -g prisma."}),
 	entry("kotlin-language-server", []string{".kt", ".kts"}, "Kotlin — kotlin-language-server", entryOptions{
-		markers: []string{"settings.gradle", "settings.gradle.kts", "build.gradle", "build.gradle.kts", "pom.xml"}}),
+		markers: []string{"settings.gradle", "settings.gradle.kts", "build.gradle", "build.gradle.kts", "pom.xml"},
+		install: "Install kotlin-language-server with brew install kotlin-language-server."}),
 	entry("jdtls", []string{".java"}, "Java — Eclipse JDT Language Server", entryOptions{
-		markers: []string{"pom.xml", "build.gradle", "build.gradle.kts", ".project", ".classpath", "settings.gradle"}}),
+		markers: []string{"pom.xml", "build.gradle", "build.gradle.kts", ".project", ".classpath", "settings.gradle"}, install: "Install jdtls with brew install jdtls."}),
 	entry("powershell", []string{".ps1", ".psm1", ".psd1"}, "PowerShell — PowerShellEditorServices (manual bundle)", entryOptions{
-		markers: []string{"PSScriptAnalyzerSettings.psd1"}, spawn: spawnPowershell, names: []string{"pwsh", "powershell"}}),
+		markers: []string{"PSScriptAnalyzerSettings.psd1"}, spawn: spawnPowershell, names: []string{"pwsh", "powershell"},
+		install: "Install PowerShell, then unzip PowerShellEditorServices from GitHub into the lsp folder of the profile."}),
 }
 
 // First of the servers that takes the file
@@ -585,10 +595,14 @@ func builtin(id string) bool {
 	return slices.ContainsFunc(builtins, func(s *server) bool { return s.id == id })
 }
 
-// Spawn of a server the settings declare, its program a path or a name on PATH
+// Spawn of a server the settings declare, its program a path or a name on PATH; one with no command yet starts nothing
 func spawnCustom(id string, command []string) func(b *build) (*spec, error) {
 	return func(b *build) (*spec, error) {
-		bin := which(terminal.ExpandUser(command[0]))
+		if len(command) == 0 {
+			b.s.m.warnOnce("custom:"+id, fmt.Sprintf("%s.%s: the server has no command — server skipped", lspconfig.Servers, id))
+			return nil, nil
+		}
+		bin := which(fsx.ExpandHome(command[0]))
 		if bin == "" {
 			b.s.m.warnOnce("custom:"+id, fmt.Sprintf("%s.%s: command %q not found on PATH — server skipped", lspconfig.Servers, id, command[0]))
 			return nil, nil
@@ -599,8 +613,14 @@ func spawnCustom(id string, command []string) func(b *build) (*spec, error) {
 
 // Non empty list of non empty texts, false for any other shape
 func texts(v any) ([]string, bool) {
-	list, ok := v.([]any)
-	if !ok || len(list) == 0 {
+	var list []any
+	switch held := v.(type) {
+	case []any:
+		list = held
+	case []string:
+		list = anyList(held)
+	}
+	if len(list) == 0 {
 		return nil, false
 	}
 	out := make([]string, len(list))
@@ -614,42 +634,64 @@ func texts(v any) ([]string, bool) {
 	return out, true
 }
 
-// Servers the settings declare: entries with extensions under a name no built in server has, in the order they are written
+// File types an entry a person wrote by hand names, read as kindly as they can be: a list of them, or one line of them
+func endings(v any) []string {
+	switch held := v.(type) {
+	case string:
+		return fileTypes(held)
+	case []string:
+		return fileTypes(strings.Join(held, " "))
+	case []any:
+		var words []string
+		for _, item := range held {
+			if item != nil {
+				words = append(words, fmt.Sprint(item))
+			}
+		}
+		return fileTypes(strings.Join(words, " "))
+	}
+	return nil
+}
+
+// Servers the settings declare: entries with extensions under a name no built in server has, in the order they are written. One whose
+// entry lacks a command or file types, which only a file written by hand holds, is a server all the same, so its page can give it what
+// it lacks: it starts nothing until then
 func (m *Manager) customs(entries []serverEntry) []*server {
 	var out []*server
 	for _, e := range entries {
 		if builtin(e.id) {
 			continue
 		}
-		if _, has := e.raw["extensions"]; !has {
+		if _, has := e.raw[lspconfig.Extensions]; !has {
 			continue
 		}
-		command, okCommand := texts(e.raw["command"])
-		extensions, okExtensions := texts(e.raw["extensions"])
-		if !okCommand || !okExtensions {
-			m.logf(slog.LevelWarn, "%s.%s: custom server needs command: [bin, ...args] and extensions: [.ext, ...] — ignored", lspconfig.Servers, e.id)
-			continue
+		command := commandOf(e.raw[lspconfig.Command])
+		extensions := endings(e.raw[lspconfig.Extensions])
+		if len(command) == 0 || len(extensions) == 0 {
+			m.logf(slog.LevelWarn, "%s.%s: custom server needs a command and its file types — it checks nothing until it has both", lspconfig.Servers, e.id)
 		}
-		for i, ext := range extensions {
-			if strings.HasPrefix(ext, ".") {
-				extensions[i] = strings.ToLower(ext)
-			}
+		program := ""
+		if len(command) > 0 {
+			program = command[0]
 		}
 		var markers []string
-		if list, ok := e.raw["root_markers"].([]any); ok {
+		if list, ok := e.raw[lspconfig.RootMarkers].([]any); ok {
 			for _, item := range list {
 				if marker := fmt.Sprint(item); item != nil && marker != "" {
 					markers = append(markers, marker)
 				}
 			}
 		}
-		about := e.id + " — declared in /settings under Tools › Language servers › Servers"
-		if text, ok := e.raw["description"].(string); ok && text != "" {
-			about = text
+		about := "A language server you added"
+		if len(extensions) == 0 {
+			about = "A language server you added, which checks no file until it has file types"
 		}
-		language, _ := e.raw["language_id"].(string)
+		if text, ok := e.raw[lspconfig.Description].(string); ok && strings.TrimSpace(text) != "" {
+			about = strings.TrimSpace(text)
+		}
+		language, _ := e.raw[lspconfig.LanguageID].(string)
 		out = append(out, &server{id: e.id, extensions: extensions, root: markersRoot(markers, nil), spawn: spawnCustom(e.id, command), about: about,
-			language: language, custom: true, names: []string{command[0]}, program: command[0]})
+			language: language, custom: true, names: []string{program}, program: program})
 	}
 	return out
 }

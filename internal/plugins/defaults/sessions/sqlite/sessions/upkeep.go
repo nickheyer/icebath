@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/internal/sessions"
 	sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/sqlitex"
 )
 
 // Share of pages a database must have free before automatic cleanup compacts it
@@ -356,7 +357,7 @@ func (s *store) housekeeping(ctx context.Context) error {
 			"turn Delete old sessions off to disable pruning", days))
 		return nil
 	}
-	return withFlock(s.config.GetString(sqliteconfig.Path)+".maintenance.lock", 0, func(locked bool) error {
+	return sqlitex.Locked(s.config.GetString(sqliteconfig.Path)+".maintenance.lock", 0, func(locked bool) error {
 		if !locked {
 			return nil
 		}

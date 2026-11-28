@@ -15,12 +15,11 @@ func Register(cfg *config.Config, providers *provider.Registry) {
 		Key:    Key,
 		Parent: generationconfig.ImageKey,
 		Title:  "OpenAI",
-		About:  "Images and edits from OpenAI, with an OpenAI API key",
+		About:  "Images and edits from OpenAI, with an OpenAI account",
 		Order:  10,
 		Settings: []config.Setting{
-			{Key: Model, Title: "Model", About: "The OpenAI model or quality tier that makes images.",
-				Help: "A tier such as gpt-image-2-high, or any model ID. When neither model is set, GPT Image 2 at medium quality is used.", Default: "",
-				Zero: "The general model", Env: []string{"OPENAI_IMAGE_MODEL"}},
+			{Key: Model, Title: "Model", About: "The OpenAI model or quality tier that makes images.", Help: "Any OpenAI model ID works too.", Default: "",
+				Zero: "GPT Image 2 Medium", Env: []string{"OPENAI_IMAGE_MODEL"}, Picks: generationconfig.ImageModelOf(Name)},
 			{Key: Provider, Title: "Provider", About: "Which provider's address and API key image requests use.", Default: "", Options: endpoints,
 				Advanced: true},
 			{Key: BaseURL, Title: "Base URL", About: "The address image requests go to.", Help: "This wins over Provider.", Default: "",
@@ -36,9 +35,8 @@ func Register(cfg *config.Config, providers *provider.Registry) {
 		About:  "Images from OpenAI with your ChatGPT sign-in, no API key",
 		Order:  20,
 		Settings: []config.Setting{
-			{Key: CodexModel, Title: "Model", About: "The quality tier of images made with your ChatGPT sign-in.",
-				Help: "One of gpt-image-2-low, gpt-image-2-medium or gpt-image-2-high. When neither model is set, medium is used.", Default: "",
-				Zero: "The general model", Env: []string{"OPENAI_IMAGE_MODEL"}},
+			{Key: CodexModel, Title: "Model", About: "The quality tier of images made with your ChatGPT sign-in.", Default: "", Zero: "GPT Image 2 Medium",
+				Env: []string{"OPENAI_IMAGE_MODEL"}, Picks: generationconfig.ImageModelOf(Codex)},
 		},
 	}})
 }

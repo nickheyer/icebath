@@ -80,6 +80,7 @@ func Register(registry *speech.Registry) {
 			return speech.WhisperModel(strs.Filled(model, job.Text(config.Model, config.DefaultModel)))
 		},
 		Language:   func(job *speech.Job) string { return job.Text(config.Language, "") },
+		Prompt:     func(job *speech.Job) string { return job.Text(config.InitialPrompt, "") },
 		Transcribe: e.transcribe,
 		Setup:      speech.Setup{Extra: config.Extra, Badge: "recommended · free"},
 		Choices:    []speech.Choices{speech.Fixed(config.Model, speech.WhisperModels...)},
@@ -337,7 +338,7 @@ func (e *engine) transcribe(ctx context.Context, job *speech.Job, path string, h
 	r := speech.Recognizer{Name: config.Name}
 	if !job.Provisioned(config.Extra) {
 		e.told.Do(func() {
-			slog.Warn("Local Whisper is not provisioned. Run `" + packages.InstallHint(config.Extra) + "`, or open /recognition and choose Local Whisper.")
+			slog.Warn("Local Whisper is not provisioned. Run `" + packages.InstallHint(config.Extra) + "`, or install it in Settings › Voice › Speech to text › Local Whisper.")
 		})
 		return r.Failure(missing)
 	}
@@ -366,9 +367,6 @@ func (e *engine) run(job *speech.Job, path string, hints speech.Hints) (string, 
 	}
 	if language := speech.WhisperLanguage(hints.Language, h.languages); language != "" {
 		kwargs["language"] = language
-	}
-	if prompt := job.Config.GetString(config.InitialPrompt); strings.TrimSpace(prompt) != "" {
-		kwargs["initial_prompt"] = prompt
 	}
 	if hints.Prompt != "" {
 		kwargs["initial_prompt"] = hints.Prompt

@@ -20,7 +20,7 @@ func Credential(providers *provider.Registry, creds *credentials.Registry, cfg *
 			if err != nil {
 				return credentials.Credential{}, false
 			}
-			credential, ok := creds.Credential(credentials.Of(instance, route.Account))
+			credential, ok := creds.Credential(credentials.Carried(instance, route))
 			credential.APIKey = route.APIKey
 			return credential, ok && strings.TrimSpace(credential.APIKey) != ""
 		}
@@ -41,7 +41,7 @@ func RenewXAI(ctx context.Context, providers *provider.Registry, creds *credenti
 			if err != nil {
 				return err
 			}
-			return creds.Refresh(ctx, credentials.Of(instance, route.Account), true)
+			return creds.Refresh(ctx, credentials.Carried(instance, route), true)
 		}
 	}
 	return credentials.ErrNotRenewable

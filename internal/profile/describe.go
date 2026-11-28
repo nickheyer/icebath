@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/internal/tools/redact"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Skill names a description prompt lists at most
@@ -114,7 +115,7 @@ func (p *Profiles) Describe(ctx context.Context, name string, overwrite bool, co
 	if err != nil {
 		slog.Info(fmt.Sprintf("describe: API call failed for %s (%v)", canon, err))
 		// The whole failure, not only its kind, with what looks like a secret masked
-		return fail("The helper model could not write a description: " + sentence(redact.File(err.Error(), true)))
+		return fail("The helper model could not write a description: " + strs.Sentence(redact.File(err.Error(), true)))
 	}
 	description := ""
 	stripped := fence.ReplaceAllString(strings.TrimSpace(raw), "")
@@ -140,7 +141,7 @@ func (p *Profiles) Describe(ctx context.Context, name string, overwrite bool, co
 	}
 	auto := true
 	if err := WriteMeta(dir, MetaUpdate{Description: &description, DescriptionAuto: &auto}); err != nil {
-		return fail("The description could not be saved in profile.yaml: " + sentence(err.Error()))
+		return fail("The description could not be saved in profile.yaml: " + strs.Sentence(err.Error()))
 	}
 	return Outcome{Name: canon, OK: true, Reason: "described", Description: description}, nil
 }

@@ -13,13 +13,14 @@ func Register(cfg *config.Config) {
 		Global: true,
 		Title:  "Appearance",
 		About:  "Colors and keyboard",
-		Group:  config.GroupApp,
-		Order:  10,
+		Into:   config.GeneralKey,
 		Settings: []config.Setting{
-			{Key: Skin, Title: "Color theme", About: "Which colors and borders this app draws with.", Default: theme.DefaultName, Options: skins, Slash: "skin"},
+			{Key: Skin, Title: "Color theme", About: "Which colors and borders this app draws with.", Default: theme.DefaultName, Options: skins,
+				Slash: "skin"},
 			{Key: Option, Title: "Option as alt", About: "Use the Option key of a Mac as Alt in shortcuts.",
 				Help: "Turn this on when alt shortcuts do nothing in your Mac terminal.", Default: false, Slash: "keys"},
-			{Key: Keys, Title: "Shortcuts", About: "Shortcuts you changed from their defaults.", Default: map[string]any{}, Internal: true, Slash: "keys",
+			{Key: Keys, Title: "Keyboard shortcuts", About: "Shortcuts you changed from their defaults.", Default: map[string]any{}, Internal: true,
+				Slash: "keys",
 				Entry: &config.Entry{Noun: "shortcut", Name: "Action", Fields: []config.Setting{
 					{Title: "Keys", About: "The keys that run the action.", Default: []string{}},
 				}}},

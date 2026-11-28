@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/cli"
 	camofoxconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/camofox/config"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	camofoxv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/camofox/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/camofox/v1/camofoxv1connect"
 )
@@ -42,7 +43,7 @@ func show(cmd *cobra.Command, st *camofoxv1.StatusResponse) error {
 	}
 	c.Pairs("Camofox", rows)
 	if !st.GetReachable() {
-		c.Failure("The server does not answer. Start it, and check its address in /settings under Browser › Camofox › Server address.")
+		c.Failure("The server does not answer. Start it, and check its address, Server address on the Camofox page of /browser.")
 		for _, line := range serverHelp {
 			c.Say(line)
 		}
@@ -63,7 +64,7 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 			"status to check that it answers. With no subcommand, camofox shows the status.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			st, err := service.Status(cmd.Context(), &camofoxv1.StatusRequest{Profile: profile})
+			st, err := service.Status(cmd.Context(), &camofoxv1.StatusRequest{Profile: named(cmd, profile)})
 			if err != nil {
 				return err
 			}
@@ -84,18 +85,18 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 			console.Say("Camofox is a server you run yourself, as icebath does not install or start it.")
 			chosen := address
 			if !cmd.Flags().Changed("url") {
-				current, err := service.Status(cmd.Context(), &camofoxv1.StatusRequest{Profile: profile})
+				current, err := service.Status(cmd.Context(), &camofoxv1.StatusRequest{Profile: named(cmd, profile)})
 				if err != nil {
 					return err
 				}
 				chosen = console.Prompt("Address of your Camofox server", cmp.Or(current.GetUrl(), camofoxconfig.DefaultURL), false)
 			}
 			key := console.Prompt("API key of your Camofox server, or press enter if it needs none", "", true)
-			reply, err := service.Setup(cmd.Context(), &camofoxv1.SetupRequest{Profile: profile, Url: chosen, ApiKey: key})
+			reply, err := service.Setup(cmd.Context(), &camofoxv1.SetupRequest{Profile: named(cmd, profile), Url: chosen, ApiKey: key})
 			if err != nil {
 				return err
 			}
-			console.Success("Saved the address in /settings under Browser › Camofox › Server address. The agent can use the Camofox tools from " +
+			console.Success("Saved the address as Server address on the Camofox page of /browser. The agent can use the Camofox tools from " +
 				"its next reply.")
 			return show(cmd, reply.GetStatus())
 		},
@@ -107,7 +108,7 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 		Long:  "Shows the address of your Camofox server and whether it answers.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			st, err := service.Status(cmd.Context(), &camofoxv1.StatusRequest{Profile: profile})
+			st, err := service.Status(cmd.Context(), &camofoxv1.StatusRequest{Profile: named(cmd, profile)})
 			if err != nil {
 				return err
 			}
@@ -116,4 +117,9 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	}
 	root.AddCommand(setup, status)
 	return []*cobra.Command{root}
+}
+
+// Profile a command acts for: the one its --profile names, else the one -p picked for icebath, else the one in use
+func named(cmd *cobra.Command, flag string) string {
+	return cmp.Or(flag, picked.Picked(cmd.Context()))
 }

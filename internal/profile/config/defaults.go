@@ -12,7 +12,7 @@ func Register(cfg *config.Config, profiles func() []config.Option) {
 		Order:  30,
 		Settings: []config.Setting{
 			{Key: Active, Title: "In use", About: "Which profile icebath uses now and the next time it starts.", Default: "default", Env: []string{PinnedEnv, ActiveEnv},
-				Options: profiles, Internal: true},
+				Options: profiles, Custom: true},
 		},
 	}})
 }

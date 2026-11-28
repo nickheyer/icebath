@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/internal/skills"
+	skillsconfig "github.com/nickheyer/icebath/internal/skills/config"
 	"github.com/nickheyer/icebath/internal/terminal"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
 	"github.com/nickheyer/icebath/internal/tools"
@@ -356,4 +357,9 @@ func manageSchema() map[string]any {
 			"items":       items,
 		},
 	})
+}
+
+// The group of the skill tools, whose options are the area of skills
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: "Skills", Area: skillsconfig.Key, Order: 110}}
 }

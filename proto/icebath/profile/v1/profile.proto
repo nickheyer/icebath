@@ -26,6 +26,10 @@ service ProfileService {
   rpc Update(UpdateRequest) returns (UpdateResponse);
   // Manifest of a profile's distribution
   rpc Info(InfoRequest) returns (InfoResponse);
+  // Gives a profile every skill that comes with icebath, or only the essential ones
+  rpc Bundled(BundledRequest) returns (BundledResponse);
+  // Has a profile keep pulling what the profile in use imports from other agents, or stop
+  rpc SyncImports(SyncImportsRequest) returns (SyncImportsResponse);
 }
 
 message Profile {
@@ -52,6 +56,10 @@ message Profile {
   string display_name = 16;
   string bot_title = 17;
   repeated string previous_names = 18;
+  // It gets every skill that comes with icebath, not only the essential ones
+  bool bundled = 19;
+  // It keeps pulling what another profile imports from other agents
+  bool sync_imports = 20;
 }
 
 message ListRequest {}
@@ -83,7 +91,7 @@ message CreateRequest {
   bool no_skills = 7;
   string description = 8;
   string soul = 9;
-  // Takes no keys, logins or model from the profile in use
+  // Takes no keys, sign-ins or model: from the profile in use for a fresh one, from the source for a copy
   bool no_credentials = 10;
   string model = 11;
   string provider = 12;
@@ -112,13 +120,14 @@ message DeleteRequest {
 
 message DeleteResponse {
   string path = 1;
-  // What the delete did, line by line: before the profile's alias is removed, and after
-  repeated string lines = 2;
-  repeated string later = 5;
-  // Every feature removed what it keeps of the profile
-  bool settled = 3;
+  // What the delete did besides deleting, each a sentence
+  repeated string done = 2;
+  // What failed, each a sentence, the profile deleted all the same
+  repeated string failed = 3;
+  // Every feature removed what it keeps of the profile; PurgeIdentity removes the rest
+  bool settled = 4;
   // Why the folder would not go, the rest done all the same
-  string failure = 4;
+  string failure = 5;
 }
 
 message UseRequest {
@@ -136,11 +145,14 @@ message RenameRequest {
 
 message RenameResponse {
   string path = 1;
-  // What the rename did, line by line: before the profile's alias follows it, and after
-  repeated string lines = 2;
-  repeated string later = 4;
-  // Every feature moved what it keeps under the old name
-  bool settled = 3;
+  // Name the profile has now, or the name the default profile shows
+  string name = 2;
+  // What the rename did besides renaming, each a sentence
+  repeated string done = 3;
+  // What failed, each a sentence, the profile renamed all the same
+  repeated string failed = 4;
+  // Every feature moved what it keeps under the old name; MigrateIdentity moves the rest
+  bool settled = 5;
 }
 
 message DescribeRequest {
@@ -175,8 +187,8 @@ message PurgeIdentityRequest {
 }
 
 message PurgeIdentityResponse {
-  // What failed again, line by line
-  repeated string lines = 1;
+  // What failed again, each a sentence
+  repeated string failed = 1;
   bool settled = 2;
 }
 
@@ -186,9 +198,10 @@ message MigrateIdentityRequest {
 }
 
 message MigrateIdentityResponse {
-  // What moved and what failed again, line by line
-  repeated string lines = 1;
-  bool settled = 2;
+  // What moved, and what failed again, each a sentence
+  repeated string done = 1;
+  repeated string failed = 2;
+  bool settled = 3;
 }
 
 message ExportRequest {
@@ -285,4 +298,23 @@ message InfoResponse {
   // Whether the profile is a distribution
   bool found = 1;
   Manifest manifest = 2;
+}
+
+message BundledRequest {
+  string name = 1;
+  bool on = 2;
+}
+
+message BundledResponse {
+  // What changed, as a sentence
+  string note = 1;
+}
+
+message SyncImportsRequest {
+  string name = 1;
+  bool on = 2;
+}
+
+message SyncImportsResponse {
+  string note = 1;
 }

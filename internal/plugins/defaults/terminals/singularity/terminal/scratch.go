@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	singularityconfig "github.com/nickheyer/icebath/internal/plugins/defaults/terminals/singularity/config"
 	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 // How long a verdict on the scratch folder's size holds
@@ -23,7 +24,7 @@ const usageTTL = 5 * time.Minute
 
 // Folder of overlays and the image cache: the setting's, else a writable /scratch of the user, else the sandboxes folder's singularity
 func scratchDir(cfg *config.Config) (string, error) {
-	scratch := terminal.ExpandPath(strings.TrimSpace(cfg.GetString(singularityconfig.ScratchDir)))
+	scratch := fsx.ExpandHome(strings.TrimSpace(cfg.GetString(singularityconfig.ScratchDir)))
 	if scratch == "" {
 		sandboxes, err := terminal.SandboxDir(cfg)
 		if err != nil {
@@ -47,7 +48,7 @@ func scratchDir(cfg *config.Config) (string, error) {
 
 // Folder the .sif images are kept in: the setting's, else .apptainer in the scratch folder
 func cacheDir(cfg *config.Config) (string, error) {
-	cache := terminal.ExpandPath(strings.TrimSpace(cfg.GetString(singularityconfig.CacheDir)))
+	cache := fsx.ExpandHome(strings.TrimSpace(cfg.GetString(singularityconfig.CacheDir)))
 	if cache == "" {
 		scratch, err := scratchDir(cfg)
 		if err != nil {

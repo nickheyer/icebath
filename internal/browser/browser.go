@@ -21,6 +21,8 @@ type Provider struct {
 	Title string
 	// What it offers, for the picker
 	About string
+	// Key of the section of its own settings, empty for none
+	Section string
 	// Variables it reads its keys from, and where to get them
 	Keys []Key
 	// Picked by its keys alone when the profile chose no service, the lowest first; zero never
@@ -33,9 +35,10 @@ type Provider struct {
 	Close func(ctx context.Context, cfg *config.Config, id string) bool
 }
 
-// One key a cloud service reads, by the variable that holds it
+// One key a cloud service reads, by the variable that holds it, and the setting that keeps it, which the variable sets over
 type Key struct {
 	Env, Prompt, URL string
+	Setting          string
 }
 
 // A browser a cloud service opened for a task
@@ -56,6 +59,8 @@ type Session struct {
 // what the user saved
 type Page struct {
 	Name, Title string
+	// Key of the section of its own settings, empty for none
+	Section string
 	// Whether it holds a live page for the task, never opening one
 	Has func(cfg *config.Config, task string) bool
 	// Runs the script on the task's page and answers its value; a secret script goes only where nothing between can read it
@@ -199,4 +204,73 @@ func (b *Browser) Holder(cfg *config.Config, task string) *Page {
 		}
 	}
 	return nil
+}
+
+// Groups of places, in the words of their headings
+const (
+	Here     = "On this computer"
+	InCloud  = "Cloud services"
+	OwnTools = "Browsers with tools of their own"
+)
+
+// A place pages can open as the profile sees it: this computer, a cloud service or a browser holding pages of its own
+type Place struct {
+	Name, Title, About, Section string
+	// Heading it is listed under, one of the groups of places
+	Group string
+	// Its state in the state words, and whether pages can open there now
+	State string
+	Ready bool
+	// Pages open there now
+	Chosen bool
+	// Settings that keep its keys, outside its own section
+	Keys []string
+}
+
+// States of a place pages open, in the words every page and command says them in
+const (
+	Ready     = "Ready"
+	NeedsKey  = "Needs an API key"
+	NeedsMore = "Needs setup"
+)
+
+// Every place pages can open for the profile, this computer first, each with how it stands
+func (b *Browser) Places(cfg *config.Config) []Place {
+	cloud, err := b.Cloud(cfg)
+	chosen, picked := Chosen(cfg)
+	inUse := func(name string) bool {
+		switch {
+		case picked:
+			return chosen == name
+		case cloud != nil:
+			return cloud.Name == name
+		}
+		return name == browserconfig.Local && err == nil
+	}
+	places := []Place{{Name: browserconfig.Local, Title: "Local browser", About: "A browser on this computer", Group: Here, State: Ready,
+		Ready: true, Chosen: inUse(browserconfig.Local)}}
+	for _, p := range b.Providers() {
+		place := Place{Name: p.Name, Title: p.Title, About: p.About, Section: p.Section, Group: InCloud, State: Ready, Ready: true,
+			Chosen: inUse(p.Name)}
+		if p.Available != nil && !p.Available(cfg) {
+			place.State, place.Ready = NeedsMore, false
+			for _, key := range p.Keys {
+				if strings.TrimSpace(cfg.Variable(key.Env)) == "" && (key.Setting == "" || strings.TrimSpace(cfg.GetString(key.Setting)) == "") {
+					place.State = NeedsKey
+					break
+				}
+			}
+		}
+		for _, key := range p.Keys {
+			if key.Setting != "" && !strings.HasPrefix(key.Setting, p.Section+".") {
+				place.Keys = append(place.Keys, key.Setting)
+			}
+		}
+		places = append(places, place)
+	}
+	for _, p := range b.Pages() {
+		places = append(places, Place{Name: p.Name, Title: p.Title, About: "Pages open in " + p.Title + ", which brings tools of its own",
+			Section: p.Section, Group: OwnTools, State: Ready, Ready: true, Chosen: inUse(p.Name)})
+	}
+	return places
 }

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/internal/checkpoints"
+	checkpointsconfig "github.com/nickheyer/icebath/internal/checkpoints/config"
 	"github.com/nickheyer/icebath/internal/terminal"
 	"github.com/nickheyer/icebath/internal/tools"
 )
@@ -182,4 +183,9 @@ func (r *registrant) Finished(call *tools.Call, result string) {
 			store.Record(r.resolve(call, path))
 		}
 	}
+}
+
+// Checkpoints save the files the file tools change, so their options sit with the group of the file tools
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: "Files", Sections: []string{checkpointsconfig.Key}}}
 }

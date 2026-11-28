@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -102,7 +103,7 @@ func Validate(references map[string]string) (map[string]string, []string) {
 	return valid, warnings
 }
 
-// Variables the profile binds to references, its settings keeping their names in lower case and the variables named here in upper case
+// Variables the profile binds to references, each named as it is written
 func References(cfg *config.Config) map[string]string {
 	out := map[string]string{}
 	table, _ := cfg.Get(onepasswordconfig.References).(map[string]any)
@@ -111,7 +112,7 @@ func References(cfg *config.Config) map[string]string {
 		if !ok {
 			text = fmt.Sprint(value)
 		}
-		out[strings.ToUpper(name)] = text
+		out[name] = text
 	}
 	return out
 }
@@ -149,7 +150,7 @@ func read(ctx context.Context, op, reference, account, token string, env map[str
 	}
 	if out.Code != 0 {
 		if text := strs.Head(Scrub(out.Stderr), 200); text != "" {
-			return "", fmt.Errorf("1Password could not read %s: %s", reference, secrets.Sentence(text))
+			return "", fmt.Errorf("1Password could not read %s: %s", reference, strs.Sentence(text))
 		}
 		return "", fmt.Errorf("op stopped with exit code %d while reading %s.", out.Code, reference)
 	}
@@ -230,6 +231,37 @@ func (s *Store) Pull(ctx context.Context, p Pull) (map[string]string, []string, 
 // Forgets every resolution kept, after a new token
 func (s *Store) Clear(dir string) {
 	s.cache.Clear(dir)
+}
+
+// One 1Password account op knows on this computer: its sign-in address and the email it signs in with
+type Account struct{ Address, Email string }
+
+// Accounts op knows on this computer, an error saying why op could not list them
+func Accounts(ctx context.Context, op string, env map[string]string) ([]Account, error) {
+	out, err := secrets.Run(ctx, []string{op, "account", "list", "--format=json"}, Child(env, ""), whoamiTimeout, "op",
+		"op did not list its accounts within "+strs.Span(whoamiTimeout)+".", nil)
+	if err != nil {
+		return nil, err
+	}
+	if out.Code != 0 {
+		return nil, fmt.Errorf("op could not list its accounts: %s", strs.Sentence(strs.Head(Scrub(out.Stderr), 200)))
+	}
+	var listed []struct {
+		URL   string `json:"url"`
+		Email string `json:"email"`
+	}
+	if strings.TrimSpace(out.Stdout) != "" {
+		if err := json.Unmarshal([]byte(out.Stdout), &listed); err != nil {
+			return nil, fmt.Errorf("op listed its accounts in a form icebath can't read: %v", err)
+		}
+	}
+	accounts := make([]Account, 0, len(listed))
+	for _, account := range listed {
+		if address := strings.TrimSpace(account.URL); address != "" {
+			accounts = append(accounts, Account{Address: address, Email: strings.TrimSpace(account.Email)})
+		}
+	}
+	return accounts, nil
 }
 
 // Who op signs in as, with the token given, else the one of the environment or its signed in session; false when it is not signed in

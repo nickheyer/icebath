@@ -129,11 +129,22 @@ func fit(cols []Column, widths []int, avail int) bool {
 
 // Renders the table with one cell of the selected row shown as it is being typed into
 func TableEdit(cols []Column, rows [][]string, width int, selected int, edit *Edit, t theme.Theme) string {
-	return TableMarked(cols, rows, width, selected, nil, edit, t)
+	return table(cols, rows, width, selected, nil, edit, false, t)
 }
 
 // Renders the table with the cursor row lit and every other marked row tinted as part of the selection
 func TableMarked(cols []Column, rows [][]string, width int, selected int, marked func(int) bool, edit *Edit, t theme.Theme) string {
+	return table(cols, rows, width, selected, marked, edit, false, t)
+}
+
+// Renders the table of a list that does not have the keys: the row in hand only marked, its cursor dim and its text bold on no lit
+// background
+func TableResting(cols []Column, rows [][]string, width int, selected int, t theme.Theme) string {
+	return table(cols, rows, width, selected, nil, nil, true, t)
+}
+
+// Table of the rows: the selected row lit, or only marked while the table rests, every other marked row tinted
+func table(cols []Column, rows [][]string, width int, selected int, marked func(int) bool, edit *Edit, rest bool, t theme.Theme) string {
 	if len(cols) == 0 || width <= 0 {
 		return ""
 	}
@@ -221,6 +232,11 @@ func TableMarked(cols []Column, rows [][]string, width int, selected int, marked
 		}
 		if i != selected {
 			sb.WriteString(line(r, body, body.Render(strings.Repeat(" ", tableGutter)), nil))
+			continue
+		}
+		if rest {
+			held := body.Bold(true)
+			sb.WriteString(line(r, held, lipgloss.NewStyle().Foreground(t.TextDim).Render(t.Glyphs.Cursor)+body.Render(strings.Repeat(" ", tableGutter-1)), nil))
 			continue
 		}
 		// The lit row paints every cell in its own color, so a cell tinted for the plain rows still reads on the steel behind it

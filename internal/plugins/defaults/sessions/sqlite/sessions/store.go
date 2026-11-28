@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,8 +30,8 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	sqliteconfig "github.com/nickheyer/icebath/internal/plugins/defaults/sessions/sqlite/config"
 	"github.com/nickheyer/icebath/internal/sessions"
-	"github.com/nickheyer/icebath/pkg/fsx"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/sqlitex"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -56,6 +57,37 @@ const corruptText = "The session database is damaged beyond its search index, so
 
 const lockedText = "The session database is busy, because another icebath has held it for more than %s, such as for a long cleanup. The " +
 	"database itself is fine, so try again once the other is done."
+
+// Told the person once when the file at the path of the database was set aside and a new database started there
+const (
+	otherVersionText = "Your session database was made by another version of icebath, so icebath started a new one. The old database is kept " +
+		"at %s."
+	damagedText = "Your session database was empty or damaged, so icebath started a new one. To see which sessions can be brought back, run " +
+		"icebath sessions recover --source %s --inspect-only."
+)
+
+// Told the person once when the journal mode of the file asks something of them
+const (
+	deleteKeptText = "Journal mode in /settings under Session storage › SQLite is Delete, but the session database already uses a write-ahead log, so " +
+		"icebath keeps the write-ahead log. To switch, stop every other icebath and run icebath sessions set-journal-mode delete."
+	crossVMText = "The session database is in a folder shared with a virtual machine, where a write-ahead log can damage the database when " +
+		"two icebath windows write at once. Stop every other icebath and run icebath sessions set-journal-mode delete, or move the database " +
+		"onto a disk of this computer."
+)
+
+const settingUpText = "The session database at %s was made by another version of icebath, and another icebath is setting it up right now. " +
+	"Try again in a moment."
+
+// What SQLite reports of the file, said so the person can act on it
+const (
+	readOnlyText = "icebath can't write to the session database at %s, because the file or its folder is read-only for your user. Make " +
+		"them writable with chmod u+rw, then try again."
+	diskText     = "The disk that holds the session database at %s reported an error, so icebath could not save. Check the disk, then try again."
+	fullText     = "The disk that holds the session database is full, so icebath can't save to it. Free some space in %s, then try again."
+	cantOpenText = "icebath can't open the session database at %s. Check that the folder %s exists and that your user can write to it."
+	failedText   = "icebath can't use the session database at %s, because SQLite said: %s. Run icebath sessions repair to check and mend " +
+		"the database."
+)
 
 type store struct {
 	config *config.Config
@@ -136,7 +168,7 @@ func (s *store) open(ctx context.Context) (*sql.DB, error) {
 	}
 	path := s.config.GetString(sqliteconfig.Path)
 	if path == "" {
-		return nil, errors.New("No file is set for the session database. Set Database file in /settings under Sessions › SQLite.")
+		return nil, errors.New("No file is set for the session database. Set Database file in /settings under Session storage › SQLite.")
 	}
 	if !filepath.IsAbs(path) {
 		absolute, err := filepath.Abs(path)
@@ -152,40 +184,98 @@ func (s *store) open(ctx context.Context) (*sql.DB, error) {
 		return nil, err
 	}
 	var db *sql.DB
-	// The first open of a file, and the moving aside of a damaged one, happen one process at a time
-	err := withFlock(path+".quarantine.lock", 5*time.Second, func(locked bool) error {
-		if locked {
-			if err := quarantine(path); err != nil {
-				return err
+	// The first open of a file, and the moving aside of a damaged one or one of another layout, happen one process at a time
+	err := sqlitex.FirstOpen(path, 5*time.Second, func(locked bool) error {
+		if !locked {
+			slog.Warn("The lock of the session database's first open was not taken within 5s; opening without it, and a damaged file or one of "+
+				"another layout is left in place", "path", path)
+		} else if err := s.quarantine(path); err != nil {
+			return err
+		}
+		var err error
+		db, err = s.connect(ctx, path)
+		if _, other := errors.AsType[*sqlitex.Mismatch](err); other {
+			if !locked {
+				return fmt.Errorf(settingUpText, path)
 			}
-		} else {
-			slog.Warn("The lock of the session database's first open was not taken within 5s; opening without it, and a damaged file is left in place",
-				"path", path)
+			db, err = s.replace(ctx, path, err)
 		}
-		if err := secure(path, true); err != nil {
-			return err
-		}
-		dsn, err := s.dsn(path, 5*time.Second)
-		if err != nil {
-			return err
-		}
-		if db, err = sql.Open("sqlite", dsn); err != nil {
-			return err
-		}
-		if err := s.init(ctx, db, path); err != nil {
-			db.Close()
-			return err
-		}
-		return nil
+		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, plain(path, err)
 	}
 	s.db, s.path = db, path
 	if info, err := os.Stat(path); err == nil {
 		s.dev, s.ino = identity(info)
 	}
 	return db, nil
+}
+
+// Opens the file and readies it, made owner only before SQLite first opens it
+func (s *store) connect(ctx context.Context, path string) (*sql.DB, error) {
+	if err := secure(path, true); err != nil {
+		return nil, err
+	}
+	dsn, err := s.dsn(path, 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.init(ctx, db, path); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+// Moves a file of another layout aside, tells the person where it went, and starts a new database in its place
+func (s *store) replace(ctx context.Context, path string, cause error) (*sql.DB, error) {
+	backup, err := sqlitex.Aside(path, sqlitex.OtherVersion)
+	if err != nil {
+		return nil, fmt.Errorf("The session database at %s was made by another version of icebath, and it could not be moved aside: %s Move it "+
+			"somewhere else, then start icebath again.", path, strs.Sentence(err.Error()))
+	}
+	slog.Warn("The session database has another layout, so it was moved aside and a new one started", "backup", backup, "reason", cause)
+	s.registry.Tell(fmt.Sprintf(otherVersionText, backup))
+	return s.connect(ctx, path)
+}
+
+// Failure of the session database said so the person can act on it, by what SQLite reported; any other failure as it is
+func plain(path string, err error) error {
+	var problem *sqlite.Error
+	if !errors.As(err, &problem) {
+		return err
+	}
+	switch problem.Code() & 0xff {
+	case 3, 8, 23:
+		return fmt.Errorf(readOnlyText, path)
+	case 5, 6:
+		return fmt.Errorf(lockedText, strs.Span(writePatience))
+	case 10:
+		return fmt.Errorf(diskText, path)
+	case 11, 26:
+		return fmt.Errorf(corruptText, path, said(problem))
+	case 13:
+		return fmt.Errorf(fullText, filepath.Dir(path))
+	case 14:
+		return fmt.Errorf(cantOpenText, path, filepath.Dir(path))
+	}
+	return fmt.Errorf(failedText, path, said(problem))
+}
+
+// What SQLite said, without the number of its code
+func said(err error) string {
+	text := err.Error()
+	if open := strings.LastIndex(text, " ("); open > 0 && strings.HasSuffix(text, ")") {
+		if _, err := strconv.Atoi(text[open+2 : len(text)-1]); err == nil {
+			return text[:open]
+		}
+	}
+	return text
 }
 
 // Connection string of the store: the pragmas every connection runs, and writes that take the write lock as they begin
@@ -251,7 +341,16 @@ func (s *store) init(ctx context.Context, db *sql.DB, path string) error {
 	}
 }
 
+// Readies the file: found to be of the store's layout before anything of it changes, its journal mode, then its shape, tables and search
+// indexes in one transaction, so another process never sees them half made; a *sqlitex.Mismatch for a file of another layout
 func (s *store) prepare(ctx context.Context, db *sql.DB, path string) error {
+	want, err := declare(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := sqlitex.Inspect(ctx, db, want); err != nil {
+		return err
+	}
 	mode, err := s.journal(ctx, db, path)
 	if err != nil {
 		return err
@@ -260,52 +359,74 @@ func (s *store) prepare(ctx context.Context, db *sql.DB, path string) error {
 	if err := secure(path, false); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, schema); err != nil {
-		return err
-	}
 	cjk := s.config.GetBool(sqliteconfig.CJKFTS)
-	// An index made over messages already stored starts a backfill of them in the same transaction, so its triggers and the backfill
-	// never index one message twice
-	if err := s.once(ctx, db, func(tx *sql.Tx) error {
-		for _, i := range []index{wordIndex, trigramIndex} {
-			if i == trigramIndex && !cjk {
-				_, err := tx.ExecContext(ctx, `DROP TRIGGER IF EXISTS messages_fts_trigram_insert; DROP TRIGGER IF EXISTS messages_fts_trigram_delete;
-					DROP TRIGGER IF EXISTS messages_fts_trigram_update; DROP TABLE IF EXISTS messages_fts_trigram; DROP VIEW IF EXISTS messages_fts_trigram_src;
-					DELETE FROM state_meta WHERE key IN ('`+trigramBackfill+`_high_water', '`+trigramBackfill+`_progress');`)
-				if err != nil {
-					return err
-				}
-				continue
-			}
-			var present int
-			err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, i.table).Scan(&present)
-			if err != nil {
-				return err
-			}
-			if present == 0 {
-				if err := seed(ctx, tx, i.prefix); err != nil {
-					return err
-				}
-			}
-			ddl := ftsSchema
-			if i == trigramIndex {
-				ddl = trigramSchema
-			}
-			if _, err := tx.ExecContext(ctx, ddl); err != nil {
-				return err
-			}
+	stale := false
+	err = s.once(ctx, db, func(tx *sql.Tx) error {
+		plan, err := sqlitex.Reconcile(ctx, tx, want)
+		if err != nil {
+			return err
 		}
-		return nil
-	}); err != nil {
+		if len(plan.Added)+len(plan.Dropped) > 0 {
+			remade := make([]string, len(plan.Dropped))
+			for i, o := range plan.Dropped {
+				remade[i] = o.Name
+			}
+			slog.Info("Brought the session database into the current layout", "path", path, "added", plan.Added, "remade", remade)
+		}
+		if _, err := tx.ExecContext(ctx, schema); err != nil {
+			return err
+		}
+		if _, stale, err = meta(ctx, tx, "fts_stale"); err != nil {
+			return err
+		}
+		return searchable(ctx, tx, plan, cjk, stale)
+	})
+	if err != nil {
 		return err
 	}
 	s.trigram.Store(cjk)
-	var stale sql.NullString
-	if err := db.QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key = 'fts_stale'`).Scan(&stale); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	s.stale.Store(stale.Valid)
+	s.stale.Store(stale)
 	return stamp(ctx, db)
+}
+
+// Makes the search indexes the settings ask for. An index whose view, table or trigger the reconcile dropped is dropped whole and made again,
+// and an index made over messages already stored starts a backfill of them in the same transaction, so its triggers and the backfill never
+// index one message twice. The trigram index is dropped while it is off, and no triggers are made while the indexes are detached after
+// damage, until a rebuild makes them again
+func searchable(ctx context.Context, tx *sql.Tx, plan sqlitex.Plan, cjk, stale bool) error {
+	for _, i := range []index{wordIndex, trigramIndex} {
+		off := i == trigramIndex && !cjk
+		if off || slices.ContainsFunc(plan.Dropped, func(o sqlitex.Object) bool { return i.owns(o.Name) }) {
+			if err := i.drop(ctx, tx); err != nil {
+				return err
+			}
+		}
+		if off {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM state_meta WHERE key IN (?, ?)`, i.prefix+"_high_water", i.prefix+"_progress"); err != nil {
+				return err
+			}
+			continue
+		}
+		var present int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, i.table).Scan(&present); err != nil {
+			return err
+		}
+		if present == 0 {
+			if err := seed(ctx, tx, i.prefix); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, i.body); err != nil {
+			return err
+		}
+		if stale {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, i.triggers); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Generation of the file, minted by its first opener, and the header id it lets a copy be told apart by
@@ -345,15 +466,16 @@ func (s *store) journal(ctx context.Context, db *sql.DB, path string) (string, e
 	current, known := diskMode(ctx, conn)
 	configured := s.config.GetString(sqliteconfig.JournalMode)
 	if current == sqliteconfig.WAL {
-		if configured == sqliteconfig.Delete {
-			once("delete_overridden", "The session database is configured for journal_mode=delete but the file is already in WAL; keeping WAL, since a "+
-				"live downgrade under open connections can corrupt it. To apply journal_mode=delete, stop every icebath process using it and run "+
-				"`icebath sessions set-journal-mode delete`.")
+		if configured == sqliteconfig.Delete && once("delete_overridden", "The session database is configured for journal_mode=delete but the "+
+			"file is already in WAL; keeping WAL, since a live downgrade under open connections can corrupt it. To apply journal_mode=delete, stop "+
+			"every icebath process using it and run `icebath sessions set-journal-mode delete`.") {
+			s.registry.Tell(deleteKeptText)
 		}
-		if crossVM(filepath.Dir(path)) {
-			once("cross_vm_fs_existing_wal", "The WAL session database is on a cross-VM file system (virtiofs or 9p, as Docker Desktop, OrbStack and "+
-				"Podman bind mounts are), whose shared memory is not coherent across the VM boundary, so concurrent writers can silently corrupt it. "+
-				"Stop every icebath process using it and run `icebath sessions set-journal-mode delete`, or move it onto a native volume.")
+		if crossVM(filepath.Dir(path)) && once("cross_vm_fs_existing_wal", "The WAL session database is on a cross-VM file system (virtiofs or 9p, "+
+			"as Docker Desktop, OrbStack and Podman bind mounts are), whose shared memory is not coherent across the VM boundary, so concurrent "+
+			"writers can silently corrupt it. Stop every icebath process using it and run `icebath sessions set-journal-mode delete`, or move it "+
+			"onto a native volume.") {
+			s.registry.Tell(crossVMText)
 		}
 		return sqliteconfig.WAL, companions(ctx, conn)
 	}
@@ -367,7 +489,7 @@ func (s *store) journal(ctx context.Context, db *sql.DB, path string) (string, e
 			return "", err
 		}
 		if mode != sqliteconfig.Delete {
-			return "", fmt.Errorf("The journal mode of the session database could not be set to delete, as Journal mode in /settings under Sessions › "+
+			return "", fmt.Errorf("The journal mode of the session database could not be set to delete, as Journal mode in /settings under Session storage › "+
 				"SQLite asks. It is %s.", cmp.Or(mode, "unknown"))
 		}
 		return mode, nil
@@ -404,7 +526,7 @@ func (s *store) journal(ctx context.Context, db *sql.DB, path string) (string, e
 	}
 	if current != "" && current != sqliteconfig.WAL && hasContent(ctx, conn) {
 		once("journal_upgrade", "The session database was in journal_mode="+current+" and has been switched to WAL. Set the journal mode to delete in "+
-			"/settings under Sessions → SQLite to keep it as it was.")
+			"/settings under Session storage › SQLite to keep it as it was.")
 	}
 	return mode, companions(ctx, conn)
 }
@@ -502,11 +624,13 @@ func unescapeMount(field string) string {
 
 var logged sync.Map
 
-// Logs a warning about the database once per process
-func once(key, text string) {
-	if _, seen := logged.LoadOrStore(key, true); !seen {
-		slog.Warn(text)
+// Logs a warning about the database once per process; whether it did so now
+func once(key, text string) bool {
+	if _, seen := logged.LoadOrStore(key, true); seen {
+		return false
 	}
+	slog.Warn(text)
+	return true
 }
 
 // Fails with a plain account when the folder or a file of the database is not writable, rather than SQLite's
@@ -538,50 +662,19 @@ func preflight(path string) error {
 	return check(path+"-shm", "file", "")
 }
 
-// Moves an empty or damaged file aside, so icebath starts on a fresh database rather than failing every open
-func quarantine(path string) error {
-	header := make([]byte, 16)
-	f, err := os.Open(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
+// Moves an empty or damaged file aside, so icebath starts on a fresh database rather than failing every open, and tells the person
+func (s *store) quarantine(path string) error {
+	kind, size, err := sqlitex.Damaged(path)
+	if err != nil || kind == "" {
 		return err
 	}
-	n, _ := f.Read(header)
-	info, statErr := f.Stat()
-	f.Close()
-	if statErr != nil {
-		return statErr
+	backup, err := sqlitex.Aside(path, kind)
+	if err != nil {
+		return fmt.Errorf("The session database at %s is empty or damaged, and it could not be moved aside: %s Run icebath sessions recover "+
+			"--source %s --inspect-only to bring old sessions back.", path, strs.Sentence(err.Error()), path)
 	}
-	if n == 16 && string(header) == "SQLite format 3\x00" {
-		return nil
-	}
-	kind := "notadb"
-	if info.Size() == 0 || strings.Trim(string(header[:n]), "\x00") == "" {
-		kind = "zeroed"
-	}
-	backup := ""
-	base := fmt.Sprintf("%s.%s-%s-%d", path, kind, time.Now().Format("20060102-150405"), os.Getpid())
-	for i := 0; ; i++ {
-		backup = base + ".bak"
-		if i > 0 {
-			backup = fmt.Sprintf("%s-%d.bak", base, i)
-		}
-		if _, err := os.Stat(backup); errors.Is(err, fs.ErrNotExist) {
-			break
-		}
-	}
-	where := "moved aside to " + backup
-	if err := os.Rename(path, backup); err != nil {
-		return fmt.Errorf("The session database is empty or damaged, at %s, and it could not be moved aside: %v. Run icebath sessions recover "+
-			"--source %s --inspect-only to bring old sessions back.", strs.Size(float64(info.Size())), err, path)
-	}
-	for _, sidecar := range []string{"-wal", "-shm"} {
-		os.Rename(path+sidecar, backup+sidecar)
-	}
-	slog.Error(fmt.Sprintf("The session database was empty or damaged (%d bytes) and has been %s; icebath started with a fresh, empty session "+
-		"database. To bring old sessions back, run `icebath sessions recover --source %s --inspect-only`.", info.Size(), where, backup))
+	slog.Error("The session database was empty or damaged, so it was moved aside and a fresh one started", "bytes", size, "backup", backup)
+	s.registry.Tell(fmt.Sprintf(damagedText, backup))
 	return nil
 }
 
@@ -604,16 +697,6 @@ func secure(path string, create bool) error {
 		}
 	}
 	return nil
-}
-
-// Runs the function holding an exclusive lock file, waiting for it until the timeout; told whether it got the lock
-func withFlock(path string, timeout time.Duration, fn func(locked bool) error) error {
-	release, err := fsx.Lock(context.Background(), path, timeout)
-	if err != nil {
-		return fn(false)
-	}
-	defer release()
-	return fn(true)
 }
 
 func identity(info fs.FileInfo) (uint64, uint64) {
@@ -692,12 +775,14 @@ func (s *store) writeWithin(ctx context.Context, patience time.Duration, fn func
 			}
 			s.mu.Lock()
 			if s.halted == nil {
-				s.halted = sessions.Halted(fmt.Errorf(corruptText, s.path, err))
+				s.halted = sessions.Halted(fmt.Errorf(corruptText, s.path, said(problem)))
 				slog.Error("The session database reported structural corruption outside the search index; refusing further writes", "path", s.path, "error", err)
 			}
 			halted := s.halted
 			s.mu.Unlock()
 			return halted
+		case code == 1 || code == 3 || code == 8 || code == 10 || code == 13 || code == 14 || code == 23:
+			return plain(s.path, err)
 		}
 		return err
 	}
@@ -825,11 +910,7 @@ func setMeta(ctx context.Context, q querier, key, value string) error {
 }
 
 // What runs statements: the database or a transaction
-type querier interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
+type querier = sqlitex.Querier
 
 // Seconds since the epoch, as times are stored
 func now() float64 {

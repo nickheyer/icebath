@@ -185,9 +185,9 @@ func (s *Services) videoModels(ctx context.Context, cfg *config.Config) []genera
 	return rows
 }
 
-// What the model video_gen.model names takes, the whole API's when the catalog doesn't list it
+// What the model video_gen.openrouter.model names takes, the whole API's when the catalog doesn't list it
 func (s *Services) videoTakes(cfg *config.Config) generation.VideoTakes {
-	if e := s.entry(context.Background(), cfg, strs.Filled(generation.Named(cfg, generation.Video), videoDefault)); len(e) > 0 {
+	if e := s.entry(context.Background(), cfg, strs.Filled(strings.TrimSpace(cfg.GetString(openrouterconfig.VideoModel)), videoDefault)); len(e) > 0 {
 		return takes(e)
 	}
 	return generation.VideoTakes{Modalities: []string{"text", "image"}, Aspects: allRatios, Resolutions: resolutionOrder, MinDuration: 1, MaxDuration: 30, Audio: true,

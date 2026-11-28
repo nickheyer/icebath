@@ -7,18 +7,44 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/field"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Yes or no question along the bottom of a table and what a yes does
+// A question asked before an act: what will happen, the act as the word on its button, and whether it deletes something for good
+type Question struct {
+	Text, Verb string
+	Deletes    bool
+}
+
+// Question asked along the bottom of a list or a page and what the act does
 type question struct {
-	text string
-	yes  func() tea.Cmd
+	Question
+	yes func() tea.Cmd
+}
+
+// Buttons of a question: the act on the yes key and the way out
+func (q *question) hints() []wm.Hint {
+	return []wm.Hint{{Action: "confirm.yes", Label: q.Verb}, {Action: "confirm.no", Label: "cancel"}}
+}
+
+// Lines of the question wrapped to the width, in the bad color only when its act deletes something for good
+func (q *question) lines(w int, t theme.Theme) []string {
+	paint := func(text string) string { return render.Paint(lipgloss.NewStyle().Foreground(t.Text), text) }
+	if q.Deletes {
+		paint = func(text string) string { return render.Bad(text, t) }
+	}
+	var out []string
+	for _, part := range wrapWords(q.Text, max(w-2, 8)) {
+		out = append(out, render.Fit(" "+paint(part), w, t))
+	}
+	return out
 }
 
 // Row typed into in place while the cursor sits on it, the table keys making way for the text
@@ -138,6 +164,8 @@ type lister struct {
 	xs     []int
 	widths []int
 	w, h   int
+	// Does not have the keys now, its row in hand only marked
+	rest bool
 }
 
 func (l *lister) Title() string    { return l.title }
@@ -325,8 +353,8 @@ func (l *lister) editCell(col int, initial string, done func(l *lister, text str
 	l.edit, l.onDone = &cellEdit{col: col, in: in}, done
 }
 
-// Asks a yes or no question along the bottom, running yes on a yes
-func (l *lister) confirm(text string, yes func() tea.Cmd) { l.ask = &question{text: text, yes: yes} }
+// Asks a question along the bottom, running yes on its act
+func (l *lister) confirm(q Question, yes func() tea.Cmd) { l.ask = &question{Question: q, yes: yes} }
 
 // Reports whether a cell is being typed into
 func (l *lister) Editing() bool { return l.edit != nil }
@@ -512,25 +540,24 @@ func (l *lister) act(id string) tea.Cmd {
 // Lines along the bottom, the key capture prompt or the question, wrapped so it is read whole
 func (l *lister) foot(w int) []string {
 	t := l.env.Theme
-	text, paint := "", render.Bad
 	switch {
 	case l.capture != nil:
-		text, paint = l.asking, render.Warm
+		var lines []string
+		for _, part := range wrapWords(l.asking, max(w-2, 8)) {
+			lines = append(lines, render.Fit(" "+render.Warm(part, t), w, t))
+		}
+		return lines
 	case l.ask != nil:
-		text = l.ask.text
-	default:
-		return nil
+		return l.ask.lines(w, t)
 	}
-	var lines []string
-	for _, part := range wrapWords(text, max(w-2, 8)) {
-		lines = append(lines, render.Fit(" "+paint(part, t), w, t))
-	}
-	return lines
+	return nil
 }
 
-// Filter field above the table with its count, shown once there is a query or more rows than fit, a short list needing none
+// Filter field above the table with its count, shown once there is a query or more rows than fit, a short list needing none. A list to pick
+// from that rests shows the field it takes typing in once it has the keys, unlit, so nothing moves as the keys come and go
 func (l *lister) field(w int) string {
-	if !l.bar.Shown() || len(l.data) == 0 || l.bar.pinned && !l.always && l.roomy && l.bar.Query() == "" {
+	shown := l.bar.Shown() || l.rest && l.bar.pinned
+	if !shown || len(l.data) == 0 || l.bar.pinned && !l.always && l.roomy && l.bar.Query() == "" {
 		return ""
 	}
 	// A count says something only once a search narrowed the rows
@@ -538,7 +565,7 @@ func (l *lister) field(w int) string {
 	if l.bar.Query() != "" {
 		count = strconv.Itoa(len(l.shown)) + " found"
 	}
-	return l.bar.View(w, count, cmp.Or(l.search, "Search"), l.env.Theme)
+	return l.bar.View(w, count, cmp.Or(l.search, "Search"), !l.rest, l.env.Theme)
 }
 
 // Lines above the rows: what failed to load, then what the list is
@@ -706,7 +733,11 @@ func (l *lister) View(w, h int) string {
 		}
 	}
 	l.xs, l.widths = render.Columns(cols, rows, w)
-	table := strings.Split(render.TableEdit(cols, rows, w, l.sel, ed, t), "\n")
+	drawn := render.TableEdit(cols, rows, w, l.sel, ed, t)
+	if l.rest {
+		drawn = render.TableResting(cols, rows, w, l.sel, t)
+	}
+	table := strings.Split(drawn, "\n")
 	lines := append(head, table[:l.head]...)
 	for _, line := range shown {
 		switch {
@@ -776,7 +807,7 @@ func (l *lister) Hints() []wm.Hint {
 	case l.capture != nil:
 		return []wm.Hint{{Action: "capture.cancel"}}
 	case l.ask != nil:
-		return []wm.Hint{{Action: "confirm.yes"}, {Action: "confirm.no"}}
+		return l.ask.hints()
 	case l.edit != nil:
 		return nil
 	}

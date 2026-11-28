@@ -248,11 +248,8 @@ func (c *charge) costSentence() string {
 	if cost.low != cost.high {
 		text = "Costs " + amount(cost.low) + " to " + qty(cost.high, unit)
 	}
-	if note := strings.TrimSpace(cost.note); note != "" {
-		if !strings.ContainsAny(note[len(note)-1:], ".!?") {
-			note += "."
-		}
-		return text + ". " + strings.ToUpper(note[:1]) + note[1:]
+	if note := strs.Full(cost.note); note != "" {
+		return text + ". " + note
 	}
 	return text + "."
 }

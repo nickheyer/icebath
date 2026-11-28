@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/credentials"
 	anthropicconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/anthropic/config"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 )
 
 // Sign-in with a Claude Pro or Max subscription: the link opened, the code pasted back
@@ -83,11 +84,8 @@ func run(p *credentials.Prompter) (credentials.Signed, error) {
 	return tokenFields(token), nil
 }
 
-// Clears what the account keeps, so its credential is the one Claude Code keeps on this computer
-func borrowed(p *credentials.Prompter) (credentials.Signed, error) {
-	if ReadClaudeCodeCredentials(PoolEnv{Ctx: p.Ctx}) == nil {
-		return credentials.Signed{}, errors.New("No Claude Code sign-in was found on this computer. Sign in with `claude` first, then try again.")
-	}
-	return credentials.Signed{Fields: map[string]any{anthropicconfig.Token: nil, anthropicconfig.OAuthToken: nil, anthropicconfig.APIKey: nil,
-		anthropicconfig.RefreshToken: nil, anthropicconfig.TokenExpires: nil}}, nil
+// Account that uses the sign-in Claude Code keeps, as Claude Code renews it. The sign-in is read by the server, on its computer and with
+// the account's environment, so the server is the one that looks for it as it keeps the account, and refuses one it does not find
+func borrowed(*credentials.Prompter) (credentials.Signed, error) {
+	return credentials.Signed{Fields: map[string]any{providerconfig.Program: claudeCode}}, nil
 }

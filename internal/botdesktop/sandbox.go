@@ -215,9 +215,9 @@ func tail(b []byte, n int) string {
 
 // How a plugin's sandbox gets the desktop stack, empty for a backend icebath ships
 func (d *Desktop) imageAdvice(cfg *config.Config, backend string) string {
-	setting := map[string]string{"docker": "Container image in /settings under Terminal › Docker", "modal": "Image in /settings under Terminal › Modal",
-		"daytona": "Image in /settings under Terminal › Daytona", "vercel_sandbox": "Image in /settings under Terminal › Vercel Sandbox",
-		"singularity": "Apptainer image in /settings under Terminal › Singularity/Apptainer to docker://" + sandbox.Image}[backend]
+	setting := map[string]string{"docker": "Container image on the Docker page of /sandbox", "modal": "Image on the Modal page of /sandbox",
+		"daytona": "Image on the Daytona page of /sandbox", "vercel_sandbox": "Image on the Vercel Sandbox page of /sandbox",
+		"singularity": "Apptainer image on the Singularity/Apptainer page of /sandbox to docker://" + sandbox.Image}[backend]
 	switch {
 	case backend == "ssh":
 		return "Install TigerVNC and the core of Xfce on the computer that SSH reaches."
@@ -252,7 +252,7 @@ func (d *Desktop) sandboxStart(cfg *config.Config, env terminal.Environment, pro
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("The agent desktop needs %s inside the sandbox where the agent's commands run, and its image does not have them. %s "+
-			"Or set Location in /settings under Agent desktop to This computer.", strings.Join(missing, ", "), d.imageAdvice(cfg, env.Backend()))
+			"Or set Location, an option of Agent desktop, to This computer.", strings.Join(missing, ", "), d.imageAdvice(cfg, env.Backend()))
 	}
 	q := terminal.Quote(dir)
 	seed := "set -e; rm -rf " + q + "; mkdir -p " + q + "; cd " + q + ";" +

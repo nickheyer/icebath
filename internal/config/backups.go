@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/pkg/fsx"
 )
@@ -104,19 +104,20 @@ func Backup(path, reason string, keep int) string {
 	return dest
 }
 
-// Settings of the newest good copy of a config file that still reads and parses, an unreadable one told and passed over; nil when there is
-// none
-func newestGood(path string) *viper.Viper {
+// Document and settings of the newest good copy of a config file that still reads and parses, every name as the copy spells it, an
+// unreadable one told and passed over; nil when there is none
+func newestGood(path string) (*yaml.Node, map[string]any) {
 	for _, backup := range Backups(path, Good) {
 		data, err := os.ReadFile(backup)
-		var v *viper.Viper
+		var doc *yaml.Node
+		var tree map[string]any
 		if err == nil {
-			v, err = parse(data)
+			doc, tree, err = parse(data)
 		}
 		if err == nil {
-			return v
+			return doc, tree
 		}
 		slog.Warn(fmt.Sprintf("Last-known-good backup %s is unreadable: %s", backup, details(err)))
 	}
-	return nil
+	return nil, nil
 }

@@ -11,11 +11,11 @@ service CheckpointService {
   rpc Diff(DiffRequest) returns (DiffResponse);
   // Puts the session's project, or one file of it, back as a snapshot has it
   rpc Restore(RestoreRequest) returns (RestoreResponse);
-  // What the snapshots of the profile in use take
+  // What the snapshots of a profile take
   rpc Status(StatusRequest) returns (StatusResponse);
   // Deletes the projects whose folder is gone and those not snapshotted lately, then brings the store within its size
   rpc Prune(PruneRequest) returns (PruneResponse);
-  // Deletes every snapshot of the profile in use
+  // Deletes every snapshot of a profile
   rpc Clear(ClearRequest) returns (ClearResponse);
   // Deletes the archives of what the checkpoint folder held before its store was made
   rpc ClearLegacy(ClearLegacyRequest) returns (ClearLegacyResponse);
@@ -45,6 +45,8 @@ message ListResponse {
   // Project the snapshots are of
   string directory = 3;
   repeated Checkpoint checkpoints = 4;
+  // Profile of the session when it is not the one in use, whose settings say whether snapshots are on
+  string profile = 5;
 }
 
 message DiffRequest {
@@ -83,7 +85,10 @@ message RestoreResponse {
   repeated string failed_deletes = 9;
 }
 
-message StatusRequest {}
+message StatusRequest {
+  // Profile whose snapshots, the one in use when empty
+  string profile = 1;
+}
 
 message Project {
   string hash = 1;
@@ -111,6 +116,8 @@ message StatusResponse {
   repeated Archive archives = 7;
   // Way out the user is told of when snapshots are on and the store is at or above its size, empty otherwise
   string footprint = 8;
+  // Profile the snapshots are of
+  string profile = 9;
 }
 
 message PruneRequest {
@@ -123,6 +130,8 @@ message PruneRequest {
   // Only the projects listed, by hash, go for their folder being gone
   bool allow_listed = 4;
   repeated string allow = 5;
+  // Profile whose snapshots, the one in use when empty
+  string profile = 6;
 }
 
 message PruneResponse {
@@ -133,13 +142,19 @@ message PruneResponse {
   int64 freed = 5;
 }
 
-message ClearRequest {}
+message ClearRequest {
+  // Profile whose snapshots, the one in use when empty
+  string profile = 1;
+}
 
 message ClearResponse {
   int64 freed = 1;
 }
 
-message ClearLegacyRequest {}
+message ClearLegacyRequest {
+  // Profile whose old archives, the one in use when empty
+  string profile = 1;
+}
 
 message ClearLegacyResponse {
   int32 deleted = 1;

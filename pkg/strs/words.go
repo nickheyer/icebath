@@ -48,6 +48,9 @@ func Count(n int, noun string) string {
 
 // Word for one of what the plural names: a short unit such as MB or ms is left as it is
 func Singular(word string) string {
+	if first, rest, ok := strings.Cut(word, " or "); ok {
+		return Singular(first) + " or " + Singular(rest)
+	}
 	switch {
 	case len(word) <= 3:
 		return word
@@ -63,6 +66,10 @@ func Singular(word string) string {
 
 // Word for several of what the singular names
 func Plural(word string) string {
+	// Each of two nouns a phrase offers, such as commands or patterns
+	if first, rest, ok := strings.Cut(word, " or "); ok {
+		return Plural(first) + " or " + Plural(rest)
+	}
 	switch {
 	case strings.HasSuffix(word, "s"), strings.HasSuffix(word, "x"), strings.HasSuffix(word, "ch"), strings.HasSuffix(word, "sh"):
 		return word + "es"

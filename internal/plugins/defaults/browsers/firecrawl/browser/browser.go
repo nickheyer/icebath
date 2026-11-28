@@ -16,30 +16,32 @@ import (
 	"github.com/nickheyer/icebath/internal/browser"
 	"github.com/nickheyer/icebath/internal/config"
 	fcconfig "github.com/nickheyer/icebath/internal/plugins/defaults/browsers/firecrawl/config"
+	firecrawlconfig "github.com/nickheyer/icebath/internal/plugins/defaults/webbackends/firecrawl/config"
 )
 
 const title = "Firecrawl"
 
 func Register(registry *browser.Registry) {
 	registry.Register(browser.Declared{Services: []browser.Provider{{
-		Name: "firecrawl", Title: title, About: "Cloud browsers that use your Firecrawl API key",
-		Keys:      []browser.Key{{Env: fcconfig.APIKeyEnv, Prompt: "Firecrawl API key", URL: "https://firecrawl.dev"}},
+		Name: "firecrawl", Title: title, About: "Cloud browsers that use your Firecrawl API key", Section: fcconfig.Key,
+		Keys:      []browser.Key{{Env: fcconfig.APIKeyEnv, Prompt: "Firecrawl API key", URL: "https://firecrawl.dev", Setting: firecrawlconfig.APIKey}},
 		Available: func(cfg *config.Config) bool { return key(cfg) != "" },
 		Create:    create,
 		Close:     closeSession,
 	}}})
 }
 
-func key(cfg *config.Config) string { return strings.TrimSpace(cfg.Variable(fcconfig.APIKeyEnv)) }
+// The Firecrawl API key of the profile: the one Web search keeps, which FIRECRAWL_API_KEY sets over
+func key(cfg *config.Config) string { return strings.TrimSpace(cfg.GetString(firecrawlconfig.APIKey)) }
 
 func base(cfg *config.Config) string {
-	return strings.TrimRight(cmp.Or(strings.TrimSpace(cfg.Variable(fcconfig.APIURLEnv)), "https://api.firecrawl.dev"), "/")
+	return strings.TrimRight(cmp.Or(strings.TrimSpace(cfg.GetString(firecrawlconfig.APIURL)), "https://api.firecrawl.dev"), "/")
 }
 
 func headers(cfg *config.Config) (map[string]string, error) {
 	k := key(cfg)
 	if k == "" {
-		return nil, errors.New("FIRECRAWL_API_KEY environment variable is required. Get your key at https://firecrawl.dev")
+		return nil, errors.New("No Firecrawl API key is set. Set it on the Firecrawl page of /web, or export FIRECRAWL_API_KEY. Get a key at https://firecrawl.dev")
 	}
 	return map[string]string{"Content-Type": "application/json", "Authorization": "Bearer " + k}, nil
 }

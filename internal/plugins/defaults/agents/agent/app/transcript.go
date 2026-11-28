@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -275,10 +276,24 @@ func (c *chat) paint(w int) []row {
 		}
 	}
 	notes := t.asides
+	// Lines the person ran, each before the first message that came after it
+	runs := c.runs
+	ran := func(before time.Time) {
+		for len(runs) > 0 && (before.IsZero() || runs[0].ran.Time.Before(before)) {
+			if run := runs[0]; run.liner.Shown != nil {
+				gap()
+				presented(run.id, run.liner.Shown(run.ran, max(w-2, 1), look, c.kit.WM.Keys().Display("session.stop")))
+			}
+			runs = runs[1:]
+		}
+	}
 	for i, e := range t.entries {
 		for len(notes) > 0 && notes[0].after <= i {
 			prose(notes[0].text)
 			notes = notes[1:]
+		}
+		if at := e.message.GetTime(); at != nil {
+			ran(at.AsTime())
 		}
 		if e.message == nil {
 			prose(e.notice)
@@ -309,6 +324,7 @@ func (c *chat) paint(w int) []row {
 			}
 		}
 	}
+	ran(time.Time{})
 	for _, note := range notes {
 		prose(note.text)
 	}

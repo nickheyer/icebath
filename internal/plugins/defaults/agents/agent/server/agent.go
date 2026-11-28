@@ -227,7 +227,7 @@ func refused(err error) string {
 
 // Refusal of a provider the profile does not have
 func noProvider(profile, name string) error {
-	return fmt.Errorf("The profile %s has no provider named %s. Add it in /providers, or pick another with /model.", profile, name)
+	return fmt.Errorf("The profile %s has no provider named %s. /providers adds it, and /model picks another.", profile, name)
 }
 
 func (a *Agent) Close() error {
@@ -450,7 +450,7 @@ func (a *Agent) run(id string) (*run, error) {
 	}
 	if made && a.approvals.Restore(id, session.GetYolo()) {
 		r.mu.Lock()
-		a.notify(r, "⚠ This session still runs every command without asking. Type /yolo to have the agent ask again.")
+		a.notify(r, "⚠ "+approvals.SkipKept())
 		r.mu.Unlock()
 	}
 	a.evict()
@@ -653,15 +653,20 @@ func (a *Agent) state(r *run) *agentv1.WatchResponse {
 	route, effort := a.own(r)
 	used, window, estimated, compressions := a.dial(r)
 	cost := a.cost(r)
-	busy := a.settings(r).GetString(agentconfig.BusyInputMode)
+	settings := a.settings(r)
+	busy := settings.GetString(agentconfig.BusyInputMode)
+	title := a.providerTitle(settings, route.Provider)
+	inUse := a.config.Profile()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return &agentv1.WatchResponse{Event: &agentv1.WatchResponse_State{State: &agentv1.State{
 		Profile:          r.profile,
+		ProfileInUse:     r.profile == inUse,
 		Provider:         route.Provider,
+		ProviderTitle:    title,
 		Model:            route.Model,
 		ReasoningEffort:  effort,
-		Yolo:             a.approvals.Launched() || a.approvals.Yolo(r.sessionID()),
+		Yolo:             a.approvals.Skips(r.sessionID()),
 		ContextUsed:      int64(used),
 		ContextMax:       int64(window),
 		ContextEstimated: estimated,
@@ -730,11 +735,12 @@ func (a *Agent) effort(r *run) string {
 	return refused.apply(effort)
 }
 
-// Effort the session is set to, its own over the profile's
+// Effort the session is set to: a subagent's own, else the session's own setting over the profile's
 func (a *Agent) ownEffort(r *run) string {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	return cmp.Or(r.effort, a.config.In(r.profile).GetString(agentconfig.ReasoningEffort))
+	effort := r.effort
+	r.mu.Unlock()
+	return cmp.Or(effort, a.settings(r).GetString(agentconfig.ReasoningEffort))
 }
 
 func (a *Agent) append(store sessions.Store, r *run, message *sessionsv1.Message) error {

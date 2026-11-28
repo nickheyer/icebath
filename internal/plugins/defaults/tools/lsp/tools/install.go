@@ -80,13 +80,6 @@ func binOf(key string) string {
 	return key
 }
 
-// Install states of a server
-const (
-	installed  = "installed"
-	missing    = "missing"
-	manualOnly = "manual-only"
-)
-
 // Folder the profile's language servers are installed in
 func (m *Manager) dir(cfg *config.Config) string {
 	return filepath.Join(cfg.ProfileDir(cfg.Profile()), "lsp")
@@ -153,21 +146,6 @@ func pipBinary(name string) bool {
 	return false
 }
 
-// Install state of a recipe key, nothing started
-func (m *Manager) status(cfg *config.Config, key string) (string, error) {
-	bin, err := m.existing(cfg, binOf(key))
-	if err != nil {
-		return "", err
-	}
-	if bin != "" {
-		return installed, nil
-	}
-	if r, ok := recipes[key]; ok && r.strategy == manualInstall {
-		return manualOnly, nil
-	}
-	return missing, nil
-}
-
 // Installs done by key, each tried once a process unless a person asks again
 type installs struct {
 	mu      sync.Mutex
@@ -175,10 +153,10 @@ type installs struct {
 	results map[string]string
 }
 
-// Binary of a recipe: installed under the auto strategy, else only looked for; explicit when a person asked, which tries again what failed
-// before and installs the package manager's npm whatever lazy installs allow
-func (m *Manager) install(ctx context.Context, cfg *config.Config, key, strategy string, explicit bool) (string, error) {
-	if strategy != lspconfig.InstallAuto {
+// Binary of a recipe: installed when auto says so, else only looked for; explicit when a person asked, which tries again what failed before
+// and installs the package manager's npm whatever lazy installs allow
+func (m *Manager) install(ctx context.Context, cfg *config.Config, key string, auto, explicit bool) (string, error) {
+	if !auto {
 		return m.existing(cfg, binOf(key))
 	}
 	id := cfg.Profile() + "\x00" + key
@@ -238,8 +216,51 @@ func (m *Manager) installRecipe(ctx context.Context, cfg *config.Config, key str
 	case pipInstall:
 		return m.installPython(ctx, cfg, r.pkg, name, explicit)
 	}
-	m.installf(ctx, slog.LevelWarn, "There is no way to install %s that icebath knows, as its install method “%s” is unknown.", key, strategy)
+	m.lacking(ctx, key, lack{say: "icebath has no way to install a server called “" + strategy + "”."})
 	return "", nil
+}
+
+// What stopped servers from being installed, as an install found it
+type lack struct {
+	// What the servers need, in a few words such as yarn; empty when the install failed for another reason
+	what string
+	// What to do about it, or what happened when nothing is to be done here
+	say string
+	// The sentence names the server it is about, as the way to install one by hand does
+	named bool
+	// Setting that gives another way and the value that does it, empty for none
+	setting, value string
+}
+
+// The lack as a sentence about the servers it holds back: what they need and what to do, the way to install one by hand, or that they could
+// not be installed and why
+func (l lack) text(servers []string) string {
+	names := strs.AndMore(servers, 3)
+	switch {
+	case l.named:
+		return l.say
+	case l.what == "":
+		return strings.TrimSpace(names + " could not be installed. " + l.say)
+	case len(servers) == 1:
+		return names + " needs " + l.what + ". " + l.say
+	}
+	return names + " need " + l.what + ". " + l.say
+}
+
+// Asks the context of an install to hand what stops it to the person who asked for it, rather than the log
+func withLack(ctx context.Context, tell func(lack)) context.Context {
+	return context.WithValue(ctx, lackKey{}, tell)
+}
+
+type lackKey struct{}
+
+// What stopped the install of a package, handed to the person who asked for the install, else logged
+func (m *Manager) lacking(ctx context.Context, pkg string, l lack) {
+	if tell, ok := ctx.Value(lackKey{}).(func(lack)); ok {
+		tell(l)
+		return
+	}
+	m.logf(slog.LevelWarn, "[install] %s", l.text([]string{pkg}))
 }
 
 // Recipe as compact JSON for the log
@@ -268,23 +289,23 @@ func (m *Manager) installf(ctx context.Context, level slog.Level, format string,
 	m.logf(level, "[install] "+format, args...)
 }
 
-// Runs one installer child with the runner's environment, its output captured and no input, false after logging when it fails
+// Runs one installer child with the runner's environment, its output captured and no input; false once what stopped it is told
 func (m *Manager) run(ctx context.Context, runner *packages.Runner, pkg string, timeout time.Duration, name string, args ...string) bool {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	limited, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := runner.Command(ctx, name, args...)
+	cmd := runner.Command(limited, name, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, &stdout, &stderr
 	cmd.WaitDelay = time.Second
 	err := cmd.Run()
 	tool := runner.Name
-	if ctx.Err() == context.DeadlineExceeded {
-		m.installf(ctx, slog.LevelWarn, "Installing %s with %s took longer than %s, so it was stopped.", pkg, tool, strs.Span(timeout))
+	if limited.Err() == context.DeadlineExceeded {
+		m.lacking(ctx, pkg, lack{say: "Installing with " + tool + " took longer than " + strs.Span(timeout) + ", so it was stopped."})
 		return false
 	}
 	if err != nil {
 		if _, exited := errors.AsType[*exec.ExitError](err); !exited {
-			m.installf(ctx, slog.LevelWarn, "Could not install %s with %s: %s.", pkg, tool, err)
+			m.lacking(ctx, pkg, lack{say: tool + " could not be started. The error was: " + strs.Sentence(err.Error())})
 			return false
 		}
 		detail := strings.TrimSpace(strings.ToValidUTF8(stderr.String(), "\uFFFD"))
@@ -294,7 +315,7 @@ func (m *Manager) run(ctx context.Context, runner *packages.Runner, pkg string, 
 		if runes := []rune(detail); len(runes) > 500 {
 			detail = string(runes[:500])
 		}
-		m.installf(ctx, slog.LevelWarn, "Could not install %s with %s. It said: %s", pkg, tool, detail)
+		m.lacking(ctx, pkg, lack{say: tool + " failed. The error was: " + strs.Sentence(detail)})
 		return false
 	}
 	return true
@@ -356,14 +377,14 @@ var nodeArgs = map[string]func(dir string) []string{
 }
 
 // Node package manager the settings name, empty for one that isn't known so installs fail closed
-func (m *Manager) nodeManager(ctx context.Context, cfg *config.Config) string {
+func (m *Manager) nodeManager(ctx context.Context, cfg *config.Config, pkg string) string {
 	pm := strings.ToLower(strings.TrimSpace(cfg.GetString(lspconfig.PackageManager)))
 	if pm == "" {
 		pm = "npm"
 	}
 	if _, ok := nodeArgs[pm]; !ok {
-		m.installf(ctx, slog.LevelWarn, "The Node package manager is set to “%s”, which is not npm, pnpm or yarn, so nothing was installed. Choose one "+
-			"in /settings under Tools › Language servers › Node package manager.", pm)
+		m.lacking(ctx, pkg, lack{what: "npm, pnpm or yarn", say: "Set Node package manager to one of them, not “" + pm + "”.",
+			setting: lspconfig.PackageManager, value: "npm"})
 		return ""
 	}
 	return pm
@@ -409,7 +430,7 @@ func (m *Manager) nodeTool(command string) (string, error) {
 
 // Installs a Node server with the package manager the settings name into the profile's folder and links its binary
 func (m *Manager) installNode(ctx context.Context, cfg *config.Config, pkg, name string, extra []string, explicit bool) (string, error) {
-	pm := m.nodeManager(ctx, cfg)
+	pm := m.nodeManager(ctx, cfg, pkg)
 	if pm == "" {
 		return "", nil
 	}
@@ -419,7 +440,7 @@ func (m *Manager) installNode(ctx context.Context, cfg *config.Config, pkg, name
 	}
 	if tool == "" && pm == "npm" {
 		if _, err := m.packages.Ensure(ctx, cfg, packages.NPM, packages.Ensuring{Explicit: explicit}); err != nil {
-			m.installf(ctx, slog.LevelWarn, "Could not install %s, because npm could not be set up: %s", pkg, err)
+			m.lacking(ctx, pkg, lack{what: "npm", say: "icebath could not set up npm. " + strs.Full(err.Error())})
 			return "", nil
 		}
 		if tool, err = m.nodeTool("npm"); err != nil {
@@ -427,8 +448,7 @@ func (m *Manager) installNode(ctx context.Context, cfg *config.Config, pkg, name
 		}
 	}
 	if tool == "" {
-		m.installf(ctx, slog.LevelWarn, "Could not install %s, because %s was not found. Install %s, or choose npm in /settings under "+
-			"Tools › Language servers › Node package manager.", pkg, pm, pm)
+		m.lacking(ctx, pkg, lack{what: pm, say: "Install " + pm + ", or set Node package manager to npm.", setting: lspconfig.PackageManager, value: "npm"})
 		return "", nil
 	}
 	if _, err := m.binDir(cfg); err != nil {
@@ -455,7 +475,7 @@ func (m *Manager) installNode(ctx context.Context, cfg *config.Config, pkg, name
 		}
 		return m.link(cfg, found)
 	}
-	m.installf(ctx, slog.LevelWarn, "%s installed %s, but its program %s was not found.", pm, pkg, name)
+	m.lacking(ctx, pkg, lack{say: pm + " installed " + pkg + " without the program " + name + "."})
 	return "", nil
 }
 
@@ -463,7 +483,7 @@ func (m *Manager) installNode(ctx context.Context, cfg *config.Config, pkg, name
 func (m *Manager) installGo(ctx context.Context, cfg *config.Config, pkg, name string) (string, error) {
 	goBin := which("go")
 	if goBin == "" {
-		m.installf(ctx, slog.LevelInfo, "Could not install %s, because Go is not installed or not on your PATH.", pkg)
+		m.lacking(ctx, pkg, lack{what: "Go", say: "Install Go, so that it is on your PATH."})
 		return "", nil
 	}
 	bin, err := m.binDir(cfg)
@@ -483,7 +503,7 @@ func (m *Manager) installGo(ctx context.Context, cfg *config.Config, pkg, name s
 	if fsx.Exists(path) {
 		return path, nil
 	}
-	m.installf(ctx, slog.LevelWarn, "Go installed %s, but its program %s was not found.", pkg, name)
+	m.lacking(ctx, pkg, lack{say: "Go installed " + pkg + " without the program " + name + "."})
 	return "", nil
 }
 
@@ -491,7 +511,7 @@ func (m *Manager) installGo(ctx context.Context, cfg *config.Config, pkg, name s
 func (m *Manager) installPython(ctx context.Context, cfg *config.Config, pkg, name string, explicit bool) (string, error) {
 	if _, err := m.packages.Environment(ctx, cfg, packages.EnvironmentOptions{Name: "lsp-" + name, Requirements: []string{pkg}, Explicit: explicit,
 		Timeout: 300 * time.Second, Executable: name}); err != nil {
-		m.installf(ctx, slog.LevelWarn, "Could not install %s: %s", pkg, err)
+		m.lacking(ctx, pkg, lack{say: "icebath could not set up a Python environment. " + strs.Full(err.Error())})
 		return "", nil
 	}
 	path, found, err := m.packages.PythonTool(cfg, "lsp-"+name, name)
@@ -508,19 +528,7 @@ func (m *Manager) warnings(cfg *config.Config) ([]string, error) {
 		return nil, err
 	}
 	if bash != "" && which("shellcheck") == "" {
-		return []string{"bash-language-server is installed, but shellcheck is missing, so shell scripts get no checks. Install shellcheck with " +
-			"apt, brew or scoop."}, nil
+		return []string{"Shell scripts get no checks, because shellcheck is missing. Install shellcheck."}, nil
 	}
 	return nil, nil
-}
-
-// Built in servers with a recipe that installs by itself, those with a manual one too when asked
-func recipeServers(manual bool) []*server {
-	var out []*server
-	for _, s := range builtins {
-		if r, ok := recipes[recipeKey(s.id)]; ok && (manual || r.strategy != manualInstall) {
-			out = append(out, s)
-		}
-	}
-	return out
 }

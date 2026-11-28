@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
+	"github.com/nickheyer/icebath/internal/profile"
 	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
@@ -36,21 +37,27 @@ type command struct {
 const (
 	rewindUsage     = "[n | fork n]"
 	copyUsage       = "[n]"
-	replayUsage     = "[n|last|list|load <path>]"
+	replayUsage     = "[n|last|list|all|load <path>]"
 	replayDiffUsage = "<baseline> <candidate>"
 	saveUsageLine   = "<json|md|html> [file] [redact]"
 )
 
 func locals() []command {
 	return []command{
-		{name: "new", aliases: []string{"clear", "reset"}, usage: "[title]", help: "Start a new session in this chat", run: (*chat).fresh},
+		{name: "new", aliases: []string{"clear", "reset"}, usage: "[@profile] [title]", help: "Start a new session in this chat, on this profile or another",
+			run: (*chat).fresh},
 		{name: "resume", usage: "[title|id]", help: "Open a past session in this chat", run: (*chat).resume},
 		{name: "branch", aliases: []string{"fork"}, usage: "[--here] [title]", help: "Branch the session and go on in the branch", run: (*chat).branch},
 		{name: "save", usage: saveUsageLine, help: "Save the session to a file", run: (*chat).saveTo},
 		{name: "rewind", usage: rewindUsage, help: "Go back to an earlier message to change it", run: (*chat).rewind},
-		{name: "model", usage: "[model|reset] [--provider name] [--reasoning level] [--login name] [--global|--session] [--refresh]",
-			help: "Show or switch the model", run: (*chat).model},
-		{name: "reasoning", usage: "[level|reset|show|hide|full] [--global]", help: "Set the reasoning effort or how reasoning shows", run: (*chat).reasoning},
+		{name: "model", usage: "[model|reset] [--provider name] [--reasoning level] [--login name] [--refresh]", help: "Switch the model of this chat",
+			run: (*chat).model},
+		{name: "reasoning", usage: "[level|reset|show|hide|full]", help: "Set how hard the model thinks, or how reasoning shows, in this chat",
+			run: (*chat).reasoning},
+		{name: "busy", usage: "[queue|steer|interrupt|reset]", help: "Choose what enter does in this chat while the agent replies",
+			run: jobOf(agentScreen, jobBusy)},
+		{name: "personality", usage: "[name|none]", help: "Choose the personality the agent speaks with", run: jobOf(agentScreen, jobPersonality)},
+		{name: "delegation", usage: "[name]", help: "Choose where subagents run", run: jobOf(subagentScreen, jobMethod)},
 		{name: "history", usage: "[characters]", help: "Show the messages of this session, shortened", run: (*chat).history},
 		{name: "copy", usage: copyUsage, help: "Copy the last reply, or the one n back", run: (*chat).copy},
 		{name: "help", aliases: []string{"commands"}, usage: "[skills|words]", help: "List the commands, or only the matching ones", run: (*chat).help},
@@ -138,6 +145,12 @@ func (c *chat) command(text string) (*slashv1.Command, bool) {
 			return command, true
 		}
 	}
+	// A name a screen answers that no list shows is still a command
+	for _, screen := range c.kit.Screens() {
+		if slices.Contains(screen.Aliases, name) {
+			return &slashv1.Command{Name: name, Usage: screen.Usage, Help: screen.Short}, true
+		}
+	}
 	return nil, false
 }
 
@@ -145,26 +158,72 @@ func (c *chat) say(command, text string) {
 	c.log.note("`" + command + "`\n\n" + text)
 }
 
-func (c *chat) fresh(name string) (tea.Cmd, bool) {
-	running := c.log.busy
-	left := cmp.Or(c.id, c.left)
-	c.reset()
-	c.left = left
-	c.named = name
-	if running {
-		c.say(strings.TrimSpace("/new "+name), "Started a new session. The one before keeps working, and /sessions lists it.")
+// Starts a new session in this chat: on the profile named after @, else on the profile the chat is on, titled with the words after it. A
+// profile named is looked for first, so a name no profile has leaves the chat and its session as they are
+func (c *chat) fresh(argument string) (tea.Cmd, bool) {
+	on, title := profile.Split(argument)
+	echo := strings.TrimSpace("/new " + argument)
+	start := func() {
+		running := c.log.busy
+		left := cmp.Or(c.id, c.left)
+		c.reset()
+		c.left = left
+		c.named = strings.TrimSpace(title)
+		told := "Started a new session."
+		if on != "" {
+			c.profile = on
+			told = "Started a new session on the profile " + on + "."
+		}
+		if running {
+			told += " The one before keeps working, and /sessions lists it."
+		}
+		c.say(echo, told)
+	}
+	if on == "" || on == c.on() {
+		start()
 		return nil, true
 	}
-	c.say(strings.TrimSpace("/new "+name), "Started a new session.")
-	return nil, true
+	return tui.Async(func() func() tea.Cmd {
+		_, err := c.desk.settings.Get(c.kit.Env.Ctx, &configv1.GetRequest{Key: agentconfig.Model, Profile: on})
+		return func() tea.Cmd {
+			if err != nil {
+				c.say(echo, "No new session was started. "+tui.Reason(err))
+				return nil
+			}
+			start()
+			return nil
+		}
+	}), true
+}
+
+// Profile the menu opens on from this chat: the one its session runs on, none for the profile in use
+func (c *chat) menuProfile() string {
+	if state := c.log.state; state.GetProfile() != "" {
+		if state.GetProfileInUse() {
+			return ""
+		}
+		return state.GetProfile()
+	}
+	return c.profile
+}
+
+// Command that opens a job of an area alone, and goes to the server with a word after it, as a shortcut to the same control
+func jobOf(screen, job string) func(c *chat, argument string) (tea.Cmd, bool) {
+	return func(c *chat, argument string) (tea.Cmd, bool) {
+		if argument != "" {
+			return nil, false
+		}
+		return c.kit.Open(screen, profile.Join(c.menuProfile(), job)), true
+	}
 }
 
 func (c *chat) resume(name string) (tea.Cmd, bool) {
 	if name == "" {
 		return c.kit.Open(sessionsScreen, ""), true
 	}
+	on := c.on()
 	return tui.Async(func() func() tea.Cmd {
-		response, err := c.desk.sessions.Resolve(c.kit.Env.Ctx, &sessionsv1.ResolveRequest{Ref: name, Profile: c.on(), Tip: true})
+		response, err := c.desk.sessions.Resolve(c.kit.Env.Ctx, &sessionsv1.ResolveRequest{Ref: name, Profile: on, Tip: true})
 		return func() tea.Cmd {
 			if err != nil {
 				c.say("/resume "+name, "No session matches “"+name+"”. /sessions lists them all.")
@@ -179,22 +238,19 @@ func (c *chat) resume(name string) (tea.Cmd, bool) {
 	}), true
 }
 
+// Opens the model of this chat in Settings alone; with words, they go to the server as the shortcut to the same control
 func (c *chat) model(argument string) (tea.Cmd, bool) {
-	if argument != "" {
-		return nil, false
-	}
-	return c.pick(), true
+	return jobOf(agentScreen, jobModel)(c, argument)
 }
 
+// Opens the reasoning effort of this chat in Settings alone, shows or hides the model's reasoning in this chat with hide, show or full, and
+// sends any other word to the server as the shortcut to the effort
 func (c *chat) reasoning(argument string) (tea.Cmd, bool) {
-	words := strings.Fields(strings.ToLower(argument))
-	global := slices.Contains(words, "--global")
-	if words = slices.DeleteFunc(words, func(word string) bool { return word == "--global" }); len(words) != 1 {
-		return nil, false
-	}
-	// Words of the Reasoning display setting and of its choices, as the settings screen names them
+	// Words of the Reasoning display setting and of its choices, as the settings name them
 	thinking, shown := "", ""
-	switch words[0] {
+	switch strings.ToLower(strings.TrimSpace(argument)) {
+	case "":
+		return jobOf(agentScreen, jobReasoning)(c, argument)
 	case "hide":
 		thinking, shown = agentconfig.ThinkingHidden, "Hidden"
 	case "full":
@@ -207,29 +263,14 @@ func (c *chat) reasoning(argument string) (tea.Cmd, bool) {
 	default:
 		return nil, false
 	}
-	echo := "/reasoning " + argument
-	if !global {
-		c.thinking = thinking
-		c.refold(":thinking")
-		told := "Reasoning display is now " + shown + " in this chat."
-		if thinking == agentconfig.ThinkingFolded {
-			told += " Click a Reasoning line to open it."
-		}
-		c.say(echo, told)
-		return nil, true
+	c.thinking = thinking
+	c.refold(":thinking")
+	told := "Reasoning display is now " + shown + " in this chat."
+	if thinking == agentconfig.ThinkingFolded {
+		told += " Click a Reasoning line to open it."
 	}
-	value := strconv.Quote(thinking)
-	return tui.Async(func() func() tea.Cmd {
-		_, err := c.desk.settings.Set(c.kit.Env.Ctx, &configv1.SetRequest{Key: agentconfig.Thinking, Value: value})
-		return func() tea.Cmd {
-			if err != nil {
-				c.say(echo, "Reasoning display was not changed. "+tui.Reason(err))
-				return nil
-			}
-			c.say(echo, "Reasoning display is now "+shown+" in your settings.")
-			return c.kit.Changed(agentconfig.Thinking, value)
-		}
-	}), true
+	c.say("/reasoning "+argument, told)
+	return nil, true
 }
 
 func (c *chat) history(argument string) (tea.Cmd, bool) {

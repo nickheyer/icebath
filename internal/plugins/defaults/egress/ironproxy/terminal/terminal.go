@@ -89,7 +89,7 @@ func (e *Egress) Text(ctx context.Context, cfg *config.Config, showTokens bool) 
 		source = "Bitwarden"
 	}
 	enabled := cfg.GetBool(ironconfig.Enabled)
-	lines := []string{"Sandbox proxy", "",
+	lines := []string{"Key proxy", "",
 		"Hide your keys: " + on(enabled),
 		"Program: " + or(status.Binary, "Not installed"),
 		"Version: " + or(strings.TrimPrefix(status.Version, "v"), "Not known"),
@@ -120,9 +120,9 @@ func (e *Egress) Text(ctx context.Context, cfg *config.Config, showTokens bool) 
 	}
 	switch {
 	case enabled && !status.Configured():
-		lines = append(lines, "", "Next, run `icebath egress setup` to make the tokens and write proxy.yaml.")
+		lines = append(lines, "", "It is not set up yet. Turn Hide your keys off and on again in Key proxy, in /sandbox, or run `icebath egress setup`.")
 	case enabled && !(status.PID != 0 && status.Listening):
-		lines = append(lines, "", "Next, run `icebath egress start` before you start Docker sandboxes.")
+		lines = append(lines, "", "It is not running. Start it in Key proxy, in /sandbox, or with `icebath egress start`, before you start Docker sandboxes.")
 	}
 	return strings.Join(lines, "\n")
 }

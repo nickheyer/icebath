@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/cli"
 	"github.com/nickheyer/icebath/internal/models"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	"github.com/nickheyer/icebath/internal/provider"
 	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1/providerv1connect"
@@ -35,21 +36,32 @@ func (c commands) Commands(conn *connect.Client) []*cobra.Command {
 			"profile with their kind, account and API key, and where each key comes from.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			response, err := service.List(cmd.Context(), &providerv1.ListRequest{})
+			response, err := service.List(cmd.Context(), &providerv1.ListRequest{Profile: picked.Picked(cmd.Context())})
 			if err != nil {
 				return err
 			}
 			console := cli.NewConsole(cmd)
 			if len(response.GetProviders()) == 0 {
-				console.Say("No providers yet. Add one with `icebath providers add <kind>` or `icebath auth add <kind>`, or open /providers in icebath.")
+				console.Say("No providers yet. Add one with `icebath providers add <kind>` or `icebath auth add <kind>`.")
 				return nil
 			}
 			var rows [][]string
+			var waiting []string
 			for _, entry := range response.GetProviders() {
-				rows = append(rows, []string{entry.GetName(), entry.GetSpec(), entry.GetDisplayName(), cmp.Or(entry.GetAccount(), "None"),
+				state, account := entry.GetState(), "None"
+				if using := entry.GetUsing(); using != "" {
+					account = provider.AccountTitle(entry, using)
+				}
+				if !entry.GetReady() {
+					waiting = append(waiting, entry.GetDisplayName()+": "+entry.GetWhy())
+				}
+				rows = append(rows, []string{entry.GetName(), entry.GetSpec(), entry.GetDisplayName(), state, account,
 					credential(entry.GetCredentialOrigin(), entry.GetCredentialSource(), entry.GetLocal()), cmp.Or(entry.GetBaseUrl(), "Not set")})
 			}
-			console.Table([]string{"Name", "Kind", "Title", "Account", "API key", "Address"}, rows)
+			console.Table([]string{"Name", "Kind", "Title", "State", "Account", "API key", "Address"}, rows)
+			for _, line := range waiting {
+				console.Say(line)
+			}
 			return nil
 		},
 	}
@@ -57,20 +69,21 @@ func (c commands) Commands(conn *connect.Client) []*cobra.Command {
 	add := &cobra.Command{
 		Use:   "add <kind>",
 		Short: "Add a provider of this kind to the profile",
-		Long: "Adds a provider of the kind, as providers kinds lists it, to this profile and prints its name. Give it another name with " +
-			"--name, for example to add the same kind twice.",
+		Long: "Adds a provider of the kind, as providers kinds lists it, to this profile and prints the name the commands know it by. " +
+			"--title gives it the name it is shown by, which that name follows, and --name sets that name itself.",
 		Example: "  icebath providers add anthropic\n  icebath providers add openai --name work-openai --title \"Work OpenAI\"",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			response, err := service.Add(cmd.Context(), &providerv1.AddRequest{Spec: args[0], Name: name, Title: title})
+			response, err := service.Add(cmd.Context(), &providerv1.AddRequest{Profile: picked.Picked(cmd.Context()), Spec: args[0], Name: name, Title: title})
 			if err != nil {
-				return err
+				fmt.Fprintln(cmd.ErrOrStderr(), "✗ "+tui.Reason(err)+" Run `icebath providers kinds` to see the kinds you can add.")
+				return exit(1)
 			}
 			_, err = fmt.Fprintln(cmd.OutOrStdout(), response.GetProvider().GetName())
 			return err
 		},
 	}
-	add.Flags().StringVar(&name, "name", "", "Name of the provider in the profile, instead of the kind's name")
+	add.Flags().StringVar(&name, "name", "", "Name the commands know the provider by, instead of one made from its title or kind")
 	add.Flags().StringVar(&title, "title", "", "Name the provider is shown by")
 	providers.AddCommand(
 		&cobra.Command{
@@ -80,7 +93,7 @@ func (c commands) Commands(conn *connect.Client) []*cobra.Command {
 				"that kind.",
 			Args: cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, _ []string) error {
-				response, err := service.Specs(cmd.Context(), &providerv1.SpecsRequest{})
+				response, err := service.Specs(cmd.Context(), &providerv1.SpecsRequest{Profile: picked.Picked(cmd.Context())})
 				if err != nil {
 					return err
 				}
@@ -97,10 +110,33 @@ func (c commands) Commands(conn *connect.Client) []*cobra.Command {
 		&cobra.Command{
 			Use:   "remove <name>",
 			Short: "Remove a provider and its accounts from the profile",
-			Long:  "Removes the provider from this profile, with every account kept for it.",
+			Long:  "Removes the provider from this profile, with every account kept for it, and clears every setting and session that named it.",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				_, err := service.Remove(cmd.Context(), &providerv1.RemoveRequest{Provider: args[0]})
+				removed, err := service.Remove(cmd.Context(), &providerv1.RemoveRequest{Profile: picked.Picked(cmd.Context()), Provider: args[0]})
+				if err != nil {
+					fmt.Fprintln(cmd.ErrOrStderr(), "✗ "+tui.Reason(err))
+					return exit(1)
+				}
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "✓ "+removed.GetSaid())
+				return err
+			},
+		},
+		&cobra.Command{
+			Use:   "rename <name> <title>",
+			Short: "Give a provider another name",
+			Long: "Gives the provider the name it is shown by, which the name the commands know it by follows, as every setting and session " +
+				"that named it does. An empty title gives it the name of its kind again.",
+			Example: "  icebath providers rename custom \"My server\"",
+			Args:    cobra.ExactArgs(2),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				renamed, err := service.Rename(cmd.Context(), &providerv1.RenameRequest{Profile: picked.Picked(cmd.Context()), Provider: args[0], Title: args[1]})
+				if err != nil {
+					fmt.Fprintln(cmd.ErrOrStderr(), "✗ "+tui.Reason(err))
+					return exit(1)
+				}
+				entry := renamed.GetProvider()
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "✓ Renamed the provider to %s. Commands know it as %s.\n", entry.GetDisplayName(), entry.GetName())
 				return err
 			},
 		},
@@ -115,7 +151,7 @@ func (c commands) Commands(conn *connect.Client) []*cobra.Command {
 		Example: "  icebath models anthropic --details",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			response, err := service.Models(cmd.Context(), &providerv1.ModelsRequest{Provider: args[0], Refresh: refresh})
+			response, err := service.Models(cmd.Context(), &providerv1.ModelsRequest{Profile: picked.Picked(cmd.Context()), Provider: args[0], Refresh: refresh})
 			if err != nil {
 				return err
 			}
@@ -149,7 +185,7 @@ func (c commands) Commands(conn *connect.Client) []*cobra.Command {
 		Long:    "Shows how much of your account's usage limits you have used and when they reset, as /usage does, without starting a session.",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			response, err := service.Usage(cmd.Context(), &providerv1.UsageRequest{Provider: usageProvider})
+			response, err := service.Usage(cmd.Context(), &providerv1.UsageRequest{Profile: picked.Picked(cmd.Context()), Provider: usageProvider})
 			if err == nil && response.GetUsage() == nil {
 				err = fmt.Errorf("icebath can't say how much of the limits of %s you have used. It may have no account, no way to report usage, or "+
 					"it did not answer.", cmp.Or(usageProvider, "your providers"))

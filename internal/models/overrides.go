@@ -49,7 +49,7 @@ func (m *Models) explicit(cfg *config.Config, route provider.Route) map[string]a
 		return entry
 	}
 	for _, id := range slices.Sorted(maps.Keys(section)) {
-		if id != "_default" && strings.EqualFold(id, route.Model) {
+		if id != modelsconfig.EveryModel && strings.EqualFold(id, route.Model) {
 			if entry, ok := section[id].(map[string]any); ok {
 				return entry
 			}
@@ -60,11 +60,11 @@ func (m *Models) explicit(cfg *config.Config, route provider.Route) map[string]a
 
 // Override filling what nothing knows of a model: the provider's _default, else the one for every provider
 func (m *Models) fallback(cfg *config.Config, route provider.Route) map[string]any {
-	if entry, ok := m.section(cfg, route)["_default"].(map[string]any); ok {
+	if entry, ok := m.section(cfg, route)[modelsconfig.EveryModel].(map[string]any); ok {
 		return entry
 	}
 	overrides, _ := cfg.Get(modelsconfig.Overrides).(map[string]any)
-	entry, _ := overrides["_default"].(map[string]any)
+	entry, _ := overrides[modelsconfig.EveryModel].(map[string]any)
 	return entry
 }
 
@@ -151,7 +151,7 @@ func (m *Models) patched(cfg *config.Config, route provider.Route, entry map[str
 // from the input modalities
 func (m *Models) merge(cfg *config.Config, entry, override map[string]any) map[string]any {
 	merged := maps.Clone(entry)
-	if n, ok := m.overrideInt(cfg, override, "context_window"); ok {
+	if n, ok := m.overrideInt(cfg, override, modelsconfig.OverrideContext); ok {
 		limits := map[string]any{}
 		if old, ok := entry["limit"].(map[string]any); ok {
 			maps.Copy(limits, old)
@@ -159,12 +159,12 @@ func (m *Models) merge(cfg *config.Config, entry, override map[string]any) map[s
 		limits["context"] = float64(n)
 		merged["limit"] = limits
 	}
-	for from, to := range map[string]string{"supports_tools": "tool_call", "supports_reasoning": "reasoning"} {
+	for from, to := range map[string]string{modelsconfig.OverrideTools: "tool_call", modelsconfig.OverrideReasoning: "reasoning"} {
 		if v, ok := override[from]; ok {
 			merged[to] = config.Truthy(v)
 		}
 	}
-	if v, ok := override["supports_vision"]; ok {
+	if v, ok := override[modelsconfig.OverrideVision]; ok {
 		vision := config.Truthy(v)
 		merged["attachment"] = vision
 		modalities := map[string]any{}
@@ -186,7 +186,7 @@ func (m *Models) merge(cfg *config.Config, entry, override map[string]any) map[s
 		modalities["input"] = input
 		merged["modalities"] = modalities
 	}
-	if v, ok := override["model_family"]; ok {
+	if v, ok := override[modelsconfig.OverrideFamily]; ok {
 		family := ""
 		if config.Truthy(v) {
 			family = text(v)

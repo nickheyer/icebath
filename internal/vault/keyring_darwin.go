@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Item not found, as the security tool exits for errSecItemNotFound
@@ -54,7 +56,7 @@ func securityQuote(s string) string {
 func (k macKeyring) set(service, account, secret string) error {
 	line := fmt.Sprintf("add-generic-password -U -s %s -a %s -w %s\n", securityQuote(service), securityQuote(account), securityQuote(secret))
 	if _, _, err := k.run(line, "-i"); err != nil {
-		return &keyringError{"PasswordSetError", "The keychain did not keep the key: " + sentence(err.Error())}
+		return &keyringError{"PasswordSetError", "The keychain did not keep the key: " + strs.Full(err.Error())}
 	}
 	return nil
 }
@@ -65,7 +67,7 @@ func (k macKeyring) remove(service, account string) error {
 		return &keyringError{"PasswordDeleteError", "The keychain has no such entry."}
 	}
 	if err != nil {
-		return &keyringError{"PasswordDeleteError", "The keychain did not delete the entry: " + sentence(err.Error())}
+		return &keyringError{"PasswordDeleteError", "The keychain did not delete the entry: " + strs.Full(err.Error())}
 	}
 	return nil
 }

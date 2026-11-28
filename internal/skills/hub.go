@@ -107,22 +107,82 @@ type Trust struct {
 	Skills int
 }
 
+// Folder of this computer a trusted project names, resolved: a relative one taken from the scope's folder; an error when it is no folder
+func (s *Scope) folder(entry string) (string, error) {
+	path := fsx.ExpandHome(s.expandVars(strings.TrimSpace(entry)))
+	if path == "" {
+		return "", errors.New("A trusted project is a folder, such as ~/code/project.")
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(s.Cwd, path)
+	}
+	root := resolve(path)
+	if !fsx.IsDir(root) {
+		return root, errors.New("There is no folder at " + root + ".")
+	}
+	return root, nil
+}
+
+// Trusted projects as the settings keep them
+func (s *Scope) TrustedDirs() []string {
+	return list(s.Config.Get(skillsconfig.TrustedProjectDirs))
+}
+
+// Folders the entries name, each once by its whole path: one trusted already as it is, though it may be gone since, and any other only when
+// it is a folder of this computer
+func (s *Scope) trustable(entries []string) ([]string, error) {
+	trusted := map[string]bool{}
+	for _, entry := range s.TrustedDirs() {
+		trusted[s.path(entry)] = true
+	}
+	kept := []string{}
+	for _, entry := range entries {
+		root := s.path(entry)
+		if !trusted[root] {
+			var err error
+			if root, err = s.folder(entry); err != nil {
+				return nil, err
+			}
+		}
+		if !slices.Contains(kept, root) {
+			kept = append(kept, root)
+		}
+	}
+	return kept, nil
+}
+
+// Keeps the trusted projects, each a folder kept once by its whole path, a new one only when it is there: what trusting a project, no
+// longer trusting it and every write of the setting a person asks for end in
+func (s *Scope) KeepTrusted(entries []string) error {
+	kept, err := s.trustable(entries)
+	if err != nil {
+		return err
+	}
+	var value any = kept
+	if len(kept) == 0 {
+		value = nil
+	}
+	if err := s.Config.Set(skillsconfig.TrustedProjectDirs, value); err != nil {
+		return err
+	}
+	s.registry.Forget()
+	return nil
+}
+
 // Trusts a project with its own skills, or stops trusting it: the folder given, a relative one taken from the scope's folder, else the
 // git checkout the scope's folder is in
 func (s *Scope) SetTrusted(path string, trusted bool) (Trust, error) {
 	var root string
-	if path = strings.TrimSpace(path); path != "" {
-		path = fsx.ExpandHome(path)
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(s.Cwd, path)
-		}
-		if root = resolve(path); !fsx.IsDir(root) {
-			return Trust{Root: root}, errors.New(root + " is not a folder.")
+	if strings.TrimSpace(path) != "" {
+		var err error
+		// A project that is gone since it was trusted is still one a person stops trusting
+		if root, err = s.folder(path); err != nil && (trusted || root == "" || !s.Trusted(root)) {
+			return Trust{Root: root}, err
 		}
 	} else if root = s.projectRoot(); root == "" {
 		return Trust{}, errors.New("This folder is not inside a git repository. Run the command inside a project, or give the folder of the project.")
 	}
-	entries := list(s.Config.Get(skillsconfig.TrustedProjectDirs))
+	entries := s.TrustedDirs()
 	kept := slices.DeleteFunc(slices.Clone(entries), func(entry string) bool { return s.path(entry) == root })
 	out := Trust{Root: root}
 	switch {
@@ -139,14 +199,7 @@ func (s *Scope) SetTrusted(path string, trusted bool) (Trust, error) {
 	if !out.Changed {
 		return out, nil
 	}
-	if entries == nil {
-		entries = []string{}
-	}
-	if err := s.Config.Set(skillsconfig.TrustedProjectDirs, entries); err != nil {
-		return out, err
-	}
-	s.registry.Forget()
-	return out, nil
+	return out, s.KeepTrusted(entries)
 }
 
 // Whether a path, with slashes, has a folder in it no scan of skills enters, such as .git or node_modules

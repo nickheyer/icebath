@@ -23,7 +23,7 @@ type Resources struct {
 func SandboxResources(cfg *config.Config) (Resources, error) {
 	cpu, err := cast.ToFloat64E(cfg.Get(terminalconfig.ContainerCPU))
 	if err != nil {
-		return Resources{}, fmt.Errorf("Sandbox CPUs is set to %q, which is not a number. Change it in /settings under Terminal.", cfg.GetString(terminalconfig.ContainerCPU))
+		return Resources{}, fmt.Errorf("Sandbox CPUs is set to %q, which is not a number. Change it under Advanced in /sandbox.", cfg.GetString(terminalconfig.ContainerCPU))
 	}
 	resources := Resources{CPU: cpu, Persistent: cfg.GetBool(terminalconfig.ContainerPersistent)}
 	for _, whole := range []struct {
@@ -31,7 +31,7 @@ func SandboxResources(cfg *config.Config) (Resources, error) {
 		into       *int
 	}{{terminalconfig.ContainerMemory, "Sandbox memory", &resources.Memory}, {terminalconfig.ContainerDisk, "Sandbox disk", &resources.Disk}} {
 		if *whole.into, err = cast.ToIntE(cfg.Get(whole.key)); err != nil {
-			return Resources{}, fmt.Errorf("%s is set to %q, which is not a whole number. Change it in /settings under Terminal.", whole.title, cfg.GetString(whole.key))
+			return Resources{}, fmt.Errorf("%s is set to %q, which is not a whole number. Change it under Advanced in /sandbox.", whole.title, cfg.GetString(whole.key))
 		}
 	}
 	return resources, nil

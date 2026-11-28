@@ -36,7 +36,7 @@ func screen(service botdesktopv1connect.DesktopServiceClient, profile *string) *
 			"exit status is 1 while it is not running.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			st, err := service.Status(cmd.Context(), &botdesktopv1.StatusRequest{Profile: *profile})
+			st, err := service.Status(cmd.Context(), &botdesktopv1.StatusRequest{Profile: named(cmd, *profile)})
 			if err != nil {
 				return err
 			}
@@ -51,9 +51,9 @@ func screen(service botdesktopv1connect.DesktopServiceClient, profile *string) *
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
-			st, err := service.Start(cmd.Context(), &botdesktopv1.StartRequest{Profile: *profile})
+			st, err := service.Start(cmd.Context(), &botdesktopv1.StartRequest{Profile: named(cmd, *profile)})
 			if err != nil {
-				c.Failure("The agent desktop did not start. " + sentence(tui.Reason(err)))
+				c.Failure("The agent desktop did not start. " + strs.Full(tui.Reason(err)))
 				return cli.Exit(1)
 			}
 			c.Success(running(st) + ".")
@@ -68,7 +68,7 @@ func screen(service botdesktopv1connect.DesktopServiceClient, profile *string) *
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
-			reply, err := service.Stop(cmd.Context(), &botdesktopv1.StopRequest{Profile: *profile, Force: force})
+			reply, err := service.Stop(cmd.Context(), &botdesktopv1.StopRequest{Profile: named(cmd, *profile), Force: force})
 			if connect.CodeOf(err) == connect.CodePermissionDenied {
 				c.Failure("A person is using the agent desktop, so it was not stopped. Run icebath computer-use screen stop --force to stop it anyway.")
 				return cli.Exit(1)
@@ -92,7 +92,7 @@ func screen(service botdesktopv1connect.DesktopServiceClient, profile *string) *
 		Long:  "Installs TigerVNC and the core of the Xfce desktop with the package manager of this computer, after asking.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return installScreen(cmd, service, *profile, yes)
+			return installScreen(cmd, service, named(cmd, *profile), yes)
 		},
 	}
 	install.Flags().BoolVarP(&yes, "yes", "y", false, "Install without asking first")
@@ -108,19 +108,6 @@ func running(st *botdesktopv1.Screen) string {
 	}
 	if geometry := st.GetGeometry(); geometry != "" {
 		text += " with a screen of " + geometry
-	}
-	return text
-}
-
-// Reason a server gave as a sentence: capital first letter, a period at the end
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	text = strings.ToUpper(text[:1]) + text[1:]
-	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
-		text += "."
 	}
 	return text
 }
@@ -190,7 +177,7 @@ func report(c *cli.Console, st *botdesktopv1.Screen, asJSON bool) error {
 		c.Say("  Watch it with /desktop in the app, or open its VNC socket in a VNC viewer.")
 		return nil
 	case st.GetBlocker() != "":
-		c.Say("The agent desktop of the profile " + st.GetProfile() + " is installed but not running. " + sentence(st.GetBlocker()))
+		c.Say("The agent desktop of the profile " + st.GetProfile() + " is installed but not running. " + strs.Full(st.GetBlocker()))
 	default:
 		c.Say("The agent desktop of the profile " + st.GetProfile() + " is installed but not running. Start it with icebath computer-use screen start.")
 	}
@@ -200,7 +187,7 @@ func report(c *cli.Console, st *botdesktopv1.Screen, asJSON bool) error {
 // Installs the screen's packages on the server's machine, asking first on a terminal and asking the sudo password there when it needs one
 func installScreen(cmd *cobra.Command, service botdesktopv1connect.DesktopServiceClient, profile string, yes bool) error {
 	console := cli.NewConsole(cmd)
-	st, err := service.Status(cmd.Context(), &botdesktopv1.StatusRequest{Profile: profile})
+	st, err := service.Status(cmd.Context(), &botdesktopv1.StatusRequest{Profile: named(cmd, profile)})
 	if err != nil {
 		return err
 	}
@@ -222,9 +209,9 @@ func installScreen(cmd *cobra.Command, service botdesktopv1connect.DesktopServic
 	if !yes && console.Interactive() && !console.Confirm("Run it now? It installs "+strings.Join(st.GetMissing(), ", ")+" on this computer.", true) {
 		return cli.Exit(1)
 	}
-	stream, err := service.Install(cmd.Context(), &botdesktopv1.InstallRequest{Profile: profile})
+	stream, err := service.Install(cmd.Context(), &botdesktopv1.InstallRequest{Profile: named(cmd, profile)})
 	if err != nil {
-		console.Failure("The install did not start. " + sentence(tui.Reason(err)))
+		console.Failure("The install did not start. " + strs.Full(tui.Reason(err)))
 		return cli.Exit(1)
 	}
 	defer stream.Close()
@@ -235,7 +222,7 @@ func installScreen(cmd *cobra.Command, service botdesktopv1connect.DesktopServic
 		}
 		if err != nil {
 			if connect.CodeOf(err) == connect.CodeFailedPrecondition {
-				console.Failure(sentence(tui.Reason(err)))
+				console.Failure(strs.Full(tui.Reason(err)))
 				return cli.Exit(1)
 			}
 			return err

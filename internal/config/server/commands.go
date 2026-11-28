@@ -132,6 +132,92 @@ func redacted(value any, secret bool) any {
 	return value
 }
 
+// Value of a setting with the credentials inside it masked: its text when the setting or its name says it is one, and in a table or a list
+// of records each entry by what the setting declares of its entries
+func shielded(setting config.Setting, value any, secret bool) any {
+	switch held := value.(type) {
+	case map[string]any:
+		if setting.Kind() != config.Table {
+			break
+		}
+		out := make(map[string]any, len(held))
+		for name, entry := range held {
+			out[name] = entryShielded(setting, entry, secretKey(name, false))
+		}
+		return out
+	case []any:
+		if setting.Kind() != config.List {
+			break
+		}
+		out := make([]any, len(held))
+		for i, record := range held {
+			out[i] = entryShielded(setting, record, secret)
+		}
+		return out
+	}
+	return redacted(value, secret || setting.Secret)
+}
+
+// One entry of a table, or one record of a list, with the credentials inside it masked: the one value it is, or each of its fields, by
+// what the setting declares of them and by their names
+func entryShielded(table config.Setting, entry any, secret bool) any {
+	var fields []config.Setting
+	if table.Entry != nil {
+		fields = table.Entry.Fields
+	}
+	if len(fields) == 1 && fields[0].Key == "" {
+		return shielded(fields[0], entry, secret || table.Secret)
+	}
+	held, ok := entry.(map[string]any)
+	if !ok {
+		return redacted(entry, secret || table.Secret)
+	}
+	out := make(map[string]any, len(held))
+	for name, item := range held {
+		named := table.Secret || secretKey(name, false)
+		if at := fieldAt(fields, name); at >= 0 {
+			out[name] = shielded(fields[at], item, named)
+		} else {
+			out[name] = redacted(item, named)
+		}
+	}
+	return out
+}
+
+// Place of the named field the name answers to among the fields of an entry, as a declared key answers in any case, -1 when none does
+func fieldAt(fields []config.Setting, name string) int {
+	return slices.IndexFunc(fields, func(field config.Setting) bool { return field.Key != "" && strings.EqualFold(field.Key, name) })
+}
+
+// Part of a table's value under a path inside it with the credentials inside it masked as the table declares them: one entry, a field
+// of one, or a part of a table one of those is
+func partShielded(table config.Setting, path string, value any, secret bool) any {
+	name, rest, more := strings.Cut(path, ".")
+	var fields []config.Setting
+	if table.Entry != nil {
+		fields = table.Entry.Fields
+	}
+	part := -1
+	switch {
+	case len(fields) == 1 && fields[0].Key == "":
+		part = 0
+	case !more:
+		return entryShielded(table, value, secretKey(name, false))
+	default:
+		name, rest, more = strings.Cut(rest, ".")
+		part = fieldAt(fields, name)
+	}
+	switch {
+	case part < 0:
+		return redacted(value, secret || table.Secret)
+	case !more:
+		return shielded(fields[part], value, secret || table.Secret)
+	case fields[part].Kind() == config.Table:
+		return partShielded(fields[part], rest, value, secret)
+	}
+	return redacted(value, secret || table.Secret)
+}
+
 // Value as YAML lists and tables are written in a file, scalars on their own
 func block(value any) (string, error) {
 	switch v := value.(type) {
@@ -189,14 +275,16 @@ func (s *service) Value(_ context.Context, request *configv1.ValueRequest) (*con
 	var value any
 	found, secret, note := false, false, ""
 	_, setting, known := cfg.Setting(key)
-	table, _, under := config.Setting{}, "", false
+	table, path, under := config.Setting{}, "", false
 	if !known {
-		table, _, under = cfg.Under(key)
+		table, path, under = cfg.Under(key)
 	}
+	// What masks the credentials of the value: its name alone, unless a setting declares what it holds
+	shield := func(value any) any { return redacted(value, secret) }
 	switch {
 	case s.envKey(cfg, key):
 		value, found = cfg.LookupEnv(strings.ToUpper(key))
-		stale := cfg.Stored(strings.ToLower(key))
+		stale := cfg.Stored(key)
 		if _, table := stale.(map[string]any); !found && stale != nil && !table {
 			value, found = fmt.Sprint(stale), true
 			note = fmt.Sprintf("%s comes from an old copy in the settings file. `icebath config set %s <value>` moves it to the keys file, and `icebath "+
@@ -204,9 +292,12 @@ func (s *service) Value(_ context.Context, request *configv1.ValueRequest) (*con
 		}
 		secret = secretKey(key, true)
 	case known:
-		value, found, secret = cfg.Get(setting.Key), true, setting.Secret || secretKey(setting.Key, false)
+		value, found, secret = cfg.Get(setting.Key), true, secretKey(setting.Key, false)
+		shield = func(value any) any { return shielded(setting, value, secret) }
 	case under:
-		value, found, secret = cfg.Get(key), true, table.Secret || secretKey(key, false)
+		value, secret = cfg.Get(key), secretKey(key, false)
+		found = value != nil
+		shield = func(value any) any { return partShielded(table, path, value, secret) }
 	case cfg.Stored(key) != nil:
 		value, found = cfg.Get(key), true
 		secret = secretKey(key, false)
@@ -217,7 +308,7 @@ func (s *service) Value(_ context.Context, request *configv1.ValueRequest) (*con
 		return &configv1.ValueResponse{}, nil
 	}
 	if !request.GetRaw() && cfg.GetBool(toolsconfig.RedactSecrets) {
-		value = redacted(value, secret)
+		value = shield(value)
 	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
@@ -230,14 +321,13 @@ func (s *service) Value(_ context.Context, request *configv1.ValueRequest) (*con
 	return &configv1.ValueResponse{Found: true, Json: string(encoded), Yaml: text, Note: note}, nil
 }
 
-// Removes the copy of a variable kept at the top of the profile's config.yaml, so its .env holds the only one; whether there was one. A
-// table under the name is a section of settings, as keys fold case, and stays
+// Removes the copy of a variable kept at the top of the profile's config.yaml, found in any case, so its .env holds the only one; whether
+// there was one. A table under the name is a section of settings, which stays
 func dropCopies(cfg *config.Config, key string) (bool, error) {
-	name := strings.ToLower(key)
-	if _, table := cfg.Stored(name).(map[string]any); table || cfg.Global(name) || !cfg.Holds(name) {
+	if _, table := cfg.Stored(key).(map[string]any); table || cfg.Global(key) || !cfg.Holds(key) {
 		return false, nil
 	}
-	return true, cfg.Set(name, nil)
+	return true, cfg.Set(key, nil)
 }
 
 // Integer of decimal text with an optional sign and single underscores between digits, as YAML writes one
@@ -349,9 +439,17 @@ func (s *service) Put(_ context.Context, request *configv1.PutRequest) (*configv
 		if !under {
 			return nil, s.unknown(cfg, key, true)
 		}
-		// A part of a table setting takes any value, text kept as typed where the table's default holds text
-		setting = config.Setting{Key: strings.ToLower(key), Default: config.Dig(table.DefaultValue(), path), Secret: table.Secret}
-		_, verbatim = setting.Default.(string)
+		if part, declared := table.Part(path); declared {
+			// A part the table declares, the value of an entry or a field of one, is read as the field it is, so text stays as typed; a
+			// declared field of one entry is checked as that field too, as a write from the app is
+			setting, verbatim = part, true
+			setting.Secret = setting.Secret || table.Secret
+			_, known = table.EntryField(path)
+		} else {
+			// Any other part of a table setting takes any value, text kept as typed where the table's default holds text
+			setting = config.Setting{Key: cfg.Key(key), Default: config.Dig(table.DefaultValue(), path), Secret: table.Secret}
+			_, verbatim = setting.Default.(string)
+		}
 	}
 	value, err := typed(setting, verbatim, text)
 	if err != nil {
@@ -361,17 +459,17 @@ func (s *service) Put(_ context.Context, request *configv1.PutRequest) (*configv
 		if value, err = setting.Check(value); err != nil {
 			return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
 		}
+		if value, err = setting.Located(value); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err.Error())
+		}
 	}
-	if err := cfg.Set(setting.Key, value); err != nil {
+	if err := cfg.Change(setting.Key, value); err != nil {
 		if locked, ok := errors.AsType[*config.LockedError](err); ok {
 			return nil, connect.NewError(connect.CodePermissionDenied, locked.Refusal())
 		}
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 	}
-	shown := cfg.Stored(setting.Key)
-	if text, ok := shown.(string); ok && (setting.Secret || secretKey(setting.Key, false)) && text != "" {
-		shown = mask(text)
-	}
+	shown := shielded(setting, cfg.Stored(setting.Key), secretKey(setting.Key, false))
 	words, err := encode(shown)
 	if err != nil {
 		return nil, err
@@ -433,7 +531,7 @@ func (s *service) Unset(_ context.Context, request *configv1.UnsetRequest) (*con
 	if !cfg.Holds(key) {
 		return &configv1.UnsetResponse{Destination: destination}, nil
 	}
-	if err := cfg.Set(key, nil); err != nil {
+	if err := cfg.Change(key, nil); err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error())
 	}
 	return &configv1.UnsetResponse{Found: true, Destination: destination}, nil
@@ -536,12 +634,8 @@ func (s *service) Seed(_ context.Context, request *configv1.SeedRequest) (*confi
 // What is wrong with the text of an edited config file, empty when it parses to a mapping of settings; the settings themselves are read
 // again at their next read, as the version of the file changed
 func problem(text []byte) string {
-	var doc any
-	if err := yaml.Unmarshal(text, &doc); err != nil {
+	if err := config.Problem(text); err != nil {
 		return strings.TrimPrefix(err.Error(), "yaml: ")
-	}
-	if _, ok := doc.(map[string]any); !ok && doc != nil {
-		return "the file must hold named settings"
 	}
 	return ""
 }
@@ -661,36 +755,58 @@ func (s *service) Show(_ context.Context, request *configv1.ShowRequest) (*confi
 // an environment variable or the administrator decide instead
 func (s *service) inactive(cfg *config.Config) []string {
 	shared, own := cfg.Files()
-	ownPlace := own
+	ownPlace, ownEdit := own, "icebath config edit"
 	if ownPlace == "" {
-		ownPlace = "The remote settings"
+		ownPlace, ownEdit = "The remote settings", "icebath config unset <key>"
 	}
 	var out []string
 	for _, scope := range []struct {
 		global bool
 		place  string
-	}{{true, shared}, {false, ownPlace}} {
+		edit   string
+	}{{true, shared, "icebath config edit --shared"}, {false, ownPlace, ownEdit}} {
 		held := cfg.Held(scope.global)
 		var walk func(m map[string]any, prefix string)
 		walk = func(m map[string]any, prefix string) {
 			for _, name := range sortedKeys(m) {
 				key, value := prefix+name, m[name]
 				_, setting, known := cfg.Setting(key)
+				child, table := value.(map[string]any)
 				switch {
 				case known:
 					out = append(out, s.misfit(cfg, scope.place, setting, value, scope.global)...)
-				case prefix == "" && !s.registered(cfg, key):
-					out = append(out, fmt.Sprintf("%s holds %s, which is not a setting. It has no effect.", scope.place, key))
+				case table && s.registered(cfg, key):
+					walk(child, key+".")
 				default:
-					if child, ok := value.(map[string]any); ok {
-						walk(child, key+".")
-					}
+					out = append(out, stray(scope.place, scope.edit, leaves(key, value)))
 				}
 			}
 		}
 		walk(held, "")
 	}
 	return out
+}
+
+// Line naming the keys of a file that no setting declares, which nothing reads, and the command that opens the file
+func stray(place, edit string, keys []string) string {
+	if len(keys) == 1 {
+		return fmt.Sprintf("%s holds %s, which is not a setting, so nothing reads it. Remove it with `%s`.", place, keys[0], edit)
+	}
+	return fmt.Sprintf("%s holds keys that are not settings, so nothing reads them: %s. Remove them with `%s`.", place, strings.Join(keys, ", "),
+		edit)
+}
+
+// Full keys of the values a value of tables holds at its ends, the key itself for a value that is no table
+func leaves(key string, value any) []string {
+	table, ok := value.(map[string]any)
+	if !ok || len(table) == 0 {
+		return []string{key}
+	}
+	var keys []string
+	for _, name := range sortedKeys(table) {
+		keys = append(keys, leaves(key+"."+name, table[name])...)
+	}
+	return keys
 }
 
 // Whether a section is registered under the key at the top
@@ -710,6 +826,8 @@ func (s *service) misfit(cfg *config.Config, place string, setting config.Settin
 		return []string{fmt.Sprintf("%s holds %s, which is only read from %s. Here it has no effect.", place, setting.Key, where)}
 	}
 	if _, err := setting.Check(value); err != nil {
+		out = append(out, fmt.Sprintf("%s sets %s to %v, which can't be used. %s", place, setting.Key, shownValue(setting, value), err.Error()))
+	} else if err := cfg.Refused(setting.Key, value); err != nil {
 		out = append(out, fmt.Sprintf("%s sets %s to %v, which can't be used. %s", place, setting.Key, shownValue(setting, value), err.Error()))
 	}
 	switch source, variable := cfg.Source(setting); source {

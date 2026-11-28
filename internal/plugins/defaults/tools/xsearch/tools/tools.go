@@ -47,7 +47,7 @@ func (r registrant) Tools() []tools.Def {
 		Toolset: "x_search",
 		Title:   "X search",
 		About:   "Search posts on X, the site once called Twitter",
-		Group:   "Web",
+		Group:   "X search",
 		Icon:    tools.IconSearch,
 		Subject: "query",
 		Schema: tools.Schema(description, []string{"query"}, map[string]any{
@@ -65,6 +65,7 @@ func (r registrant) Tools() []tools.Def {
 		}),
 		Handler:        tools.Bind(r.search),
 		Check:          func(env *tools.Env) bool { _, ok := r.bearer(env.Config); return ok },
+		Lacks:          func(*tools.Env) string { return "It needs an xAI account that is connected." },
 		MaxResultChars: 100000,
 	}}
 }
@@ -438,4 +439,9 @@ func failure(message, kind string) string {
 		Error     string `json:"error"`
 		ErrorType string `json:"error_type"`
 	}{Provider: "xai", Tool: "x_search", Error: message, ErrorType: kind})
+}
+
+// The group of X search, whose options are the X search section
+func (r registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: "X search", Sections: []string{xsearchconfig.Key}, Order: 35}}
 }

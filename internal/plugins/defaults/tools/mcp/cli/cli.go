@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/internal/cli"
 	"github.com/nickheyer/icebath/internal/mcp"
 	mcpconfig "github.com/nickheyer/icebath/internal/plugins/defaults/tools/mcp/config"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	"github.com/nickheyer/icebath/pkg/browser"
 	mcpv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/mcp/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/mcp/v1/mcpv1connect"
@@ -50,21 +51,8 @@ func (r *run) commands(root *cobra.Command) {
 	}
 }
 
-// Reason a server gave as a sentence: capital first letter, a period at the end
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	text = strings.ToUpper(text[:1]) + text[1:]
-	if !strings.ContainsAny(text[len(text)-1:], ".!?") {
-		text += "."
-	}
-	return text
-}
-
 // Why a call to the service failed, as a sentence
-func reason(err error) string { return sentence(tui.Reason(err)) }
+func reason(err error) string { return strs.Full(tui.Reason(err)) }
 
 // Servers a name can stand for in place of a command or URL
 var presets = map[string]struct {
@@ -234,7 +222,7 @@ type addArgs struct {
 }
 
 func (r *run) servers() ([]*mcpv1.Server, error) {
-	response, err := r.service.List(r.Context(), &mcpv1.ListRequest{})
+	response, err := r.service.List(r.Context(), &mcpv1.ListRequest{Profile: picked.Picked(r.Context())})
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +303,7 @@ func (r *run) list() error {
 		case len(server.GetExclude()) > 0:
 			filter = strs.Number(float64(len(server.GetExclude()))) + " left out"
 		}
-		rows = append(rows, []string{server.GetName(), runs, filter, r.OnOff(server.GetEnabled())})
+		rows = append(rows, []string{server.GetName(), runs, filter, server.GetShown()})
 	}
 	r.Table([]string{"Name", "Address or command", "Tools", "State"}, rows)
 	r.Blank()
@@ -335,7 +323,7 @@ func (r *run) remove(name string) error {
 		r.Info("Nothing was removed.")
 		return nil
 	}
-	if _, err := r.service.Remove(r.Context(), &mcpv1.RemoveRequest{Name: name}); err != nil {
+	if _, err := r.service.Remove(r.Context(), &mcpv1.RemoveRequest{Profile: picked.Picked(r.Context()), Name: name}); err != nil {
 		r.Failure(reason(err))
 		return exit(1)
 	}
@@ -402,13 +390,13 @@ func (r *run) test(name string) error {
 		r.Info("Sign-in: None")
 	}
 	start := time.Now()
-	probe, err := r.service.Probe(r.Context(), &mcpv1.ProbeRequest{Name: name})
+	probe, err := r.service.Probe(r.Context(), &mcpv1.ProbeRequest{Profile: picked.Picked(r.Context()), Name: name})
 	if err != nil {
 		return err
 	}
 	if !probe.GetOk() {
 		r.Failure(fmt.Sprintf("Could not connect to %s after %s. %s", name, strs.Span(time.Since(start).Round(100*time.Millisecond)),
-			sentence(probe.GetError())))
+			strs.Full(probe.GetError())))
 		r.Info(probe.GetNextStep())
 		return exit(1)
 	}
@@ -470,7 +458,7 @@ func (r *run) checked(name string, settings map[string]any) (bool, error) {
 }
 
 func (r *run) save(name string, settings map[string]any) bool {
-	response, err := r.service.Save(r.Context(), &mcpv1.SaveRequest{Name: name, Settings: encode(settings)})
+	response, err := r.service.Save(r.Context(), &mcpv1.SaveRequest{Profile: picked.Picked(r.Context()), Name: name, Settings: encode(settings)})
 	if err != nil {
 		r.Failure(reason(err))
 		return false
@@ -544,7 +532,7 @@ func (r *run) add(a addArgs) error {
 	}
 	r.Blank()
 	r.Say(fmt.Sprintf("  Connecting to %s…", name), cli.Cyan)
-	request := &mcpv1.ProbeRequest{Name: name, Settings: encode(settings)}
+	request := &mcpv1.ProbeRequest{Profile: picked.Picked(r.Context()), Name: name, Settings: encode(settings)}
 	if a.connectTimeout != nil {
 		request.ConnectTimeout = *a.connectTimeout
 	}
@@ -553,7 +541,7 @@ func (r *run) add(a addArgs) error {
 		return err
 	}
 	if !probe.GetOk() {
-		r.Failure(fmt.Sprintf("Could not connect to %s. %s", name, sentence(probe.GetError())))
+		r.Failure(fmt.Sprintf("Could not connect to %s. %s", name, strs.Full(probe.GetError())))
 		r.Info(probe.GetNextStep())
 		if r.Ask("Save the server anyway, turned off? You can test it later.", false) {
 			settings["enabled"] = false
@@ -608,7 +596,7 @@ func (r *run) httpAuth(name, url, auth string, settings map[string]any) (bool, e
 		return true, nil
 	}
 	key := mcp.KeyEnv(name)
-	has, err := r.service.HasValue(r.Context(), &mcpv1.HasValueRequest{Name: key})
+	has, err := r.service.HasValue(r.Context(), &mcpv1.HasValueRequest{Profile: picked.Picked(r.Context()), Name: key})
 	if err != nil {
 		return false, err
 	}
@@ -621,7 +609,7 @@ func (r *run) httpAuth(name, url, auth string, settings map[string]any) (bool, e
 	if token == "" {
 		return true, nil
 	}
-	saved, err := r.service.SaveBearer(r.Context(), &mcpv1.SaveBearerRequest{Name: name, Token: token})
+	saved, err := r.service.SaveBearer(r.Context(), &mcpv1.SaveBearerRequest{Profile: picked.Picked(r.Context()), Name: name, Token: token})
 	if err != nil {
 		r.Failure(reason(err))
 		return false, nil
@@ -676,7 +664,7 @@ func (r *run) chooseTools(name string, found []*mcpv1.ToolSummary, settings map[
 // Signs in to a server over the service, showing the link and opening it here, taking the address the browser ended on when it is pasted;
 // whether it signed in
 func (r *run) signin(name, flow string, settings map[string]any) bool {
-	request := &mcpv1.LoginRequest{Name: name, Flow: flow}
+	request := &mcpv1.LoginRequest{Profile: picked.Picked(r.Context()), Name: name, Flow: flow}
 	if settings != nil {
 		request.Settings = encode(settings)
 	}
@@ -775,7 +763,7 @@ func (r *run) signedIn(name string, event *mcpv1.LoginEvent) bool {
 		r.Info("Then run icebath mcp login " + name + " again.")
 		return false
 	case event.GetError() != "":
-		r.Failure("Could not sign in. " + sentence(event.GetError()))
+		r.Failure("Could not sign in. " + strs.Full(event.GetError()))
 		return false
 	case event.GetTools() > 0:
 		r.Success("Signed in. The server offers " + strs.Count(int(event.GetTools()), "tool") + ".")
@@ -975,12 +963,12 @@ func (r *run) configure(name string) error {
 	}
 	r.Blank()
 	r.Say(fmt.Sprintf("  Connecting to %s to list its tools…", name), cli.Cyan)
-	probe, err := r.service.Probe(r.Context(), &mcpv1.ProbeRequest{Name: name})
+	probe, err := r.service.Probe(r.Context(), &mcpv1.ProbeRequest{Profile: picked.Picked(r.Context()), Name: name})
 	if err != nil {
 		return err
 	}
 	if !probe.GetOk() {
-		r.Failure(fmt.Sprintf("Could not connect to %s. %s", name, sentence(probe.GetError())))
+		r.Failure(fmt.Sprintf("Could not connect to %s. %s", name, strs.Full(probe.GetError())))
 		return exit(1)
 	}
 	found := probe.GetTools()
@@ -1010,7 +998,7 @@ func (r *run) configure(name string) error {
 		return nil
 	}
 	count := len(cli.Picked(chosen))
-	request := &mcpv1.SetFilterRequest{Name: name}
+	request := &mcpv1.SetFilterRequest{Profile: picked.Picked(r.Context()), Name: name}
 	excludeMode := len(server.GetExclude()) > 0 && !server.GetIncluded()
 	switch {
 	case count == len(found) && !excludeMode:
@@ -1050,7 +1038,7 @@ type pickerRow struct {
 }
 
 func (r *run) rows() ([]pickerRow, []*mcpv1.Entry, error) {
-	catalog, err := r.service.Catalog(r.Context(), &mcpv1.CatalogRequest{})
+	catalog, err := r.service.Catalog(r.Context(), &mcpv1.CatalogRequest{Profile: picked.Picked(r.Context())})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1216,7 +1204,7 @@ func (r *run) submenu(title string, items []menuItem) error {
 }
 
 func (r *run) enable(name string, enabled bool) error {
-	if _, err := r.service.Enable(r.Context(), &mcpv1.EnableRequest{Name: name, Enabled: enabled}); err != nil {
+	if _, err := r.service.Enable(r.Context(), &mcpv1.EnableRequest{Profile: picked.Picked(r.Context()), Name: name, Enabled: enabled}); err != nil {
 		if connect.CodeOf(err) == connect.CodeNotFound {
 			r.Failure(name + " is not installed.")
 			return nil
@@ -1239,7 +1227,7 @@ func (r *run) removeCustom(server *mcpv1.Server) error {
 	if !r.Ask(fmt.Sprintf("Remove the MCP server %s? Its settings are deleted.", server.GetName()), false) {
 		return nil
 	}
-	if _, err := r.service.Remove(r.Context(), &mcpv1.RemoveRequest{Name: server.GetName()}); err != nil {
+	if _, err := r.service.Remove(r.Context(), &mcpv1.RemoveRequest{Profile: picked.Picked(r.Context()), Name: server.GetName()}); err != nil {
 		return err
 	}
 	r.Success("Removed " + server.GetName() + ".")
@@ -1250,7 +1238,7 @@ func (r *run) uninstall(name string) error {
 	if !r.Ask(fmt.Sprintf("Uninstall %s? Its settings and downloaded files are deleted.", name), false) {
 		return nil
 	}
-	response, err := r.service.Remove(r.Context(), &mcpv1.RemoveRequest{Name: name, Purge: true})
+	response, err := r.service.Remove(r.Context(), &mcpv1.RemoveRequest{Profile: picked.Picked(r.Context()), Name: name, Purge: true})
 	if err != nil {
 		return err
 	}
@@ -1263,7 +1251,7 @@ func (r *run) uninstall(name string) error {
 }
 
 func (r *run) installName(name string) error {
-	catalog, err := r.service.Catalog(r.Context(), &mcpv1.CatalogRequest{})
+	catalog, err := r.service.Catalog(r.Context(), &mcpv1.CatalogRequest{Profile: picked.Picked(r.Context())})
 	if err != nil {
 		return err
 	}
@@ -1272,7 +1260,7 @@ func (r *run) installName(name string) error {
 			continue
 		}
 		if entry.GetProblem() != "" {
-			r.Failure("Could not install " + entry.GetName() + ". " + sentence(entry.GetProblem()))
+			r.Failure("Could not install " + entry.GetName() + ". " + strs.Full(entry.GetProblem()))
 			return exit(1)
 		}
 		ok, err := r.install(entry, "install")
@@ -1302,7 +1290,7 @@ func (r *run) install(entry *mcpv1.Entry, verb string) (bool, error) {
 		if verb == "reinstall" {
 			what = "install again"
 		}
-		r.Failure("Could not " + what + " " + entry.GetName() + ". " + sentence(string(failure)))
+		r.Failure("Could not " + what + " " + entry.GetName() + ". " + strs.Full(string(failure)))
 		return false, nil
 	}
 	return err == nil, err
@@ -1331,7 +1319,7 @@ func (r *run) installEntry(entry *mcpv1.Entry) error {
 	}
 	dir := ""
 	if entry.GetFromSource() {
-		cloned, err := r.service.GitInstall(r.Context(), &mcpv1.GitInstallRequest{Entry: name})
+		cloned, err := r.service.GitInstall(r.Context(), &mcpv1.GitInstallRequest{Profile: picked.Picked(r.Context()), Entry: name})
 		if err != nil {
 			return err
 		}
@@ -1351,7 +1339,7 @@ func (r *run) installEntry(entry *mcpv1.Entry) error {
 		r.Say("  Keys and settings it needs:", cli.Cyan)
 		for _, spec := range requires {
 			if spec.GetSecret() {
-				has, err := r.service.HasValue(r.Context(), &mcpv1.HasValueRequest{Name: spec.GetName()})
+				has, err := r.service.HasValue(r.Context(), &mcpv1.HasValueRequest{Profile: picked.Picked(r.Context()), Name: spec.GetName()})
 				if err != nil {
 					return err
 				}
@@ -1364,7 +1352,7 @@ func (r *run) installEntry(entry *mcpv1.Entry) error {
 			switch {
 			case value != "":
 				if spec.GetSecret() {
-					if _, err := r.service.SetValue(r.Context(), &mcpv1.SetValueRequest{Name: spec.GetName(), Value: value}); err != nil {
+					if _, err := r.service.SetValue(r.Context(), &mcpv1.SetValueRequest{Profile: picked.Picked(r.Context()), Name: spec.GetName(), Value: value}); err != nil {
 						return err
 					}
 				}
@@ -1386,11 +1374,11 @@ func (r *run) installEntry(entry *mcpv1.Entry) error {
 		}
 		r.Say(fmt.Sprintf("  This server signs in with %s in the browser, once it is installed.", client), cli.Dim)
 	}
-	config, err := r.service.InstallConfig(r.Context(), &mcpv1.InstallConfigRequest{Entry: name, InstallDir: dir, Values: values})
+	config, err := r.service.InstallConfig(r.Context(), &mcpv1.InstallConfigRequest{Profile: picked.Picked(r.Context()), Entry: name, InstallDir: dir, Values: values})
 	if err != nil {
 		return err
 	}
-	saved, err := r.service.Save(r.Context(), &mcpv1.SaveRequest{Name: name, Settings: config.GetSettings()})
+	saved, err := r.service.Save(r.Context(), &mcpv1.SaveRequest{Profile: picked.Picked(r.Context()), Name: name, Settings: config.GetSettings()})
 	if err != nil {
 		return err
 	}
@@ -1435,7 +1423,7 @@ func (r *run) selectTools(entry *mcpv1.Entry, prior *mcpv1.Server) error {
 		}
 	}
 	setFilter := func(mode string, values []string) error {
-		_, err := r.service.SetFilter(r.Context(), &mcpv1.SetFilterRequest{Name: name, Mode: mode, Values: values, Clear: values == nil})
+		_, err := r.service.SetFilter(r.Context(), &mcpv1.SetFilterRequest{Profile: picked.Picked(r.Context()), Name: name, Mode: mode, Values: values, Clear: values == nil})
 		return err
 	}
 	if len(entry.GetDefaultExcluded()) > 0 && priorInclude == nil {
@@ -1448,12 +1436,12 @@ func (r *run) selectTools(entry *mcpv1.Entry, prior *mcpv1.Server) error {
 		return nil
 	}
 	r.Say(fmt.Sprintf("  Asking %s for its tools…", name), cli.Cyan)
-	probe, err := r.service.Probe(r.Context(), &mcpv1.ProbeRequest{Name: name})
+	probe, err := r.service.Probe(r.Context(), &mcpv1.ProbeRequest{Profile: picked.Picked(r.Context()), Name: name})
 	if err != nil {
 		return err
 	}
 	if !probe.GetOk() {
-		r.Warning("Could not reach " + name + ". " + sentence(probe.GetError()))
+		r.Warning("Could not reach " + name + ". " + strs.Full(probe.GetError()))
 		refine := "Once the server can be reached, run " + hint + " to choose."
 		switch {
 		case priorInclude != nil:

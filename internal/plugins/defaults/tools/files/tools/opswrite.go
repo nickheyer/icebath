@@ -45,8 +45,8 @@ func osErrorText(err error, fallback string) string {
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
 		message = errno.Error()
-		if !windows && message != "" {
-			message = strings.ToUpper(message[:1]) + message[1:]
+		if !windows {
+			message = strs.Capital(message)
 		}
 	}
 	var pathErr *os.PathError

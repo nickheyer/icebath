@@ -2,6 +2,7 @@ package cli
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/internal/cli"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	"github.com/nickheyer/icebath/internal/skills"
 	skillsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/skills/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/skills/v1/skillsv1connect"
@@ -37,10 +39,10 @@ func Register(registry *cli.Registry) {
 	registry.Register(commands{})
 }
 
-// Scope of a command: the profile in use and the folder it runs in
-func here() *skillsv1.Scope {
+// Scope of a command: the profile -p picked, the one in use for none, and the folder it runs in
+func here(ctx context.Context) *skillsv1.Scope {
 	dir, _ := os.Getwd()
-	return &skillsv1.Scope{Directory: dir}
+	return &skillsv1.Scope{Profile: picked.Picked(ctx), Directory: dir}
 }
 
 // Asks the question after the lines, true for yes; the end of the input is no, which says that nothing changed
@@ -79,7 +81,8 @@ func listed(out io.Writer, label string, items []string) {
 func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	service := skillsv1connect.NewSkillsServiceClient(conn)
 	root := &cobra.Command{Use: "skills", GroupID: cli.GroupAbilities, Short: "Find, install and manage skills"}
-	root.AddCommand(list(service), configure(service), reset(service), modified(service), diff(service), optOut(service), optIn(service), repair(service))
+	root.AddCommand(list(service), turn(service, true), turn(service, false), configure(service), reset(service), modified(service), diff(service),
+		optOut(service), optIn(service), repair(service))
 	root.Long = "Skills are instructions the agent loads for certain kinds of work. Use these commands to find skills on skills.sh, GitHub, " +
 		"ClawHub and other registries, install them, scan them for risks and turn them on or off. icebath also comes with built-in skills, " +
 		"which it copies into each profile."
@@ -108,7 +111,7 @@ func list(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			if !slices.Contains([]string{"all", "hub", "builtin", "local"}, source) {
 				return fmt.Errorf("--source takes all, hub, builtin or local, not “%s”.", source)
 			}
-			response, err := service.List(cmd.Context(), &skillsv1.ListRequest{Scope: here()})
+			response, err := service.List(cmd.Context(), &skillsv1.ListRequest{Scope: here(cmd.Context()), Surface: "cli"})
 			if err != nil {
 				return err
 			}
@@ -127,15 +130,16 @@ func list(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 					continue
 				}
 				counts[kind(skill)]++
-				status := "Off"
+				status := skill.GetShown()
 				if skill.GetEnabled() {
-					status = "On"
 					enabled++
 				} else {
 					disabled++
 				}
-				if off := skill.GetDisabledOn(); len(off) > 0 {
-					status += ", off in " + strings.Join(off, ", ")
+				for _, surface := range response.GetSurfaces() {
+					if surface.GetName() != "cli" && slices.Contains(skill.GetDisabledOn(), surface.GetName()) {
+						status += ", off in the " + strings.ToLower(surface.GetTitle())
+					}
 				}
 				if note := skill.GetCommandNote(); note != "" {
 					status += ". " + note
@@ -144,7 +148,7 @@ func list(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				if trust == "builtin" && skill.GetSource() == "hub" {
 					trust = "official"
 				}
-				fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", skill.GetName(), cmp.Or(skill.GetCategory(), "None"), sourceWord(skill.GetSource()),
+				fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", skill.GetName(), skill.GetCategoryTitle(), sourceWord(skill.GetSource()),
 					cmp.Or(strings.ToUpper(trust[:min(1, len(trust))])+trust[min(1, len(trust)):], "Unknown"), status)
 			}
 			if err := table.Flush(); err != nil {
@@ -158,6 +162,63 @@ func list(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 	}
 	command.Flags().StringVar(&source, "source", "all", "Source to list: all, hub, builtin or local")
 	command.Flags().BoolVar(&enabledOnly, "enabled-only", false, "List only the skills that are on")
+	return command
+}
+
+// Turns skills on or off as the switches of the page of Skills do, by the name of a skill or of a category, in every app or in one alone
+func turn(service skillsv1connect.SkillsServiceClient, on bool) *cobra.Command {
+	use, short, long := "disable <skill or category>...", "Turn skills off", "Turns off the skills named, by the name of a skill or of a category."
+	if on {
+		use, short, long = "enable <skill or category>...", "Turn skills on", "Turns on the skills named, by the name of a skill or of a category."
+	}
+	var app string
+	command := &cobra.Command{Use: use, Short: short, Long: long + " With --app, only in that app.", Example: "  icebath skills disable pdf-tools",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			response, err := service.List(cmd.Context(), &skillsv1.ListRequest{Scope: here(cmd.Context()), Surface: app})
+			if err != nil {
+				return err
+			}
+			var names, unknown []string
+			for _, word := range args {
+				matched := false
+				for _, skill := range response.GetSkills() {
+					category := strings.EqualFold(skill.GetCategory(), word) || strings.EqualFold(skill.GetCategoryTitle(), word)
+					switch {
+					case skill.GetName() == word:
+						names, matched = append(names, skill.GetName()), true
+					case category && skill.GetEssential():
+						// A skill that is always on stays so when its category is turned off
+						matched = true
+					case category:
+						names, matched = append(names, skill.GetName()), true
+					}
+				}
+				if !matched {
+					unknown = append(unknown, word)
+				}
+			}
+			c := cli.NewConsole(cmd)
+			if len(unknown) > 0 {
+				c.Failure("No skill or category is called " + strings.Join(unknown, ", ") + ". icebath skills list shows them.")
+				return cli.Exit(1)
+			}
+			if len(names) == 0 {
+				c.Info("Every skill named there is always on, because the agent's instructions point at it.")
+				return nil
+			}
+			turned, err := service.Toggle(cmd.Context(), &skillsv1.ToggleRequest{Scope: here(cmd.Context()), Names: names, Enabled: on, Surface: app})
+			if failure, ok := errors.AsType[*connect.Error](err); ok {
+				c.Failure(failure.Message())
+				return cli.Exit(1)
+			}
+			if err != nil {
+				return err
+			}
+			c.Success(turned.GetSaid())
+			return nil
+		}}
+	command.Flags().StringVar(&app, "app", "", "Turn them on or off in one app alone: tui for the terminal app, cli for the command line")
 	return command
 }
 
@@ -236,7 +297,7 @@ func configure(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				return cli.Exit(1)
 			}
 			out := cmd.OutOrStdout()
-			response, err := service.List(cmd.Context(), &skillsv1.ListRequest{Scope: here()})
+			response, err := service.List(cmd.Context(), &skillsv1.ListRequest{Scope: here(cmd.Context())})
 			if err != nil {
 				return err
 			}
@@ -343,7 +404,7 @@ func configure(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				if len(change.names) == 0 {
 					continue
 				}
-				if counts, err = service.Toggle(cmd.Context(), &skillsv1.ToggleRequest{Scope: here(), Names: change.names, Enabled: change.on, Surface: surface}); err != nil {
+				if counts, err = service.Toggle(cmd.Context(), &skillsv1.ToggleRequest{Scope: here(cmd.Context()), Names: change.names, Enabled: change.on, Surface: surface}); err != nil {
 					return err
 				}
 			}
@@ -366,12 +427,12 @@ func reset(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			if restore && !yes && !confirm(cmd, fmt.Sprintf("\nReplace your copy of %s with the built-in version? Your changes to it are deleted.", args[0])) {
 				return nil
 			}
-			response, err := service.Reset(cmd.Context(), &skillsv1.ResetRequest{Scope: here(), Name: args[0], Restore: restore})
+			response, err := service.Reset(cmd.Context(), &skillsv1.ResetRequest{Scope: here(cmd.Context()), Name: args[0], Restore: restore})
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, response.GetMessage())
+			fmt.Fprintln(out, "✓ "+response.GetMessage())
 			listed(out, "Copied", response.GetSynced().GetCopied())
 			listed(out, "Updated", response.GetSynced().GetUpdated())
 			return nil
@@ -390,7 +451,7 @@ func modified(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 		Long:  "Lists the built-in skills you changed. Updates leave these skills alone until you reset them.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			response, err := service.Modified(cmd.Context(), &skillsv1.ModifiedRequest{Scope: here()})
+			response, err := service.Modified(cmd.Context(), &skillsv1.ModifiedRequest{Scope: here(cmd.Context())})
 			if err != nil {
 				return err
 			}
@@ -432,7 +493,7 @@ func diff(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 		Long:  "Shows the changes between your copy of a built-in skill and the version that comes with icebath.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			response, err := service.Diff(cmd.Context(), &skillsv1.DiffRequest{Scope: here(), Name: args[0]})
+			response, err := service.Diff(cmd.Context(), &skillsv1.DiffRequest{Scope: here(cmd.Context()), Name: args[0]})
 			if err != nil {
 				return err
 			}
@@ -471,17 +532,17 @@ func optOut(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := cmd.OutOrStdout()
-			response, err := service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(), Out: true})
+			response, err := service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(cmd.Context()), Out: true})
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(out, response.GetMessage())
+			fmt.Fprintln(out, marked(response))
 			fmt.Fprintln(out, "The marker file is "+response.GetMarker()+".")
 			if !remove {
 				fmt.Fprintln(out, "The skills already copied stay. Run the command again with --remove to also delete the built-in skills you never edited.")
 				return nil
 			}
-			preview, err := service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(), Out: true, Dry: true})
+			preview, err := service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(cmd.Context()), Out: true, Dry: true})
 			if err != nil {
 				return err
 			}
@@ -498,7 +559,7 @@ func optOut(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				fmt.Fprintln(out, "No skill was deleted, and built-in skills are still not copied.")
 				return nil
 			}
-			response, err = service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(), Out: true, Remove: true})
+			response, err = service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(cmd.Context()), Out: true, Remove: true})
 			if err != nil {
 				return err
 			}
@@ -521,12 +582,12 @@ func optIn(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 		Long:  "Undoes opt-out, so icebath copies its built-in skills into this profile again. With --sync, opt-in copies them now.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			response, err := service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(), Sync: sync})
+			response, err := service.OptOut(cmd.Context(), &skillsv1.OptOutRequest{Scope: here(cmd.Context()), Sync: sync})
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, response.GetMessage())
+			fmt.Fprintln(out, marked(response))
 			if sync {
 				fmt.Fprintf(out, "✓ Copied %s into this profile.\n", strs.Count(len(response.GetSynced().GetCopied()), "built-in skill"))
 			}
@@ -549,7 +610,7 @@ func repair(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			if restore && !yes && !confirm(cmd, fmt.Sprintf("\nPut the official copy of %s in place? Copies of it you have are moved to a backup first.", args[0])) {
 				return nil
 			}
-			response, err := service.Repair(cmd.Context(), &skillsv1.RepairRequest{Scope: here(), Name: args[0], Restore: restore})
+			response, err := service.Repair(cmd.Context(), &skillsv1.RepairRequest{Scope: here(cmd.Context()), Name: args[0], Restore: restore})
 			if err != nil {
 				return err
 			}
@@ -571,7 +632,7 @@ func repair(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 
 func bundles(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 	show := func(cmd *cobra.Command) error {
-		response, err := service.Bundles(cmd.Context(), &skillsv1.BundlesRequest{Scope: here()})
+		response, err := service.Bundles(cmd.Context(), &skillsv1.BundlesRequest{Scope: here(cmd.Context())})
 		if err != nil {
 			return err
 		}
@@ -631,7 +692,7 @@ func bundles(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			if len(names) == 0 {
 				return errors.New("A bundle needs at least one skill.")
 			}
-			response, err := service.SaveBundle(cmd.Context(), &skillsv1.SaveBundleRequest{Scope: here(), Name: args[0], Skills: names, Description: description, Instruction: instruction, Overwrite: force})
+			response, err := service.SaveBundle(cmd.Context(), &skillsv1.SaveBundleRequest{Scope: here(cmd.Context()), Name: args[0], Skills: names, Description: description, Instruction: instruction, Overwrite: force})
 			if failure, ok := errors.AsType[*connect.Error](err); ok && failure.Code() == connect.CodeAlreadyExists {
 				return fmt.Errorf("%s Pass --force to replace it.", strings.TrimSuffix(failure.Message(), ".")+".")
 			}
@@ -662,7 +723,7 @@ func bundles(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			Long:  "Shows one bundle's slash command, description, file, skills and instruction.",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				response, err := service.Bundles(cmd.Context(), &skillsv1.BundlesRequest{Scope: here()})
+				response, err := service.Bundles(cmd.Context(), &skillsv1.BundlesRequest{Scope: here(cmd.Context())})
 				if err != nil {
 					return err
 				}
@@ -694,7 +755,7 @@ func bundles(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			Long:  "Deletes the bundle and its slash command. The skills it loaded stay installed.",
 			Args:  cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				response, err := service.DeleteBundle(cmd.Context(), &skillsv1.DeleteBundleRequest{Scope: here(), Name: args[0]})
+				response, err := service.DeleteBundle(cmd.Context(), &skillsv1.DeleteBundleRequest{Scope: here(cmd.Context()), Name: args[0]})
 				if err != nil {
 					return err
 				}
@@ -708,7 +769,7 @@ func bundles(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			Long:  "Reads the bundles folder again, for bundles you added or removed by hand, and reports what changed.",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, _ []string) error {
-				response, err := service.Reload(cmd.Context(), &skillsv1.ReloadRequest{Scope: here()})
+				response, err := service.Reload(cmd.Context(), &skillsv1.ReloadRequest{Scope: here(cmd.Context())})
 				if err != nil {
 					return err
 				}
@@ -735,4 +796,12 @@ func bundles(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 		},
 	)
 	return root
+}
+
+// What an opt out or opt in said, marked done when it changed anything
+func marked(response *skillsv1.OptOutResponse) string {
+	if response.GetChanged() {
+		return "✓ " + response.GetMessage()
+	}
+	return response.GetMessage()
 }

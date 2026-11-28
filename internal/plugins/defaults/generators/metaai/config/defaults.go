@@ -10,10 +10,11 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: generationconfig.ImageKey,
 		Title:  "Meta AI",
-		About:  "Images from Meta, with the Meta account in Providers",
+		About:  "Images from Meta's Muse model, with a Meta account",
 		Order:  80,
 		Settings: []config.Setting{
-			{Key: Model, Title: "Model", About: "The Meta model that makes images.", Default: "", Zero: "Muse Image 1.0", Env: []string{"META_IMAGE_MODEL"}},
+			{Key: Model, Title: "Model", About: "The Meta model that makes images.", Default: "", Zero: "Muse Image 1.0", Env: []string{"META_IMAGE_MODEL"},
+				Picks: generationconfig.ImageModelOf(Name)},
 		},
 	}})
 }

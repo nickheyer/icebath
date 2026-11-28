@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Kinds of item a vault keeps
@@ -63,14 +64,6 @@ func FieldName(key string) string {
 		return "postal code"
 	}
 	return strings.ReplaceAll(key, "_", " ")
-}
-
-// Words joined as a list is said: a, b and c
-func joined(words []string) string {
-	if len(words) < 2 {
-		return strings.Join(words, "")
-	}
-	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
 }
 
 // Fields an item of a kind can't go without
@@ -125,6 +118,15 @@ type Store struct {
 	dir string
 	// Where a new key goes, file or keychain
 	storage string
+	// Told where a new key was made, so the setting of where the key is follows it; nil tells nobody
+	made func(storage string)
+}
+
+// Tells where a new key was made
+func (s *Store) placed(storage string) {
+	if s.made != nil {
+		s.made(storage)
+	}
 }
 
 func (s *Store) vaultPath() string { return filepath.Join(s.dir, "vault.json.enc") }
@@ -186,7 +188,7 @@ func (s *Store) key() ([]byte, error) {
 		var unavailable *KeychainUnavailable
 		switch {
 		case errors.As(err, &unavailable):
-			why = "icebath can't reach the keychain of this computer here. " + sentence(unavailable.Msg)
+			why = "icebath can't reach the keychain of this computer here. " + strs.Full(unavailable.Msg)
 		case err != nil:
 			return nil, err
 		case len(key) > 0:
@@ -205,7 +207,7 @@ func (s *Store) key() ([]byte, error) {
 
 func (s *Store) missingKey(why string) string {
 	return fmt.Sprintf("icebath can't find the key of the vault. %s The vault file vault.json.enc in %s is untouched.\n", why, s.dir) +
-		"If this profile came from another computer, run icebath vault key migrate --to file there and copy its vault.key next to " +
+		"If this profile came from another computer, run icebath vault key move --to file there and copy its vault.key next to " +
 		"vault.json.enc. If the keychain entry was deleted, bring it back from a backup of the keychain. icebath vault key shows where the " +
 		"key should be. To start over, delete vault.json.enc, and the items saved in it are lost."
 }
@@ -213,19 +215,6 @@ func (s *Store) missingKey(why string) string {
 func (s *Store) conflictingKey() string {
 	return s.keyPath() + " does not open vault.json.enc, so the key was not moved and nothing was deleted. If the key of the vault is in the " +
 		"keychain, move this vault.key somewhere else and run icebath vault key again."
-}
-
-// Text of a keychain failure as the end of a sentence
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	text = strings.ToUpper(text[:1]) + text[1:]
-	if !strings.HasSuffix(text, ".") && !strings.HasSuffix(text, "!") && !strings.HasSuffix(text, "?") {
-		text += "."
-	}
-	return text
 }
 
 // New key in the keychain when the settings ask for it and it is reachable, else in the 0600 key file
@@ -239,6 +228,7 @@ func (s *Store) newKey() ([]byte, error) {
 			if err := saveNewRef(s.refPath(), ref); err != nil {
 				return nil, err
 			}
+			s.placed("keychain")
 			return key, nil
 		}
 	}
@@ -248,6 +238,7 @@ func (s *Store) newKey() ([]byte, error) {
 	if err := fsx.Write(s.keyPath(), key, 0o600); err != nil {
 		return nil, err
 	}
+	s.placed("file")
 	return key, nil
 }
 
@@ -354,7 +345,7 @@ func (s *Store) toKeychain() error {
 			}
 			var unavailable *KeychainUnavailable
 			if errors.As(err, &unavailable) {
-				return &Error{"icebath can't read the vault key from the keychain of this computer. " + sentence(unavailable.Msg)}
+				return &Error{"icebath can't read the vault key from the keychain of this computer. " + strs.Full(unavailable.Msg)}
 			}
 			if err != nil {
 				return err
@@ -368,7 +359,7 @@ func (s *Store) toKeychain() error {
 			return &Error{s.missingKey("The file " + filepath.Base(s.keyPath()) + " is missing.")}
 		}
 		if _, err := osKeyring(); err != nil {
-			return &Error{"icebath can't use the keychain of this computer. " + sentence(err.Error())}
+			return &Error{"icebath can't use the keychain of this computer. " + strs.Full(err.Error())}
 		}
 		return nil
 	}
@@ -394,11 +385,11 @@ func (s *Store) toKeychain() error {
 		if fresh {
 			deleteKey(ref)
 		}
-		return &Error{fmt.Sprintf("The vault key could not be moved to the keychain, so it stays in %s. %s", s.keyPath(), sentence(err.Error()))}
+		return &Error{fmt.Sprintf("The vault key could not be moved to the keychain, so it stays in %s. %s", s.keyPath(), strs.Full(err.Error()))}
 	}
 	if fresh {
 		if err := saveNewRef(s.refPath(), ref); err != nil {
-			return &Error{fmt.Sprintf("%s could not be saved, so the key stays in %s. %s", filepath.Base(s.refPath()), s.keyPath(), sentence(err.Error()))}
+			return &Error{fmt.Sprintf("%s could not be saved, so the key stays in %s. %s", filepath.Base(s.refPath()), s.keyPath(), strs.Full(err.Error()))}
 		}
 	}
 	return removeFile(s.keyPath())
@@ -430,7 +421,7 @@ func (s *Store) toFile() error {
 	}
 	key, err := loadKey(ref)
 	if err != nil {
-		return &Error{"icebath can't read the vault key from the keychain of this computer. " + sentence(err.Error())}
+		return &Error{"icebath can't read the vault key from the keychain of this computer. " + strs.Full(err.Error())}
 	}
 	if len(key) == 0 || !s.opens(key) {
 		return &Error{s.missingKey(fmt.Sprintf("The keychain entry %q does not hold the key of this vault.", ref.Account))}
@@ -502,75 +493,89 @@ func (s *Store) write(records []record) error {
 	return fsx.Write(s.vaultPath(), f.encrypt(data), 0o600)
 }
 
-// Saves an item: a login keeps its identifier as metadata and only its password and authenticator key secret, a card or an address only
-// the fields of its kind
-func (s *Store) Add(kind, label, origin string, secret map[string]string) (Item, error) {
+// Record of an item from what it holds: a login keeps its identifier as metadata and only its password and authenticator key secret, a card
+// or an address only the fields of its kind. Every item needs the address of the site it is filled on, or it is never filled
+func build(kind, label, origin string, secret map[string]string) (record, error) {
 	if !slices.Contains(Kinds, kind) {
-		return Item{}, &Error{fmt.Sprintf("The vault keeps logins, payment cards and addresses, not “%s”.", kind)}
+		return record{}, &Error{fmt.Sprintf("The vault keeps logins, payment cards and addresses, not “%s”.", kind)}
 	}
 	if label = strings.TrimSpace(label); label == "" {
-		return Item{}, &Error{"Give the item a name."}
+		return record{}, &Error{"Give the item a name."}
 	}
-	rec := record{ID: "vault_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12], Kind: kind, Label: label,
-		Created: time.Now().UTC().Format("2006-01-02T15:04:05.000000+00:00")}
+	if origin = strings.TrimSpace(origin); origin == "" {
+		return record{}, &Error{"An item needs the address of the site it is filled on, such as https://github.com."}
+	}
+	normal, err := NormalizeOrigin(origin)
+	if err != nil {
+		return record{}, err
+	}
+	rec := record{Kind: kind, Label: label, Origin: &normal}
 	if kind == "login" {
-		if origin == "" {
-			return Item{}, &Error{"A login needs the address of the site it is for, such as https://github.com."}
-		}
-		normal, err := NormalizeOrigin(origin)
-		if err != nil {
-			return Item{}, err
-		}
 		idType := secret["identifier_type"]
 		if !slices.Contains(IdentifierTypes, idType) {
-			return Item{}, &Error{"A login signs in with an email, a phone number or a username, not “" + idType + "”."}
+			return record{}, &Error{"A login signs in with an email, a phone number or a username, not “" + idType + "”."}
 		}
 		identifier, password := strings.TrimSpace(secret["identifier"]), secret["password"]
 		if identifier == "" || password == "" {
-			return Item{}, &Error{"A login needs what you sign in with and a password."}
+			return record{}, &Error{"A login needs what you sign in with and a password."}
 		}
 		seed, err := NormalizeOTP(secret["otp_secret"])
 		if err != nil {
-			return Item{}, err
+			return record{}, err
 		}
-		rec.Origin, rec.IdentifierType, rec.Identifier = &normal, &idType, &identifier
+		rec.IdentifierType, rec.Identifier = &idType, &identifier
 		rec.Secret = map[string]string{"password": password}
 		if seed != "" {
 			rec.Secret["otp_secret"] = seed
 		}
-	} else {
-		fields := AddressFields
-		if kind == "payment" {
-			fields = PaymentFields
-		}
-		rec.Secret = map[string]string{}
-		for _, f := range fields {
-			if value := secret[f[0]]; strings.TrimSpace(value) != "" {
-				rec.Secret[f[0]] = value
-			}
-		}
-		var missing []string
-		for _, f := range required[kind] {
-			if _, ok := rec.Secret[f]; !ok {
-				missing = append(missing, f)
-			}
-		}
-		if len(missing) > 0 {
-			names := make([]string, len(missing))
-			for i, key := range missing {
-				names[i] = FieldName(key)
-			}
-			return Item{}, &Error{fmt.Sprintf("Fill in the %s.", joined(names))}
-		}
-		if origin != "" {
-			normal, err := NormalizeOrigin(origin)
-			if err != nil {
-				return Item{}, err
-			}
-			rec.Origin = &normal
+		return rec, nil
+	}
+	fields := AddressFields
+	if kind == "payment" {
+		fields = PaymentFields
+	}
+	rec.Secret = map[string]string{}
+	for _, f := range fields {
+		if value := secret[f[0]]; strings.TrimSpace(value) != "" {
+			rec.Secret[f[0]] = value
 		}
 	}
-	err := s.locked(func() error {
+	var missing []string
+	for _, f := range required[kind] {
+		if _, ok := rec.Secret[f]; !ok {
+			missing = append(missing, FieldName(f))
+		}
+	}
+	if len(missing) > 0 {
+		return record{}, &Error{fmt.Sprintf("Fill in the %s.", strs.And(missing))}
+	}
+	return rec, nil
+}
+
+// What a record holds by field, its metadata with its secret: what build makes it from
+func (r record) values() map[string]string {
+	out := map[string]string{}
+	for key, value := range r.Secret {
+		out[key] = value
+	}
+	if r.IdentifierType != nil {
+		out["identifier_type"] = *r.IdentifierType
+	}
+	if r.Identifier != nil {
+		out["identifier"] = *r.Identifier
+	}
+	return out
+}
+
+// Saves a new item, checked as build checks it
+func (s *Store) Add(kind, label, origin string, secret map[string]string) (Item, error) {
+	rec, err := build(kind, label, origin, secret)
+	if err != nil {
+		return Item{}, err
+	}
+	rec.ID = "vault_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	rec.Created = time.Now().UTC().Format("2006-01-02T15:04:05.000000+00:00")
+	err = s.locked(func() error {
 		records, err := s.read()
 		if err != nil {
 			return err
@@ -581,6 +586,88 @@ func (s *Store) Add(kind, label, origin string, secret map[string]string) (Item,
 		return Item{}, err
 	}
 	return rec.item(), nil
+}
+
+// Changes one field of an item, its name as label, its site as origin, or a field of its kind, empty taking an optional field away; the
+// item is checked whole again as build checks a new one
+func (s *Store) Change(id, field, value string) (Item, error) {
+	var changed record
+	err := s.locked(func() error {
+		records, err := s.read()
+		if err != nil {
+			return err
+		}
+		at := slices.IndexFunc(records, func(rec record) bool { return rec.ID == id })
+		if at < 0 {
+			return &Error{fmt.Sprintf("The vault has no item with the handle %q.", id)}
+		}
+		was := records[at]
+		label, origin, values := was.Label, "", was.values()
+		if was.Origin != nil {
+			origin = *was.Origin
+		}
+		switch {
+		case field == "label":
+			label = value
+		case field == "origin":
+			origin = value
+		case slices.ContainsFunc(KindFields(was.Kind), func(f Field) bool { return f.Key == field }):
+			values[field] = value
+		default:
+			return &Error{fmt.Sprintf("A %s has no field %q.", kindName(was.Kind), field)}
+		}
+		changed, err = build(was.Kind, label, origin, values)
+		if err != nil {
+			return err
+		}
+		changed.ID, changed.Created = was.ID, was.Created
+		records[at] = changed
+		return s.write(records)
+	})
+	if err != nil {
+		return Item{}, err
+	}
+	return changed.item(), nil
+}
+
+// Kind of item as a sentence says it
+func kindName(kind string) string {
+	if kind == "payment" {
+		return "card"
+	}
+	return kind
+}
+
+// One field of an item as its page shows it: its value when it is no secret, else only whether one is kept
+type Shown struct {
+	Field
+	Value string
+	Set   bool
+}
+
+// Fields of an item of its kind, the secret ones without their values
+func (s *Store) Fields(id string) ([]Shown, error) {
+	var out []Shown
+	err := s.locked(func() error {
+		records, err := s.read()
+		if err != nil {
+			return err
+		}
+		at := slices.IndexFunc(records, func(rec record) bool { return rec.ID == id })
+		if at < 0 {
+			return &Error{fmt.Sprintf("The vault has no item with the handle %q.", id)}
+		}
+		values := records[at].values()
+		for _, field := range KindFields(records[at].Kind) {
+			shown := Shown{Field: field, Set: values[field.Key] != ""}
+			if !field.Secret {
+				shown.Value = values[field.Key]
+			}
+			out = append(out, shown)
+		}
+		return nil
+	})
+	return out, err
 }
 
 // Every item, never a secret

@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/internal/plugins/defaults/speech/piper/config"
 	"github.com/nickheyer/icebath/internal/speech"
 	"github.com/nickheyer/icebath/internal/speech/sherpa"
-	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 func Register(registry *speech.Registry) {
@@ -46,12 +46,12 @@ type piper struct {
 
 // Files of the voice setting: a voice file you have, then one of the name in the voices folder, then the catalog's
 func resolve(ctx context.Context, job *speech.Job, name string) (voice, error) {
-	if candidate := terminal.ExpandUser(name); strings.EqualFold(filepath.Ext(candidate), ".onnx") && exists(candidate) {
+	if candidate := fsx.ExpandHome(name); strings.EqualFold(filepath.Ext(candidate), ".onnx") && exists(candidate) {
 		return adopt(ctx, job.Speech, candidate)
 	}
 	folder := filepath.Join(job.Config.ProfileDir(job.Config.Profile()), "cache", "piper-voices")
 	if own := job.Text(config.VoicesDir, ""); own != "" {
-		folder = terminal.ExpandUser(own)
+		folder = fsx.ExpandHome(own)
 	}
 	if local := filepath.Join(folder, name+".onnx"); exists(local) {
 		return adopt(ctx, job.Speech, local)
@@ -68,8 +68,8 @@ func exists(path string) bool {
 // The voice of the settings loaded into the engine, the scales that are set over its own; refused where the engine has no build
 func (p *piper) load(ctx context.Context, job *speech.Job) (*sherpa.Voice, error) {
 	if !sherpa.Supported() {
-		return nil, speech.Absent("Piper provider selected but the local speech engine has no build for this platform. Start 'icebath', type " +
-			"'/voice setup' and choose another provider.")
+		return nil, speech.Absent("Piper can't run on this computer, because the local speech engine has no build for it. Pick another service in " +
+			"Settings › Voice › Text to speech.")
 	}
 	files, err := resolve(ctx, job, job.Text(config.Voice, config.DefaultVoice))
 	if err != nil {

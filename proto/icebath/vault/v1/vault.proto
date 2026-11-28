@@ -9,6 +9,10 @@ service VaultService {
   rpc List(ListRequest) returns (ListResponse);
   // Saves an item in the profile's own vault
   rpc Add(AddRequest) returns (AddResponse);
+  // One item with the fields its page shows, the secret ones never with their values
+  rpc Item(ItemRequest) returns (ItemResponse);
+  // Changes one field of an item of the profile's own vault
+  rpc Change(ChangeRequest) returns (AddResponse);
   // Removes an item of the profile's own vault
   rpc Remove(RemoveRequest) returns (RemoveResponse);
   // Starts or stops using a password manager
@@ -24,6 +28,9 @@ service VaultService {
 message ListRequest {
   // Profile whose vault is read, the one in use when empty
   string profile = 1;
+  // Only the items of the profile's own vault and the names of the password managers, with no item of a manager, no state and no key,
+  // which take time to find
+  bool bare = 2;
 }
 
 // One item the agent may fill in, never its secret
@@ -41,12 +48,13 @@ message Item {
   bool otp = 8;
 }
 
-// One password manager: on, off or missing, and whether it waits to be unlocked
+// One password manager: on, off or missing, whether it waits to be unlocked, and whether it works with no unlock at all
 message Source {
   string name = 1;
   string display_name = 2;
   string state = 3;
   bool locked = 4;
+  bool ready = 5;
 }
 
 // Where the key of the profile's own vault lives: file, keychain, or none before the first item
@@ -55,7 +63,7 @@ message Key {
   string path = 2;
   string service = 3;
   string account = 4;
-  // Where a new vault's key goes, file or keychain
+  // Where the first key is made while there is none, file or keychain
   string configured = 5;
   // Keychain of this computer, or why there is none
   string keychain = 6;
@@ -96,6 +104,33 @@ message AddRequest {
 
 message AddResponse {
   Item item = 1;
+}
+
+message ItemRequest {
+  string profile = 1;
+  string handle = 2;
+}
+
+// One field of an item as its page shows it: its value when it is no secret, else only whether one is kept
+message Value {
+  Field field = 1;
+  string value = 2;
+  bool set = 3;
+}
+
+message ItemResponse {
+  Item item = 1;
+  // Every field of its kind for an item of the profile's own vault, none for one of a password manager
+  repeated Value values = 2;
+}
+
+message ChangeRequest {
+  string profile = 1;
+  string handle = 2;
+  // label for its name, origin for its site, else a field of its kind
+  string field = 3;
+  // Empty takes an optional field away
+  string value = 4;
 }
 
 message RemoveRequest {

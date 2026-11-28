@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/internal/cli"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/botdesktop/v1/botdesktopv1connect"
 	computerusev1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/computeruse/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/computeruse/v1/computerusev1connect"
@@ -86,7 +88,7 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 		Long:  "Installs the version of cua-driver that icebath pins, or repairs the copy you have, on macOS, Windows or Linux.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, err := service.Install(cmd.Context(), &computerusev1.InstallRequest{Profile: profile, Color: painted(cmd)})
+			s, err := service.Install(cmd.Context(), &computerusev1.InstallRequest{Profile: named(cmd, profile), Color: painted(cmd)})
 			return follow(cmd, s, err)
 		},
 	}
@@ -97,7 +99,7 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 		Long:  "Checks the cua-driver that icebath picked and whether it works the way icebath needs.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, err := service.Status(cmd.Context(), &computerusev1.StatusRequest{Profile: profile})
+			s, err := service.Status(cmd.Context(), &computerusev1.StatusRequest{Profile: named(cmd, profile)})
 			return follow(cmd, s, err)
 		},
 	}
@@ -109,7 +111,7 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 		Long:  "Runs the health report of cua-driver and shows the result of each check. --include and --skip pick checks by name.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, err := service.Doctor(cmd.Context(), &computerusev1.DoctorRequest{Profile: profile, Include: include, Skip: skip, Json: doctorJSON,
+			s, err := service.Doctor(cmd.Context(), &computerusev1.DoctorRequest{Profile: named(cmd, profile), Include: include, Skip: skip, Json: doctorJSON,
 				Color: painted(cmd)})
 			return follow(cmd, s, err)
 		},
@@ -131,7 +133,7 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 		Long:  "Shows whether cua-driver has the Accessibility and Screen Recording permissions, without changing anything.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, err := service.Permissions(cmd.Context(), &computerusev1.PermissionsRequest{Profile: profile, Json: permissionsJSON})
+			s, err := service.Permissions(cmd.Context(), &computerusev1.PermissionsRequest{Profile: named(cmd, profile), Json: permissionsJSON})
 			return follow(cmd, s, err)
 		},
 	}
@@ -142,11 +144,16 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 		Long:  "Opens the macOS dialogs that grant Accessibility and Screen Recording to CuaDriver.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, err := service.Grant(cmd.Context(), &computerusev1.GrantRequest{Profile: profile})
+			s, err := service.Grant(cmd.Context(), &computerusev1.GrantRequest{Profile: named(cmd, profile)})
 			return follow(cmd, s, err)
 		},
 	}
 	permissions.AddCommand(permissionsStatus, grant)
 	root.AddCommand(install, status, doctor, permissions, screen(botdesktopv1connect.NewDesktopServiceClient(conn), &profile))
 	return []*cobra.Command{root}
+}
+
+// Profile a command acts for: the one its --profile names, else the one -p picked for icebath, else the one in use
+func named(cmd *cobra.Command, flag string) string {
+	return cmp.Or(flag, picked.Picked(cmd.Context()))
 }

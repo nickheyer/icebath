@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -52,9 +51,9 @@ func (r registrant) Backends() []terminal.Backend {
 		Cwd:       workspace,
 		Secrets:   []string{"VERCEL_OIDC_TOKEN", "VERCEL_TOKEN", "VERCEL_PROJECT_ID", "VERCEL_TEAM_ID"},
 		Check:     check,
-		Setup:     setup,
 		Doctor:    doctor,
 		Prepare:   prepare,
+		Readies:   "Fills in Project ID and Team ID from the nearest .vercel/project.json when they are not set, then starts and stops a test sandbox.",
 		Create: func(ctx context.Context, spec *terminal.Spec) (terminal.Environment, error) {
 			return create(ctx, spec, r.skills)
 		},
@@ -72,7 +71,7 @@ var tuple = []struct{ key, env, title string }{
 }
 
 // Where the Vercel settings are, as a sentence names them
-const where = "in /settings under Terminal › Vercel Sandbox"
+const where = "on the Vercel Sandbox page of /sandbox"
 
 // Credentials from the OIDC token's claims, else the access token with its project and team
 func credentialsOf(cfg *config.Config) (credentials, error) {
@@ -111,14 +110,6 @@ type auth struct {
 	details []string
 }
 
-// Titles as one list, the last after "and"
-func titles(names []string) string {
-	if len(names) < 2 {
-		return strings.Join(names, "")
-	}
-	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
-}
-
 func describe(cfg *config.Config) auth {
 	var present, missing []string
 	for _, field := range tuple {
@@ -131,7 +122,7 @@ func describe(cfg *config.Config) auth {
 	if setting(cfg, vercelconfig.OIDCToken) != "" {
 		details := []string{"OIDC tokens are for development only. Use an access token for deployments and work that runs a long time."}
 		if len(present) > 0 {
-			details = append(details, titles(present)+" are set too, and the OIDC token wins over them.")
+			details = append(details, strs.And(present)+" are set too, and the OIDC token wins over them.")
 		}
 		return auth{ok: true, label: "Signed in with the OIDC token.", details: details}
 	}
@@ -139,7 +130,7 @@ func describe(cfg *config.Config) auth {
 		return auth{ok: true, label: "Signed in with the access token, project ID and team ID."}
 	}
 	if len(present) > 0 {
-		return auth{label: "Sign-in is incomplete.", details: []string{"Set: " + titles(present) + ".", "Not set: " + titles(missing) + ".",
+		return auth{label: "Sign-in is incomplete.", details: []string{"Set: " + strs.And(present) + ".", "Not set: " + strs.And(missing) + ".",
 			"Set Access token, Project ID and Team ID together " + where + "."}}
 	}
 	return auth{label: "Sign-in is not set up.", details: []string{"Set Access token, Project ID and Team ID together " + where + ".",
@@ -156,7 +147,7 @@ func check(cfg *config.Config) error {
 		return err
 	}
 	if resources.Disk != 0 && resources.Disk != defaultDisk {
-		return fmt.Errorf("Vercel Sandbox does not take a custom disk size, and Sandbox disk in /settings under Terminal is %s. Set it back to %s.",
+		return fmt.Errorf("Vercel Sandbox does not take a custom disk size, and Sandbox disk, under Advanced in /sandbox, is %s. Set it back to %s.",
 			strs.Counted(float64(resources.Disk), "MB"), strs.Counted(defaultDisk, "MB"))
 	}
 	if setting(cfg, vercelconfig.OIDCToken) != "" {
@@ -180,30 +171,6 @@ func check(cfg *config.Config) error {
 		"one-off local development.")
 }
 
-func setup(cfg *config.Config) []string {
-	lines := []string{
-		"Cloud sandboxes in small virtual machines, whose files Vercel can keep between sessions.",
-		"Set Image " + where + " to an image Vercel manages or to a VCR repository, with an optional :tag. The default is " + vercelconfig.DefaultImage + ".",
-		"A kept sandbox brings back its files only. Programs that were running do not carry on after the sandbox is made again.",
-		"Use a long-lived Vercel access token with its project and team: set Access token, Project ID and Team ID together " + where + ", or " +
-			"export VERCEL_TOKEN, VERCEL_PROJECT_ID and VERCEL_TEAM_ID. For one-off local development, OIDC token or VERCEL_OIDC_TOKEN works instead.",
-		"Preparing Vercel Sandbox on this screen fills in Project ID and Team ID from the nearest .vercel/project.json when they are not set, " +
-			"then starts and stops a sandbox to prove it works.",
-	}
-	if runtime := setting(cfg, vercelconfig.Runtime); runtime != "" {
-		lines = append(lines, fmt.Sprintf("Runtime is set to %s, which Vercel is phasing out and which wins over Image. Clear Runtime to use the image.",
-			strconv.Quote(runtime)))
-	}
-	if resources, err := terminal.SandboxResources(cfg); err == nil && resources.Disk != 0 && resources.Disk != defaultDisk {
-		lines = append(lines, "Vercel Sandbox does not take a custom disk size. Set Sandbox disk in /settings under Terminal back to "+
-			strs.Counted(defaultDisk, "MB")+".")
-	}
-	if linked, err := linkedProject(); err == nil && len(linked) > 0 {
-		lines = append(lines, "The nearest .vercel/project.json names "+describeLinked(linked)+".")
-	}
-	return lines
-}
-
 func describeLinked(linked map[string]string) string {
 	var parts []string
 	if id := linked["projectId"]; id != "" {
@@ -212,36 +179,38 @@ func describeLinked(linked map[string]string) string {
 	if id := linked["orgId"]; id != "" {
 		parts = append(parts, "the team ID "+id)
 	}
-	return strings.Join(parts, " and ")
+	return strs.And(parts)
 }
 
+// The image or runtime, the disk, how Vercel is signed in to, the link file of the folder and whether sandbox files are kept
 func doctor(cfg *config.Config) []terminal.Check {
-	var rows []terminal.Check
-	supported := strings.Join(vercelconfig.Runtimes, ", ")
-	switch runtime := setting(cfg, vercelconfig.Runtime); {
-	case runtime == "":
-		rows = append(rows, terminal.Check{OK: true, Label: "Sandbox image:", Detail: cmp.Or(setting(cfg, vercelconfig.Image), vercelconfig.DefaultImage)})
-	case slices.Contains(vercelconfig.Runtimes, runtime):
-		rows = append(rows, terminal.Check{OK: true, Label: "Runtime:", Detail: runtime})
-	default:
-		rows = append(rows, terminal.Check{OK: false, Label: "Vercel Sandbox has no runtime " + strconv.Quote(runtime) + ".", Detail: "Use " + supported + "."})
+	var checks []terminal.Check
+	if runtime := setting(cfg, vercelconfig.Runtime); runtime != "" && !slices.Contains(vercelconfig.Runtimes, runtime) {
+		checks = append(checks, terminal.Check{Label: "Runtime name", State: "Not known", Detail: "Vercel Sandbox has no runtime " +
+			strconv.Quote(runtime) + ".", Fix: "Set Runtime to " + strings.Join(vercelconfig.Runtimes, ", ") + ", or clear it.", Setting: vercelconfig.Runtime})
 	}
 	if resources, err := terminal.SandboxResources(cfg); err == nil && (resources.Disk == 0 || resources.Disk == defaultDisk) {
-		rows = append(rows, terminal.Check{OK: true, Label: "Sandbox disk is the size Vercel gives."})
+		checks = append(checks, terminal.Check{OK: true, Label: "Disk", State: "Vercel's size"})
 	} else {
-		rows = append(rows, terminal.Check{OK: false, Label: "Vercel Sandbox does not take a custom disk size.",
-			Detail: "Set Sandbox disk in /settings under Terminal back to " + strs.Counted(defaultDisk, "MB") + "."})
+		checks = append(checks, terminal.Check{Label: "Disk", State: "Not allowed", Detail: "Vercel Sandbox does not take a custom disk size.",
+			Fix: "Set Sandbox disk, under Advanced in Sandbox, back to " + strs.Counted(defaultDisk, "MB") + "."})
 	}
 	a := describe(cfg)
-	rows = append(rows, terminal.Check{OK: a.ok, Label: a.label})
-	for _, line := range a.details {
-		rows = append(rows, terminal.Check{OK: true, Label: line})
+	signIn := terminal.Check{OK: a.ok, Label: "Sign-in", State: "Signed in", Detail: strings.Join(append([]string{a.label}, a.details...), " ")}
+	if !a.ok {
+		signIn.State, signIn.Fix, signIn.Setting = "Not signed in", "Set Access token, Project ID and Team ID together, or export VERCEL_TOKEN, "+
+			"VERCEL_PROJECT_ID and VERCEL_TEAM_ID. For one-off local development, OIDC token works instead.", vercelconfig.Token
+	}
+	checks = append(checks, signIn)
+	if linked, err := linkedProject(); err == nil && len(linked) > 0 {
+		checks = append(checks, terminal.Check{OK: true, Label: "Linked project", State: "Found", Detail: "The nearest .vercel/project.json names " +
+			describeLinked(linked) + "."})
 	}
 	if cfg.GetBool(terminalconfig.ContainerPersistent) {
-		return append(rows, terminal.Check{OK: true, Label: "Sandbox files are kept.", Detail: "Programs that were running do not carry on after the " +
-			"sandbox is made again."})
+		return append(checks, terminal.Check{OK: true, Label: "Sandbox files", State: "Kept", Detail: "A kept sandbox brings back its files only. " +
+			"Programs that were running do not carry on after the sandbox is made again."})
 	}
-	return append(rows, terminal.Check{OK: true, Label: "Sandbox files are not kept.", Detail: "They go when the sandbox does."})
+	return append(checks, terminal.Check{OK: true, Label: "Sandbox files", State: "Not kept", Detail: "They go when the sandbox does."})
 }
 
 // Fills the project and team IDs the nearest .vercel/project.json links when unset, then starts a sandbox and stops it

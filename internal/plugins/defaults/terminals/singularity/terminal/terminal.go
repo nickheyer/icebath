@@ -61,9 +61,9 @@ func (r *registrant) Backends() []terminal.Backend {
 		Home:      home,
 		Cwd:       "~",
 		Check:     check,
-		Setup:     setup,
 		Doctor:    doctor,
 		Prepare:   r.prepare,
+		Readies:   "Builds the .sif image that sandboxes start from, so the first command waits for no build.",
 		Create:    r.create,
 	}}
 }
@@ -91,7 +91,7 @@ func check(cfg *config.Config) error {
 		if selected(cfg) {
 			slog.Error("Singularity backend selected but neither 'apptainer' nor 'singularity' is on PATH. Install Apptainer: " + installURL)
 		}
-		return fmt.Errorf("Neither apptainer nor singularity is on your PATH. Install Apptainer from %s.", installURL)
+		return &terminal.MissingError{Reason: "Neither apptainer nor singularity is on your PATH. Install Apptainer from " + installURL + "."}
 	}
 	argv := []string{exe, "--version"}
 	captured, err := terminal.Capture(context.Background(), argv, 5*time.Second, nil)
@@ -137,33 +137,23 @@ func available(ctx context.Context) (string, error) {
 	return exe, nil
 }
 
-// The program found or where to install it, and the image instances start from
-func setup(cfg *config.Config) []string {
-	line := "Neither apptainer nor singularity is on your PATH. Install Apptainer from " + installURL + "."
-	if exe := program(); exe != "" {
-		line = "Found " + filepath.Base(exe) + "."
+// The program found, or where to install it, and the image sandboxes start from
+func doctor(cfg *config.Config) []terminal.Check {
+	exe := program()
+	if exe == "" {
+		return []terminal.Check{{Label: "Apptainer", State: "Not installed", Detail: "Neither apptainer nor singularity is on your PATH.",
+			Fix: "Install Apptainer from " + installURL + "."}}
 	}
-	return []string{line, "Sandboxes start from the image " + configured(cfg) + ". Change it with Apptainer image in /settings under Terminal › " +
-		"Singularity/Apptainer."}
-}
-
-// The program found, or where to install it
-func doctor(*config.Config) []terminal.Check {
-	if exe := program(); exe != "" {
-		return []terminal.Check{{OK: true, Label: "Found " + filepath.Base(exe) + "."}}
-	}
-	return []terminal.Check{{Label: "Neither apptainer nor singularity is on your PATH.", Detail: "Install Apptainer from " + installURL + "."}}
+	return []terminal.Check{{OK: true, Label: "Apptainer", State: "Installed", Detail: "Found " + exe + "."}}
 }
 
 // Finds the program and builds the .sif image instances start from
 func (r *registrant) prepare(ctx context.Context, cfg *config.Config, say func(line string)) error {
-	for _, line := range setup(cfg) {
-		say(line)
-	}
 	exe, err := available(ctx)
 	if err != nil {
 		return err
 	}
+	say("Found " + filepath.Base(exe) + ". Sandboxes start from the image " + configured(cfg) + ".")
 	image, err := r.sif(ctx, cfg, reference(configured(cfg)), exe, say)
 	if err != nil {
 		return err

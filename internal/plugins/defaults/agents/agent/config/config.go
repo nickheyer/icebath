@@ -89,6 +89,9 @@ const (
 	GuidanceNever  = "never"
 )
 
+// Words of a chat taking the account that its provider's own Account used picks
+const ProviderChoice = "Same as provider"
+
 // Values of busy_input_mode
 const (
 	BusyQueue     = "queue"

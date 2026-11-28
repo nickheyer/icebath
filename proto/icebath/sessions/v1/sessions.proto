@@ -46,6 +46,8 @@ service SessionService {
   rpc RetitleSkills(RetitleSkillsRequest) returns (RetitleSkillsResponse);
   // Tells the watcher each time sessions are made, changed or deleted
   rpc Watch(WatchRequest) returns (stream WatchResponse);
+  // What icebath has to tell you once, such as a session database it set aside; each is handed out once
+  rpc Notices(NoticesRequest) returns (NoticesResponse);
 }
 
 enum Role {
@@ -633,6 +635,13 @@ message WatchRequest {}
 message WatchResponse {
   // Sessions made, changed or deleted, every session when empty
   repeated string ids = 1;
+}
+
+message NoticesRequest {}
+
+message NoticesResponse {
+  // Full sentences, oldest first
+  repeated string notices = 1;
 }
 
 message RetitleSkillsRequest {

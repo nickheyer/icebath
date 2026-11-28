@@ -16,6 +16,9 @@ const (
 	OutputCompression = Key + ".output_compression"
 	Seed              = Key + ".seed"
 	Count             = Key + ".count"
+
+	VideoKey   = generationconfig.VideoKey + ".openrouter"
+	VideoModel = VideoKey + ".model"
 )
 
 const Name = "openrouter"

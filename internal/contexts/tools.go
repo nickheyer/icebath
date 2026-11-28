@@ -53,3 +53,8 @@ func (t engineTools) handle(kind Kind) tools.Handler {
 		return handler.Handle(ctx, call)
 	}
 }
+
+// The group of the tools of the engines of long sessions, whose options are the area of long sessions
+func (t engineTools) Groups() []tools.Group {
+	return []tools.Group{{Title: "Long sessions", Area: contextsconfig.Key, Order: 160}}
+}

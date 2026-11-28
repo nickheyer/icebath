@@ -24,7 +24,10 @@ const (
 type ListRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Profile whose vault is read, the one in use when empty
-	Profile       string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Profile string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Only the items of the profile's own vault and the names of the password managers, with no item of a manager, no state and no key,
+	// which take time to find
+	Bare          bool `protobuf:"varint,2,opt,name=bare,proto3" json:"bare,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -64,6 +67,13 @@ func (x *ListRequest) GetProfile() string {
 		return x.Profile
 	}
 	return ""
+}
+
+func (x *ListRequest) GetBare() bool {
+	if x != nil {
+		return x.Bare
+	}
+	return false
 }
 
 // One item the agent may fill in, never its secret
@@ -170,13 +180,14 @@ func (x *Item) GetOtp() bool {
 	return false
 }
 
-// One password manager: on, off or missing, and whether it waits to be unlocked
+// One password manager: on, off or missing, whether it waits to be unlocked, and whether it works with no unlock at all
 type Source struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	State         string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
 	Locked        bool                   `protobuf:"varint,4,opt,name=locked,proto3" json:"locked,omitempty"`
+	Ready         bool                   `protobuf:"varint,5,opt,name=ready,proto3" json:"ready,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -239,6 +250,13 @@ func (x *Source) GetLocked() bool {
 	return false
 }
 
+func (x *Source) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
 // Where the key of the profile's own vault lives: file, keychain, or none before the first item
 type Key struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
@@ -246,7 +264,7 @@ type Key struct {
 	Path    string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	Service string                 `protobuf:"bytes,3,opt,name=service,proto3" json:"service,omitempty"`
 	Account string                 `protobuf:"bytes,4,opt,name=account,proto3" json:"account,omitempty"`
-	// Where a new vault's key goes, file or keychain
+	// Where the first key is made while there is none, file or keychain
 	Configured string `protobuf:"bytes,5,opt,name=configured,proto3" json:"configured,omitempty"`
 	// Keychain of this computer, or why there is none
 	Keychain string `protobuf:"bytes,6,opt,name=keychain,proto3" json:"keychain,omitempty"`
@@ -654,6 +672,242 @@ func (x *AddResponse) GetItem() *Item {
 	return nil
 }
 
+type ItemRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Handle        string                 `protobuf:"bytes,2,opt,name=handle,proto3" json:"handle,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ItemRequest) Reset() {
+	*x = ItemRequest{}
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ItemRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ItemRequest) ProtoMessage() {}
+
+func (x *ItemRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ItemRequest.ProtoReflect.Descriptor instead.
+func (*ItemRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ItemRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ItemRequest) GetHandle() string {
+	if x != nil {
+		return x.Handle
+	}
+	return ""
+}
+
+// One field of an item as its page shows it: its value when it is no secret, else only whether one is kept
+type Value struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Field         *Field                 `protobuf:"bytes,1,opt,name=field,proto3" json:"field,omitempty"`
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Set           bool                   `protobuf:"varint,3,opt,name=set,proto3" json:"set,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Value) Reset() {
+	*x = Value{}
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Value) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Value) ProtoMessage() {}
+
+func (x *Value) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Value.ProtoReflect.Descriptor instead.
+func (*Value) Descriptor() ([]byte, []int) {
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *Value) GetField() *Field {
+	if x != nil {
+		return x.Field
+	}
+	return nil
+}
+
+func (x *Value) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *Value) GetSet() bool {
+	if x != nil {
+		return x.Set
+	}
+	return false
+}
+
+type ItemResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Item  *Item                  `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
+	// Every field of its kind for an item of the profile's own vault, none for one of a password manager
+	Values        []*Value `protobuf:"bytes,2,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ItemResponse) Reset() {
+	*x = ItemResponse{}
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ItemResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ItemResponse) ProtoMessage() {}
+
+func (x *ItemResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ItemResponse.ProtoReflect.Descriptor instead.
+func (*ItemResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ItemResponse) GetItem() *Item {
+	if x != nil {
+		return x.Item
+	}
+	return nil
+}
+
+func (x *ItemResponse) GetValues() []*Value {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+type ChangeRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Handle  string                 `protobuf:"bytes,2,opt,name=handle,proto3" json:"handle,omitempty"`
+	// label for its name, origin for its site, else a field of its kind
+	Field string `protobuf:"bytes,3,opt,name=field,proto3" json:"field,omitempty"`
+	// Empty takes an optional field away
+	Value         string `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangeRequest) Reset() {
+	*x = ChangeRequest{}
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeRequest) ProtoMessage() {}
+
+func (x *ChangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeRequest.ProtoReflect.Descriptor instead.
+func (*ChangeRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ChangeRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ChangeRequest) GetHandle() string {
+	if x != nil {
+		return x.Handle
+	}
+	return ""
+}
+
+func (x *ChangeRequest) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+func (x *ChangeRequest) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
 type RemoveRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
@@ -664,7 +918,7 @@ type RemoveRequest struct {
 
 func (x *RemoveRequest) Reset() {
 	*x = RemoveRequest{}
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[9]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -676,7 +930,7 @@ func (x *RemoveRequest) String() string {
 func (*RemoveRequest) ProtoMessage() {}
 
 func (x *RemoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[9]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -689,7 +943,7 @@ func (x *RemoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveRequest.ProtoReflect.Descriptor instead.
 func (*RemoveRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{9}
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RemoveRequest) GetProfile() string {
@@ -715,7 +969,7 @@ type RemoveResponse struct {
 
 func (x *RemoveResponse) Reset() {
 	*x = RemoveResponse{}
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[10]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -727,7 +981,7 @@ func (x *RemoveResponse) String() string {
 func (*RemoveResponse) ProtoMessage() {}
 
 func (x *RemoveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[10]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -740,7 +994,7 @@ func (x *RemoveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveResponse.ProtoReflect.Descriptor instead.
 func (*RemoveResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{10}
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RemoveResponse) GetRemoved() bool {
@@ -761,7 +1015,7 @@ type SetSourceRequest struct {
 
 func (x *SetSourceRequest) Reset() {
 	*x = SetSourceRequest{}
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[11]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -773,7 +1027,7 @@ func (x *SetSourceRequest) String() string {
 func (*SetSourceRequest) ProtoMessage() {}
 
 func (x *SetSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[11]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -786,7 +1040,7 @@ func (x *SetSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSourceRequest.ProtoReflect.Descriptor instead.
 func (*SetSourceRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{11}
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *SetSourceRequest) GetProfile() string {
@@ -819,7 +1073,7 @@ type SetSourceResponse struct {
 
 func (x *SetSourceResponse) Reset() {
 	*x = SetSourceResponse{}
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[12]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -831,7 +1085,7 @@ func (x *SetSourceResponse) String() string {
 func (*SetSourceResponse) ProtoMessage() {}
 
 func (x *SetSourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[12]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -844,7 +1098,7 @@ func (x *SetSourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSourceResponse.ProtoReflect.Descriptor instead.
 func (*SetSourceResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{12}
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SetSourceResponse) GetDisplayName() string {
@@ -865,7 +1119,7 @@ type MoveKeyRequest struct {
 
 func (x *MoveKeyRequest) Reset() {
 	*x = MoveKeyRequest{}
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[13]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -877,7 +1131,7 @@ func (x *MoveKeyRequest) String() string {
 func (*MoveKeyRequest) ProtoMessage() {}
 
 func (x *MoveKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[13]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -890,7 +1144,7 @@ func (x *MoveKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveKeyRequest.ProtoReflect.Descriptor instead.
 func (*MoveKeyRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{13}
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *MoveKeyRequest) GetProfile() string {
@@ -918,7 +1172,7 @@ type UnlockRequest struct {
 
 func (x *UnlockRequest) Reset() {
 	*x = UnlockRequest{}
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[14]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -930,7 +1184,7 @@ func (x *UnlockRequest) String() string {
 func (*UnlockRequest) ProtoMessage() {}
 
 func (x *UnlockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[14]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -943,7 +1197,7 @@ func (x *UnlockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnlockRequest.ProtoReflect.Descriptor instead.
 func (*UnlockRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{14}
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *UnlockRequest) GetProfile() string {
@@ -975,7 +1229,7 @@ type UnlockResponse struct {
 
 func (x *UnlockResponse) Reset() {
 	*x = UnlockResponse{}
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[15]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -987,7 +1241,7 @@ func (x *UnlockResponse) String() string {
 func (*UnlockResponse) ProtoMessage() {}
 
 func (x *UnlockResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[15]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1000,7 +1254,7 @@ func (x *UnlockResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnlockResponse.ProtoReflect.Descriptor instead.
 func (*UnlockResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{15}
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{19}
 }
 
 type LockRequest struct {
@@ -1013,7 +1267,7 @@ type LockRequest struct {
 
 func (x *LockRequest) Reset() {
 	*x = LockRequest{}
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[16]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1025,7 +1279,7 @@ func (x *LockRequest) String() string {
 func (*LockRequest) ProtoMessage() {}
 
 func (x *LockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[16]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1038,7 +1292,7 @@ func (x *LockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockRequest.ProtoReflect.Descriptor instead.
 func (*LockRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{16}
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *LockRequest) GetProfile() string {
@@ -1063,7 +1317,7 @@ type LockResponse struct {
 
 func (x *LockResponse) Reset() {
 	*x = LockResponse{}
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[17]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1075,7 +1329,7 @@ func (x *LockResponse) String() string {
 func (*LockResponse) ProtoMessage() {}
 
 func (x *LockResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_vault_v1_vault_proto_msgTypes[17]
+	mi := &file_icebath_vault_v1_vault_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1088,16 +1342,17 @@ func (x *LockResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockResponse.ProtoReflect.Descriptor instead.
 func (*LockResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{17}
+	return file_icebath_vault_v1_vault_proto_rawDescGZIP(), []int{21}
 }
 
 var File_icebath_vault_v1_vault_proto protoreflect.FileDescriptor
 
 const file_icebath_vault_v1_vault_proto_rawDesc = "" +
 	"\n" +
-	"\x1cicebath/vault/v1/vault.proto\x12\x10icebath.vault.v1\"'\n" +
+	"\x1cicebath/vault/v1/vault.proto\x12\x10icebath.vault.v1\";\n" +
 	"\vListRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"\xc0\x01\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04bare\x18\x02 \x01(\bR\x04bare\"\xc0\x01\n" +
 	"\x04Item\x12\x16\n" +
 	"\x06handle\x18\x01 \x01(\tR\x06handle\x12\x16\n" +
 	"\x06source\x18\x02 \x01(\tR\x06source\x12\x12\n" +
@@ -1108,12 +1363,13 @@ const file_icebath_vault_v1_vault_proto_rawDesc = "" +
 	"identifier\x12\x16\n" +
 	"\x06origin\x18\x06 \x01(\tR\x06origin\x12\x14\n" +
 	"\x05local\x18\a \x01(\bR\x05local\x12\x10\n" +
-	"\x03otp\x18\b \x01(\bR\x03otp\"m\n" +
+	"\x03otp\x18\b \x01(\bR\x03otp\"\x83\x01\n" +
 	"\x06Source\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x14\n" +
 	"\x05state\x18\x03 \x01(\tR\x05state\x12\x16\n" +
-	"\x06locked\x18\x04 \x01(\bR\x06locked\"\xc8\x01\n" +
+	"\x06locked\x18\x04 \x01(\bR\x06locked\x12\x14\n" +
+	"\x05ready\x18\x05 \x01(\bR\x05ready\"\xc8\x01\n" +
 	"\x03Key\x12\x18\n" +
 	"\astorage\x18\x01 \x01(\tR\astorage\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x18\n" +
@@ -1149,7 +1405,22 @@ const file_icebath_vault_v1_vault_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"9\n" +
 	"\vAddResponse\x12*\n" +
-	"\x04item\x18\x01 \x01(\v2\x16.icebath.vault.v1.ItemR\x04item\"A\n" +
+	"\x04item\x18\x01 \x01(\v2\x16.icebath.vault.v1.ItemR\x04item\"?\n" +
+	"\vItemRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x16\n" +
+	"\x06handle\x18\x02 \x01(\tR\x06handle\"^\n" +
+	"\x05Value\x12-\n" +
+	"\x05field\x18\x01 \x01(\v2\x17.icebath.vault.v1.FieldR\x05field\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12\x10\n" +
+	"\x03set\x18\x03 \x01(\bR\x03set\"k\n" +
+	"\fItemResponse\x12*\n" +
+	"\x04item\x18\x01 \x01(\v2\x16.icebath.vault.v1.ItemR\x04item\x12/\n" +
+	"\x06values\x18\x02 \x03(\v2\x17.icebath.vault.v1.ValueR\x06values\"m\n" +
+	"\rChangeRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x16\n" +
+	"\x06handle\x18\x02 \x01(\tR\x06handle\x12\x14\n" +
+	"\x05field\x18\x03 \x01(\tR\x05field\x12\x14\n" +
+	"\x05value\x18\x04 \x01(\tR\x05value\"A\n" +
 	"\rRemoveRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x16\n" +
 	"\x06handle\x18\x02 \x01(\tR\x06handle\"*\n" +
@@ -1172,10 +1443,12 @@ const file_icebath_vault_v1_vault_proto_rawDesc = "" +
 	"\vLockRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"\x0e\n" +
-	"\fLockResponse2\x94\x04\n" +
+	"\fLockResponse2\xa5\x05\n" +
 	"\fVaultService\x12E\n" +
 	"\x04List\x12\x1d.icebath.vault.v1.ListRequest\x1a\x1e.icebath.vault.v1.ListResponse\x12B\n" +
-	"\x03Add\x12\x1c.icebath.vault.v1.AddRequest\x1a\x1d.icebath.vault.v1.AddResponse\x12K\n" +
+	"\x03Add\x12\x1c.icebath.vault.v1.AddRequest\x1a\x1d.icebath.vault.v1.AddResponse\x12E\n" +
+	"\x04Item\x12\x1d.icebath.vault.v1.ItemRequest\x1a\x1e.icebath.vault.v1.ItemResponse\x12H\n" +
+	"\x06Change\x12\x1f.icebath.vault.v1.ChangeRequest\x1a\x1d.icebath.vault.v1.AddResponse\x12K\n" +
 	"\x06Remove\x12\x1f.icebath.vault.v1.RemoveRequest\x1a .icebath.vault.v1.RemoveResponse\x12T\n" +
 	"\tSetSource\x12\".icebath.vault.v1.SetSourceRequest\x1a#.icebath.vault.v1.SetSourceResponse\x12B\n" +
 	"\aMoveKey\x12 .icebath.vault.v1.MoveKeyRequest\x1a\x15.icebath.vault.v1.Key\x12K\n" +
@@ -1196,7 +1469,7 @@ func file_icebath_vault_v1_vault_proto_rawDescGZIP() []byte {
 	return file_icebath_vault_v1_vault_proto_rawDescData
 }
 
-var file_icebath_vault_v1_vault_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_icebath_vault_v1_vault_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_icebath_vault_v1_vault_proto_goTypes = []any{
 	(*ListRequest)(nil),       // 0: icebath.vault.v1.ListRequest
 	(*Item)(nil),              // 1: icebath.vault.v1.Item
@@ -1207,16 +1480,20 @@ var file_icebath_vault_v1_vault_proto_goTypes = []any{
 	(*ListResponse)(nil),      // 6: icebath.vault.v1.ListResponse
 	(*AddRequest)(nil),        // 7: icebath.vault.v1.AddRequest
 	(*AddResponse)(nil),       // 8: icebath.vault.v1.AddResponse
-	(*RemoveRequest)(nil),     // 9: icebath.vault.v1.RemoveRequest
-	(*RemoveResponse)(nil),    // 10: icebath.vault.v1.RemoveResponse
-	(*SetSourceRequest)(nil),  // 11: icebath.vault.v1.SetSourceRequest
-	(*SetSourceResponse)(nil), // 12: icebath.vault.v1.SetSourceResponse
-	(*MoveKeyRequest)(nil),    // 13: icebath.vault.v1.MoveKeyRequest
-	(*UnlockRequest)(nil),     // 14: icebath.vault.v1.UnlockRequest
-	(*UnlockResponse)(nil),    // 15: icebath.vault.v1.UnlockResponse
-	(*LockRequest)(nil),       // 16: icebath.vault.v1.LockRequest
-	(*LockResponse)(nil),      // 17: icebath.vault.v1.LockResponse
-	nil,                       // 18: icebath.vault.v1.AddRequest.ValuesEntry
+	(*ItemRequest)(nil),       // 9: icebath.vault.v1.ItemRequest
+	(*Value)(nil),             // 10: icebath.vault.v1.Value
+	(*ItemResponse)(nil),      // 11: icebath.vault.v1.ItemResponse
+	(*ChangeRequest)(nil),     // 12: icebath.vault.v1.ChangeRequest
+	(*RemoveRequest)(nil),     // 13: icebath.vault.v1.RemoveRequest
+	(*RemoveResponse)(nil),    // 14: icebath.vault.v1.RemoveResponse
+	(*SetSourceRequest)(nil),  // 15: icebath.vault.v1.SetSourceRequest
+	(*SetSourceResponse)(nil), // 16: icebath.vault.v1.SetSourceResponse
+	(*MoveKeyRequest)(nil),    // 17: icebath.vault.v1.MoveKeyRequest
+	(*UnlockRequest)(nil),     // 18: icebath.vault.v1.UnlockRequest
+	(*UnlockResponse)(nil),    // 19: icebath.vault.v1.UnlockResponse
+	(*LockRequest)(nil),       // 20: icebath.vault.v1.LockRequest
+	(*LockResponse)(nil),      // 21: icebath.vault.v1.LockResponse
+	nil,                       // 22: icebath.vault.v1.AddRequest.ValuesEntry
 }
 var file_icebath_vault_v1_vault_proto_depIdxs = []int32{
 	4,  // 0: icebath.vault.v1.Kind.fields:type_name -> icebath.vault.v1.Field
@@ -1224,27 +1501,34 @@ var file_icebath_vault_v1_vault_proto_depIdxs = []int32{
 	2,  // 2: icebath.vault.v1.ListResponse.sources:type_name -> icebath.vault.v1.Source
 	3,  // 3: icebath.vault.v1.ListResponse.key:type_name -> icebath.vault.v1.Key
 	5,  // 4: icebath.vault.v1.ListResponse.kinds:type_name -> icebath.vault.v1.Kind
-	18, // 5: icebath.vault.v1.AddRequest.values:type_name -> icebath.vault.v1.AddRequest.ValuesEntry
+	22, // 5: icebath.vault.v1.AddRequest.values:type_name -> icebath.vault.v1.AddRequest.ValuesEntry
 	1,  // 6: icebath.vault.v1.AddResponse.item:type_name -> icebath.vault.v1.Item
-	0,  // 7: icebath.vault.v1.VaultService.List:input_type -> icebath.vault.v1.ListRequest
-	7,  // 8: icebath.vault.v1.VaultService.Add:input_type -> icebath.vault.v1.AddRequest
-	9,  // 9: icebath.vault.v1.VaultService.Remove:input_type -> icebath.vault.v1.RemoveRequest
-	11, // 10: icebath.vault.v1.VaultService.SetSource:input_type -> icebath.vault.v1.SetSourceRequest
-	13, // 11: icebath.vault.v1.VaultService.MoveKey:input_type -> icebath.vault.v1.MoveKeyRequest
-	14, // 12: icebath.vault.v1.VaultService.Unlock:input_type -> icebath.vault.v1.UnlockRequest
-	16, // 13: icebath.vault.v1.VaultService.Lock:input_type -> icebath.vault.v1.LockRequest
-	6,  // 14: icebath.vault.v1.VaultService.List:output_type -> icebath.vault.v1.ListResponse
-	8,  // 15: icebath.vault.v1.VaultService.Add:output_type -> icebath.vault.v1.AddResponse
-	10, // 16: icebath.vault.v1.VaultService.Remove:output_type -> icebath.vault.v1.RemoveResponse
-	12, // 17: icebath.vault.v1.VaultService.SetSource:output_type -> icebath.vault.v1.SetSourceResponse
-	3,  // 18: icebath.vault.v1.VaultService.MoveKey:output_type -> icebath.vault.v1.Key
-	15, // 19: icebath.vault.v1.VaultService.Unlock:output_type -> icebath.vault.v1.UnlockResponse
-	17, // 20: icebath.vault.v1.VaultService.Lock:output_type -> icebath.vault.v1.LockResponse
-	14, // [14:21] is the sub-list for method output_type
-	7,  // [7:14] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	4,  // 7: icebath.vault.v1.Value.field:type_name -> icebath.vault.v1.Field
+	1,  // 8: icebath.vault.v1.ItemResponse.item:type_name -> icebath.vault.v1.Item
+	10, // 9: icebath.vault.v1.ItemResponse.values:type_name -> icebath.vault.v1.Value
+	0,  // 10: icebath.vault.v1.VaultService.List:input_type -> icebath.vault.v1.ListRequest
+	7,  // 11: icebath.vault.v1.VaultService.Add:input_type -> icebath.vault.v1.AddRequest
+	9,  // 12: icebath.vault.v1.VaultService.Item:input_type -> icebath.vault.v1.ItemRequest
+	12, // 13: icebath.vault.v1.VaultService.Change:input_type -> icebath.vault.v1.ChangeRequest
+	13, // 14: icebath.vault.v1.VaultService.Remove:input_type -> icebath.vault.v1.RemoveRequest
+	15, // 15: icebath.vault.v1.VaultService.SetSource:input_type -> icebath.vault.v1.SetSourceRequest
+	17, // 16: icebath.vault.v1.VaultService.MoveKey:input_type -> icebath.vault.v1.MoveKeyRequest
+	18, // 17: icebath.vault.v1.VaultService.Unlock:input_type -> icebath.vault.v1.UnlockRequest
+	20, // 18: icebath.vault.v1.VaultService.Lock:input_type -> icebath.vault.v1.LockRequest
+	6,  // 19: icebath.vault.v1.VaultService.List:output_type -> icebath.vault.v1.ListResponse
+	8,  // 20: icebath.vault.v1.VaultService.Add:output_type -> icebath.vault.v1.AddResponse
+	11, // 21: icebath.vault.v1.VaultService.Item:output_type -> icebath.vault.v1.ItemResponse
+	8,  // 22: icebath.vault.v1.VaultService.Change:output_type -> icebath.vault.v1.AddResponse
+	14, // 23: icebath.vault.v1.VaultService.Remove:output_type -> icebath.vault.v1.RemoveResponse
+	16, // 24: icebath.vault.v1.VaultService.SetSource:output_type -> icebath.vault.v1.SetSourceResponse
+	3,  // 25: icebath.vault.v1.VaultService.MoveKey:output_type -> icebath.vault.v1.Key
+	19, // 26: icebath.vault.v1.VaultService.Unlock:output_type -> icebath.vault.v1.UnlockResponse
+	21, // 27: icebath.vault.v1.VaultService.Lock:output_type -> icebath.vault.v1.LockResponse
+	19, // [19:28] is the sub-list for method output_type
+	10, // [10:19] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_icebath_vault_v1_vault_proto_init() }
@@ -1258,7 +1542,7 @@ func file_icebath_vault_v1_vault_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_vault_v1_vault_proto_rawDesc), len(file_icebath_vault_v1_vault_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

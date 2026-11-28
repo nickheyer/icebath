@@ -20,6 +20,16 @@ func (j *Job) Key(variable string, kinds ...string) string {
 	return ""
 }
 
+// Provider of the profile of a kind, by its name in the profile; empty while the profile has none
+func (j *Job) Provider(kind string) string {
+	for _, instance := range j.Speech.providers.Instances(j.Config) {
+		if instance.Known && instance.Spec.Name == kind {
+			return instance.ID
+		}
+	}
+	return ""
+}
+
 // Variable OpenAI's audio services prefer over the general OpenAI key, kept apart from routers that take OPENAI_API_KEY
 const OpenAIAudioKey = "VOICE_TOOLS_OPENAI_KEY"
 

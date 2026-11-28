@@ -26,7 +26,7 @@ func (backend) Backends() []delegation.Backend {
 	}}
 }
 
-// The delegation settings as the route of every task, the fallbacks inherited while they are unset
+// The delegation settings as the route of every task, the agent's fallback models while they name none of their own
 func route(cfg *config.Config, _ delegation.Task) (delegation.Route, error) {
 	text := func(key string) string { return strings.TrimSpace(cfg.GetString(key)) }
 	r := delegation.Route{
@@ -40,11 +40,9 @@ func route(cfg *config.Config, _ delegation.Task) (delegation.Route, error) {
 	if overrides, ok := cfg.Get(delegationconfig.RequestOverrides).(map[string]any); ok && len(overrides) > 0 {
 		r.RequestOverrides = overrides
 	}
-	if cfg.Stored(delegationconfig.Fallbacks) != nil {
-		r.Fallbacks = cast.ToStringSlice(cfg.Get(delegationconfig.Fallbacks))
-		if r.Fallbacks == nil {
-			r.Fallbacks = []string{}
-		}
+	// No fallback models of their own leaves the agent's
+	if fallbacks := cast.ToStringSlice(cfg.Get(delegationconfig.Fallbacks)); len(fallbacks) > 0 {
+		r.Fallbacks = fallbacks
 	}
 	return r, nil
 }

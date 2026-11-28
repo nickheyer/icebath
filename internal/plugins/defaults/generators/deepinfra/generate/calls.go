@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 	"time"
 
@@ -52,17 +51,12 @@ func (s *services) videoModels(ctx context.Context, cfg *config.Config) []genera
 	return rows
 }
 
-// Picture model: image_gen.deepinfra.model, else Image model when the catalog lists it, else the first of the catalog; empty when there
-// is none
-func (s *services) imageModel(ctx context.Context, cfg *config.Config, asked string) string {
-	if model := strings.TrimSpace(cfg.GetString(deepinfraconfig.Model)); model != "" {
+// Picture model: the one image_gen.deepinfra.model names, else the first of the catalog; empty when there is none
+func (s *services) imageModel(ctx context.Context, cfg *config.Config, model string) string {
+	if model = strings.TrimSpace(model); model != "" {
 		return model
 	}
-	models := s.imageModels(ctx, cfg)
-	if i := slices.IndexFunc(models, func(m generation.Model) bool { return m.ID == strings.TrimSpace(asked) }); i >= 0 {
-		return models[i].ID
-	}
-	if len(models) > 0 {
+	if models := s.imageModels(ctx, cfg); len(models) > 0 {
 		return models[0].ID
 	}
 	return ""
@@ -90,8 +84,8 @@ func (s *services) draw(ctx context.Context, job *generation.Job, request genera
 	}
 	route, ok := s.route(cfg)
 	if !ok {
-		return generation.Call{Provider: deepinfraconfig.Name, Aspect: aspect}.Fail("DEEPINFRA_API_KEY not set. Connect DeepInfra in /providers, or pick another image "+
-			"service with /imagegen.", "auth_required")
+		return generation.Call{Provider: deepinfraconfig.Name, Aspect: aspect}.Fail("DEEPINFRA_API_KEY not set. The user connects DeepInfra in /providers, or picks "+
+			"another image service with /images.", "auth_required")
 	}
 	model := s.imageModel(ctx, cfg, request.Model)
 	if model == "" {

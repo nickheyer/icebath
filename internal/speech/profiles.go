@@ -6,7 +6,7 @@ import (
 	speechconfig "github.com/nickheyer/icebath/internal/speech/config"
 )
 
-// Speech as profiles are made: a new profile takes the recognizer, voice and voice mode settings of the profile it was made from that it
+// Speech as profiles are made: a new profile takes the recognizer, voice and voice input settings of the profile it was made from that it
 // has none of its own of, unless it takes nothing from it
 type Profiles struct {
 	Config *config.Config

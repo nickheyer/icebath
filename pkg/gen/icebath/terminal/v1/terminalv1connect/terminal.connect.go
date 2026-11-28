@@ -36,6 +36,8 @@ const (
 	BackendServiceBackendsProcedure = "/icebath.terminal.v1.BackendService/Backends"
 	// BackendServicePrepareProcedure is the procedure name of the BackendService's Prepare RPC.
 	BackendServicePrepareProcedure = "/icebath.terminal.v1.BackendService/Prepare"
+	// BackendServiceUseProcedure is the procedure name of the BackendService's Use RPC.
+	BackendServiceUseProcedure = "/icebath.terminal.v1.BackendService/Use"
 )
 
 var (
@@ -189,6 +191,13 @@ var (
 			Procedure:  BackendServicePrepareProcedure,
 		}
 	})
+	backendServiceUseSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_terminal_v1_terminal_proto.Services().ByName("BackendService").Methods().ByName("Use"),
+			Procedure:  BackendServiceUseProcedure,
+		}
+	})
 )
 
 // BackendServiceClient is a client for the icebath.terminal.v1.BackendService service.
@@ -196,6 +205,9 @@ type BackendServiceClient interface {
 	Backends(context.Context, *v1.BackendsRequest) (*v1.BackendsResponse, error)
 	// Readies a backend ahead of its first command, such as building its image, a line at a time as it goes
 	Prepare(context.Context, *v1.PrepareRequest) (BackendServicePrepareClientStream, error)
+	// Runs the profile's commands on the backend from the next one on, saying so, and that a variable of the environment wins when one
+	// names another backend
+	Use(context.Context, *v1.UseRequest) (*v1.UseResponse, error)
 }
 
 // NewBackendServiceClient constructs a client for the icebath.terminal.v1.BackendService service.
@@ -229,6 +241,9 @@ type BackendServiceHandler interface {
 	Backends(context.Context, *v1.BackendsRequest) (*v1.BackendsResponse, error)
 	// Readies a backend ahead of its first command, such as building its image, a line at a time as it goes
 	Prepare(context.Context, *v1.PrepareRequest, BackendServicePrepareServerStream) error
+	// Runs the profile's commands on the backend from the next one on, saying so, and that a variable of the environment wins when one
+	// names another backend
+	Use(context.Context, *v1.UseRequest) (*v1.UseResponse, error)
 }
 
 // RegisterBackendServiceHandler registers svc as the icebath.terminal.v1.BackendService
@@ -238,6 +253,7 @@ func RegisterBackendServiceHandler(server *connect.Server, svc BackendServiceHan
 	server.Register(
 		connect.Method{Spec: backendServiceBackendsSpec(), Handler: adapter.backends},
 		connect.Method{Spec: backendServicePrepareSpec(), Handler: adapter.prepare},
+		connect.Method{Spec: backendServiceUseSpec(), Handler: adapter.use},
 	)
 }
 
@@ -267,6 +283,10 @@ func (UnimplementedBackendServiceHandler) Prepare(context.Context, *v1.PrepareRe
 	return connect.NewError(connect.CodeUnimplemented, "icebath.terminal.v1.BackendService.Prepare is not implemented")
 }
 
+func (UnimplementedBackendServiceHandler) Use(context.Context, *v1.UseRequest) (*v1.UseResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.terminal.v1.BackendService.Use is not implemented")
+}
+
 type backendServiceClient struct {
 	client *connect.Client
 }
@@ -285,6 +305,14 @@ func (c *backendServiceClient) Prepare(ctx context.Context, req *v1.PrepareReque
 		return BackendServicePrepareClientStream{}, err
 	}
 	return BackendServicePrepareClientStream{stream: stream}, nil
+}
+
+func (c *backendServiceClient) Use(ctx context.Context, req *v1.UseRequest) (*v1.UseResponse, error) {
+	var res v1.UseResponse
+	if err := c.client.CallUnary(ctx, backendServiceUseSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
 type backendServiceHandler struct{ svc BackendServiceHandler }
@@ -307,4 +335,16 @@ func (h backendServiceHandler) prepare(ctx context.Context, _ connect.Spec, stre
 		return err
 	}
 	return h.svc.Prepare(ctx, &req, BackendServicePrepareServerStream{stream: stream})
+}
+
+func (h backendServiceHandler) use(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.UseRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Use(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

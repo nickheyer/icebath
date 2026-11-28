@@ -1139,9 +1139,11 @@ type Screen struct {
 	MemoryAvailableMb int32 `protobuf:"varint,13,opt,name=memory_available_mb,json=memoryAvailableMb,proto3" json:"memory_available_mb,omitempty"`
 	MemoryLimitMb     int32 `protobuf:"varint,14,opt,name=memory_limit_mb,json=memoryLimitMb,proto3" json:"memory_limit_mb,omitempty"`
 	// gateway, or terminal:<backend>
-	Placement     string       `protobuf:"bytes,15,opt,name=placement,proto3" json:"placement,omitempty"`
-	ImageSwitch   *ImageSwitch `protobuf:"bytes,16,opt,name=image_switch,json=imageSwitch,proto3" json:"image_switch,omitempty"`
-	Lease         *Lease       `protobuf:"bytes,17,opt,name=lease,proto3" json:"lease,omitempty"`
+	Placement   string       `protobuf:"bytes,15,opt,name=placement,proto3" json:"placement,omitempty"`
+	ImageSwitch *ImageSwitch `protobuf:"bytes,16,opt,name=image_switch,json=imageSwitch,proto3" json:"image_switch,omitempty"`
+	Lease       *Lease       `protobuf:"bytes,17,opt,name=lease,proto3" json:"lease,omitempty"`
+	// Title of the place of the agent's commands the screen runs in, for one in their sandbox
+	Sandbox       string `protobuf:"bytes,18,opt,name=sandbox,proto3" json:"sandbox,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1295,6 +1297,13 @@ func (x *Screen) GetLease() *Lease {
 	return nil
 }
 
+func (x *Screen) GetSandbox() string {
+	if x != nil {
+		return x.Sandbox
+	}
+	return ""
+}
+
 var File_icebath_botdesktop_v1_botdesktop_proto protoreflect.FileDescriptor
 
 const file_icebath_botdesktop_v1_botdesktop_proto_rawDesc = "" +
@@ -1364,7 +1373,7 @@ const file_icebath_botdesktop_v1_botdesktop_proto_rawDesc = "" +
 	"\ftarget_image\x18\x02 \x01(\tR\vtargetImage\x12\x1e\n" +
 	"\n" +
 	"containers\x18\x03 \x01(\x05R\n" +
-	"containers\"\xc0\x04\n" +
+	"containers\"\xda\x04\n" +
 	"\x06Screen\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x1c\n" +
 	"\tsupported\x18\x02 \x01(\bR\tsupported\x12\x1c\n" +
@@ -1383,7 +1392,8 @@ const file_icebath_botdesktop_v1_botdesktop_proto_rawDesc = "" +
 	"\x0fmemory_limit_mb\x18\x0e \x01(\x05R\rmemoryLimitMb\x12\x1c\n" +
 	"\tplacement\x18\x0f \x01(\tR\tplacement\x12E\n" +
 	"\fimage_switch\x18\x10 \x01(\v2\".icebath.botdesktop.v1.ImageSwitchR\vimageSwitch\x122\n" +
-	"\x05lease\x18\x11 \x01(\v2\x1c.icebath.botdesktop.v1.LeaseR\x05lease2\xc7\x06\n" +
+	"\x05lease\x18\x11 \x01(\v2\x1c.icebath.botdesktop.v1.LeaseR\x05lease\x12\x18\n" +
+	"\asandbox\x18\x12 \x01(\tR\asandbox2\xc7\x06\n" +
 	"\x0eDesktopService\x12M\n" +
 	"\x06Status\x12$.icebath.botdesktop.v1.StatusRequest\x1a\x1d.icebath.botdesktop.v1.Screen\x12K\n" +
 	"\x05Start\x12#.icebath.botdesktop.v1.StartRequest\x1a\x1d.icebath.botdesktop.v1.Screen\x12L\n" +

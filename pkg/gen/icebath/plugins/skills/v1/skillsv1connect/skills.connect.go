@@ -278,7 +278,8 @@ type SkillsServiceClient interface {
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	// One skill as the agent loads it, with its files, what it needs, its usage and how it is written
 	Show(context.Context, *v1.ShowRequest) (*v1.ShowResponse, error)
-	// Turns skills on or off for the agent, everywhere or on one surface
+	// Turns skills on or off for the agent, in every app or in one alone: the one way a skill is turned on or off, which the page, the commands
+	// and the settings service all end in, a skill that is always on refused
 	Toggle(context.Context, *v1.ToggleRequest) (*v1.ToggleResponse, error)
 	// Lets a built in skill follow its source again, or puts the shipped copy back
 	Reset(context.Context, *v1.ResetRequest) (*v1.ResetResponse, error)
@@ -480,7 +481,8 @@ type SkillsServiceHandler interface {
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	// One skill as the agent loads it, with its files, what it needs, its usage and how it is written
 	Show(context.Context, *v1.ShowRequest) (*v1.ShowResponse, error)
-	// Turns skills on or off for the agent, everywhere or on one surface
+	// Turns skills on or off for the agent, in every app or in one alone: the one way a skill is turned on or off, which the page, the commands
+	// and the settings service all end in, a skill that is always on refused
 	Toggle(context.Context, *v1.ToggleRequest) (*v1.ToggleResponse, error)
 	// Lets a built in skill follow its source again, or puts the shipped copy back
 	Reset(context.Context, *v1.ResetRequest) (*v1.ResetResponse, error)

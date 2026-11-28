@@ -27,7 +27,7 @@ import (
 	"github.com/nickheyer/icebath/internal/plugins/defaults/speech/gemini/config"
 	"github.com/nickheyer/icebath/internal/provider"
 	"github.com/nickheyer/icebath/internal/speech"
-	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -44,8 +44,24 @@ func Register(registry *speech.Registry) {
 		Stream:     &speech.Stream{Rank: 2, Label: "Gemini streaming TTS", Ready: ready, Open: stream},
 		Opus:       speech.NativeOpus,
 		Setup:      speech.Setup{Keys: []string{config.KeyEnv, config.GoogleKeyEnv}, SignIn: config.Name, Link: config.Link, Badge: "preview"},
+		Choices: []speech.Choices{{Setting: config.Voice, List: func(context.Context, *speech.Job) ([]speech.Pick, error) { return voices, nil }},
+			speech.Fixed(config.Model, config.DefaultModel, "gemini-2.5-pro-preview-tts")},
 	}}})
 }
+
+// The voices Gemini speaks in, each with how it sounds
+var voices = func() []speech.Pick {
+	var picks []speech.Pick
+	for _, v := range [][2]string{{"Zephyr", "bright"}, {"Puck", "upbeat"}, {"Charon", "informative"}, {"Kore", "firm"}, {"Fenrir", "excitable"},
+		{"Leda", "youthful"}, {"Orus", "firm"}, {"Aoede", "breezy"}, {"Callirrhoe", "easy-going"}, {"Autonoe", "bright"}, {"Enceladus", "breathy"},
+		{"Iapetus", "clear"}, {"Umbriel", "easy-going"}, {"Algieba", "smooth"}, {"Despina", "smooth"}, {"Erinome", "clear"}, {"Algenib", "gravelly"},
+		{"Rasalgethi", "informative"}, {"Laomedeia", "upbeat"}, {"Achernar", "soft"}, {"Alnilam", "firm"}, {"Schedar", "even"}, {"Gacrux", "mature"},
+		{"Pulcherrima", "forward"}, {"Achird", "friendly"}, {"Zubenelgenubi", "casual"}, {"Vindemiatrix", "gentle"}, {"Sadachbia", "lively"},
+		{"Sadaltager", "knowledgeable"}, {"Sulafat", "warm"}} {
+		picks = append(picks, speech.Pick{Value: v[0], Title: v[0], About: v[1]})
+	}
+	return picks
+}()
 
 // Gemini key, the Google key standing in when it is unset
 func key(job *speech.Job) string {
@@ -63,7 +79,7 @@ func persona(job *speech.Job) string {
 	if raw == "" {
 		return ""
 	}
-	path := terminal.ExpandUser(os.ExpandEnv(raw))
+	path := fsx.ExpandHome(os.ExpandEnv(raw))
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(job.Config.ProfileDir(job.Config.Profile()), path)
 	}

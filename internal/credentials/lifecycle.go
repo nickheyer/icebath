@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"context"
 	"slices"
 	"strings"
 
@@ -16,19 +17,17 @@ type Lifecycle struct {
 }
 
 // After the variable was saved over the value it held: copies of the old value in api key settings take the new one, the providers that
-// read it take it from it again, and what held back the accounts it is the key of on the old value is cleared
+// read it take it from it again by the one control of that choice, and what held back the accounts it is the key of on the old value is
+// cleared
 func (l Lifecycle) Saved(cfg *config.Config, name, old, value string) error {
 	if value != "" && old != "" && old != value {
-		if _, err := mirrors(cfg, old, value); err != nil {
+		if _, err := l.mirrors(cfg, old, value); err != nil {
 			return err
 		}
 	}
 	for _, instance := range l.readers(cfg, name) {
-		ignored := instance.Settings.GetStringSlice(providerconfig.Ignored)
-		if kept := slices.DeleteFunc(slices.Clone(ignored), func(source string) bool { return source == name }); len(kept) < len(ignored) {
-			if err := instance.Settings.Set(providerconfig.Ignored, kept); err != nil {
-				return err
-			}
+		if _, err := l.Providers.SetOutside(cfg, instance.ID, name, true); err != nil {
+			return err
 		}
 	}
 	if old == value {
@@ -42,20 +41,19 @@ func (l Lifecycle) Saved(cfg *config.Config, name, old, value string) error {
 	return nil
 }
 
-// After the variable was removed: the providers that read it leave it out from now on, so a shell that still exports it can't give it back
-// until it is set again, and copies of its old value in api key settings are removed. Whether a setting held a copy
+// After the variable was removed: the providers that read it leave it out from now on by the one control of that choice, so a shell that
+// still exports it can't give it back until it is set again, and copies of its old value in api key settings are removed, with the accounts
+// they were the one credential of. Whether a setting held a copy
 func (l Lifecycle) Removed(cfg *config.Config, name, old string) (bool, error) {
 	for _, instance := range l.readers(cfg, name) {
-		if ignored := instance.Settings.GetStringSlice(providerconfig.Ignored); !slices.Contains(ignored, name) {
-			if err := instance.Settings.Set(providerconfig.Ignored, append(slices.Clone(ignored), name)); err != nil {
-				return false, err
-			}
+		if _, err := l.Providers.SetOutside(cfg, instance.ID, name, false); err != nil {
+			return false, err
 		}
 	}
 	if old == "" {
 		return false, nil
 	}
-	scrubbed, err := mirrors(cfg, old, "")
+	scrubbed, err := l.mirrors(cfg, old, "")
 	return len(scrubbed) > 0, err
 }
 
@@ -87,8 +85,9 @@ func (l Lifecycle) keyedBy(cfg *config.Config, name string) []Account {
 }
 
 // Rewrites the api key settings of the profile's files that hold the old value to the new one, removing them for no new one; those the
-// administrator or Remote Config decide are left as they are. The keys touched
-func mirrors(cfg *config.Config, old, value string) ([]string, error) {
+// administrator or Remote Config decide are left as they are. An account whose one credential the removed key was goes with it, so no
+// account stands without a credential. The keys touched
+func (l Lifecycle) mirrors(cfg *config.Config, old, value string) ([]string, error) {
 	var replacement any
 	if value != "" {
 		replacement = value
@@ -102,11 +101,28 @@ func mirrors(cfg *config.Config, old, value string) ([]string, error) {
 			if held, _ := cfg.Stored(setting.Key).(string); held != old {
 				continue
 			}
-			if err := cfg.Set(setting.Key, replacement); err != nil {
+			if instance, name, ok := l.keeper(cfg, setting.Key); ok && replacement == nil && !Of(instance, name).Holds(providerconfig.APIKeyField) {
+				if _, err := l.Providers.RemoveAccount(context.Background(), cfg, instance.ID, name); err != nil {
+					return nil, err
+				}
+			} else if err := cfg.Set(setting.Key, replacement); err != nil {
 				return nil, err
 			}
 			touched = append(touched, setting.Key)
 		}
 	}
 	return touched, nil
+}
+
+// Provider and account whose api key the key is, false for a key of anything else
+func (l Lifecycle) keeper(cfg *config.Config, key string) (provider.Instance, string, bool) {
+	parts := strings.Split(key, ".")
+	if len(parts) != 5 || parts[0] != providerconfig.Key || parts[2] != providerconfig.Accounts || parts[4] != providerconfig.APIKeyField {
+		return provider.Instance{}, "", false
+	}
+	instance, ok := l.Providers.Instance(cfg, parts[1])
+	if !ok || instance.ID != parts[1] || !slices.Contains(instance.Accounts, parts[3]) {
+		return provider.Instance{}, "", false
+	}
+	return instance, parts[3], true
 }

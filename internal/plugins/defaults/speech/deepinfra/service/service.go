@@ -25,9 +25,9 @@ func Register(registry *speech.Registry, catalog *models.Models) {
 			Ready:      func(job *speech.Job) bool { return key(job) != "" },
 			Synthesize: d.synthesize,
 			Setup:      setup,
-			Choices: []speech.Choices{{Setting: deepinfraconfig.TTSModel, List: func(ctx context.Context, job *speech.Job) []string {
+			Choices: []speech.Choices{speech.Listed(deepinfraconfig.TTSModel, func(ctx context.Context, job *speech.Job) []string {
 				return d.models(ctx, job, "tts")
-			}}},
+			})},
 		}},
 		Recognizing: []speech.Recognizer{{
 			Name: deepinfraconfig.Name, Title: "DeepInfra", About: "Open speech to text models, needs a DeepInfra API key", Cloud: true, Rank: 8, Whisper: true,
@@ -43,9 +43,9 @@ func Register(registry *speech.Registry, catalog *models.Models) {
 			},
 			Transcribe: d.transcribe,
 			Setup:      setup,
-			Choices: []speech.Choices{{Setting: deepinfraconfig.STTModel, List: func(ctx context.Context, job *speech.Job) []string {
+			Choices: []speech.Choices{speech.Listed(deepinfraconfig.STTModel, func(ctx context.Context, job *speech.Job) []string {
 				return d.models(ctx, job, "stt")
-			}}},
+			})},
 		}},
 	})
 }
@@ -70,7 +70,8 @@ func (d *deepinfra) models(ctx context.Context, job *speech.Job, tag string) []s
 func (d *deepinfra) synthesize(ctx context.Context, job *speech.Job, request speech.Request) (string, error) {
 	apiKey := key(job)
 	if apiKey == "" {
-		return "", speech.Misconfigured(deepinfraconfig.KeyEnv + " not set. Start `icebath` and type `/voice setup` to configure, or set the env var directly.")
+		return "", speech.Misconfigured("DeepInfra needs an API key. Give it one in Settings › Voice › Text to speech › DeepInfra TTS, which keeps it in " +
+			"your keys file as " + deepinfraconfig.KeyEnv + ".")
 	}
 	model := job.Text(deepinfraconfig.TTSModel, "")
 	if model == "" {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	vaultconfig "github.com/nickheyer/icebath/internal/vault/config"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Handles of the profile's own store begin with this
@@ -91,7 +93,9 @@ func Code(out string) (string, bool) {
 // A password manager to unlock before it is read
 type Locked struct{ Title string }
 
-func (e *Locked) Error() string { return e.Title + " is locked. Unlock it in /vault first." }
+func (e *Locked) Error() string {
+	return e.Title + " is locked. The user unlocks it with /vault or icebath vault unlock."
+}
 
 type Registrant interface {
 	Backends() []Backend
@@ -136,7 +140,9 @@ type Vault struct {
 
 func New(cfg *config.Config) *Vault {
 	vaultconfig.Register(cfg)
-	return &Vault{config: cfg, tokens: newTokens()}
+	v := &Vault{config: cfg, tokens: newTokens()}
+	v.guard(cfg)
+	return v
 }
 
 // Adds a registrant; a registry nested in the host reaches it through Host
@@ -181,10 +187,16 @@ func (v *Vault) backend(name string) (Backend, bool) {
 	return Backend{}, false
 }
 
-// The profile's own encrypted vault
+// The profile's own encrypted vault, whose setting of where its key is follows a key it makes
 func (v *Vault) Store(cfg *config.Config) *Store {
 	storage := strings.ToLower(strings.TrimSpace(cfg.GetString(vaultconfig.KeyStorage)))
-	return &Store{dir: filepath.Join(cfg.ProfileDir(cfg.Profile()), "vault"), storage: storage}
+	return &Store{dir: filepath.Join(cfg.ProfileDir(cfg.Profile()), "vault"), storage: storage, made: func(made string) {
+		if made != storage {
+			if err := cfg.Set(vaultconfig.KeyStorage, made); err != nil {
+				slog.Warn("Where the vault key is could not be kept in the settings", "error", err)
+			}
+		}
+	}}
 }
 
 func (b Backend) installed(cfg *config.Config) bool {
@@ -409,12 +421,31 @@ func (v *Vault) Unlock(ctx context.Context, cfg *config.Config, name, master, se
 			return login.Unlock(ctx, master, session)
 		}
 	}
-	return &Error{"There is no password manager named " + name + " to unlock. Turn it on in /settings under Autofill vault."}
+	return &Error{"There is no password manager named " + name + " to unlock that is on and installed."}
 }
 
-// Locks the password manager of the name for the profile, every one for no name
-func (v *Vault) Lock(cfg *config.Config, name string) {
+// Locks the password manager of the name for the profile, every one for no name; the manager locked, none for every one. A name of no
+// password manager is refused
+func (v *Vault) Lock(cfg *config.Config, name string) (Backend, error) {
+	var locked Backend
+	if name != "" {
+		b, ok := v.backend(name)
+		if !ok {
+			return Backend{}, v.unknown(name)
+		}
+		locked = b
+	}
 	v.tokens.lock(cfg.Profile(), name)
+	return locked, nil
+}
+
+// Refusal of a name that is no password manager, naming those icebath knows
+func (v *Vault) unknown(name string) error {
+	names := make([]string, len(v.all()))
+	for i, known := range v.all() {
+		names[i] = known.Name
+	}
+	return &Error{fmt.Sprintf("icebath knows no password manager named %q. It knows %s.", name, strs.And(names))}
 }
 
 // Locks what the ended session unlocked
@@ -485,8 +516,8 @@ func (v *Vault) Listing(ctx context.Context, cfg *config.Config) ([]Listed, []st
 // One password manager and whether the profile reads it: on, off for one turned off, missing for one whose program is not there
 type Source struct {
 	Name, Title, State string
-	// Waits to be unlocked
-	Locked bool
+	// Waits to be unlocked, or works with no unlock at all, such as 1Password with a service account token
+	Locked, Ready bool
 }
 
 func (v *Vault) Sources(cfg *config.Config) []Source {
@@ -500,22 +531,40 @@ func (v *Vault) Sources(cfg *config.Config) []Source {
 			source.State = "off"
 		default:
 			login := Login{Name: b.Name, Title: b.Title, vault: v, cfg: cfg, manager: b.Open(cfg)}
-			source.Locked = !login.Unlocked()
+			source.Locked, source.Ready = !login.Unlocked(), login.manager.Ready()
 		}
 		out = append(out, source)
 	}
 	return out
 }
 
+// Takes every write a person asks for of where the vault key is and whether a password manager is used through the functions the page uses:
+// the key moves, and a manager turned off is locked
+func (v *Vault) guard(cfg *config.Config) {
+	cfg.Guard(vaultconfig.Key, config.Guard{Write: func(cfg *config.Config, key string, value any) (bool, error) {
+		if strings.EqualFold(key, vaultconfig.KeyStorage) {
+			target, _ := value.(string)
+			if value == nil {
+				target = "file"
+			}
+			_, err := v.MoveKey(cfg, strings.ToLower(strings.TrimSpace(target)))
+			return true, err
+		}
+		name, setting, _ := strings.Cut(strings.TrimPrefix(key, vaultconfig.Key+"."), ".")
+		if _, ok := v.backend(name); !ok || setting != vaultconfig.Enabled {
+			return false, nil
+		}
+		on, ok := value.(bool)
+		_, err := v.SetSource(cfg, name, on || !ok)
+		return true, err
+	}})
+}
+
 // Turns a password manager on or off for the profile's logins, on being the absence of the opt out
 func (v *Vault) SetSource(cfg *config.Config, name string, on bool) (Backend, error) {
 	b, ok := v.backend(name)
 	if !ok {
-		names := make([]string, len(v.all()))
-		for i, known := range v.all() {
-			names[i] = known.Name
-		}
-		return Backend{}, &Error{fmt.Sprintf("icebath knows no password manager named %q. It knows %s.", name, strings.Join(names, ", "))}
+		return Backend{}, v.unknown(name)
 	}
 	var value any
 	if !on {
@@ -574,7 +623,64 @@ func (v *Vault) Add(cfg *config.Config, kind, label, origin string, values map[s
 			secret[field.Key] = value
 		}
 	}
-	return v.Store(cfg).Add(kind, strings.TrimSpace(label), strings.TrimSpace(origin), secret)
+	return v.Store(cfg).Add(kind, label, origin, secret)
+}
+
+// The profile's own vault, a refusal in a person's words for an item kept in a password manager, which is changed there
+func (v *Vault) own(ctx context.Context, cfg *config.Config, handle string) (*Store, error) {
+	login, ok := v.Login(cfg, handle)
+	switch {
+	case !ok:
+		return nil, &Error{fmt.Sprintf("The vault has no item with the handle %q.", handle)}
+	case !login.Local():
+		item, _ := login.Item(ctx, handle)
+		name := "That item"
+		if item != nil {
+			name = item.Label
+		}
+		return nil, &Error{name + " is kept in " + login.Title + ", so it is changed there."}
+	}
+	return v.Store(cfg), nil
+}
+
+// Changes one field of an item of the profile's own vault, as Store.Change does
+func (v *Vault) Change(ctx context.Context, cfg *config.Config, handle, field, value string) (Item, error) {
+	store, err := v.own(ctx, cfg, handle)
+	if err != nil {
+		return Item{}, err
+	}
+	return store.Change(handle, field, value)
+}
+
+// Removes an item of the profile's own vault, false when there was none of the handle
+func (v *Vault) Remove(ctx context.Context, cfg *config.Config, handle string) (bool, error) {
+	store, err := v.own(ctx, cfg, handle)
+	if err != nil {
+		return false, err
+	}
+	return store.Remove(handle)
+}
+
+// An item with the fields its page shows: every field of its kind for an item of the profile's own vault, its metadata alone for one of a
+// password manager
+func (v *Vault) Item(ctx context.Context, cfg *config.Config, handle string) (Listed, []Shown, error) {
+	login, ok := v.Login(cfg, handle)
+	if !ok {
+		return Listed{}, nil, &Error{fmt.Sprintf("The vault has no item with the handle %q.", handle)}
+	}
+	item, err := login.Item(ctx, handle)
+	if err != nil {
+		return Listed{}, nil, err
+	}
+	if item == nil {
+		return Listed{}, nil, &Error{fmt.Sprintf("The vault has no item with the handle %q.", handle)}
+	}
+	listed := Listed{Item: *item, Source: login.Title, Local: login.Local()}
+	if !login.Local() {
+		return listed, nil, nil
+	}
+	fields, err := v.Store(cfg).Fields(handle)
+	return listed, fields, err
 }
 
 // Where the key of the profile's own vault lives, where a new one goes and the keychain of this computer
@@ -591,8 +697,8 @@ func (v *Vault) Key(cfg *config.Config) (KeyView, error) {
 	return KeyView{Location: where, Configured: v.Store(cfg).storage, Keychain: KeychainLabel()}, nil
 }
 
-// Moves the key of the profile's own vault to the keychain or back to its file, keeping the choice for new vaults, and answers where it
-// lives after it
+// Moves the key of the profile's own vault to the keychain or back to its file, the setting of where the key is following it, and answers
+// where it lives after it. With no key yet, where the first one is made
 func (v *Vault) MoveKey(cfg *config.Config, target string) (KeyView, error) {
 	if target != "keychain" && target != "file" {
 		return KeyView{}, &Error{"The vault key can be kept in the keychain or in a file, not in “" + target + "”."}

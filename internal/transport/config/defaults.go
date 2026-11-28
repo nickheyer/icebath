@@ -17,7 +17,7 @@ func Register(cfg *config.Config) {
 			{Key: APITimeout, Title: "Request time limit", About: "How long one model request may take before it is given up.",
 				Help: "A time limit set on a provider wins over this one.", Default: 1800 * time.Second, Min: config.Bound(time.Second), Advanced: true},
 			{Key: CallStaleTimeout, Title: "Silent request limit", About: "How long a request that isn't streamed may wait for an answer.",
-				Help: "A silence limit set on a provider wins over this one.", Default: time.Duration(0), Null: "automatic", Zero: "No limit",
+				Help: "A silence limit set on a provider wins over this one.", Default: time.Duration(0), Null: "Automatic", Zero: "No limit",
 				Min: config.Bound(0), Advanced: true},
 			{Key: StreamStaleTimeout, Title: "Model silence limit", About: "How long a model may stay silent before the request is sent again.",
 				Default: 3 * time.Minute, Zero: "No limit", Min: config.Bound(0), Advanced: true},
@@ -35,7 +35,7 @@ func Register(cfg *config.Config) {
 				Default: 5, Zero: "Never", Counts: "stalls", Env: []string{StaleGiveupEnv}, Advanced: true},
 			{Key: DefaultHeaders, Title: "Extra headers", About: "Headers sent with every request to an OpenAI-style API.",
 				Help: "A header set here replaces the built-in one of the same name.", Default: map[string]any{}, Advanced: true,
-				Entry: &config.Entry{Noun: "header", Name: "Header name", Fields: []config.Setting{
+				Entry: &config.Entry{Noun: "header", Name: "Header name", IgnoreCase: true, Fields: []config.Setting{
 					{Title: "Value", About: "The text the header carries.", Default: ""}}}},
 			{Key: PromptCacheTTL, Title: "Prompt cache time", About: "How long the provider keeps the text of your requests cached.", Default: CacheShort, Advanced: true,
 				Options: config.Options(config.Option{Value: CacheShort, Title: "5 minutes"}, config.Option{Value: CacheLong, Title: "1 hour"},

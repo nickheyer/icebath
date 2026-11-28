@@ -1,4 +1,4 @@
-// Connect service of the Bot Desktop, through which the screen commands and the app reach the screens of the machine the server runs on
+// Connect service of the agent desktop, through which the screen commands and the app reach the screens of the machine the server runs on
 package server
 
 import (
@@ -60,7 +60,7 @@ func lease(l botdesktop.Lease) *botdesktopv1.Lease {
 func screen(st botdesktop.Status) *botdesktopv1.Screen {
 	out := &botdesktopv1.Screen{Profile: st.Profile, Supported: st.Supported, Installed: st.Installed, Missing: st.Missing, Running: st.Running,
 		Pid: int32(st.PID), Display: st.Display, Socket: st.Socket, Geometry: st.Geometry, InstallCommand: st.Install, Browser: st.Browser,
-		Blocker: st.Blocker, MemoryAvailableMb: int32(st.Available), MemoryLimitMb: int32(st.Limit), Placement: st.Placement, Lease: lease(st.Lease)}
+		Blocker: st.Blocker, MemoryAvailableMb: int32(st.Available), MemoryLimitMb: int32(st.Limit), Placement: st.Placement, Sandbox: st.Sandbox, Lease: lease(st.Lease)}
 	if sw := st.Switch; sw != nil {
 		out.ImageSwitch = &botdesktopv1.ImageSwitch{CurrentImage: sw.Current, TargetImage: sw.Target, Containers: int32(len(sw.Sandboxes))}
 	}

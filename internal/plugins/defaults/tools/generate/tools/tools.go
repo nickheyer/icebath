@@ -38,8 +38,11 @@ type registrant struct {
 	journal  *tools.Journal
 }
 
-// Heading the Tools screen lists the tools that make images and videos under, which the video tools of the xAI plugin share
-const group = "Images and video"
+// Groups of the tools that make images and videos, the second shared by the video tools of the xAI plugin
+const (
+	images = "Images"
+	videos = "Videos"
+)
 
 func Register(registry *tools.Registry, services *generation.Generation, t *terminal.Terminal) {
 	registry.Register(&registrant{services: services, terminal: t, journal: &tools.Journal{Name: "image_tools"}})
@@ -48,12 +51,13 @@ func Register(registry *tools.Registry, services *generation.Generation, t *term
 func (r *registrant) Tools() []tools.Def {
 	return []tools.Def{
 		{
-			Name: Image, Toolset: "image_gen", Title: "Image", About: "Make an image from a description", Group: group, Icon: tools.IconWrite,
+			Name: Image, Toolset: "image_gen", Title: "Image", About: "Make an image from a description", Group: images, Icon: tools.IconWrite,
 			Subject: "prompt",
 			Schema:  imageSchema(),
 			Dynamic: r.imageSchema,
 			Handler: r.image,
 			Check:   func(env *tools.Env) bool { return r.ready(env.Config, generation.Image) },
+			Lacks:   func(*tools.Env) string { return "It needs an image service that is set up." },
 			// Calls of one reply draw at the same time, as many as the setting lets through
 			Parallel:  true,
 			Unfocused: true,
@@ -62,12 +66,13 @@ func (r *registrant) Tools() []tools.Def {
 			},
 		},
 		{
-			Name: Video, Toolset: "video_gen", Title: "Video", About: "Make a video from a description or an image", Group: group,
+			Name: Video, Toolset: "video_gen", Title: "Video", About: "Make a video from a description or an image", Group: videos,
 			Icon: tools.IconWrite, Subject: "prompt",
 			Schema:    videoSchema(),
 			Dynamic:   r.videoSchema,
 			Handler:   r.video,
 			Check:     r.videoOffered,
+			Lacks:     func(*tools.Env) string { return "It needs a video service that is set up." },
 			Unfocused: true,
 			Timeout:   videoTimeout,
 		},
@@ -80,10 +85,9 @@ func (r *registrant) ready(cfg *config.Config, kind generation.Kind) bool {
 	return err == nil && service.Set(cfg)
 }
 
-// Whether video_generate is offered: turned on, or a video service chosen, and that service set up
+// Whether video_generate is offered: Make videos on, the one control of it, and the service that makes them set up
 func (r *registrant) videoOffered(env *tools.Env) bool {
-	cfg := env.Config
-	return (cfg.GetBool(generationconfig.VideoEnabled) || generation.Chosen(cfg, generation.Video) != "") && r.ready(cfg, generation.Video)
+	return generation.On(env.Config, generation.Video) && r.ready(env.Config, generation.Video)
 }
 
 func (r *registrant) imageSchema(env *tools.Env) map[string]any {
@@ -98,11 +102,11 @@ func (r *registrant) videoSchema(env *tools.Env) map[string]any {
 	cfg := env.Config
 	service, err := r.services.Active(cfg, generation.Video)
 	if err != nil {
-		return tools.Schema(videoDescription+"\n\nNo video backend is available. Calls will return an error until the user picks one with /videogen.", []string{"prompt"},
+		return tools.Schema(videoDescription+"\n\nNo video backend is available. Calls will return an error until the user picks one with /videos.", []string{"prompt"},
 			map[string]any{"prompt": videoProperties()["prompt"]})
 	}
 	videos := service.Videos
-	model := strs.Filled(cfg.GetString(service.ModelSetting(generation.Video)), generation.Named(cfg, generation.Video))
+	model := service.Model(cfg, generation.Video)
 	if model == "" {
 		model = videos.Default(context.Background(), cfg)
 	}
@@ -201,7 +205,7 @@ func (r *registrant) image(ctx context.Context, call *tools.Call) string {
 	if err != nil {
 		return tools.ErrorResult(fmt.Errorf("Tool execution failed: %v", err))
 	}
-	request := generation.ImageRequest{Prompt: prompt, Aspect: aspect, Model: generation.Named(cfg, generation.Image)}
+	request := generation.ImageRequest{Prompt: prompt, Aspect: aspect}
 	if len(texts(args["image_url"])) > 0 {
 		request.Image, confined = confined[0], confined[1:]
 	}
@@ -218,6 +222,7 @@ func (r *registrant) image(ctx context.Context, call *tools.Call) string {
 		}
 		return failure(generation.Image, err.Error(), kind, generation.Chosen(cfg, generation.Image))
 	}
+	request.Model = service.Model(cfg, generation.Image)
 	takes := service.Images.Takes(cfg)
 	for _, name := range generation.Controls {
 		if value, ok := args[name]; ok && slices.Contains(takes.Controls, name) {
@@ -279,7 +284,7 @@ func (r *registrant) video(ctx context.Context, call *tools.Call) string {
 	if err != nil {
 		return tools.ErrorResult(fmt.Errorf("Tool execution failed: %v", err))
 	}
-	request := generation.VideoRequest{Prompt: prompt, Model: generation.Named(cfg, generation.Video), Duration: generation.Whole(args["duration"]),
+	request := generation.VideoRequest{Prompt: prompt, Duration: generation.Whole(args["duration"]),
 		Aspect:     strings.TrimSpace(text(args, "aspect_ratio")),
 		Resolution: strings.TrimSpace(text(args, "resolution")), Negative: strings.TrimSpace(text(args, "negative_prompt")), Audio: flag(args["audio"]),
 		Seed: generation.Whole(args["seed"]), Upscale: flag(args["upscale"])}
@@ -311,9 +316,9 @@ func (r *registrant) video(ctx context.Context, call *tools.Call) string {
 		if errors.As(err, &unregistered) {
 			return failure(generation.Video, err.Error(), "provider_not_registered", unregistered.Name)
 		}
-		return failure(generation.Video, "No video generation backend is configured. Pick one with /videogen (xAI, FAL, OpenRouter, or DeepInfra).",
-			"no_provider_configured", "")
+		return failure(generation.Video, err.Error(), "no_provider_configured", "")
 	}
+	request.Model = service.Model(cfg, generation.Video)
 	result := service.Videos.Generate(ctx, job(call), request)
 	if result.Provider == "" {
 		result.Provider = service.Name
@@ -325,4 +330,9 @@ func (r *registrant) video(ctx context.Context, call *tools.Call) string {
 		slog.Warn(fmt.Sprintf("video_gen provider '%s' failed: %s", service.Name, result.Error))
 	}
 	return tools.JSON(envelope)
+}
+
+// The groups of the tools that make images and videos, whose options are the areas of images and of videos
+func (r *registrant) Groups() []tools.Group {
+	return []tools.Group{{Title: images, Area: generationconfig.ImageKey, Order: 90}, {Title: videos, Area: generationconfig.VideoKey, Order: 95}}
 }

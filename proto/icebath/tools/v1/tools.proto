@@ -3,7 +3,10 @@ syntax = "proto3";
 package icebath.tools.v1;
 
 service ToolService {
+  // The tools of a profile and how each of their groups stands
   rpc List(ListRequest) returns (ListResponse);
+  // Turns on or off the tools the words name, a word naming a tool or every tool of a group
+  rpc Turn(TurnRequest) returns (TurnResponse);
 }
 
 message Tool {
@@ -17,16 +20,62 @@ message Tool {
   string icon = 6;
   // Argument whose value names what a call works on, such as "path"
   string subject = 7;
-  // Turned off in the settings
+  // Turned off for the profile
   bool disabled = 8;
   // What the tool lets the agent do, in a phrase written for a person; the description is written for the model
   string about = 9;
-  // Heading the app lists the tool under, the title of its toolset
+  // Heading the app lists the tool under, the title of its group
   string group = 10;
+  // What it lacks to run, in a person's words, empty when it can run
+  string lacks = 11;
 }
 
-message ListRequest {}
+// A tool that is on and can't run, and what it lacks
+message Blocked {
+  string tool = 1;
+  string why = 2;
+}
+
+// A group of tools and how it stands
+message Group {
+  string title = 1;
+  // On, Off, or how many of how many are on, such as 3 of 4 on
+  string state = 2;
+  // How many that are on can't run, such as 1 can't run; empty for none
+  string note = 3;
+  repeated Blocked blocked = 4;
+  // Settings sections that hold the options of its tools: the first one's listed on its page, each other one a row that opens its own
+  repeated string sections = 5;
+  // Area of the settings menu its options are, for a group whose options are an area of their own, and what its page is opened with
+  string area = 6;
+  string opens = 7;
+  // Its tools are turned on and off on the page of its area, so it lists none of them
+  bool elsewhere = 8;
+  int32 total = 9;
+  int32 on = 10;
+}
+
+message ListRequest {
+  // Profile to read, the one in use when empty
+  string profile = 1;
+}
 
 message ListResponse {
   repeated Tool tools = 1;
+  repeated Group groups = 2;
+}
+
+message TurnRequest {
+  string profile = 1;
+  // Names or titles of tools, titles of groups or names of toolsets
+  repeated string words = 2;
+  bool on = 3;
+}
+
+message TurnResponse {
+  // What to tell the person, such as "Read is now off."
+  string said = 1;
+  // Titles of the tools turned, and the words that named none
+  repeated string turned = 2;
+  repeated string unknown = 3;
 }

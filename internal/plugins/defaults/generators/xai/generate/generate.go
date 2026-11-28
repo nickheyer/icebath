@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/internal/credentials"
 	"github.com/nickheyer/icebath/internal/generation"
 	xaiconfig "github.com/nickheyer/icebath/internal/plugins/defaults/generators/xai/config"
+	xaiprovider "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/xai/config"
 	"github.com/nickheyer/icebath/internal/provider"
 	"github.com/nickheyer/icebath/internal/web"
 	"github.com/nickheyer/icebath/pkg/strs"
@@ -39,12 +40,12 @@ func (s *Services) Services() []generation.Service {
 		Name:  xaiconfig.Name,
 		Title: "xAI",
 		Ready: func(cfg *config.Config) bool { _, ok := s.bearer(cfg); return ok },
-		Setup: generation.Setup{Badge: "paid", Provider: web.XAIOAuth, Link: "https://console.x.ai/"},
+		Setup: generation.Setup{Badge: "paid", Providers: []string{xaiprovider.OAuthName, xaiprovider.XAIName}, Link: "https://console.x.ai/"},
 		Images: &generation.Images{
-			About:    "Grok images and edits, needs an xAI API key or a Grok sign-in",
-			Settings: []string{xaiconfig.ImageModel, xaiconfig.Resolution, xaiconfig.ImageKey + xaiconfig.StorageEnabled, xaiconfig.ImageKey + xaiconfig.StoragePublic, xaiconfig.ImageKey + xaiconfig.StorageExpires},
-			Model:    xaiconfig.ImageModel,
-			Models:   s.imageModels,
+			About:   "Grok images and edits, needs an xAI API key or a Grok sign-in",
+			Section: xaiconfig.ImageKey,
+			Model:   xaiconfig.ImageModel,
+			Models:  s.imageModels,
 			Default: func(ctx context.Context, cfg *config.Config) string {
 				return s.catalog(ctx, cfg).order[0]
 			},
@@ -54,10 +55,11 @@ func (s *Services) Services() []generation.Service {
 			Generate: s.draw,
 		},
 		Videos: &generation.Videos{
-			About:    "Grok videos you can edit and extend, needs an xAI key or sign-in",
-			Settings: []string{xaiconfig.VideoKey + xaiconfig.StorageEnabled, xaiconfig.VideoKey + xaiconfig.StoragePublic, xaiconfig.VideoKey + xaiconfig.StorageExpires},
-			Models:   func(context.Context, *config.Config) []generation.Model { return videoModels },
-			Default:  func(context.Context, *config.Config) string { return textVideoModel },
+			About:   "Grok videos you can edit and extend, needs an xAI key or sign-in",
+			Section: xaiconfig.VideoKey,
+			Model:   xaiconfig.VideoModel,
+			Models:  func(context.Context, *config.Config) []generation.Model { return videoModels },
+			Default: func(context.Context, *config.Config) string { return textVideoModel },
 			Takes: func(cfg *config.Config) generation.VideoTakes {
 				lines := []string{"chaining: for edit/extend pass the public HTTPS MP4 in `video` or `public_url` from the prior Imagine result (files-cdn). For " +
 					"image-to-video / reference-to-video pass public image URLs the same way"}

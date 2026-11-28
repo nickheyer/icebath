@@ -2,11 +2,8 @@ package sessions
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -14,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
-	"github.com/nickheyer/icebath/pkg/fsx"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
@@ -22,36 +18,36 @@ import (
 // How long a "later" answer holds the low disk question off
 const snoozeFor = 7 * 24 * time.Hour
 
-// File that holds when the low disk question may be asked again
-func snoozeFile(cfg *config.Config) string {
-	return filepath.Join(cfg.Dir(), ".auto_prune_prompt.json")
-}
-
 // Holds the low disk question off for a week
 func Snooze(cfg *config.Config) error {
-	data, err := json.Marshal(map[string]float64{"snoozed_until": float64(time.Now().Add(snoozeFor).UnixNano()) / 1e9})
-	if err != nil {
-		return err
-	}
-	path := snoozeFile(cfg)
-	return fsx.Write(path, data, 0o600)
+	return cfg.Set(sessionsconfig.PruneAsk, Later(time.Now()))
+}
+
+// When the low disk question may be asked again once it is put off now, as the setting that holds it keeps it
+func Later(now time.Time) string {
+	return now.Add(snoozeFor).UTC().Format(time.RFC3339)
 }
 
 // Lets the low disk question be asked again
-func Unsnooze(cfg *config.Config) {
-	os.Remove(snoozeFile(cfg))
+func Unsnooze(cfg *config.Config) error {
+	if cfg.GetString(sessionsconfig.PruneAsk) == "" {
+		return nil
+	}
+	return cfg.Set(sessionsconfig.PruneAsk, nil)
 }
 
 func snoozed(cfg *config.Config) bool {
-	data, err := os.ReadFile(snoozeFile(cfg))
-	if err != nil {
-		return false
+	until, err := time.Parse(time.RFC3339, cfg.GetString(sessionsconfig.PruneAsk))
+	return err == nil && time.Now().Before(until)
+}
+
+// Turns deleting old sessions on or off, the one way it changes: its row, /autoprune and the command line all end here. Choosing either
+// way lets the low disk question be asked again should the choice change back
+func SetAutoPrune(cfg *config.Config, value any) error {
+	if err := cfg.Set(sessionsconfig.AutoPrune, value); err != nil {
+		return err
 	}
-	var record struct {
-		Until float64 `json:"snoozed_until"`
-	}
-	data = []byte(strings.TrimPrefix(string(data), "\ufeff"))
-	return json.Unmarshal(data, &record) == nil && float64(time.Now().UnixNano())/1e9 < record.Until
+	return Unsnooze(cfg)
 }
 
 // Free and total bytes of the file system the path is on
@@ -123,8 +119,8 @@ func Advice(ctx context.Context, store Store, cfg *config.Config, prefix string)
 	lines := []string{
 		fmt.Sprintf("The disk is low on space, with %s free of %s. Your saved sessions in %s take %s.", size(free), size(total),
 			filepath.Base(stats.GetPath()), size(stats.GetBytes())),
-		fmt.Sprintf("Delete old sessions in /settings under Sessions is off. Turned on, it deletes once a day the ended sessions unused for more "+
-			"than %s, and keeps pinned and open ones.", keep),
+		fmt.Sprintf("Delete old sessions, an option of Session storage, is off. Turned on, it deletes the sessions unused for more than %s "+
+			"each time the server starts, and keeps pinned and open ones.", keep),
 	}
 	cutoff := timestamppb.New(time.Now().Add(-time.Duration(days) * 24 * time.Hour))
 	matches, err := store.Prune(ctx, &sessionsv1.PruneRequest{Filter: &sessionsv1.Filter{ActiveBefore: cutoff}, DryRun: true})

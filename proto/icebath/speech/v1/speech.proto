@@ -2,10 +2,12 @@ syntax = "proto3";
 
 package icebath.speech.v1;
 
+import "icebath/config/v1/config.proto";
+
 // Speech of each profile on the machine the server runs on: replies read aloud, recordings turned into text and live transcription, with
-// what the voice mode of a client needs to know of them
+// what the voice input of a client needs to know of them
 service SpeechService {
-  // Voice mode settings of the profile and how its voice, its recognizer and its wake word stand
+  // Voice settings of the profile and how its voice, its recognizer and its wake word stand
   rpc Voice(VoiceRequest) returns (VoiceReply);
   // One piece of text read aloud in the profile's voice: as PCM while it is made when live and the voice streams, else as whole audio files
   rpc Speak(SpeakRequest) returns (stream Audio);
@@ -18,8 +20,51 @@ service SpeechService {
   rpc Feed(FeedRequest) returns (FeedReply);
   // Readies the profile's voice under a lease ahead of spoken replies, or drops the lease
   rpc Lease(LeaseRequest) returns (LeaseReply);
-  // Voices and recognizers of the profile with how each stands, for the voice setup screen
+  // Voices and recognizers of the profile with how each stands, and the fields of the programs of yours among them, for the pages of Voice
   rpc Services(ServicesRequest) returns (ServicesReply);
+  // Adds a program of yours, refused when its name is taken or its command can't run
+  rpc AddProgram(AddProgramRequest) returns (ProgramReply);
+  // Changes one field of a program of yours, or its name, refused when the program could then not run
+  rpc ChangeProgram(ChangeProgramRequest) returns (ProgramReply);
+  // Removes a program of yours, and the choice of it with it
+  rpc RemoveProgram(RemoveProgramRequest) returns (ProgramReply);
+  // Microphones of the machine the server runs on, which the wake word listens on
+  rpc Microphones(MicrophonesRequest) returns (MicrophonesReply);
+  // Values one setting of a service may be picked from, read when its list is opened
+  rpc Values(ValuesRequest) returns (ValuesReply);
+}
+
+// What keeps a part of voice from working, and the kind of thing that fixes it
+message Hindrance {
+  // What is wrong, a clause in a person's words, such as Local Whisper is not installed
+  string cause = 1;
+  Lack lack = 2;
+  // Service it is about, empty for none in particular
+  string service = 3;
+  // Command that installs the program of the system it lacks
+  string install = 4;
+}
+
+// Kind of thing that fixes a hindrance
+enum Lack {
+  // Nothing a page of Voice does
+  LACK_UNSPECIFIED = 0;
+  // Its Python set, which its page installs
+  LACK_INSTALL = 1;
+  // An API key, which its page takes
+  LACK_KEY = 2;
+  // A sign-in at a provider
+  LACK_SIGN_IN = 3;
+  // A program of the system, which the install command installs
+  LACK_PROGRAM = 4;
+  // A build for this computer, so another service is needed
+  LACK_BUILD = 5;
+  // A setting of its own, set on its page
+  LACK_SETUP = 6;
+  // The switch that turns it on
+  LACK_SWITCH = 7;
+  // A service: the one chosen does not exist, or none is chosen and none is ready
+  LACK_SERVICE = 8;
 }
 
 message VoiceRequest {
@@ -35,14 +80,14 @@ message VoiceReply {
   Wake wake = 5;
 }
 
-// Settings of voice mode
+// Settings of voice input
 message Mode {
   // Voice input is on
   bool input = 1;
   // Replies are read aloud
   bool speak = 2;
-  // Chord that starts and stops a recording, empty for the leader key alone
-  string record_key = 3;
+  reserved 3;
+  reserved "record_key";
   // direct sends a transcript, draft puts it in the prompt to edit
   string submit_mode = 4;
   // Speaking over a reply cuts it off
@@ -55,7 +100,7 @@ message Mode {
   bool beep = 8;
   // Loudness of the beeps, 0 to 1
   double beep_volume = 9;
-  // Voice mode traces itself on standard error
+  // Voice input traces itself on standard error
   bool debug = 10;
   // Longest recording in seconds, 0 for no cap
   double max_recording = 11;
@@ -75,12 +120,21 @@ message Mode {
 message Recognition {
   // stt.enabled
   bool enabled = 1;
-  // Recognizer in use, none when nothing can transcribe
+  // Recognizer in use: the one chosen, its fallback while that one can't and the fallback can, else the first that is ready; none when
+  // none is chosen and none is ready
   string provider = 2;
-  // Its title, empty when nothing can transcribe
+  // Its short name for the logs, empty for none
   string label = 3;
   // Recordings stream to it as they are made
   bool live = 4;
+  // stt.provider as written, empty for Automatic
+  string chosen = 5;
+  // Title of the recognizer in use, empty for none
+  string title = 6;
+  // Its state in the words every page shows
+  string state = 7;
+  // What keeps speech from being turned into text, unset while nothing does
+  Hindrance hindrance = 8;
 }
 
 // How the profile's voice stands
@@ -94,6 +148,10 @@ message Speaking {
   bool streams = 4;
   // Smallest piece of a reply in characters spoken at once, tts.streaming.min_len
   int32 least = 5;
+  // Its state in the words every page shows
+  string state = 6;
+  // What keeps replies from being read aloud, unset while nothing does
+  Hindrance hindrance = 7;
 }
 
 // Wake word settings of the profile, which the client that owns the microphone listens with
@@ -105,6 +163,7 @@ message Wake {
   string input_device = 3;
   // Engine as wake_word.provider names it, auto for the automatic choice
   string provider = 4;
+  // Phrase in effect: the one set, else hey and the profile's name while each profile has its own, else hey icebath
   string phrase = 5;
   // 0 to 1, higher catching more
   double sensitivity = 6;
@@ -129,6 +188,7 @@ message Phrase {
 
 message SpeakRequest {
   string profile = 1;
+  // Speech text, cleaned with the whole of the reply it was cut from: read as it is
   string text = 2;
   // PCM while it is made when the voice streams
   bool live = 3;
@@ -225,9 +285,11 @@ message ServicesRequest {
 message ServicesReply {
   repeated Service voices = 1;
   repeated Service recognizers = 2;
-  // Voice tts.provider names and recognizer stt.provider names
+  // Voice tts.provider names and recognizer stt.provider names, empty for Automatic
   string voice = 3;
   string recognizer = 4;
+  // Recognizer Automatic stands for now, empty while none is ready
+  string automatic = 5;
 }
 
 // A voice or recognizer and how it stands
@@ -239,17 +301,87 @@ message Service {
   bool local = 4;
   // Can run now
   bool ready = 5;
-  // Why it can't, for a recognizer
+  // What it says it lacks, in its own words; empty when it lacks nothing
   string missing = 6;
   Setup setup = 7;
   // Settings of it picked from a list, such as its voice or model
   repeated Choice choices = 8;
+  // State in the words every page shows: In use, Ready, Free, Not installed, Needs an API key, Needs a sign-in, Needs and a program, Can't
+  // run here
+  string state = 9;
+  // What keeps it from running, unset while nothing does
+  Hindrance hindrance = 10;
+  // The profile uses it now
+  bool in_use = 11;
+  // A program of yours, its entry's fields with their values in fields
+  bool program = 12;
+  repeated icebath.config.v1.Setting fields = 13;
+  // Section of its own settings, empty when it has none
+  string section = 14;
 }
 
-// Values one setting of a service may be picked from
+// Voices or recognizers
+enum Kind {
+  KIND_UNSPECIFIED = 0;
+  KIND_VOICE = 1;
+  KIND_RECOGNIZER = 2;
+}
+
+message AddProgramRequest {
+  string profile = 1;
+  Kind kind = 2;
+  string name = 3;
+  string command = 4;
+}
+
+message ChangeProgramRequest {
+  string profile = 1;
+  Kind kind = 2;
+  string name = 3;
+  // Field of its entry and its value as YAML, null putting the field's default back; none when it is renamed
+  string field = 4;
+  string value = 5;
+  // New name, empty to keep it
+  string rename = 6;
+}
+
+message RemoveProgramRequest {
+  string profile = 1;
+  Kind kind = 2;
+  string name = 3;
+}
+
+message ProgramReply {
+  // Name the program has now
+  string name = 1;
+  // The settings chose it, and a removal or a rename moved the choice with it
+  bool chosen = 2;
+}
+
+message MicrophonesRequest {}
+
+message MicrophonesReply {
+  repeated Microphone microphones = 1;
+  // Why none could be listed, empty when they were
+  string error = 2;
+}
+
+// An input device
+message Microphone {
+  string name = 1;
+  // Sound system it is reached through, such as ALSA
+  string host = 2;
+  // The device the system records with by default
+  bool default = 3;
+  // What wake_word.input_device holds to name it: its name, with its sound system where another device has the same name
+  string value = 4;
+}
+
+// One setting of a service picked from a list, which Values reads when it is opened
 message Choice {
   string setting = 1;
-  repeated string values = 2;
+  reserved 2;
+  reserved "values";
   // Value it holds now
   string value = 3;
   // Title and description of the setting
@@ -281,10 +413,33 @@ message Setup {
   repeated Program absent = 10;
   // What it costs and whether it is the one to start with, such as ★ recommended · free
   string badge = 11;
+  // Provider of the profile of the kind whose sign-in serves it, empty while the profile has none
+  string sign_in_provider = 12;
 }
 
 // A program of the machine and the command that installs it
 message Program {
   string name = 1;
   string install = 2;
+}
+
+message ValuesRequest {
+  string profile = 1;
+  Kind kind = 2;
+  string service = 3;
+  string setting = 4;
+}
+
+message ValuesReply {
+  repeated Value values = 1;
+  // Why the values could not be read, empty when they were
+  string error = 2;
+}
+
+// One value a setting may be picked as
+message Value {
+  string value = 1;
+  // Name a person knows it by and what it is, empty for a value that says it all
+  string title = 2;
+  string about = 3;
 }

@@ -34,13 +34,35 @@ const (
 	ProviderServiceAddProcedure = "/icebath.provider.v1.ProviderService/Add"
 	// ProviderServiceRemoveProcedure is the procedure name of the ProviderService's Remove RPC.
 	ProviderServiceRemoveProcedure = "/icebath.provider.v1.ProviderService/Remove"
-	// ProviderServiceAddAccountProcedure is the procedure name of the ProviderService's AddAccount RPC.
-	ProviderServiceAddAccountProcedure = "/icebath.provider.v1.ProviderService/AddAccount"
+	// ProviderServiceRenameProcedure is the procedure name of the ProviderService's Rename RPC.
+	ProviderServiceRenameProcedure = "/icebath.provider.v1.ProviderService/Rename"
+	// ProviderServiceConnectProcedure is the procedure name of the ProviderService's Connect RPC.
+	ProviderServiceConnectProcedure = "/icebath.provider.v1.ProviderService/Connect"
 	// ProviderServiceRemoveAccountProcedure is the procedure name of the ProviderService's
 	// RemoveAccount RPC.
 	ProviderServiceRemoveAccountProcedure = "/icebath.provider.v1.ProviderService/RemoveAccount"
 	// ProviderServiceUseAccountProcedure is the procedure name of the ProviderService's UseAccount RPC.
 	ProviderServiceUseAccountProcedure = "/icebath.provider.v1.ProviderService/UseAccount"
+	// ProviderServiceSetTurnsProcedure is the procedure name of the ProviderService's SetTurns RPC.
+	ProviderServiceSetTurnsProcedure = "/icebath.provider.v1.ProviderService/SetTurns"
+	// ProviderServiceSetOutsideProcedure is the procedure name of the ProviderService's SetOutside RPC.
+	ProviderServiceSetOutsideProcedure = "/icebath.provider.v1.ProviderService/SetOutside"
+	// ProviderServiceSetOfferedProcedure is the procedure name of the ProviderService's SetOffered RPC.
+	ProviderServiceSetOfferedProcedure = "/icebath.provider.v1.ProviderService/SetOffered"
+	// ProviderServiceLimitsProcedure is the procedure name of the ProviderService's Limits RPC.
+	ProviderServiceLimitsProcedure = "/icebath.provider.v1.ProviderService/Limits"
+	// ProviderServiceSetLimitProcedure is the procedure name of the ProviderService's SetLimit RPC.
+	ProviderServiceSetLimitProcedure = "/icebath.provider.v1.ProviderService/SetLimit"
+	// ProviderServiceRemoveLimitProcedure is the procedure name of the ProviderService's RemoveLimit
+	// RPC.
+	ProviderServiceRemoveLimitProcedure = "/icebath.provider.v1.ProviderService/RemoveLimit"
+	// ProviderServiceCatalogsProcedure is the procedure name of the ProviderService's Catalogs RPC.
+	ProviderServiceCatalogsProcedure = "/icebath.provider.v1.ProviderService/Catalogs"
+	// ProviderServiceSetCatalogProcedure is the procedure name of the ProviderService's SetCatalog RPC.
+	ProviderServiceSetCatalogProcedure = "/icebath.provider.v1.ProviderService/SetCatalog"
+	// ProviderServiceRemoveCatalogProcedure is the procedure name of the ProviderService's
+	// RemoveCatalog RPC.
+	ProviderServiceRemoveCatalogProcedure = "/icebath.provider.v1.ProviderService/RemoveCatalog"
 	// ProviderServiceUsageProcedure is the procedure name of the ProviderService's Usage RPC.
 	ProviderServiceUsageProcedure = "/icebath.provider.v1.ProviderService/Usage"
 	// ProviderServiceRenewProcedure is the procedure name of the ProviderService's Renew RPC.
@@ -95,11 +117,18 @@ var (
 			Procedure:  ProviderServiceRemoveProcedure,
 		}
 	})
-	providerServiceAddAccountSpec = sync.OnceValue(func() connect.Spec {
+	providerServiceRenameSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
 			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("AddAccount"),
-			Procedure:  ProviderServiceAddAccountProcedure,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("Rename"),
+			Procedure:  ProviderServiceRenameProcedure,
+		}
+	})
+	providerServiceConnectSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("Connect"),
+			Procedure:  ProviderServiceConnectProcedure,
 		}
 	})
 	providerServiceRemoveAccountSpec = sync.OnceValue(func() connect.Spec {
@@ -114,6 +143,69 @@ var (
 			StreamType: connect.StreamTypeUnary,
 			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("UseAccount"),
 			Procedure:  ProviderServiceUseAccountProcedure,
+		}
+	})
+	providerServiceSetTurnsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("SetTurns"),
+			Procedure:  ProviderServiceSetTurnsProcedure,
+		}
+	})
+	providerServiceSetOutsideSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("SetOutside"),
+			Procedure:  ProviderServiceSetOutsideProcedure,
+		}
+	})
+	providerServiceSetOfferedSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("SetOffered"),
+			Procedure:  ProviderServiceSetOfferedProcedure,
+		}
+	})
+	providerServiceLimitsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("Limits"),
+			Procedure:  ProviderServiceLimitsProcedure,
+		}
+	})
+	providerServiceSetLimitSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("SetLimit"),
+			Procedure:  ProviderServiceSetLimitProcedure,
+		}
+	})
+	providerServiceRemoveLimitSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("RemoveLimit"),
+			Procedure:  ProviderServiceRemoveLimitProcedure,
+		}
+	})
+	providerServiceCatalogsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("Catalogs"),
+			Procedure:  ProviderServiceCatalogsProcedure,
+		}
+	})
+	providerServiceSetCatalogSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("SetCatalog"),
+			Procedure:  ProviderServiceSetCatalogProcedure,
+		}
+	})
+	providerServiceRemoveCatalogSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_provider_v1_provider_proto.Services().ByName("ProviderService").Methods().ByName("RemoveCatalog"),
+			Procedure:  ProviderServiceRemoveCatalogProcedure,
 		}
 	})
 	providerServiceUsageSpec = sync.OnceValue(func() connect.Spec {
@@ -175,10 +267,30 @@ type ProviderServiceClient interface {
 	Specs(context.Context, *v1.SpecsRequest) (*v1.SpecsResponse, error)
 	Models(context.Context, *v1.ModelsRequest) (*v1.ModelsResponse, error)
 	Add(context.Context, *v1.AddRequest) (*v1.AddResponse, error)
+	// Removes a provider with its accounts, then clears every setting and session that named it
 	Remove(context.Context, *v1.RemoveRequest) (*v1.RemoveResponse, error)
-	AddAccount(context.Context, *v1.AddAccountRequest) (*v1.AddAccountResponse, error)
+	// Gives a provider the name a person typed: the name shown changes and the key it is kept under follows it
+	Rename(context.Context, *v1.RenameRequest) (*v1.RenameResponse, error)
+	// Keeps a credential in an account, which is made with it when the provider has none of the name: written whole at once, so that no
+	// account stands without the credential that makes it one
+	Connect(context.Context, *v1.ConnectRequest) (*v1.ConnectResponse, error)
+	// Removes an account, then clears every setting and session that named it
 	RemoveAccount(context.Context, *v1.RemoveAccountRequest) (*v1.RemoveAccountResponse, error)
 	UseAccount(context.Context, *v1.UseAccountRequest) (*v1.UseAccountResponse, error)
+	// Turns an account's taking turns on or off, the provider taking turns while one does
+	SetTurns(context.Context, *v1.SetTurnsRequest) (*v1.SetTurnsResponse, error)
+	// Turns the use of a credential found outside the accounts off or on: the one control of that choice
+	SetOutside(context.Context, *v1.SetOutsideRequest) (*v1.SetOutsideResponse, error)
+	// Offers a provider's models in the model list, or leaves them out
+	SetOffered(context.Context, *v1.SetOfferedRequest) (*v1.SetOfferedResponse, error)
+	// Limits and abilities set for models, by provider and model
+	Limits(context.Context, *v1.LimitsRequest) (*v1.LimitsResponse, error)
+	SetLimit(context.Context, *v1.SetLimitRequest) (*v1.SetLimitResponse, error)
+	RemoveLimit(context.Context, *v1.RemoveLimitRequest) (*v1.RemoveLimitResponse, error)
+	// Lists of models of single kinds of provider, read over the online list
+	Catalogs(context.Context, *v1.CatalogsRequest) (*v1.CatalogsResponse, error)
+	SetCatalog(context.Context, *v1.SetCatalogRequest) (*v1.SetCatalogResponse, error)
+	RemoveCatalog(context.Context, *v1.RemoveCatalogRequest) (*v1.RemoveCatalogResponse, error)
 	// What the provider says the account in use may still spend
 	Usage(context.Context, *v1.UsageRequest) (*v1.UsageResponse, error)
 	// Renews the sign-in of an account now, clearing a limit its old token ran into
@@ -208,10 +320,30 @@ type ProviderServiceHandler interface {
 	Specs(context.Context, *v1.SpecsRequest) (*v1.SpecsResponse, error)
 	Models(context.Context, *v1.ModelsRequest) (*v1.ModelsResponse, error)
 	Add(context.Context, *v1.AddRequest) (*v1.AddResponse, error)
+	// Removes a provider with its accounts, then clears every setting and session that named it
 	Remove(context.Context, *v1.RemoveRequest) (*v1.RemoveResponse, error)
-	AddAccount(context.Context, *v1.AddAccountRequest) (*v1.AddAccountResponse, error)
+	// Gives a provider the name a person typed: the name shown changes and the key it is kept under follows it
+	Rename(context.Context, *v1.RenameRequest) (*v1.RenameResponse, error)
+	// Keeps a credential in an account, which is made with it when the provider has none of the name: written whole at once, so that no
+	// account stands without the credential that makes it one
+	Connect(context.Context, *v1.ConnectRequest) (*v1.ConnectResponse, error)
+	// Removes an account, then clears every setting and session that named it
 	RemoveAccount(context.Context, *v1.RemoveAccountRequest) (*v1.RemoveAccountResponse, error)
 	UseAccount(context.Context, *v1.UseAccountRequest) (*v1.UseAccountResponse, error)
+	// Turns an account's taking turns on or off, the provider taking turns while one does
+	SetTurns(context.Context, *v1.SetTurnsRequest) (*v1.SetTurnsResponse, error)
+	// Turns the use of a credential found outside the accounts off or on: the one control of that choice
+	SetOutside(context.Context, *v1.SetOutsideRequest) (*v1.SetOutsideResponse, error)
+	// Offers a provider's models in the model list, or leaves them out
+	SetOffered(context.Context, *v1.SetOfferedRequest) (*v1.SetOfferedResponse, error)
+	// Limits and abilities set for models, by provider and model
+	Limits(context.Context, *v1.LimitsRequest) (*v1.LimitsResponse, error)
+	SetLimit(context.Context, *v1.SetLimitRequest) (*v1.SetLimitResponse, error)
+	RemoveLimit(context.Context, *v1.RemoveLimitRequest) (*v1.RemoveLimitResponse, error)
+	// Lists of models of single kinds of provider, read over the online list
+	Catalogs(context.Context, *v1.CatalogsRequest) (*v1.CatalogsResponse, error)
+	SetCatalog(context.Context, *v1.SetCatalogRequest) (*v1.SetCatalogResponse, error)
+	RemoveCatalog(context.Context, *v1.RemoveCatalogRequest) (*v1.RemoveCatalogResponse, error)
 	// What the provider says the account in use may still spend
 	Usage(context.Context, *v1.UsageRequest) (*v1.UsageResponse, error)
 	// Renews the sign-in of an account now, clearing a limit its old token ran into
@@ -237,9 +369,19 @@ func RegisterProviderServiceHandler(server *connect.Server, svc ProviderServiceH
 		connect.Method{Spec: providerServiceModelsSpec(), Handler: adapter.models},
 		connect.Method{Spec: providerServiceAddSpec(), Handler: adapter.add},
 		connect.Method{Spec: providerServiceRemoveSpec(), Handler: adapter.remove},
-		connect.Method{Spec: providerServiceAddAccountSpec(), Handler: adapter.addAccount},
+		connect.Method{Spec: providerServiceRenameSpec(), Handler: adapter.rename},
+		connect.Method{Spec: providerServiceConnectSpec(), Handler: adapter.connect},
 		connect.Method{Spec: providerServiceRemoveAccountSpec(), Handler: adapter.removeAccount},
 		connect.Method{Spec: providerServiceUseAccountSpec(), Handler: adapter.useAccount},
+		connect.Method{Spec: providerServiceSetTurnsSpec(), Handler: adapter.setTurns},
+		connect.Method{Spec: providerServiceSetOutsideSpec(), Handler: adapter.setOutside},
+		connect.Method{Spec: providerServiceSetOfferedSpec(), Handler: adapter.setOffered},
+		connect.Method{Spec: providerServiceLimitsSpec(), Handler: adapter.limits},
+		connect.Method{Spec: providerServiceSetLimitSpec(), Handler: adapter.setLimit},
+		connect.Method{Spec: providerServiceRemoveLimitSpec(), Handler: adapter.removeLimit},
+		connect.Method{Spec: providerServiceCatalogsSpec(), Handler: adapter.catalogs},
+		connect.Method{Spec: providerServiceSetCatalogSpec(), Handler: adapter.setCatalog},
+		connect.Method{Spec: providerServiceRemoveCatalogSpec(), Handler: adapter.removeCatalog},
 		connect.Method{Spec: providerServiceUsageSpec(), Handler: adapter.usage},
 		connect.Method{Spec: providerServiceRenewSpec(), Handler: adapter.renew},
 		connect.Method{Spec: providerServiceResetSpec(), Handler: adapter.reset},
@@ -273,8 +415,12 @@ func (UnimplementedProviderServiceHandler) Remove(context.Context, *v1.RemoveReq
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Remove is not implemented")
 }
 
-func (UnimplementedProviderServiceHandler) AddAccount(context.Context, *v1.AddAccountRequest) (*v1.AddAccountResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.AddAccount is not implemented")
+func (UnimplementedProviderServiceHandler) Rename(context.Context, *v1.RenameRequest) (*v1.RenameResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Rename is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) Connect(context.Context, *v1.ConnectRequest) (*v1.ConnectResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Connect is not implemented")
 }
 
 func (UnimplementedProviderServiceHandler) RemoveAccount(context.Context, *v1.RemoveAccountRequest) (*v1.RemoveAccountResponse, error) {
@@ -283,6 +429,42 @@ func (UnimplementedProviderServiceHandler) RemoveAccount(context.Context, *v1.Re
 
 func (UnimplementedProviderServiceHandler) UseAccount(context.Context, *v1.UseAccountRequest) (*v1.UseAccountResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.UseAccount is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) SetTurns(context.Context, *v1.SetTurnsRequest) (*v1.SetTurnsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.SetTurns is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) SetOutside(context.Context, *v1.SetOutsideRequest) (*v1.SetOutsideResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.SetOutside is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) SetOffered(context.Context, *v1.SetOfferedRequest) (*v1.SetOfferedResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.SetOffered is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) Limits(context.Context, *v1.LimitsRequest) (*v1.LimitsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Limits is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) SetLimit(context.Context, *v1.SetLimitRequest) (*v1.SetLimitResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.SetLimit is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) RemoveLimit(context.Context, *v1.RemoveLimitRequest) (*v1.RemoveLimitResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.RemoveLimit is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) Catalogs(context.Context, *v1.CatalogsRequest) (*v1.CatalogsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.Catalogs is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) SetCatalog(context.Context, *v1.SetCatalogRequest) (*v1.SetCatalogResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.SetCatalog is not implemented")
+}
+
+func (UnimplementedProviderServiceHandler) RemoveCatalog(context.Context, *v1.RemoveCatalogRequest) (*v1.RemoveCatalogResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.provider.v1.ProviderService.RemoveCatalog is not implemented")
 }
 
 func (UnimplementedProviderServiceHandler) Usage(context.Context, *v1.UsageRequest) (*v1.UsageResponse, error) {
@@ -357,9 +539,17 @@ func (c *providerServiceClient) Remove(ctx context.Context, req *v1.RemoveReques
 	return &res, nil
 }
 
-func (c *providerServiceClient) AddAccount(ctx context.Context, req *v1.AddAccountRequest) (*v1.AddAccountResponse, error) {
-	var res v1.AddAccountResponse
-	if err := c.client.CallUnary(ctx, providerServiceAddAccountSpec(), req, &res); err != nil {
+func (c *providerServiceClient) Rename(ctx context.Context, req *v1.RenameRequest) (*v1.RenameResponse, error) {
+	var res v1.RenameResponse
+	if err := c.client.CallUnary(ctx, providerServiceRenameSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) Connect(ctx context.Context, req *v1.ConnectRequest) (*v1.ConnectResponse, error) {
+	var res v1.ConnectResponse
+	if err := c.client.CallUnary(ctx, providerServiceConnectSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -376,6 +566,78 @@ func (c *providerServiceClient) RemoveAccount(ctx context.Context, req *v1.Remov
 func (c *providerServiceClient) UseAccount(ctx context.Context, req *v1.UseAccountRequest) (*v1.UseAccountResponse, error) {
 	var res v1.UseAccountResponse
 	if err := c.client.CallUnary(ctx, providerServiceUseAccountSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) SetTurns(ctx context.Context, req *v1.SetTurnsRequest) (*v1.SetTurnsResponse, error) {
+	var res v1.SetTurnsResponse
+	if err := c.client.CallUnary(ctx, providerServiceSetTurnsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) SetOutside(ctx context.Context, req *v1.SetOutsideRequest) (*v1.SetOutsideResponse, error) {
+	var res v1.SetOutsideResponse
+	if err := c.client.CallUnary(ctx, providerServiceSetOutsideSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) SetOffered(ctx context.Context, req *v1.SetOfferedRequest) (*v1.SetOfferedResponse, error) {
+	var res v1.SetOfferedResponse
+	if err := c.client.CallUnary(ctx, providerServiceSetOfferedSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) Limits(ctx context.Context, req *v1.LimitsRequest) (*v1.LimitsResponse, error) {
+	var res v1.LimitsResponse
+	if err := c.client.CallUnary(ctx, providerServiceLimitsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) SetLimit(ctx context.Context, req *v1.SetLimitRequest) (*v1.SetLimitResponse, error) {
+	var res v1.SetLimitResponse
+	if err := c.client.CallUnary(ctx, providerServiceSetLimitSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) RemoveLimit(ctx context.Context, req *v1.RemoveLimitRequest) (*v1.RemoveLimitResponse, error) {
+	var res v1.RemoveLimitResponse
+	if err := c.client.CallUnary(ctx, providerServiceRemoveLimitSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) Catalogs(ctx context.Context, req *v1.CatalogsRequest) (*v1.CatalogsResponse, error) {
+	var res v1.CatalogsResponse
+	if err := c.client.CallUnary(ctx, providerServiceCatalogsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) SetCatalog(ctx context.Context, req *v1.SetCatalogRequest) (*v1.SetCatalogResponse, error) {
+	var res v1.SetCatalogResponse
+	if err := c.client.CallUnary(ctx, providerServiceSetCatalogSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *providerServiceClient) RemoveCatalog(ctx context.Context, req *v1.RemoveCatalogRequest) (*v1.RemoveCatalogResponse, error) {
+	var res v1.RemoveCatalogResponse
+	if err := c.client.CallUnary(ctx, providerServiceRemoveCatalogSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -499,12 +761,24 @@ func (h providerServiceHandler) remove(ctx context.Context, _ connect.Spec, stre
 	return stream.Send(res)
 }
 
-func (h providerServiceHandler) addAccount(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.AddAccountRequest
+func (h providerServiceHandler) rename(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RenameRequest
 	if err := stream.Receive(&req); err != nil {
 		return err
 	}
-	res, err := h.svc.AddAccount(ctx, &req)
+	res, err := h.svc.Rename(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) connect(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ConnectRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Connect(ctx, &req)
 	if err != nil {
 		return err
 	}
@@ -529,6 +803,114 @@ func (h providerServiceHandler) useAccount(ctx context.Context, _ connect.Spec, 
 		return err
 	}
 	res, err := h.svc.UseAccount(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) setTurns(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetTurnsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetTurns(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) setOutside(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetOutsideRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetOutside(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) setOffered(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetOfferedRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetOffered(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) limits(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.LimitsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Limits(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) setLimit(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetLimitRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetLimit(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) removeLimit(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RemoveLimitRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RemoveLimit(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) catalogs(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.CatalogsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Catalogs(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) setCatalog(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetCatalogRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetCatalog(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h providerServiceHandler) removeCatalog(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RemoveCatalogRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RemoveCatalog(ctx, &req)
 	if err != nil {
 		return err
 	}

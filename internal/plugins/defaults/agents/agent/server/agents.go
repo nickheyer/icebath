@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/internal/delegation"
 	delegationconfig "github.com/nickheyer/icebath/internal/delegation/config"
-	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -169,7 +168,8 @@ func (a *Agent) delegationStatus(ctx context.Context, id string) (string, error)
 	return strings.Join(lines, "\n"), nil
 }
 
-// What /delegation says: every backend and whether it can run, or the backend of the profile set to another
+// What /delegation says: the methods that can run and the one in use, or with a name the method of the profile set to it, through the
+// check every way of setting it goes through. The note the control gives
 func (a *Agent) Delegation(id, argument string) (string, error) {
 	r, err := a.run(id)
 	if err != nil {
@@ -181,6 +181,9 @@ func (a *Agent) Delegation(id, argument string) (string, error) {
 		current := delegation.Configured(settings)
 		lines := []string{"**Where subagents run**", ""}
 		for _, info := range a.delegation.List(settings) {
+			if !info.Available {
+				continue
+			}
 			line := "- `" + info.Name + "` — " + info.Title
 			if info.Summary != "" {
 				line += ": " + info.Summary
@@ -188,20 +191,15 @@ func (a *Agent) Delegation(id, argument string) (string, error) {
 			if info.Name == current {
 				line += " · In use"
 			}
-			if !info.Available {
-				line += " · Can't be used now. " + sentence(info.Reason)
-			}
 			lines = append(lines, line)
 		}
 		return strings.Join(append(lines, "", "Usage: /delegation [name]"), "\n"), nil
 	}
-	if _, reason := a.delegation.Status(settings, name); reason != "" {
-		return "", errors.New(reason)
-	}
-	if err := a.config.In(r.profileName()).Set(delegationconfig.Backend, name); err != nil {
+	if err := a.config.In(r.profileName()).Change(delegationconfig.Backend, name); err != nil {
 		return "", err
 	}
-	return "Subagents run with `" + name + "` from your next message on.", nil
+	backend, _ := a.delegation.Backend(name)
+	return "Method is now " + cmp.Or(backend.Title, name) + ". Takes effect from your next message.", nil
 }
 
 // Ends the subagents the session's spawn tree runs and its background delegations, as /stop asks; how many it ended
@@ -240,47 +238,6 @@ func (a *Agent) SteerMessage(ctx context.Context, id, text string) (string, erro
 		}
 	}
 	return "No reply is running, so your message is sent as a new one: “" + steerPreview(text) + "”.", nil
-}
-
-// What /busy says: what a message sent while the session's agent works does, or that it changed for the session
-func (a *Agent) Busy(ctx context.Context, id, argument string) (string, error) {
-	r, err := a.run(id)
-	if err != nil {
-		return "", err
-	}
-	switch mode := strings.ToLower(strings.TrimSpace(argument)); mode {
-	case "", "status":
-		return "Enter while busy is set to " + busyTitle(a.settings(r).GetString(agentconfig.BusyInputMode)) + ".", nil
-	case agentconfig.BusyQueue, agentconfig.BusySteer, agentconfig.BusyInterrupt:
-		store, err := a.store()
-		if err != nil {
-			return "", err
-		}
-		r.mu.Lock()
-		merged := r.overrides.Merge(map[string]any{agentconfig.BusyInputMode: mode}, nil)
-		r.mu.Unlock()
-		if err := store.Update(ctx, id, merged.Change()); err != nil {
-			return "", err
-		}
-		r.mu.Lock()
-		r.overrides = merged
-		r.mu.Unlock()
-		// The windows show the mode while the agent works
-		a.changed(r)
-		return "Enter while busy is now " + busyTitle(mode) + " for this session.", nil
-	}
-	return "", errors.New("Usage: /busy [queue|steer|interrupt|status]")
-}
-
-// Title of what enter does while the agent works, as the settings screen shows it
-func busyTitle(mode string) string {
-	switch mode {
-	case agentconfig.BusySteer:
-		return "Steer"
-	case agentconfig.BusyInterrupt:
-		return "Interrupt"
-	}
-	return "Queue it"
 }
 
 // Start of the text a steer's reply quotes

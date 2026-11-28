@@ -4,12 +4,14 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"strings"
 
 	"connectrpc.com/connect/v2"
 
 	hub "github.com/nickheyer/icebath/internal/plugins/defaults/skills/skills/skills"
 	skillsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/skills/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/skills/v1/skillsv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 func line(l hub.Line) *skillsv1.Line {
@@ -294,6 +296,25 @@ func (s *service) Trust(ctx context.Context, request *skillsv1.TrustRequest) (*s
 		return nil, err
 	}
 	response := &skillsv1.TrustResponse{}
-	response.Ok = s.hub.Trust(scope, request.GetPath(), !request.GetUntrust(), func(l hub.Line) { response.Lines = append(response.Lines, line(l)) })
+	result, ok := s.hub.Trust(scope, request.GetPath(), !request.GetUntrust(), func(l hub.Line) { response.Lines = append(response.Lines, line(l)) })
+	response.Ok = ok
+	switch {
+	case !ok:
+		for _, l := range response.GetLines() {
+			response.Said = strings.TrimSpace(response.Said + " " + l.GetText())
+		}
+	case request.GetUntrust() && result.Changed:
+		response.Said = result.Root + " is no longer trusted. Its skills no longer load."
+	case request.GetUntrust():
+		response.Said = "You had not trusted " + result.Root + ", so nothing changed."
+	case !result.Changed:
+		response.Said = "You trust " + result.Root + " already."
+	case result.Skills == 0:
+		response.Said = "Trusted " + result.Root + ". It keeps no skills of its own yet."
+	case result.Skills == 1:
+		response.Said = "Trusted " + result.Root + ". Its skill loads in sessions working in it."
+	default:
+		response.Said = "Trusted " + result.Root + ". Its " + strs.Count(result.Skills, "skill") + " load in sessions working in it."
+	}
 	return response, nil
 }

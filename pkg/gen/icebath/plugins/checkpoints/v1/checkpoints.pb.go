@@ -167,8 +167,10 @@ type ListResponse struct {
 	// Why snapshots taken on this machine don't serve the session's terminal backend, empty when they do
 	Refusal string `protobuf:"bytes,2,opt,name=refusal,proto3" json:"refusal,omitempty"`
 	// Project the snapshots are of
-	Directory     string        `protobuf:"bytes,3,opt,name=directory,proto3" json:"directory,omitempty"`
-	Checkpoints   []*Checkpoint `protobuf:"bytes,4,rep,name=checkpoints,proto3" json:"checkpoints,omitempty"`
+	Directory   string        `protobuf:"bytes,3,opt,name=directory,proto3" json:"directory,omitempty"`
+	Checkpoints []*Checkpoint `protobuf:"bytes,4,rep,name=checkpoints,proto3" json:"checkpoints,omitempty"`
+	// Profile of the session when it is not the one in use, whose settings say whether snapshots are on
+	Profile       string `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -229,6 +231,13 @@ func (x *ListResponse) GetCheckpoints() []*Checkpoint {
 		return x.Checkpoints
 	}
 	return nil
+}
+
+func (x *ListResponse) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
 }
 
 type DiffRequest struct {
@@ -526,7 +535,9 @@ func (x *RestoreResponse) GetFailedDeletes() []string {
 }
 
 type StatusRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Profile whose snapshots, the one in use when empty
+	Profile       string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -559,6 +570,13 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
 	return file_icebath_plugins_checkpoints_v1_checkpoints_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *StatusRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
 }
 
 type Project struct {
@@ -716,7 +734,9 @@ type StatusResponse struct {
 	Projects    []*Project             `protobuf:"bytes,6,rep,name=projects,proto3" json:"projects,omitempty"`
 	Archives    []*Archive             `protobuf:"bytes,7,rep,name=archives,proto3" json:"archives,omitempty"`
 	// Way out the user is told of when snapshots are on and the store is at or above its size, empty otherwise
-	Footprint     string `protobuf:"bytes,8,opt,name=footprint,proto3" json:"footprint,omitempty"`
+	Footprint string `protobuf:"bytes,8,opt,name=footprint,proto3" json:"footprint,omitempty"`
+	// Profile the snapshots are of
+	Profile       string `protobuf:"bytes,9,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -807,6 +827,13 @@ func (x *StatusResponse) GetFootprint() string {
 	return ""
 }
 
+func (x *StatusResponse) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
 type PruneRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Projects not snapshotted for this many days go, none for zero
@@ -816,8 +843,10 @@ type PruneRequest struct {
 	// Projects whose folder is gone go
 	Orphans bool `protobuf:"varint,3,opt,name=orphans,proto3" json:"orphans,omitempty"`
 	// Only the projects listed, by hash, go for their folder being gone
-	AllowListed   bool     `protobuf:"varint,4,opt,name=allow_listed,json=allowListed,proto3" json:"allow_listed,omitempty"`
-	Allow         []string `protobuf:"bytes,5,rep,name=allow,proto3" json:"allow,omitempty"`
+	AllowListed bool     `protobuf:"varint,4,opt,name=allow_listed,json=allowListed,proto3" json:"allow_listed,omitempty"`
+	Allow       []string `protobuf:"bytes,5,rep,name=allow,proto3" json:"allow,omitempty"`
+	// Profile whose snapshots, the one in use when empty
+	Profile       string `protobuf:"bytes,6,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -885,6 +914,13 @@ func (x *PruneRequest) GetAllow() []string {
 		return x.Allow
 	}
 	return nil
+}
+
+func (x *PruneRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
 }
 
 type PruneResponse struct {
@@ -964,7 +1000,9 @@ func (x *PruneResponse) GetFreed() int64 {
 }
 
 type ClearRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Profile whose snapshots, the one in use when empty
+	Profile       string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -997,6 +1035,13 @@ func (x *ClearRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ClearRequest.ProtoReflect.Descriptor instead.
 func (*ClearRequest) Descriptor() ([]byte, []int) {
 	return file_icebath_plugins_checkpoints_v1_checkpoints_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ClearRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
 }
 
 type ClearResponse struct {
@@ -1044,7 +1089,9 @@ func (x *ClearResponse) GetFreed() int64 {
 }
 
 type ClearLegacyRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Profile whose old archives, the one in use when empty
+	Profile       string `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1077,6 +1124,13 @@ func (x *ClearLegacyRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ClearLegacyRequest.ProtoReflect.Descriptor instead.
 func (*ClearLegacyRequest) Descriptor() ([]byte, []int) {
 	return file_icebath_plugins_checkpoints_v1_checkpoints_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ClearLegacyRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
 }
 
 type ClearLegacyResponse struct {
@@ -1157,12 +1211,13 @@ const file_icebath_plugins_checkpoints_v1_checkpoints_proto_rawDesc = "" +
 	"\tdeletions\x18\a \x01(\x05R\tdeletions\",\n" +
 	"\vListRequest\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\"\xae\x01\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\xc8\x01\n" +
 	"\fListResponse\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x18\n" +
 	"\arefusal\x18\x02 \x01(\tR\arefusal\x12\x1c\n" +
 	"\tdirectory\x18\x03 \x01(\tR\tdirectory\x12L\n" +
-	"\vcheckpoints\x18\x04 \x03(\v2*.icebath.plugins.checkpoints.v1.CheckpointR\vcheckpoints\"L\n" +
+	"\vcheckpoints\x18\x04 \x03(\v2*.icebath.plugins.checkpoints.v1.CheckpointR\vcheckpoints\x12\x18\n" +
+	"\aprofile\x18\x05 \x01(\tR\aprofile\"L\n" +
 	"\vDiffRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1e\n" +
@@ -1192,8 +1247,9 @@ const file_icebath_plugins_checkpoints_v1_checkpoints_proto_rawDesc = "" +
 	"\n" +
 	"kept_edits\x18\a \x03(\tR\tkeptEdits\x12#\n" +
 	"\rkept_oversize\x18\b \x03(\tR\fkeptOversize\x12%\n" +
-	"\x0efailed_deletes\x18\t \x03(\tR\rfailedDeletes\"\x0f\n" +
-	"\rStatusRequest\"\xd5\x01\n" +
+	"\x0efailed_deletes\x18\t \x03(\tR\rfailedDeletes\")\n" +
+	"\rStatusRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"\xd5\x01\n" +
 	"\aProject\x12\x12\n" +
 	"\x04hash\x18\x01 \x01(\tR\x04hash\x12\x18\n" +
 	"\aworkdir\x18\x02 \x01(\tR\aworkdir\x12\x16\n" +
@@ -1204,7 +1260,7 @@ const file_icebath_plugins_checkpoints_v1_checkpoints_proto_rawDesc = "" +
 	"\aArchive\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05bytes\x18\x02 \x01(\x03R\x05bytes\x126\n" +
-	"\bmodified\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\bmodified\"\xc9\x02\n" +
+	"\bmodified\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\bmodified\"\xe3\x02\n" +
 	"\x0eStatusResponse\x12\x12\n" +
 	"\x04base\x18\x01 \x01(\tR\x04base\x12\x16\n" +
 	"\x06exists\x18\x02 \x01(\bR\x06exists\x12\x1f\n" +
@@ -1215,23 +1271,27 @@ const file_icebath_plugins_checkpoints_v1_checkpoints_proto_rawDesc = "" +
 	"totalBytes\x12C\n" +
 	"\bprojects\x18\x06 \x03(\v2'.icebath.plugins.checkpoints.v1.ProjectR\bprojects\x12C\n" +
 	"\barchives\x18\a \x03(\v2'.icebath.plugins.checkpoints.v1.ArchiveR\barchives\x12\x1c\n" +
-	"\tfootprint\x18\b \x01(\tR\tfootprint\"\xa8\x01\n" +
+	"\tfootprint\x18\b \x01(\tR\tfootprint\x12\x18\n" +
+	"\aprofile\x18\t \x01(\tR\aprofile\"\xc2\x01\n" +
 	"\fPruneRequest\x12%\n" +
 	"\x0eretention_days\x18\x01 \x01(\x05R\rretentionDays\x12\x1e\n" +
 	"\vmax_size_mb\x18\x02 \x01(\x05R\tmaxSizeMb\x12\x18\n" +
 	"\aorphans\x18\x03 \x01(\bR\aorphans\x12!\n" +
 	"\fallow_listed\x18\x04 \x01(\bR\vallowListed\x12\x14\n" +
-	"\x05allow\x18\x05 \x03(\tR\x05allow\"\x87\x01\n" +
+	"\x05allow\x18\x05 \x03(\tR\x05allow\x12\x18\n" +
+	"\aprofile\x18\x06 \x01(\tR\aprofile\"\x87\x01\n" +
 	"\rPruneResponse\x12\x18\n" +
 	"\ascanned\x18\x01 \x01(\x05R\ascanned\x12\x18\n" +
 	"\aorphans\x18\x02 \x01(\x05R\aorphans\x12\x14\n" +
 	"\x05stale\x18\x03 \x01(\x05R\x05stale\x12\x16\n" +
 	"\x06errors\x18\x04 \x01(\x05R\x06errors\x12\x14\n" +
-	"\x05freed\x18\x05 \x01(\x03R\x05freed\"\x0e\n" +
-	"\fClearRequest\"%\n" +
+	"\x05freed\x18\x05 \x01(\x03R\x05freed\"(\n" +
+	"\fClearRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"%\n" +
 	"\rClearResponse\x12\x14\n" +
-	"\x05freed\x18\x01 \x01(\x03R\x05freed\"\x14\n" +
-	"\x12ClearLegacyRequest\"]\n" +
+	"\x05freed\x18\x01 \x01(\x03R\x05freed\".\n" +
+	"\x12ClearLegacyRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"]\n" +
 	"\x13ClearLegacyResponse\x12\x18\n" +
 	"\adeleted\x18\x01 \x01(\x05R\adeleted\x12\x14\n" +
 	"\x05freed\x18\x02 \x01(\x03R\x05freed\x12\x16\n" +

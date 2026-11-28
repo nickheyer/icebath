@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 
 	sqliteconfig "github.com/nickheyer/icebath/internal/plugins/defaults/sessions/sqlite/config"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
+	"github.com/nickheyer/icebath/pkg/sqlitex"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -34,15 +36,38 @@ const (
 	leastRest      = 200 * time.Millisecond
 )
 
-// Search index a backfill fills from its source view
+// Search index a backfill fills from its source view, with the statements that make its view and table and those of the triggers that keep
+// it in step, each named after its table
 type index struct {
 	prefix, table, source, columns string
+	body, triggers                 string
 }
 
 var (
-	wordIndex    = index{wordBackfill, "messages_fts", "messages_fts_src", "content, tool_name, tool_calls"}
-	trigramIndex = index{trigramBackfill, "messages_fts_trigram", "messages_fts_trigram_src", "content, tool_name"}
+	wordIndex    = index{wordBackfill, "messages_fts", "messages_fts_src", "content, tool_name, tool_calls", ftsBody, ftsTriggers}
+	trigramIndex = index{trigramBackfill, "messages_fts_trigram", "messages_fts_trigram_src", "content, tool_name", trigramBody, trigramTriggers}
 )
+
+func (i index) triggerNames() []string {
+	return []string{i.table + "_insert", i.table + "_delete", i.table + "_update"}
+}
+
+// Whether the object of the name is one of the index: its view, its table or a trigger of it
+func (i index) owns(name string) bool {
+	name = strings.ToLower(name)
+	return name == i.source || name == i.table || slices.Contains(i.triggerNames(), name)
+}
+
+// Drops the index whole: its triggers, its table with what it holds, and its view
+func (i index) drop(ctx context.Context, q querier) error {
+	for _, trigger := range i.triggerNames() {
+		if _, err := q.ExecContext(ctx, "DROP TRIGGER IF EXISTS "+trigger); err != nil {
+			return err
+		}
+	}
+	_, err := q.ExecContext(ctx, "DROP TABLE IF EXISTS "+i.table+"; DROP VIEW IF EXISTS "+i.source)
+	return err
+}
 
 // Progress of a backfill: the id it indexed up to and the highest it indexes, false when none runs
 func progressOf(ctx context.Context, q querier, prefix string) (int64, int64, bool, error) {
@@ -91,14 +116,10 @@ func (s *store) isStale(ctx context.Context, q querier) bool {
 func (s *store) reindex(ctx context.Context) error {
 	trigram := s.config.GetBool(sqliteconfig.CJKFTS)
 	err := s.write(ctx, func(tx *sql.Tx) error {
-		for _, trigger := range indexTriggers {
-			if _, err := tx.ExecContext(ctx, "DROP TRIGGER IF EXISTS "+trigger); err != nil {
+		for _, i := range []index{wordIndex, trigramIndex} {
+			if err := i.drop(ctx, tx); err != nil {
 				return err
 			}
-		}
-		if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS messages_fts; DROP VIEW IF EXISTS messages_fts_src;
-			DROP TABLE IF EXISTS messages_fts_trigram; DROP VIEW IF EXISTS messages_fts_trigram_src;`); err != nil {
-			return err
 		}
 		if err := seed(ctx, tx, wordBackfill); err != nil {
 			return err
@@ -238,7 +259,7 @@ func (s *store) mendOnce(ctx context.Context) (bool, error) {
 		return err == nil, err
 	}
 	finished := false
-	err = withFlock(s.path+".fts_rebuild.lock", 0, func(locked bool) error {
+	err = sqlitex.Locked(s.path+".fts_rebuild.lock", 0, func(locked bool) error {
 		if !locked {
 			return nil
 		}

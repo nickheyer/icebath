@@ -665,7 +665,7 @@ func (s *scope) cleanupTask(task string) {
 func (s *scope) identityMode() string {
 	switch {
 	case s.identityOverride("") != nil:
-		return "The user you chose, under Browser › Camofox › User or with CAMOFOX_USER_ID"
+		return "The user you chose, as User on the Camofox page of /browser or with CAMOFOX_USER_ID"
 	case s.managed():
 		return "One user for every session of this profile, so sign-ins last"
 	}

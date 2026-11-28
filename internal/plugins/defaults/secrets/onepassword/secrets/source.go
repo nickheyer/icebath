@@ -14,8 +14,8 @@ import (
 
 const (
 	// Fix of an op program that is not there
-	InstallHint = "Install the 1Password command line tool from " + onepasswordconfig.Docs + ", or set op program in /settings under Secret " +
-		"stores › 1Password to where it is."
+	InstallHint = "Install the 1Password command line tool from " + onepasswordconfig.Docs + ", or give icebath the path of op as the op program " +
+		"of 1Password."
 	authRemedy = "Run icebath secrets onepassword token to paste a new service account token for {token_env}, or run op signin to sign in."
 	emptyHint  = "Add one with icebath secrets onepassword set, such as icebath secrets onepassword set OPENAI_API_KEY op://Private/OpenAI/credential."
 )
@@ -33,6 +33,7 @@ func (s *Store) Host() *secrets.Secrets {
 
 func (s *Store) Spec() secrets.Spec {
 	return secrets.Spec{Name: onepasswordconfig.Name, Label: "1Password", Short: "1Password", Shape: secrets.Mapped, Scheme: "op",
+		Example: "op://Private/OpenAI/credential", Find: "Copy Secret Reference on a field in 1Password gives it.",
 		TokenSetting: onepasswordconfig.TokenSetting, TokenEnv: onepasswordconfig.DefaultTokenEnv,
 		Hints: map[secrets.Failure]string{secrets.AuthFailed: authRemedy, secrets.AuthExpired: authRemedy, secrets.BinaryMissing: InstallHint,
 			secrets.NotConfigured: emptyHint}}
@@ -46,9 +47,28 @@ func (s *Store) TokenEnv(cfg *config.Config) string {
 // Why the op program the settings name is not there
 func Missing(pinned string) string {
 	if pinned != "" {
-		return fmt.Sprintf("%s, the op program set in /settings under Secret stores › 1Password, is not a program icebath can run.", pinned)
+		return fmt.Sprintf("%s, the op program of 1Password, is not a program icebath can run.", pinned)
 	}
-	return "1Password is on, but op, the 1Password command line tool, is not installed."
+	return "op, the 1Password command line tool, is not installed."
+}
+
+// What keeps 1Password from filling anything: its program, a sign-in of op or a token, then a variable bound to a reference
+func (s *Store) Needs(ctx context.Context, f secrets.Fetch) (string, string) {
+	cfg := f.Config
+	pinned := strings.TrimSpace(cfg.GetString(onepasswordconfig.Binary))
+	op := Find(pinned)
+	if op == "" {
+		return "Needs the op program", Missing(pinned)
+	}
+	if strings.TrimSpace(f.Env[s.TokenEnv(cfg)]) == "" {
+		if _, ok := Whoami(ctx, op, strings.TrimSpace(cfg.GetString(onepasswordconfig.Account)), "", f.Env); !ok {
+			return "Needs a sign-in", "op is not signed in, and no service account token is kept."
+		}
+	}
+	if valid, _ := Validate(References(cfg)); len(valid) == 0 {
+		return "Needs a variable", "It fills no variable yet."
+	}
+	return "", ""
 }
 
 // Seconds values are reused for by the settings

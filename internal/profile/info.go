@@ -25,6 +25,8 @@ type Info struct {
 	Distribution        string
 	DistributionVersion string
 	DistributionSource  string
+	// It gets every skill that comes with icebath, and keeps pulling what another profile imports from other agents
+	Bundled, SyncImports bool
 	Meta
 }
 
@@ -51,7 +53,7 @@ func (p *Profiles) Info(name string) (Info, error) {
 	summary := p.Summarize(p.config.In(canon))
 	info := Info{Name: canon, Path: dir, Default: canon == Default, Active: canon == p.Active(), Sticky: canon == p.sticky(), Model: summary.Model,
 		Provider: summary.Provider, Skills: len(summary.Skills), HasEnv: fsx.Exists(filepath.Join(dir, ".env")),
-		HasSoul: fsx.Exists(filepath.Join(dir, "SOUL.md")), Meta: ReadMeta(dir)}
+		HasSoul: fsx.Exists(filepath.Join(dir, "SOUL.md")), Bundled: bundled(dir), SyncImports: syncing(dir), Meta: ReadMeta(dir)}
 	if manifest, err := ReadManifest(dir); err == nil && manifest != nil {
 		info.Distribution, info.DistributionVersion, info.DistributionSource = manifest.Name, manifest.Version, manifest.Source
 	}

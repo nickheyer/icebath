@@ -18,7 +18,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 // TLS settings of a server: verification on, off or against a CA bundle, and the client certificate when it has one
@@ -29,7 +29,7 @@ func tlsConfig(server string, verify, cert, key any) (*tls.Config, error) {
 	case bool:
 		config.InsecureSkipVerify = !v
 	case string:
-		path := terminal.ExpandUser(strings.TrimSpace(v))
+		path := fsx.ExpandHome(strings.TrimSpace(v))
 		bundle, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("The CA certificate file %s that ssl_verify names for the MCP server %s cannot be read: %w", path, server, err)
@@ -62,7 +62,7 @@ func clientCertificate(server string, rawCert, rawKey any) (*tls.Certificate, er
 		if !ok || strings.TrimSpace(text) == "" {
 			return "", fmt.Errorf("%s of the MCP server %s must be the path of a file.", label, server)
 		}
-		path := terminal.ExpandUser(strings.TrimSpace(text))
+		path := fsx.ExpandHome(strings.TrimSpace(text))
 		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
 			return "", fmt.Errorf("%s of the MCP server %s names %s, which was not found: %w", label, server, path, os.ErrNotExist)
 		}

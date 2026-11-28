@@ -269,19 +269,11 @@ type InstallError struct {
 }
 
 func (e *InstallError) Error() string {
-	text := e.Package + ": " + sentence(e.Cause, e.Package)
+	text := e.Package + ": " + sentenceAbout(e.Cause, e.Package)
 	if remedy := strings.TrimSpace(e.Remedy); remedy != "" && !strings.EqualFold(remedy, "none") {
-		text += " " + sentence(remedy, e.Package)
+		text += " " + sentenceAbout(remedy, e.Package)
 	}
 	return text
-}
-
-// Items joined the way a sentence lists them, the last after the word given
-func joined(items []string, word string) string {
-	if len(items) < 2 {
-		return strings.Join(items, "")
-	}
-	return strings.Join(items[:len(items)-1], ", ") + " " + word + " " + items[len(items)-1]
 }
 
 // Words that stay in lower case at the start of a sentence: names of programs and of icebath
@@ -289,7 +281,7 @@ var lowerNames = map[string]bool{"icebath": true, "uv": true, "uvx": true, "npm"
 
 // Text as a sentence: its first letter capital unless it starts with a name that keeps its case, such as the package's, and a period at
 // the end unless it ends in a mark of its own
-func sentence(text, name string) string {
+func sentenceAbout(text, name string) string {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""

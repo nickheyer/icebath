@@ -144,7 +144,7 @@ func (x *Client) GetRunning() bool {
 	return false
 }
 
-// A server and a root
+// A server and a folder
 type Pair struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Server        string                 `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
@@ -197,166 +197,38 @@ func (x *Pair) GetRoot() string {
 	return ""
 }
 
-type Service struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	WaitMode string                 `protobuf:"bytes,1,opt,name=wait_mode,json=waitMode,proto3" json:"wait_mode,omitempty"`
-	// Seconds
-	WaitTimeout     float64   `protobuf:"fixed64,2,opt,name=wait_timeout,json=waitTimeout,proto3" json:"wait_timeout,omitempty"`
-	InstallStrategy string    `protobuf:"bytes,3,opt,name=install_strategy,json=installStrategy,proto3" json:"install_strategy,omitempty"`
-	Clients         []*Client `protobuf:"bytes,4,rep,name=clients,proto3" json:"clients,omitempty"`
-	// Pairs that failed and are not tried again yet
-	Broken []*Pair `protobuf:"bytes,5,rep,name=broken,proto3" json:"broken,omitempty"`
-	// Servers the settings turn off
-	Disabled           []string `protobuf:"bytes,6,rep,name=disabled,proto3" json:"disabled,omitempty"`
-	BrokenRetrySeconds float64  `protobuf:"fixed64,7,opt,name=broken_retry_seconds,json=brokenRetrySeconds,proto3" json:"broken_retry_seconds,omitempty"`
-	WarmupTimeout      float64  `protobuf:"fixed64,8,opt,name=warmup_timeout,json=warmupTimeout,proto3" json:"warmup_timeout,omitempty"`
-	ExcludeRoots       []string `protobuf:"bytes,9,rep,name=exclude_roots,json=excludeRoots,proto3" json:"exclude_roots,omitempty"`
-	// The exclude setting is no list, which keeps every workspace out
-	ExcludeRootsInvalid bool     `protobuf:"varint,10,opt,name=exclude_roots_invalid,json=excludeRootsInvalid,proto3" json:"exclude_roots_invalid,omitempty"`
-	TrustedWorkspaces   []string `protobuf:"bytes,11,rep,name=trusted_workspaces,json=trustedWorkspaces,proto3" json:"trusted_workspaces,omitempty"`
-	// Pairs kept out of a workspace the user has not trusted
-	UntrustedSkipped []*Pair `protobuf:"bytes,12,rep,name=untrusted_skipped,json=untrustedSkipped,proto3" json:"untrusted_skipped,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *Service) Reset() {
-	*x = Service{}
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Service) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Service) ProtoMessage() {}
-
-func (x *Service) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Service.ProtoReflect.Descriptor instead.
-func (*Service) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *Service) GetWaitMode() string {
-	if x != nil {
-		return x.WaitMode
-	}
-	return ""
-}
-
-func (x *Service) GetWaitTimeout() float64 {
-	if x != nil {
-		return x.WaitTimeout
-	}
-	return 0
-}
-
-func (x *Service) GetInstallStrategy() string {
-	if x != nil {
-		return x.InstallStrategy
-	}
-	return ""
-}
-
-func (x *Service) GetClients() []*Client {
-	if x != nil {
-		return x.Clients
-	}
-	return nil
-}
-
-func (x *Service) GetBroken() []*Pair {
-	if x != nil {
-		return x.Broken
-	}
-	return nil
-}
-
-func (x *Service) GetDisabled() []string {
-	if x != nil {
-		return x.Disabled
-	}
-	return nil
-}
-
-func (x *Service) GetBrokenRetrySeconds() float64 {
-	if x != nil {
-		return x.BrokenRetrySeconds
-	}
-	return 0
-}
-
-func (x *Service) GetWarmupTimeout() float64 {
-	if x != nil {
-		return x.WarmupTimeout
-	}
-	return 0
-}
-
-func (x *Service) GetExcludeRoots() []string {
-	if x != nil {
-		return x.ExcludeRoots
-	}
-	return nil
-}
-
-func (x *Service) GetExcludeRootsInvalid() bool {
-	if x != nil {
-		return x.ExcludeRootsInvalid
-	}
-	return false
-}
-
-func (x *Service) GetTrustedWorkspaces() []string {
-	if x != nil {
-		return x.TrustedWorkspaces
-	}
-	return nil
-}
-
-func (x *Service) GetUntrustedSkipped() []*Pair {
-	if x != nil {
-		return x.UntrustedSkipped
-	}
-	return nil
-}
-
 type Server struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Extensions  []string               `protobuf:"bytes,2,rep,name=extensions,proto3" json:"extensions,omitempty"`
-	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	// installed, missing or manual-only
-	Status string `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	Description string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	Extensions  []string               `protobuf:"bytes,3,rep,name=extensions,proto3" json:"extensions,omitempty"`
+	// Running, Installed, Not installed, Off or Failed
+	State string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
 	// Where its program is, empty when it is not there
 	Path string `protobuf:"bytes,5,opt,name=path,proto3" json:"path,omitempty"`
-	// Starts in a workspace the user has not trusted
-	UntrustedSafe bool `protobuf:"varint,6,opt,name=untrusted_safe,json=untrustedSafe,proto3" json:"untrusted_safe,omitempty"`
-	// Declared by the settings
-	Custom bool `protobuf:"varint,7,opt,name=custom,proto3" json:"custom,omitempty"`
-	// Key of its install recipe, empty for none, and whether the recipe installs by itself
-	Recipe        string `protobuf:"bytes,8,opt,name=recipe,proto3" json:"recipe,omitempty"`
-	Automatic     bool   `protobuf:"varint,9,opt,name=automatic,proto3" json:"automatic,omitempty"`
+	// What a person reads about installing it: that icebath installs it the first time a file needs it, or how to install it yourself; empty
+	// once it is there
+	Install string `protobuf:"bytes,6,opt,name=install,proto3" json:"install,omitempty"`
+	// Not there, and icebath can install it
+	Installable bool `protobuf:"varint,7,opt,name=installable,proto3" json:"installable,omitempty"`
+	// A server you added, and the command it runs as a shell line
+	Added   bool   `protobuf:"varint,8,opt,name=added,proto3" json:"added,omitempty"`
+	Command string `protobuf:"bytes,9,opt,name=command,proto3" json:"command,omitempty"`
+	// Starts in a folder you have not trusted
+	UntrustedSafe bool `protobuf:"varint,10,opt,name=untrusted_safe,json=untrustedSafe,proto3" json:"untrusted_safe,omitempty"`
+	// Folders it runs in, failed in, and was kept out of for not being trusted
+	Running []string `protobuf:"bytes,11,rep,name=running,proto3" json:"running,omitempty"`
+	Failed  []string `protobuf:"bytes,12,rep,name=failed,proto3" json:"failed,omitempty"`
+	Skipped []string `protobuf:"bytes,13,rep,name=skipped,proto3" json:"skipped,omitempty"`
+	// When a failed server is tried again, in words; empty for not until icebath restarts
+	Retry         string `protobuf:"bytes,14,opt,name=retry,proto3" json:"retry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Server) Reset() {
 	*x = Server{}
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[4]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -368,7 +240,7 @@ func (x *Server) String() string {
 func (*Server) ProtoMessage() {}
 
 func (x *Server) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[4]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -381,12 +253,19 @@ func (x *Server) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Server.ProtoReflect.Descriptor instead.
 func (*Server) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{4}
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Server) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *Server) GetDescription() string {
+	if x != nil {
+		return x.Description
 	}
 	return ""
 }
@@ -398,16 +277,9 @@ func (x *Server) GetExtensions() []string {
 	return nil
 }
 
-func (x *Server) GetDescription() string {
+func (x *Server) GetState() string {
 	if x != nil {
-		return x.Description
-	}
-	return ""
-}
-
-func (x *Server) GetStatus() string {
-	if x != nil {
-		return x.Status
+		return x.State
 	}
 	return ""
 }
@@ -419,6 +291,34 @@ func (x *Server) GetPath() string {
 	return ""
 }
 
+func (x *Server) GetInstall() string {
+	if x != nil {
+		return x.Install
+	}
+	return ""
+}
+
+func (x *Server) GetInstallable() bool {
+	if x != nil {
+		return x.Installable
+	}
+	return false
+}
+
+func (x *Server) GetAdded() bool {
+	if x != nil {
+		return x.Added
+	}
+	return false
+}
+
+func (x *Server) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
 func (x *Server) GetUntrustedSafe() bool {
 	if x != nil {
 		return x.UntrustedSafe
@@ -426,42 +326,67 @@ func (x *Server) GetUntrustedSafe() bool {
 	return false
 }
 
-func (x *Server) GetCustom() bool {
+func (x *Server) GetRunning() []string {
 	if x != nil {
-		return x.Custom
+		return x.Running
 	}
-	return false
+	return nil
 }
 
-func (x *Server) GetRecipe() string {
+func (x *Server) GetFailed() []string {
 	if x != nil {
-		return x.Recipe
+		return x.Failed
+	}
+	return nil
+}
+
+func (x *Server) GetSkipped() []string {
+	if x != nil {
+		return x.Skipped
+	}
+	return nil
+}
+
+func (x *Server) GetRetry() string {
+	if x != nil {
+		return x.Retry
 	}
 	return ""
 }
 
-func (x *Server) GetAutomatic() bool {
-	if x != nil {
-		return x.Automatic
-	}
-	return false
-}
-
 type StatusResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The service, absent while language servers are off
-	Service *Service `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
-	// Servers the settings declare, then those icebath knows
-	Servers []*Server `protobuf:"bytes,2,rep,name=servers,proto3" json:"servers,omitempty"`
+	// Code is checked
+	Checking          bool   `protobuf:"varint,1,opt,name=checking,proto3" json:"checking,omitempty"`
+	InstallWhenNeeded bool   `protobuf:"varint,2,opt,name=install_when_needed,json=installWhenNeeded,proto3" json:"install_when_needed,omitempty"`
+	WaitMode          string `protobuf:"bytes,3,opt,name=wait_mode,json=waitMode,proto3" json:"wait_mode,omitempty"`
+	// Seconds
+	WaitTimeout        float64 `protobuf:"fixed64,4,opt,name=wait_timeout,json=waitTimeout,proto3" json:"wait_timeout,omitempty"`
+	WarmupTimeout      float64 `protobuf:"fixed64,5,opt,name=warmup_timeout,json=warmupTimeout,proto3" json:"warmup_timeout,omitempty"`
+	BrokenRetrySeconds float64 `protobuf:"fixed64,6,opt,name=broken_retry_seconds,json=brokenRetrySeconds,proto3" json:"broken_retry_seconds,omitempty"`
+	// Servers you added, then those icebath knows
+	Servers []*Server `protobuf:"bytes,7,rep,name=servers,proto3" json:"servers,omitempty"`
+	// Folders servers were kept out of for not being trusted, each once
+	Skipped      []string `protobuf:"bytes,8,rep,name=skipped,proto3" json:"skipped,omitempty"`
+	ExcludeRoots []string `protobuf:"bytes,9,rep,name=exclude_roots,json=excludeRoots,proto3" json:"exclude_roots,omitempty"`
+	// The skipped folders setting is no list, which keeps every folder out
+	ExcludeRootsInvalid bool      `protobuf:"varint,10,opt,name=exclude_roots_invalid,json=excludeRootsInvalid,proto3" json:"exclude_roots_invalid,omitempty"`
+	TrustedWorkspaces   []string  `protobuf:"bytes,11,rep,name=trusted_workspaces,json=trustedWorkspaces,proto3" json:"trusted_workspaces,omitempty"`
+	Clients             []*Client `protobuf:"bytes,12,rep,name=clients,proto3" json:"clients,omitempty"`
+	// Pairs that failed and are not tried again yet, and pairs kept out of a folder not trusted
+	Broken           []*Pair `protobuf:"bytes,13,rep,name=broken,proto3" json:"broken,omitempty"`
+	UntrustedSkipped []*Pair `protobuf:"bytes,14,rep,name=untrusted_skipped,json=untrustedSkipped,proto3" json:"untrusted_skipped,omitempty"`
+	// Servers that are off
+	Disabled []string `protobuf:"bytes,15,rep,name=disabled,proto3" json:"disabled,omitempty"`
 	// Servers that start but stay silent for want of a companion tool
-	Warnings      []string `protobuf:"bytes,3,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	Warnings      []string `protobuf:"bytes,16,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[5]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +398,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[5]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -486,19 +411,110 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{5}
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *StatusResponse) GetService() *Service {
+func (x *StatusResponse) GetChecking() bool {
 	if x != nil {
-		return x.Service
+		return x.Checking
 	}
-	return nil
+	return false
+}
+
+func (x *StatusResponse) GetInstallWhenNeeded() bool {
+	if x != nil {
+		return x.InstallWhenNeeded
+	}
+	return false
+}
+
+func (x *StatusResponse) GetWaitMode() string {
+	if x != nil {
+		return x.WaitMode
+	}
+	return ""
+}
+
+func (x *StatusResponse) GetWaitTimeout() float64 {
+	if x != nil {
+		return x.WaitTimeout
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetWarmupTimeout() float64 {
+	if x != nil {
+		return x.WarmupTimeout
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetBrokenRetrySeconds() float64 {
+	if x != nil {
+		return x.BrokenRetrySeconds
+	}
+	return 0
 }
 
 func (x *StatusResponse) GetServers() []*Server {
 	if x != nil {
 		return x.Servers
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetSkipped() []string {
+	if x != nil {
+		return x.Skipped
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetExcludeRoots() []string {
+	if x != nil {
+		return x.ExcludeRoots
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetExcludeRootsInvalid() bool {
+	if x != nil {
+		return x.ExcludeRootsInvalid
+	}
+	return false
+}
+
+func (x *StatusResponse) GetTrustedWorkspaces() []string {
+	if x != nil {
+		return x.TrustedWorkspaces
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetClients() []*Client {
+	if x != nil {
+		return x.Clients
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetBroken() []*Pair {
+	if x != nil {
+		return x.Broken
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetUntrustedSkipped() []*Pair {
+	if x != nil {
+		return x.UntrustedSkipped
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetDisabled() []string {
+	if x != nil {
+		return x.Disabled
 	}
 	return nil
 }
@@ -515,17 +531,15 @@ type InstallRequest struct {
 	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
 	// Server to install, by its id
 	Server string `protobuf:"bytes,2,opt,name=server,proto3" json:"server,omitempty"`
-	// Every server whose recipe installs by itself instead
-	All bool `protobuf:"varint,3,opt,name=all,proto3" json:"all,omitempty"`
-	// With all, the servers that install only by hand too, as far as they can
-	IncludeManual bool `protobuf:"varint,4,opt,name=include_manual,json=includeManual,proto3" json:"include_manual,omitempty"`
+	// Each server not installed that icebath can install instead
+	All           bool `protobuf:"varint,3,opt,name=all,proto3" json:"all,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InstallRequest) Reset() {
 	*x = InstallRequest{}
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[6]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -537,7 +551,7 @@ func (x *InstallRequest) String() string {
 func (*InstallRequest) ProtoMessage() {}
 
 func (x *InstallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[6]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -550,7 +564,7 @@ func (x *InstallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallRequest.ProtoReflect.Descriptor instead.
 func (*InstallRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{6}
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *InstallRequest) GetProfile() string {
@@ -574,11 +588,211 @@ func (x *InstallRequest) GetAll() bool {
 	return false
 }
 
-func (x *InstallRequest) GetIncludeManual() bool {
+// A server an install left installed
+type Installed struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Server string                 `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
+	// Where its program is
+	Path string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	// It was there before the install
+	Already       bool `protobuf:"varint,3,opt,name=already,proto3" json:"already,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Installed) Reset() {
+	*x = Installed{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Installed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Installed) ProtoMessage() {}
+
+func (x *Installed) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[6]
 	if x != nil {
-		return x.IncludeManual
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Installed.ProtoReflect.Descriptor instead.
+func (*Installed) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *Installed) GetServer() string {
+	if x != nil {
+		return x.Server
+	}
+	return ""
+}
+
+func (x *Installed) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *Installed) GetAlready() bool {
+	if x != nil {
+		return x.Already
 	}
 	return false
+}
+
+// One thing servers that could not be installed need, said once
+type Need struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Servers it holds back, in the order they were tried
+	Servers []string `protobuf:"bytes,1,rep,name=servers,proto3" json:"servers,omitempty"`
+	// What they need and what to do, as one sentence that names them, such as "pyright, vue-language-server and 6 more need yarn. Install
+	// yarn, or set Node package manager to npm."
+	Text string `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	// Key of the setting that gives it another way, and the value that does, empty for none
+	Setting string `protobuf:"bytes,3,opt,name=setting,proto3" json:"setting,omitempty"`
+	Value   string `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
+	// The one server it holds back is installed by hand, as the text says
+	ByHand        bool `protobuf:"varint,5,opt,name=by_hand,json=byHand,proto3" json:"by_hand,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Need) Reset() {
+	*x = Need{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Need) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Need) ProtoMessage() {}
+
+func (x *Need) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Need.ProtoReflect.Descriptor instead.
+func (*Need) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Need) GetServers() []string {
+	if x != nil {
+		return x.Servers
+	}
+	return nil
+}
+
+func (x *Need) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *Need) GetSetting() string {
+	if x != nil {
+		return x.Setting
+	}
+	return ""
+}
+
+func (x *Need) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *Need) GetByHand() bool {
+	if x != nil {
+		return x.ByHand
+	}
+	return false
+}
+
+// What an install came to: the servers installed, then each thing the others need, said once with the servers it holds back
+type Outcome struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Installed []*Installed           `protobuf:"bytes,1,rep,name=installed,proto3" json:"installed,omitempty"`
+	Needs     []*Need                `protobuf:"bytes,2,rep,name=needs,proto3" json:"needs,omitempty"`
+	// The servers installed by name, those that were there already, or that every server is; empty when none was
+	Done          string `protobuf:"bytes,3,opt,name=done,proto3" json:"done,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Outcome) Reset() {
+	*x = Outcome{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Outcome) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Outcome) ProtoMessage() {}
+
+func (x *Outcome) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Outcome.ProtoReflect.Descriptor instead.
+func (*Outcome) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Outcome) GetInstalled() []*Installed {
+	if x != nil {
+		return x.Installed
+	}
+	return nil
+}
+
+func (x *Outcome) GetNeeds() []*Need {
+	if x != nil {
+		return x.Needs
+	}
+	return nil
+}
+
+func (x *Outcome) GetDone() string {
+	if x != nil {
+		return x.Done
+	}
+	return ""
 }
 
 // One step of an install
@@ -589,6 +803,7 @@ type InstallEvent struct {
 	//	*InstallEvent_Out
 	//	*InstallEvent_Err
 	//	*InstallEvent_ExitCode
+	//	*InstallEvent_Outcome
 	Kind          isInstallEvent_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -596,7 +811,7 @@ type InstallEvent struct {
 
 func (x *InstallEvent) Reset() {
 	*x = InstallEvent{}
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[7]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -608,7 +823,7 @@ func (x *InstallEvent) String() string {
 func (*InstallEvent) ProtoMessage() {}
 
 func (x *InstallEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[7]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -621,7 +836,7 @@ func (x *InstallEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallEvent.ProtoReflect.Descriptor instead.
 func (*InstallEvent) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{7}
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *InstallEvent) GetKind() isInstallEvent_Kind {
@@ -658,6 +873,15 @@ func (x *InstallEvent) GetExitCode() int32 {
 	return 0
 }
 
+func (x *InstallEvent) GetOutcome() *Outcome {
+	if x != nil {
+		if x, ok := x.Kind.(*InstallEvent_Outcome); ok {
+			return x.Outcome
+		}
+	}
+	return nil
+}
+
 type isInstallEvent_Kind interface {
 	isInstallEvent_Kind()
 }
@@ -677,11 +901,18 @@ type InstallEvent_ExitCode struct {
 	ExitCode int32 `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3,oneof"`
 }
 
+type InstallEvent_Outcome struct {
+	// What the install came to, sent before it ends
+	Outcome *Outcome `protobuf:"bytes,4,opt,name=outcome,proto3,oneof"`
+}
+
 func (*InstallEvent_Out) isInstallEvent_Kind() {}
 
 func (*InstallEvent_Err) isInstallEvent_Kind() {}
 
 func (*InstallEvent_ExitCode) isInstallEvent_Kind() {}
+
+func (*InstallEvent_Outcome) isInstallEvent_Kind() {}
 
 type WhichRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -693,7 +924,7 @@ type WhichRequest struct {
 
 func (x *WhichRequest) Reset() {
 	*x = WhichRequest{}
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[8]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -705,7 +936,7 @@ func (x *WhichRequest) String() string {
 func (*WhichRequest) ProtoMessage() {}
 
 func (x *WhichRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[8]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -718,7 +949,7 @@ func (x *WhichRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WhichRequest.ProtoReflect.Descriptor instead.
 func (*WhichRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{8}
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *WhichRequest) GetProfile() string {
@@ -745,7 +976,7 @@ type WhichResponse struct {
 
 func (x *WhichResponse) Reset() {
 	*x = WhichResponse{}
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[9]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -757,7 +988,7 @@ func (x *WhichResponse) String() string {
 func (*WhichResponse) ProtoMessage() {}
 
 func (x *WhichResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[9]
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -770,7 +1001,7 @@ func (x *WhichResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WhichResponse.ProtoReflect.Descriptor instead.
 func (*WhichResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{9}
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *WhichResponse) GetPath() string {
@@ -780,27 +1011,28 @@ func (x *WhichResponse) GetPath() string {
 	return ""
 }
 
-type RestartRequest struct {
+type StopRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RestartRequest) Reset() {
-	*x = RestartRequest{}
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[10]
+func (x *StopRequest) Reset() {
+	*x = StopRequest{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RestartRequest) String() string {
+func (x *StopRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RestartRequest) ProtoMessage() {}
+func (*StopRequest) ProtoMessage() {}
 
-func (x *RestartRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[10]
+func (x *StopRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -811,32 +1043,41 @@ func (x *RestartRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RestartRequest.ProtoReflect.Descriptor instead.
-func (*RestartRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{10}
+// Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
+func (*StopRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{12}
 }
 
-type RestartResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+func (x *StopRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type StopResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// How many ran
+	Stopped       int32 `protobuf:"varint,1,opt,name=stopped,proto3" json:"stopped,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RestartResponse) Reset() {
-	*x = RestartResponse{}
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[11]
+func (x *StopResponse) Reset() {
+	*x = StopResponse{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RestartResponse) String() string {
+func (x *StopResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RestartResponse) ProtoMessage() {}
+func (*StopResponse) ProtoMessage() {}
 
-func (x *RestartResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[11]
+func (x *StopResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -847,9 +1088,394 @@ func (x *RestartResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RestartResponse.ProtoReflect.Descriptor instead.
-func (*RestartResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{11}
+// Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
+func (*StopResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *StopResponse) GetStopped() int32 {
+	if x != nil {
+		return x.Stopped
+	}
+	return 0
+}
+
+type AddRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Name    string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// Written as a shell line, such as gopls serve
+	Command string `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`
+	// File endings, such as .go, .mod, separated by commas or spaces
+	Types         string `protobuf:"bytes,4,opt,name=types,proto3" json:"types,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddRequest) Reset() {
+	*x = AddRequest{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddRequest) ProtoMessage() {}
+
+func (x *AddRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddRequest.ProtoReflect.Descriptor instead.
+func (*AddRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AddRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *AddRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AddRequest) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+func (x *AddRequest) GetTypes() string {
+	if x != nil {
+		return x.Types
+	}
+	return ""
+}
+
+type AddResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddResponse) Reset() {
+	*x = AddResponse{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddResponse) ProtoMessage() {}
+
+func (x *AddResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddResponse.ProtoReflect.Descriptor instead.
+func (*AddResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{15}
+}
+
+type TurnRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Server        string                 `protobuf:"bytes,2,opt,name=server,proto3" json:"server,omitempty"`
+	On            bool                   `protobuf:"varint,3,opt,name=on,proto3" json:"on,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TurnRequest) Reset() {
+	*x = TurnRequest{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TurnRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TurnRequest) ProtoMessage() {}
+
+func (x *TurnRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TurnRequest.ProtoReflect.Descriptor instead.
+func (*TurnRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *TurnRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *TurnRequest) GetServer() string {
+	if x != nil {
+		return x.Server
+	}
+	return ""
+}
+
+func (x *TurnRequest) GetOn() bool {
+	if x != nil {
+		return x.On
+	}
+	return false
+}
+
+type TurnResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TurnResponse) Reset() {
+	*x = TurnResponse{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TurnResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TurnResponse) ProtoMessage() {}
+
+func (x *TurnResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TurnResponse.ProtoReflect.Descriptor instead.
+func (*TurnResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{17}
+}
+
+type RemoveRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Server        string                 `protobuf:"bytes,2,opt,name=server,proto3" json:"server,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveRequest) Reset() {
+	*x = RemoveRequest{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveRequest) ProtoMessage() {}
+
+func (x *RemoveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveRequest.ProtoReflect.Descriptor instead.
+func (*RemoveRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *RemoveRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *RemoveRequest) GetServer() string {
+	if x != nil {
+		return x.Server
+	}
+	return ""
+}
+
+type RemoveResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveResponse) Reset() {
+	*x = RemoveResponse{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveResponse) ProtoMessage() {}
+
+func (x *RemoveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveResponse.ProtoReflect.Descriptor instead.
+func (*RemoveResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{19}
+}
+
+type TrustRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrustRequest) Reset() {
+	*x = TrustRequest{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrustRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrustRequest) ProtoMessage() {}
+
+func (x *TrustRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrustRequest.ProtoReflect.Descriptor instead.
+func (*TrustRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *TrustRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+type TrustResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Folders       []string               `protobuf:"bytes,1,rep,name=folders,proto3" json:"folders,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrustResponse) Reset() {
+	*x = TrustResponse{}
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrustResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrustResponse) ProtoMessage() {}
+
+func (x *TrustResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrustResponse.ProtoReflect.Descriptor instead.
+func (*TrustResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *TrustResponse) GetFolders() []string {
+	if x != nil {
+		return x.Folders
+	}
+	return nil
 }
 
 var File_icebath_plugins_lsp_v1_lsp_proto protoreflect.FileDescriptor
@@ -867,60 +1493,106 @@ const file_icebath_plugins_lsp_v1_lsp_proto_rawDesc = "" +
 	"\arunning\x18\x05 \x01(\bR\arunning\"2\n" +
 	"\x04Pair\x12\x16\n" +
 	"\x06server\x18\x01 \x01(\tR\x06server\x12\x12\n" +
-	"\x04root\x18\x02 \x01(\tR\x04root\"\xac\x04\n" +
-	"\aService\x12\x1b\n" +
-	"\twait_mode\x18\x01 \x01(\tR\bwaitMode\x12!\n" +
-	"\fwait_timeout\x18\x02 \x01(\x01R\vwaitTimeout\x12)\n" +
-	"\x10install_strategy\x18\x03 \x01(\tR\x0finstallStrategy\x128\n" +
-	"\aclients\x18\x04 \x03(\v2\x1e.icebath.plugins.lsp.v1.ClientR\aclients\x124\n" +
-	"\x06broken\x18\x05 \x03(\v2\x1c.icebath.plugins.lsp.v1.PairR\x06broken\x12\x1a\n" +
-	"\bdisabled\x18\x06 \x03(\tR\bdisabled\x120\n" +
-	"\x14broken_retry_seconds\x18\a \x01(\x01R\x12brokenRetrySeconds\x12%\n" +
-	"\x0ewarmup_timeout\x18\b \x01(\x01R\rwarmupTimeout\x12#\n" +
+	"\x04root\x18\x02 \x01(\tR\x04root\"\xf9\x02\n" +
+	"\x06Server\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1e\n" +
+	"\n" +
+	"extensions\x18\x03 \x03(\tR\n" +
+	"extensions\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x12\x12\n" +
+	"\x04path\x18\x05 \x01(\tR\x04path\x12\x18\n" +
+	"\ainstall\x18\x06 \x01(\tR\ainstall\x12 \n" +
+	"\vinstallable\x18\a \x01(\bR\vinstallable\x12\x14\n" +
+	"\x05added\x18\b \x01(\bR\x05added\x12\x18\n" +
+	"\acommand\x18\t \x01(\tR\acommand\x12%\n" +
+	"\x0euntrusted_safe\x18\n" +
+	" \x01(\bR\runtrustedSafe\x12\x18\n" +
+	"\arunning\x18\v \x03(\tR\arunning\x12\x16\n" +
+	"\x06failed\x18\f \x03(\tR\x06failed\x12\x18\n" +
+	"\askipped\x18\r \x03(\tR\askipped\x12\x14\n" +
+	"\x05retry\x18\x0e \x01(\tR\x05retry\"\xc4\x05\n" +
+	"\x0eStatusResponse\x12\x1a\n" +
+	"\bchecking\x18\x01 \x01(\bR\bchecking\x12.\n" +
+	"\x13install_when_needed\x18\x02 \x01(\bR\x11installWhenNeeded\x12\x1b\n" +
+	"\twait_mode\x18\x03 \x01(\tR\bwaitMode\x12!\n" +
+	"\fwait_timeout\x18\x04 \x01(\x01R\vwaitTimeout\x12%\n" +
+	"\x0ewarmup_timeout\x18\x05 \x01(\x01R\rwarmupTimeout\x120\n" +
+	"\x14broken_retry_seconds\x18\x06 \x01(\x01R\x12brokenRetrySeconds\x128\n" +
+	"\aservers\x18\a \x03(\v2\x1e.icebath.plugins.lsp.v1.ServerR\aservers\x12\x18\n" +
+	"\askipped\x18\b \x03(\tR\askipped\x12#\n" +
 	"\rexclude_roots\x18\t \x03(\tR\fexcludeRoots\x122\n" +
 	"\x15exclude_roots_invalid\x18\n" +
 	" \x01(\bR\x13excludeRootsInvalid\x12-\n" +
-	"\x12trusted_workspaces\x18\v \x03(\tR\x11trustedWorkspaces\x12I\n" +
-	"\x11untrusted_skipped\x18\f \x03(\v2\x1c.icebath.plugins.lsp.v1.PairR\x10untrustedSkipped\"\xfb\x01\n" +
-	"\x06Server\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1e\n" +
-	"\n" +
-	"extensions\x18\x02 \x03(\tR\n" +
-	"extensions\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x16\n" +
-	"\x06status\x18\x04 \x01(\tR\x06status\x12\x12\n" +
-	"\x04path\x18\x05 \x01(\tR\x04path\x12%\n" +
-	"\x0euntrusted_safe\x18\x06 \x01(\bR\runtrustedSafe\x12\x16\n" +
-	"\x06custom\x18\a \x01(\bR\x06custom\x12\x16\n" +
-	"\x06recipe\x18\b \x01(\tR\x06recipe\x12\x1c\n" +
-	"\tautomatic\x18\t \x01(\bR\tautomatic\"\xa1\x01\n" +
-	"\x0eStatusResponse\x129\n" +
-	"\aservice\x18\x01 \x01(\v2\x1f.icebath.plugins.lsp.v1.ServiceR\aservice\x128\n" +
-	"\aservers\x18\x02 \x03(\v2\x1e.icebath.plugins.lsp.v1.ServerR\aservers\x12\x1a\n" +
-	"\bwarnings\x18\x03 \x03(\tR\bwarnings\"{\n" +
+	"\x12trusted_workspaces\x18\v \x03(\tR\x11trustedWorkspaces\x128\n" +
+	"\aclients\x18\f \x03(\v2\x1e.icebath.plugins.lsp.v1.ClientR\aclients\x124\n" +
+	"\x06broken\x18\r \x03(\v2\x1c.icebath.plugins.lsp.v1.PairR\x06broken\x12I\n" +
+	"\x11untrusted_skipped\x18\x0e \x03(\v2\x1c.icebath.plugins.lsp.v1.PairR\x10untrustedSkipped\x12\x1a\n" +
+	"\bdisabled\x18\x0f \x03(\tR\bdisabled\x12\x1a\n" +
+	"\bwarnings\x18\x10 \x03(\tR\bwarnings\"T\n" +
 	"\x0eInstallRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x16\n" +
 	"\x06server\x18\x02 \x01(\tR\x06server\x12\x10\n" +
-	"\x03all\x18\x03 \x01(\bR\x03all\x12%\n" +
-	"\x0einclude_manual\x18\x04 \x01(\bR\rincludeManual\"]\n" +
+	"\x03all\x18\x03 \x01(\bR\x03all\"Q\n" +
+	"\tInstalled\x12\x16\n" +
+	"\x06server\x18\x01 \x01(\tR\x06server\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x18\n" +
+	"\aalready\x18\x03 \x01(\bR\aalready\"}\n" +
+	"\x04Need\x12\x18\n" +
+	"\aservers\x18\x01 \x03(\tR\aservers\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\x12\x18\n" +
+	"\asetting\x18\x03 \x01(\tR\asetting\x12\x14\n" +
+	"\x05value\x18\x04 \x01(\tR\x05value\x12\x17\n" +
+	"\aby_hand\x18\x05 \x01(\bR\x06byHand\"\x92\x01\n" +
+	"\aOutcome\x12?\n" +
+	"\tinstalled\x18\x01 \x03(\v2!.icebath.plugins.lsp.v1.InstalledR\tinstalled\x122\n" +
+	"\x05needs\x18\x02 \x03(\v2\x1c.icebath.plugins.lsp.v1.NeedR\x05needs\x12\x12\n" +
+	"\x04done\x18\x03 \x01(\tR\x04done\"\x9a\x01\n" +
 	"\fInstallEvent\x12\x12\n" +
 	"\x03out\x18\x01 \x01(\tH\x00R\x03out\x12\x12\n" +
 	"\x03err\x18\x02 \x01(\tH\x00R\x03err\x12\x1d\n" +
-	"\texit_code\x18\x03 \x01(\x05H\x00R\bexitCodeB\x06\n" +
+	"\texit_code\x18\x03 \x01(\x05H\x00R\bexitCode\x12;\n" +
+	"\aoutcome\x18\x04 \x01(\v2\x1f.icebath.plugins.lsp.v1.OutcomeH\x00R\aoutcomeB\x06\n" +
 	"\x04kind\"@\n" +
 	"\fWhichRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x16\n" +
 	"\x06server\x18\x02 \x01(\tR\x06server\"#\n" +
 	"\rWhichResponse\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\"\x10\n" +
-	"\x0eRestartRequest\"\x11\n" +
-	"\x0fRestartResponse2\xf2\x02\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"'\n" +
+	"\vStopRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"(\n" +
+	"\fStopResponse\x12\x18\n" +
+	"\astopped\x18\x01 \x01(\x05R\astopped\"j\n" +
+	"\n" +
+	"AddRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
+	"\acommand\x18\x03 \x01(\tR\acommand\x12\x14\n" +
+	"\x05types\x18\x04 \x01(\tR\x05types\"\r\n" +
+	"\vAddResponse\"O\n" +
+	"\vTurnRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x16\n" +
+	"\x06server\x18\x02 \x01(\tR\x06server\x12\x0e\n" +
+	"\x02on\x18\x03 \x01(\bR\x02on\"\x0e\n" +
+	"\fTurnResponse\"A\n" +
+	"\rRemoveRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x16\n" +
+	"\x06server\x18\x02 \x01(\tR\x06server\"\x10\n" +
+	"\x0eRemoveResponse\"(\n" +
+	"\fTrustRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\")\n" +
+	"\rTrustResponse\x12\x18\n" +
+	"\afolders\x18\x01 \x03(\tR\afolders2\xbb\x05\n" +
 	"\n" +
 	"LspService\x12W\n" +
 	"\x06Status\x12%.icebath.plugins.lsp.v1.StatusRequest\x1a&.icebath.plugins.lsp.v1.StatusResponse\x12Y\n" +
 	"\aInstall\x12&.icebath.plugins.lsp.v1.InstallRequest\x1a$.icebath.plugins.lsp.v1.InstallEvent0\x01\x12T\n" +
-	"\x05Which\x12$.icebath.plugins.lsp.v1.WhichRequest\x1a%.icebath.plugins.lsp.v1.WhichResponse\x12Z\n" +
-	"\aRestart\x12&.icebath.plugins.lsp.v1.RestartRequest\x1a'.icebath.plugins.lsp.v1.RestartResponseB\xe4\x01\n" +
+	"\x05Which\x12$.icebath.plugins.lsp.v1.WhichRequest\x1a%.icebath.plugins.lsp.v1.WhichResponse\x12Q\n" +
+	"\x04Stop\x12#.icebath.plugins.lsp.v1.StopRequest\x1a$.icebath.plugins.lsp.v1.StopResponse\x12N\n" +
+	"\x03Add\x12\".icebath.plugins.lsp.v1.AddRequest\x1a#.icebath.plugins.lsp.v1.AddResponse\x12Q\n" +
+	"\x04Turn\x12#.icebath.plugins.lsp.v1.TurnRequest\x1a$.icebath.plugins.lsp.v1.TurnResponse\x12W\n" +
+	"\x06Remove\x12%.icebath.plugins.lsp.v1.RemoveRequest\x1a&.icebath.plugins.lsp.v1.RemoveResponse\x12T\n" +
+	"\x05Trust\x12$.icebath.plugins.lsp.v1.TrustRequest\x1a%.icebath.plugins.lsp.v1.TrustResponseB\xe4\x01\n" +
 	"\x1acom.icebath.plugins.lsp.v1B\bLspProtoP\x01ZAgithub.com/nickheyer/icebath/pkg/gen/icebath/plugins/lsp/v1;lspv1\xa2\x02\x03IPL\xaa\x02\x16Icebath.Plugins.Lsp.V1\xca\x02\x16Icebath\\Plugins\\Lsp\\V1\xe2\x02\"Icebath\\Plugins\\Lsp\\V1\\GPBMetadata\xea\x02\x19Icebath::Plugins::Lsp::V1b\x06proto3"
 
 var (
@@ -935,40 +1607,60 @@ func file_icebath_plugins_lsp_v1_lsp_proto_rawDescGZIP() []byte {
 	return file_icebath_plugins_lsp_v1_lsp_proto_rawDescData
 }
 
-var file_icebath_plugins_lsp_v1_lsp_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_icebath_plugins_lsp_v1_lsp_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_icebath_plugins_lsp_v1_lsp_proto_goTypes = []any{
-	(*StatusRequest)(nil),   // 0: icebath.plugins.lsp.v1.StatusRequest
-	(*Client)(nil),          // 1: icebath.plugins.lsp.v1.Client
-	(*Pair)(nil),            // 2: icebath.plugins.lsp.v1.Pair
-	(*Service)(nil),         // 3: icebath.plugins.lsp.v1.Service
-	(*Server)(nil),          // 4: icebath.plugins.lsp.v1.Server
-	(*StatusResponse)(nil),  // 5: icebath.plugins.lsp.v1.StatusResponse
-	(*InstallRequest)(nil),  // 6: icebath.plugins.lsp.v1.InstallRequest
-	(*InstallEvent)(nil),    // 7: icebath.plugins.lsp.v1.InstallEvent
-	(*WhichRequest)(nil),    // 8: icebath.plugins.lsp.v1.WhichRequest
-	(*WhichResponse)(nil),   // 9: icebath.plugins.lsp.v1.WhichResponse
-	(*RestartRequest)(nil),  // 10: icebath.plugins.lsp.v1.RestartRequest
-	(*RestartResponse)(nil), // 11: icebath.plugins.lsp.v1.RestartResponse
+	(*StatusRequest)(nil),  // 0: icebath.plugins.lsp.v1.StatusRequest
+	(*Client)(nil),         // 1: icebath.plugins.lsp.v1.Client
+	(*Pair)(nil),           // 2: icebath.plugins.lsp.v1.Pair
+	(*Server)(nil),         // 3: icebath.plugins.lsp.v1.Server
+	(*StatusResponse)(nil), // 4: icebath.plugins.lsp.v1.StatusResponse
+	(*InstallRequest)(nil), // 5: icebath.plugins.lsp.v1.InstallRequest
+	(*Installed)(nil),      // 6: icebath.plugins.lsp.v1.Installed
+	(*Need)(nil),           // 7: icebath.plugins.lsp.v1.Need
+	(*Outcome)(nil),        // 8: icebath.plugins.lsp.v1.Outcome
+	(*InstallEvent)(nil),   // 9: icebath.plugins.lsp.v1.InstallEvent
+	(*WhichRequest)(nil),   // 10: icebath.plugins.lsp.v1.WhichRequest
+	(*WhichResponse)(nil),  // 11: icebath.plugins.lsp.v1.WhichResponse
+	(*StopRequest)(nil),    // 12: icebath.plugins.lsp.v1.StopRequest
+	(*StopResponse)(nil),   // 13: icebath.plugins.lsp.v1.StopResponse
+	(*AddRequest)(nil),     // 14: icebath.plugins.lsp.v1.AddRequest
+	(*AddResponse)(nil),    // 15: icebath.plugins.lsp.v1.AddResponse
+	(*TurnRequest)(nil),    // 16: icebath.plugins.lsp.v1.TurnRequest
+	(*TurnResponse)(nil),   // 17: icebath.plugins.lsp.v1.TurnResponse
+	(*RemoveRequest)(nil),  // 18: icebath.plugins.lsp.v1.RemoveRequest
+	(*RemoveResponse)(nil), // 19: icebath.plugins.lsp.v1.RemoveResponse
+	(*TrustRequest)(nil),   // 20: icebath.plugins.lsp.v1.TrustRequest
+	(*TrustResponse)(nil),  // 21: icebath.plugins.lsp.v1.TrustResponse
 }
 var file_icebath_plugins_lsp_v1_lsp_proto_depIdxs = []int32{
-	1,  // 0: icebath.plugins.lsp.v1.Service.clients:type_name -> icebath.plugins.lsp.v1.Client
-	2,  // 1: icebath.plugins.lsp.v1.Service.broken:type_name -> icebath.plugins.lsp.v1.Pair
-	2,  // 2: icebath.plugins.lsp.v1.Service.untrusted_skipped:type_name -> icebath.plugins.lsp.v1.Pair
-	3,  // 3: icebath.plugins.lsp.v1.StatusResponse.service:type_name -> icebath.plugins.lsp.v1.Service
-	4,  // 4: icebath.plugins.lsp.v1.StatusResponse.servers:type_name -> icebath.plugins.lsp.v1.Server
-	0,  // 5: icebath.plugins.lsp.v1.LspService.Status:input_type -> icebath.plugins.lsp.v1.StatusRequest
-	6,  // 6: icebath.plugins.lsp.v1.LspService.Install:input_type -> icebath.plugins.lsp.v1.InstallRequest
-	8,  // 7: icebath.plugins.lsp.v1.LspService.Which:input_type -> icebath.plugins.lsp.v1.WhichRequest
-	10, // 8: icebath.plugins.lsp.v1.LspService.Restart:input_type -> icebath.plugins.lsp.v1.RestartRequest
-	5,  // 9: icebath.plugins.lsp.v1.LspService.Status:output_type -> icebath.plugins.lsp.v1.StatusResponse
-	7,  // 10: icebath.plugins.lsp.v1.LspService.Install:output_type -> icebath.plugins.lsp.v1.InstallEvent
-	9,  // 11: icebath.plugins.lsp.v1.LspService.Which:output_type -> icebath.plugins.lsp.v1.WhichResponse
-	11, // 12: icebath.plugins.lsp.v1.LspService.Restart:output_type -> icebath.plugins.lsp.v1.RestartResponse
-	9,  // [9:13] is the sub-list for method output_type
-	5,  // [5:9] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	3,  // 0: icebath.plugins.lsp.v1.StatusResponse.servers:type_name -> icebath.plugins.lsp.v1.Server
+	1,  // 1: icebath.plugins.lsp.v1.StatusResponse.clients:type_name -> icebath.plugins.lsp.v1.Client
+	2,  // 2: icebath.plugins.lsp.v1.StatusResponse.broken:type_name -> icebath.plugins.lsp.v1.Pair
+	2,  // 3: icebath.plugins.lsp.v1.StatusResponse.untrusted_skipped:type_name -> icebath.plugins.lsp.v1.Pair
+	6,  // 4: icebath.plugins.lsp.v1.Outcome.installed:type_name -> icebath.plugins.lsp.v1.Installed
+	7,  // 5: icebath.plugins.lsp.v1.Outcome.needs:type_name -> icebath.plugins.lsp.v1.Need
+	8,  // 6: icebath.plugins.lsp.v1.InstallEvent.outcome:type_name -> icebath.plugins.lsp.v1.Outcome
+	0,  // 7: icebath.plugins.lsp.v1.LspService.Status:input_type -> icebath.plugins.lsp.v1.StatusRequest
+	5,  // 8: icebath.plugins.lsp.v1.LspService.Install:input_type -> icebath.plugins.lsp.v1.InstallRequest
+	10, // 9: icebath.plugins.lsp.v1.LspService.Which:input_type -> icebath.plugins.lsp.v1.WhichRequest
+	12, // 10: icebath.plugins.lsp.v1.LspService.Stop:input_type -> icebath.plugins.lsp.v1.StopRequest
+	14, // 11: icebath.plugins.lsp.v1.LspService.Add:input_type -> icebath.plugins.lsp.v1.AddRequest
+	16, // 12: icebath.plugins.lsp.v1.LspService.Turn:input_type -> icebath.plugins.lsp.v1.TurnRequest
+	18, // 13: icebath.plugins.lsp.v1.LspService.Remove:input_type -> icebath.plugins.lsp.v1.RemoveRequest
+	20, // 14: icebath.plugins.lsp.v1.LspService.Trust:input_type -> icebath.plugins.lsp.v1.TrustRequest
+	4,  // 15: icebath.plugins.lsp.v1.LspService.Status:output_type -> icebath.plugins.lsp.v1.StatusResponse
+	9,  // 16: icebath.plugins.lsp.v1.LspService.Install:output_type -> icebath.plugins.lsp.v1.InstallEvent
+	11, // 17: icebath.plugins.lsp.v1.LspService.Which:output_type -> icebath.plugins.lsp.v1.WhichResponse
+	13, // 18: icebath.plugins.lsp.v1.LspService.Stop:output_type -> icebath.plugins.lsp.v1.StopResponse
+	15, // 19: icebath.plugins.lsp.v1.LspService.Add:output_type -> icebath.plugins.lsp.v1.AddResponse
+	17, // 20: icebath.plugins.lsp.v1.LspService.Turn:output_type -> icebath.plugins.lsp.v1.TurnResponse
+	19, // 21: icebath.plugins.lsp.v1.LspService.Remove:output_type -> icebath.plugins.lsp.v1.RemoveResponse
+	21, // 22: icebath.plugins.lsp.v1.LspService.Trust:output_type -> icebath.plugins.lsp.v1.TrustResponse
+	15, // [15:23] is the sub-list for method output_type
+	7,  // [7:15] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_icebath_plugins_lsp_v1_lsp_proto_init() }
@@ -976,10 +1668,11 @@ func file_icebath_plugins_lsp_v1_lsp_proto_init() {
 	if File_icebath_plugins_lsp_v1_lsp_proto != nil {
 		return
 	}
-	file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[7].OneofWrappers = []any{
+	file_icebath_plugins_lsp_v1_lsp_proto_msgTypes[9].OneofWrappers = []any{
 		(*InstallEvent_Out)(nil),
 		(*InstallEvent_Err)(nil),
 		(*InstallEvent_ExitCode)(nil),
+		(*InstallEvent_Outcome)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -987,7 +1680,7 @@ func file_icebath_plugins_lsp_v1_lsp_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_plugins_lsp_v1_lsp_proto_rawDesc), len(file_icebath_plugins_lsp_v1_lsp_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

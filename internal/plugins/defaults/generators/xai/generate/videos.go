@@ -102,7 +102,7 @@ func (s *Services) media(job *generation.Job, source, kind, fallback string) (st
 	return generation.DataURL(mime, data), nil
 }
 
-// Makes a video from text, a still or reference pictures with the model video_gen.model names, else the one for what it is made from
+// Makes a video from text, a still or reference pictures with the model video_gen.xai.model names, else the one for what it is made from
 func (s *Services) Generate(ctx context.Context, job *generation.Job, request generation.VideoRequest) generation.Result {
 	return s.run(ctx, job.Config, "generation", request.Prompt, request.Model, request.Aspect, func(bearer web.XAI) (generation.Result, error) {
 		return s.generate(ctx, job, bearer, request)

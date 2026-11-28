@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/tools/redact"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Stores in a profile's folder that hold credentials, never copied into an export, an archive or a distribution
@@ -68,6 +69,12 @@ func private(parts []string) bool {
 		}
 	}
 	return false
+}
+
+// Whether a path below a profile's folder, slash separated, is a credential store, lies in one, or is a copy of one: what no export carries
+// and no copy made without credentials takes
+func credentialStore(rel string) bool {
+	return private(parts(rel)) || buried(parts(rel))
 }
 
 // Stores no export carries wherever they lie in a profile, not only at its top: logins, keys and the credential folders of an account
@@ -172,6 +179,10 @@ func secretName(key string) bool {
 // Whether the value kept under the key of the settings is a credential: a setting marked secret, or for a key no setting is registered for
 // one named like a credential; an empty value or a reference to a variable never is
 func credential(cfg *config.Config, key string, value *yaml.Node) bool {
+	// An alias is what it stands for
+	if value.Kind == yaml.AliasNode && value.Alias != nil {
+		value = value.Alias
+	}
 	if value.Kind == yaml.ScalarNode && (value.Value == "" || value.Tag == "!!null" || secretBlocking.MatchString(value.Value)) {
 		return false
 	}
@@ -207,12 +218,8 @@ func scrub(cfg *config.Config, rel string, data []byte) []byte {
 	}
 	data = bytes.TrimPrefix(data, bom)
 	if rel == "config.yaml" {
-		var doc yaml.Node
-		if yaml.Unmarshal(data, &doc) == nil && len(doc.Content) == 1 && doc.Content[0].Kind == yaml.MappingNode {
-			stripSecrets(cfg, doc.Content[0], "")
-			if stripped, err := yaml.Marshal(&doc); err == nil {
-				data = stripped
-			}
+		if stripped, err := config.Without(data, func(settings *yaml.Node) { stripSecrets(cfg, settings, "") }); err == nil {
+			data = stripped
 		}
 	}
 	return []byte(redact.File(string(data), true))
@@ -241,7 +248,7 @@ func (p *Profiles) Export(name string) ([]byte, string, error) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if unexportable(entry) || private(parts(rel)) || buried(parts(rel)) || !strings.Contains(rel, "/") && runtimeTrees[rel] {
+		if unexportable(entry) || credentialStore(rel) || !strings.Contains(rel, "/") && runtimeTrees[rel] {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -370,7 +377,7 @@ func escapes(name string) error {
 func unpack(data []byte, dest string) (map[string]bool, error) {
 	zr, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
-		return nil, &ValueError{"This is not a profile archive, which is a .tar.gz file: " + sentence(err.Error())}
+		return nil, &ValueError{"This is not a profile archive, which is a .tar.gz file: " + strs.Sentence(err.Error())}
 	}
 	root, err := filepath.EvalSymlinks(dest)
 	if err != nil {
@@ -391,7 +398,7 @@ func unpack(data []byte, dest string) (map[string]bool, error) {
 			break
 		}
 		if err != nil {
-			return nil, &ValueError{"The profile archive can't be read: " + sentence(err.Error())}
+			return nil, &ValueError{"The profile archive can't be read: " + strs.Sentence(err.Error())}
 		}
 		if header.Typeflag == tar.TypeXGlobalHeader {
 			continue
@@ -585,15 +592,15 @@ func (p *Profiles) Import(data []byte, name string) (string, error) {
 	return dir, nil
 }
 
-// Saves a profile's archive where asked, always as a .tar.gz, else in the folder exports go to of icebath's folder on this machine: where it
-// went
-func SaveArchive(data []byte, name, output string) (string, error) {
+// Saves a profile's archive where asked, always as a .tar.gz, else under the file name its export gave it in the folder exports go to of
+// icebath's folder on this machine: where it went
+func SaveArchive(data []byte, file, output string) (string, error) {
 	if output == "" {
 		root, _, err := Home()
 		if err != nil {
 			return "", err
 		}
-		if output, err = ExportPath(root, name, time.Now().Format("20060102-150405")); err != nil {
+		if output, err = ExportPath(root, file); err != nil {
 			return "", err
 		}
 	} else {
@@ -627,9 +634,14 @@ func inCheckout(dir string) bool {
 	}
 }
 
-// Where an export goes when no output is named: the profile-exports folder of icebath's folder, else of the user's home or the temporary
-// folder when that lies in a git checkout, refused when every one does, or the folder is a link or another user's
-func ExportPath(root, name, stamp string) (string, error) {
+// Where an export goes when no output is named, under the file name the export gave it: the profile-exports folder of icebath's folder,
+// else of the user's home or the temporary folder when that lies in a git checkout, refused when every one does, or the folder is a link
+// or another user's
+func ExportPath(root, file string) (string, error) {
+	// The name is the server's to give and never a path
+	if file = filepath.Base(file); file == "." || file == string(filepath.Separator) {
+		return "", &ValueError{"The export gave its archive no file name. Name the file yourself, with -o on the command line."}
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -655,5 +667,5 @@ func ExportPath(root, name, stamp string) (string, error) {
 	if owner, ok := ownerOf(dir); ok && owner != os.Getuid() {
 		return "", &ValueError{fmt.Sprintf("The export folder %s belongs to another user, so icebath does not write an archive there. Name the file yourself, with -o on the command line.", dir)}
 	}
-	return filepath.Join(dir, name+"-"+stamp+".tar.gz"), nil
+	return filepath.Join(dir, file), nil
 }

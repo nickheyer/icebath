@@ -38,6 +38,18 @@ const (
 	SpeechServiceLeaseProcedure = "/icebath.speech.v1.SpeechService/Lease"
 	// SpeechServiceServicesProcedure is the procedure name of the SpeechService's Services RPC.
 	SpeechServiceServicesProcedure = "/icebath.speech.v1.SpeechService/Services"
+	// SpeechServiceAddProgramProcedure is the procedure name of the SpeechService's AddProgram RPC.
+	SpeechServiceAddProgramProcedure = "/icebath.speech.v1.SpeechService/AddProgram"
+	// SpeechServiceChangeProgramProcedure is the procedure name of the SpeechService's ChangeProgram
+	// RPC.
+	SpeechServiceChangeProgramProcedure = "/icebath.speech.v1.SpeechService/ChangeProgram"
+	// SpeechServiceRemoveProgramProcedure is the procedure name of the SpeechService's RemoveProgram
+	// RPC.
+	SpeechServiceRemoveProgramProcedure = "/icebath.speech.v1.SpeechService/RemoveProgram"
+	// SpeechServiceMicrophonesProcedure is the procedure name of the SpeechService's Microphones RPC.
+	SpeechServiceMicrophonesProcedure = "/icebath.speech.v1.SpeechService/Microphones"
+	// SpeechServiceValuesProcedure is the procedure name of the SpeechService's Values RPC.
+	SpeechServiceValuesProcedure = "/icebath.speech.v1.SpeechService/Values"
 )
 
 var (
@@ -90,11 +102,46 @@ var (
 			Procedure:  SpeechServiceServicesProcedure,
 		}
 	})
+	speechServiceAddProgramSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_speech_v1_speech_proto.Services().ByName("SpeechService").Methods().ByName("AddProgram"),
+			Procedure:  SpeechServiceAddProgramProcedure,
+		}
+	})
+	speechServiceChangeProgramSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_speech_v1_speech_proto.Services().ByName("SpeechService").Methods().ByName("ChangeProgram"),
+			Procedure:  SpeechServiceChangeProgramProcedure,
+		}
+	})
+	speechServiceRemoveProgramSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_speech_v1_speech_proto.Services().ByName("SpeechService").Methods().ByName("RemoveProgram"),
+			Procedure:  SpeechServiceRemoveProgramProcedure,
+		}
+	})
+	speechServiceMicrophonesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_speech_v1_speech_proto.Services().ByName("SpeechService").Methods().ByName("Microphones"),
+			Procedure:  SpeechServiceMicrophonesProcedure,
+		}
+	})
+	speechServiceValuesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_speech_v1_speech_proto.Services().ByName("SpeechService").Methods().ByName("Values"),
+			Procedure:  SpeechServiceValuesProcedure,
+		}
+	})
 )
 
 // SpeechServiceClient is a client for the icebath.speech.v1.SpeechService service.
 type SpeechServiceClient interface {
-	// Voice mode settings of the profile and how its voice, its recognizer and its wake word stand
+	// Voice settings of the profile and how its voice, its recognizer and its wake word stand
 	Voice(context.Context, *v1.VoiceRequest) (*v1.VoiceReply, error)
 	// One piece of text read aloud in the profile's voice: as PCM while it is made when live and the voice streams, else as whole audio files
 	Speak(context.Context, *v1.SpeakRequest) (SpeechServiceSpeakClientStream, error)
@@ -107,8 +154,18 @@ type SpeechServiceClient interface {
 	Feed(context.Context, *v1.FeedRequest) (*v1.FeedReply, error)
 	// Readies the profile's voice under a lease ahead of spoken replies, or drops the lease
 	Lease(context.Context, *v1.LeaseRequest) (*v1.LeaseReply, error)
-	// Voices and recognizers of the profile with how each stands, for the voice setup screen
+	// Voices and recognizers of the profile with how each stands, and the fields of the programs of yours among them, for the pages of Voice
 	Services(context.Context, *v1.ServicesRequest) (*v1.ServicesReply, error)
+	// Adds a program of yours, refused when its name is taken or its command can't run
+	AddProgram(context.Context, *v1.AddProgramRequest) (*v1.ProgramReply, error)
+	// Changes one field of a program of yours, or its name, refused when the program could then not run
+	ChangeProgram(context.Context, *v1.ChangeProgramRequest) (*v1.ProgramReply, error)
+	// Removes a program of yours, and the choice of it with it
+	RemoveProgram(context.Context, *v1.RemoveProgramRequest) (*v1.ProgramReply, error)
+	// Microphones of the machine the server runs on, which the wake word listens on
+	Microphones(context.Context, *v1.MicrophonesRequest) (*v1.MicrophonesReply, error)
+	// Values one setting of a service may be picked from, read when its list is opened
+	Values(context.Context, *v1.ValuesRequest) (*v1.ValuesReply, error)
 }
 
 // NewSpeechServiceClient constructs a client for the icebath.speech.v1.SpeechService service.
@@ -159,7 +216,7 @@ func (s SpeechServiceListenClientStream) Close() error {
 
 // SpeechServiceHandler is an implementation of the icebath.speech.v1.SpeechService service.
 type SpeechServiceHandler interface {
-	// Voice mode settings of the profile and how its voice, its recognizer and its wake word stand
+	// Voice settings of the profile and how its voice, its recognizer and its wake word stand
 	Voice(context.Context, *v1.VoiceRequest) (*v1.VoiceReply, error)
 	// One piece of text read aloud in the profile's voice: as PCM while it is made when live and the voice streams, else as whole audio files
 	Speak(context.Context, *v1.SpeakRequest, SpeechServiceSpeakServerStream) error
@@ -172,8 +229,18 @@ type SpeechServiceHandler interface {
 	Feed(context.Context, *v1.FeedRequest) (*v1.FeedReply, error)
 	// Readies the profile's voice under a lease ahead of spoken replies, or drops the lease
 	Lease(context.Context, *v1.LeaseRequest) (*v1.LeaseReply, error)
-	// Voices and recognizers of the profile with how each stands, for the voice setup screen
+	// Voices and recognizers of the profile with how each stands, and the fields of the programs of yours among them, for the pages of Voice
 	Services(context.Context, *v1.ServicesRequest) (*v1.ServicesReply, error)
+	// Adds a program of yours, refused when its name is taken or its command can't run
+	AddProgram(context.Context, *v1.AddProgramRequest) (*v1.ProgramReply, error)
+	// Changes one field of a program of yours, or its name, refused when the program could then not run
+	ChangeProgram(context.Context, *v1.ChangeProgramRequest) (*v1.ProgramReply, error)
+	// Removes a program of yours, and the choice of it with it
+	RemoveProgram(context.Context, *v1.RemoveProgramRequest) (*v1.ProgramReply, error)
+	// Microphones of the machine the server runs on, which the wake word listens on
+	Microphones(context.Context, *v1.MicrophonesRequest) (*v1.MicrophonesReply, error)
+	// Values one setting of a service may be picked from, read when its list is opened
+	Values(context.Context, *v1.ValuesRequest) (*v1.ValuesReply, error)
 }
 
 // RegisterSpeechServiceHandler registers svc as the icebath.speech.v1.SpeechService implementation
@@ -188,6 +255,11 @@ func RegisterSpeechServiceHandler(server *connect.Server, svc SpeechServiceHandl
 		connect.Method{Spec: speechServiceFeedSpec(), Handler: adapter.feed},
 		connect.Method{Spec: speechServiceLeaseSpec(), Handler: adapter.lease},
 		connect.Method{Spec: speechServiceServicesSpec(), Handler: adapter.services},
+		connect.Method{Spec: speechServiceAddProgramSpec(), Handler: adapter.addProgram},
+		connect.Method{Spec: speechServiceChangeProgramSpec(), Handler: adapter.changeProgram},
+		connect.Method{Spec: speechServiceRemoveProgramSpec(), Handler: adapter.removeProgram},
+		connect.Method{Spec: speechServiceMicrophonesSpec(), Handler: adapter.microphones},
+		connect.Method{Spec: speechServiceValuesSpec(), Handler: adapter.values},
 	)
 }
 
@@ -252,6 +324,26 @@ func (UnimplementedSpeechServiceHandler) Services(context.Context, *v1.ServicesR
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.speech.v1.SpeechService.Services is not implemented")
 }
 
+func (UnimplementedSpeechServiceHandler) AddProgram(context.Context, *v1.AddProgramRequest) (*v1.ProgramReply, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.speech.v1.SpeechService.AddProgram is not implemented")
+}
+
+func (UnimplementedSpeechServiceHandler) ChangeProgram(context.Context, *v1.ChangeProgramRequest) (*v1.ProgramReply, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.speech.v1.SpeechService.ChangeProgram is not implemented")
+}
+
+func (UnimplementedSpeechServiceHandler) RemoveProgram(context.Context, *v1.RemoveProgramRequest) (*v1.ProgramReply, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.speech.v1.SpeechService.RemoveProgram is not implemented")
+}
+
+func (UnimplementedSpeechServiceHandler) Microphones(context.Context, *v1.MicrophonesRequest) (*v1.MicrophonesReply, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.speech.v1.SpeechService.Microphones is not implemented")
+}
+
+func (UnimplementedSpeechServiceHandler) Values(context.Context, *v1.ValuesRequest) (*v1.ValuesReply, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.speech.v1.SpeechService.Values is not implemented")
+}
+
 type speechServiceClient struct {
 	client *connect.Client
 }
@@ -307,6 +399,46 @@ func (c *speechServiceClient) Lease(ctx context.Context, req *v1.LeaseRequest) (
 func (c *speechServiceClient) Services(ctx context.Context, req *v1.ServicesRequest) (*v1.ServicesReply, error) {
 	var res v1.ServicesReply
 	if err := c.client.CallUnary(ctx, speechServiceServicesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *speechServiceClient) AddProgram(ctx context.Context, req *v1.AddProgramRequest) (*v1.ProgramReply, error) {
+	var res v1.ProgramReply
+	if err := c.client.CallUnary(ctx, speechServiceAddProgramSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *speechServiceClient) ChangeProgram(ctx context.Context, req *v1.ChangeProgramRequest) (*v1.ProgramReply, error) {
+	var res v1.ProgramReply
+	if err := c.client.CallUnary(ctx, speechServiceChangeProgramSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *speechServiceClient) RemoveProgram(ctx context.Context, req *v1.RemoveProgramRequest) (*v1.ProgramReply, error) {
+	var res v1.ProgramReply
+	if err := c.client.CallUnary(ctx, speechServiceRemoveProgramSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *speechServiceClient) Microphones(ctx context.Context, req *v1.MicrophonesRequest) (*v1.MicrophonesReply, error) {
+	var res v1.MicrophonesReply
+	if err := c.client.CallUnary(ctx, speechServiceMicrophonesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *speechServiceClient) Values(ctx context.Context, req *v1.ValuesRequest) (*v1.ValuesReply, error) {
+	var res v1.ValuesReply
+	if err := c.client.CallUnary(ctx, speechServiceValuesSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -384,6 +516,66 @@ func (h speechServiceHandler) services(ctx context.Context, _ connect.Spec, stre
 		return err
 	}
 	res, err := h.svc.Services(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h speechServiceHandler) addProgram(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.AddProgramRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.AddProgram(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h speechServiceHandler) changeProgram(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ChangeProgramRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ChangeProgram(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h speechServiceHandler) removeProgram(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RemoveProgramRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RemoveProgram(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h speechServiceHandler) microphones(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.MicrophonesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Microphones(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h speechServiceHandler) values(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ValuesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Values(ctx, &req)
 	if err != nil {
 		return err
 	}

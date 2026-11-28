@@ -34,7 +34,8 @@ func (b backends) Backends() []web.Backend {
 			Title:  "With your sign-in",
 			Badge:  "built in · search only",
 			About:  "Needs a ChatGPT or Codex sign-in, and another service to read pages",
-			Prompt: "ChatGPT or Codex sign-in, connected in /providers",
+			Prompt: "ChatGPT or Codex sign-in",
+			SignIn: codex,
 		}},
 		Search: func(context.Context, *config.Config, string, int) (*web.Results, error) {
 			return web.Failed(unsupported), nil

@@ -82,9 +82,9 @@ func (services) Services() []generation.Service {
 		Ready: func(cfg *config.Config) bool { return key(cfg) != "" },
 		Setup: generation.Setup{Badge: "paid", Key: kreaconfig.APIKey, Prompt: "Krea API key", Link: kreaconfig.KeyLink},
 		Images: &generation.Images{
-			About:    "Stylized images and edits, needs a Krea API key",
-			Settings: []string{kreaconfig.APIKey, kreaconfig.Model, kreaconfig.Creativity, kreaconfig.Upscale},
-			Model:    kreaconfig.Model,
+			About:   "Stylized images and edits, needs a Krea API key",
+			Section: kreaconfig.Key,
+			Model:   kreaconfig.Model,
 			Models: func(context.Context, *config.Config) []generation.Model {
 				out := make([]generation.Model, len(models))
 				for i, m := range models {
@@ -99,19 +99,17 @@ func (services) Services() []generation.Service {
 	}}
 }
 
-// Model the call draws with: the one image_gen.krea.model names, else Image model, when Krea has it; else the default
-func chosen(cfg *config.Config, asked string) model {
-	for _, name := range []string{cfg.GetString(kreaconfig.Model), asked} {
-		if i := slices.IndexFunc(models, func(m model) bool { return m.id == strings.TrimSpace(name) }); i >= 0 {
-			return models[i]
-		}
+// Model image_gen.krea.model names when Krea has it, else the default
+func chosen(name string) model {
+	if i := slices.IndexFunc(models, func(m model) bool { return m.id == strings.TrimSpace(name) }); i >= 0 {
+		return models[i]
 	}
 	return models[slices.IndexFunc(models, func(m model) bool { return m.id == defaultModel })]
 }
 
 // Krea 3 edits with thinking and resolution, Krea 2 restyles with its creative controls
 func takes(cfg *config.Config) generation.ImageTakes {
-	if chosen(cfg, generation.Named(cfg, generation.Image)).edit {
+	if chosen(cfg.GetString(kreaconfig.Model)).edit {
 		return generation.ImageTakes{Edits: true, References: maxEditRefs, Upscale: true, Controls: []string{"thinking", "resolution"}}
 	}
 	return generation.ImageTakes{Edits: true, References: maxStyleRefs, Upscale: true, Controls: []string{"creativity", "intensity", "complexity", "movement"}, Style: true}
@@ -225,10 +223,10 @@ func draw(ctx context.Context, job *generation.Job, request generation.ImageRequ
 	}
 	token := key(cfg)
 	if token == "" {
-		return generation.Call{Provider: kreaconfig.Name, Aspect: aspect}.Fail("KREA_API_KEY not set. Get a key at "+kreaconfig.KeyLink+" and set it with /imagegen.",
-			"auth_required")
+		return generation.Call{Provider: kreaconfig.Name, Aspect: aspect}.Fail("KREA_API_KEY not set. The user gets a key at "+kreaconfig.KeyLink+
+			" and sets it with /images.", "auth_required")
 	}
-	m := chosen(cfg, request.Model)
+	m := chosen(request.Model)
 	call := generation.Call{Provider: kreaconfig.Name, Model: m.id, Prompt: prompt, Aspect: aspect}
 	body, why, kind := payload(job, m, request, prompt, ratio)
 	if why != "" {

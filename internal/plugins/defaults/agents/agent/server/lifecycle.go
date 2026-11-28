@@ -214,11 +214,11 @@ func (a *Agent) attach(r *run, client string) error {
 		}
 		switch {
 		case windowCount >= perWindow:
-			return fmt.Errorf("This window already has %s open, so %s was not opened. Close a session first, or raise Open per window in "+
-				"/settings under Sessions.%s", strs.Count(windowCount, "session"), name, hint)
+			return fmt.Errorf("This window already has %s open, so %s was not opened. Close a session first, or raise Open per window with "+
+				"/settings open per window.%s", strs.Count(windowCount, "session"), name, hint)
 		case !watched && profileCount >= perProfile:
-			return fmt.Errorf("This profile already has %s open, so %s was not opened. Close a session first, or raise Open per profile in "+
-				"/settings under Sessions.%s", strs.Count(profileCount, "session"), name, hint)
+			return fmt.Errorf("This profile already has %s open, so %s was not opened. Close a session first, or raise Open per profile with "+
+				"/settings open per profile.%s", strs.Count(profileCount, "session"), name, hint)
 		}
 	}
 	r.mu.Lock()
@@ -369,7 +369,7 @@ func (a *Agent) enter(ctx context.Context, r *run, admission string) (func(outco
 		count := len(a.life.turns)
 		a.mu.Unlock()
 		refuse(store, admission)
-		return nil, fmt.Errorf("icebath is already replying in %s, as many as Working at once in /settings under Sessions allows, the oldest for "+
+		return nil, fmt.Errorf("icebath is already replying in %s, as many as Working at once allows, which /settings working at once changes, the oldest for "+
 			"%s. Try again when one of them finishes.", strs.Count(count, "session"), strs.Span(rounded(time.Since(oldest))))
 	}
 	a.life.turns[r.sessionID()] = time.Now()

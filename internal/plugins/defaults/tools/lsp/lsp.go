@@ -11,7 +11,7 @@ import (
 
 func Register(registries *plugins.Registries) {
 	config.Register(registries.Config)
-	manager := tools.Register(registries.Tools, registries.Profile, registries.Sessions, registries.Worktrees, registries.Terminal.Host(),
+	manager := tools.Register(registries.Config, registries.Tools, registries.Profile, registries.Sessions, registries.Worktrees, registries.Terminal.Host(),
 		registries.Packages.Host())
 	server.Register(registries.Server, registries.Config, manager)
 	cli.Register(registries.CLI)

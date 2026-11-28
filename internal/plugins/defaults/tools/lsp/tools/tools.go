@@ -27,7 +27,6 @@ type Manager struct {
 	stop     context.CancelFunc
 	terminal *terminal.Terminal
 	packages *packages.Packages
-	servers  serversFile
 	announce announcer
 	installs installs
 	notes    *notes
@@ -36,8 +35,10 @@ type Manager struct {
 	services map[string]*service
 }
 
-func Register(registry *tools.Registry, profiles *profile.Registry, stores *sessions.Registry, trees *worktrees.Registry, host *terminal.Terminal,
-	pm *packages.Packages) *Manager {
+// Registers the language servers with the hosts they join: the checks of what the file tools write, the profiles and worktrees whose
+// servers stop with them, a settings section for each server, and the guard every write of the servers goes through
+func Register(cfg *config.Config, registry *tools.Registry, profiles *profile.Registry, stores *sessions.Registry, trees *worktrees.Registry,
+	host *terminal.Terminal, pm *packages.Packages) *Manager {
 	ctx, stop := context.WithCancel(context.Background())
 	m := &Manager{ctx: ctx, stop: stop, terminal: host, packages: pm, notes: newNotes(), services: map[string]*service{},
 		announce: announcer{warned: map[string]bool{}}, installs: installs{locks: map[string]*sync.Mutex{}, results: map[string]string{}}}
@@ -47,6 +48,8 @@ func Register(registry *tools.Registry, profiles *profile.Registry, stores *sess
 	registry.Register(m)
 	profiles.Register(m)
 	trees.Register(m)
+	cfg.Register(sections{})
+	guard(cfg, m)
 	stores.OnRelease(func(_ context.Context, session string) { m.notes.drop(session) })
 	return m
 }
@@ -214,7 +217,7 @@ func (m *Manager) all() []*service {
 	return slices.Collect(maps.Values(m.services))
 }
 
-// Stops every server of every profile; the next edit starts them again
+// Stops every server of every profile
 func (m *Manager) Restart() {
 	m.mu.Lock()
 	services := m.services

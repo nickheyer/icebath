@@ -22,7 +22,7 @@ import (
 	"github.com/nickheyer/icebath/internal/plugins/defaults/speech/porcupine/config"
 	"github.com/nickheyer/icebath/internal/speech"
 	"github.com/nickheyer/icebath/internal/speech/native"
-	"github.com/nickheyer/icebath/internal/terminal"
+	"github.com/nickheyer/icebath/pkg/fsx"
 	"github.com/nickheyer/icebath/pkg/strs"
 )
 
@@ -34,7 +34,7 @@ func Register(registry *speech.Registry) {
 			reason, known := sp.Packages().ExtraUnsupported(config.Extra)
 			return known && reason == ""
 		},
-		Installed: func(sp *speech.Speech) bool {
+		Installed: func(sp *speech.Speech, _ map[string]string) bool {
 			_, ok := sp.Packages().ExtraModule(config.Extra, "pvporcupine")
 			return ok
 		},
@@ -236,11 +236,12 @@ func open(ctx context.Context, wake *speech.Wake) (speech.Hotword, error) {
 	if keyword == "" {
 		keyword = config.DefaultKeyword
 	}
-	path, shown := terminal.ExpandUser(keyword), keyword
+	path, shown := fsx.ExpandHome(keyword), keyword
 	if !file(keyword) {
 		if path, ok = builtin[keyword]; !ok {
 			names := slices.Sorted(maps.Keys(builtin))
-			return nil, fmt.Errorf("Porcupine has no keyword %s. Set Keyword in /settings under Wake word › Porcupine to one of these, or to a keyword file: %s.", keyword, strings.Join(names, ", "))
+			return nil, fmt.Errorf("Porcupine has no keyword %s. Set Keyword on its page under Listener to one of these, or to a keyword file: %s.", keyword,
+				strings.Join(names, ", "))
 		}
 		shown = path
 	}

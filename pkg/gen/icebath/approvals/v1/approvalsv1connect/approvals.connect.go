@@ -34,6 +34,12 @@ const (
 	ApprovalsServiceAllowProcedure = "/icebath.approvals.v1.ApprovalsService/Allow"
 	// ApprovalsServiceDisallowProcedure is the procedure name of the ApprovalsService's Disallow RPC.
 	ApprovalsServiceDisallowProcedure = "/icebath.approvals.v1.ApprovalsService/Disallow"
+	// ApprovalsServiceChangeProcedure is the procedure name of the ApprovalsService's Change RPC.
+	ApprovalsServiceChangeProcedure = "/icebath.approvals.v1.ApprovalsService/Change"
+	// ApprovalsServiceModeProcedure is the procedure name of the ApprovalsService's Mode RPC.
+	ApprovalsServiceModeProcedure = "/icebath.approvals.v1.ApprovalsService/Mode"
+	// ApprovalsServiceSkipProcedure is the procedure name of the ApprovalsService's Skip RPC.
+	ApprovalsServiceSkipProcedure = "/icebath.approvals.v1.ApprovalsService/Skip"
 )
 
 var (
@@ -72,6 +78,27 @@ var (
 			Procedure:  ApprovalsServiceDisallowProcedure,
 		}
 	})
+	approvalsServiceChangeSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_approvals_v1_approvals_proto.Services().ByName("ApprovalsService").Methods().ByName("Change"),
+			Procedure:  ApprovalsServiceChangeProcedure,
+		}
+	})
+	approvalsServiceModeSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_approvals_v1_approvals_proto.Services().ByName("ApprovalsService").Methods().ByName("Mode"),
+			Procedure:  ApprovalsServiceModeProcedure,
+		}
+	})
+	approvalsServiceSkipSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_approvals_v1_approvals_proto.Services().ByName("ApprovalsService").Methods().ByName("Skip"),
+			Procedure:  ApprovalsServiceSkipProcedure,
+		}
+	})
 )
 
 // ApprovalsServiceClient is a client for the icebath.approvals.v1.ApprovalsService service.
@@ -80,12 +107,18 @@ type ApprovalsServiceClient interface {
 	Test(context.Context, *v1.TestRequest) (*v1.TestResponse, error)
 	// Allowlist entries proposed from the flagged commands the user kept approving
 	Suggest(context.Context, *v1.SuggestRequest) (*v1.SuggestResponse, error)
-	// The allowlist and the kinds of risky action it can hold
+	// The allowlist as every page shows it, the kinds of risky action it can hold, and whether a session skips asking
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	// Adds entries to the allowlist
 	Allow(context.Context, *v1.AllowRequest) (*v1.AllowResponse, error)
 	// Takes entries out of the allowlist
 	Disallow(context.Context, *v1.DisallowRequest) (*v1.DisallowResponse, error)
+	// Puts one allowed command or pattern in the place of another
+	Change(context.Context, *v1.ChangeRequest) (*v1.ChangeResponse, error)
+	// Sets when the agent asks before risky commands, for every session of the profile
+	Mode(context.Context, *v1.ModeRequest) (*v1.ModeResponse, error)
+	// Skips asking in one session, or asks again
+	Skip(context.Context, *v1.SkipRequest) (*v1.SkipResponse, error)
 }
 
 // NewApprovalsServiceClient constructs a client for the icebath.approvals.v1.ApprovalsService
@@ -101,12 +134,18 @@ type ApprovalsServiceHandler interface {
 	Test(context.Context, *v1.TestRequest) (*v1.TestResponse, error)
 	// Allowlist entries proposed from the flagged commands the user kept approving
 	Suggest(context.Context, *v1.SuggestRequest) (*v1.SuggestResponse, error)
-	// The allowlist and the kinds of risky action it can hold
+	// The allowlist as every page shows it, the kinds of risky action it can hold, and whether a session skips asking
 	List(context.Context, *v1.ListRequest) (*v1.ListResponse, error)
 	// Adds entries to the allowlist
 	Allow(context.Context, *v1.AllowRequest) (*v1.AllowResponse, error)
 	// Takes entries out of the allowlist
 	Disallow(context.Context, *v1.DisallowRequest) (*v1.DisallowResponse, error)
+	// Puts one allowed command or pattern in the place of another
+	Change(context.Context, *v1.ChangeRequest) (*v1.ChangeResponse, error)
+	// Sets when the agent asks before risky commands, for every session of the profile
+	Mode(context.Context, *v1.ModeRequest) (*v1.ModeResponse, error)
+	// Skips asking in one session, or asks again
+	Skip(context.Context, *v1.SkipRequest) (*v1.SkipResponse, error)
 }
 
 // RegisterApprovalsServiceHandler registers svc as the icebath.approvals.v1.ApprovalsService
@@ -119,6 +158,9 @@ func RegisterApprovalsServiceHandler(server *connect.Server, svc ApprovalsServic
 		connect.Method{Spec: approvalsServiceListSpec(), Handler: adapter.list},
 		connect.Method{Spec: approvalsServiceAllowSpec(), Handler: adapter.allow},
 		connect.Method{Spec: approvalsServiceDisallowSpec(), Handler: adapter.disallow},
+		connect.Method{Spec: approvalsServiceChangeSpec(), Handler: adapter.change},
+		connect.Method{Spec: approvalsServiceModeSpec(), Handler: adapter.mode},
+		connect.Method{Spec: approvalsServiceSkipSpec(), Handler: adapter.skip},
 	)
 }
 
@@ -143,6 +185,18 @@ func (UnimplementedApprovalsServiceHandler) Allow(context.Context, *v1.AllowRequ
 
 func (UnimplementedApprovalsServiceHandler) Disallow(context.Context, *v1.DisallowRequest) (*v1.DisallowResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.approvals.v1.ApprovalsService.Disallow is not implemented")
+}
+
+func (UnimplementedApprovalsServiceHandler) Change(context.Context, *v1.ChangeRequest) (*v1.ChangeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.approvals.v1.ApprovalsService.Change is not implemented")
+}
+
+func (UnimplementedApprovalsServiceHandler) Mode(context.Context, *v1.ModeRequest) (*v1.ModeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.approvals.v1.ApprovalsService.Mode is not implemented")
+}
+
+func (UnimplementedApprovalsServiceHandler) Skip(context.Context, *v1.SkipRequest) (*v1.SkipResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.approvals.v1.ApprovalsService.Skip is not implemented")
 }
 
 type approvalsServiceClient struct {
@@ -184,6 +238,30 @@ func (c *approvalsServiceClient) Allow(ctx context.Context, req *v1.AllowRequest
 func (c *approvalsServiceClient) Disallow(ctx context.Context, req *v1.DisallowRequest) (*v1.DisallowResponse, error) {
 	var res v1.DisallowResponse
 	if err := c.client.CallUnary(ctx, approvalsServiceDisallowSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *approvalsServiceClient) Change(ctx context.Context, req *v1.ChangeRequest) (*v1.ChangeResponse, error) {
+	var res v1.ChangeResponse
+	if err := c.client.CallUnary(ctx, approvalsServiceChangeSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *approvalsServiceClient) Mode(ctx context.Context, req *v1.ModeRequest) (*v1.ModeResponse, error) {
+	var res v1.ModeResponse
+	if err := c.client.CallUnary(ctx, approvalsServiceModeSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *approvalsServiceClient) Skip(ctx context.Context, req *v1.SkipRequest) (*v1.SkipResponse, error) {
+	var res v1.SkipResponse
+	if err := c.client.CallUnary(ctx, approvalsServiceSkipSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -245,6 +323,42 @@ func (h approvalsServiceHandler) disallow(ctx context.Context, _ connect.Spec, s
 		return err
 	}
 	res, err := h.svc.Disallow(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h approvalsServiceHandler) change(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ChangeRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Change(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h approvalsServiceHandler) mode(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ModeRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Mode(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h approvalsServiceHandler) skip(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SkipRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Skip(ctx, &req)
 	if err != nil {
 		return err
 	}

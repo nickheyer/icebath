@@ -15,11 +15,14 @@ import (
 // Name of the tool that connects the user to MCP servers
 const Manage = "manage_connections"
 
-// Registers the tools of every profile's MCP servers and manage_connections; the engine behind them, for the plugin's other parts
+// Registers the tools of every profile's MCP servers and manage_connections, a settings section for each server and the guard every write
+// of the servers and their values goes through; the engine behind them, for the plugin's other parts
 func Register(registry *tools.Registry, profiles *profile.Registry, cfg *config.Config, catalog *mcp.Registry, helpers Helpers, owner mcp.Owner) *Manager {
 	m := newManager(cfg, catalog, helpers, owner)
 	registry.Register(m)
 	profiles.Register(m)
+	cfg.Register(sections{m: m})
+	guard(cfg, m)
 	return m
 }
 
@@ -116,7 +119,28 @@ func (m *Manager) manageDef() tools.Def {
 		Handler: func(ctx context.Context, call *tools.Call) string { return m.manage(ctx, call) },
 		// A session in safe mode connects no server, so it is offered no way to
 		Check: func(env *tools.Env) bool { return env == nil || env.Config == nil || !safe(env.Config) },
+		Lacks: func(*tools.Env) string { return "icebath was started in safe mode, which keeps MCP servers away." },
 		// It waits on the user and its own deadline, so no other limit cuts it short
 		Timeout: -1,
 	}
+}
+
+// The group of the tool that connects MCP servers, whose options are the area of MCP servers, and one group for each server of each profile
+// whose tools are turned on and off on the server's page there
+func (m *Manager) Groups() []tools.Group {
+	groups := []tools.Group{{Title: "MCP servers", Area: mcpconfig.Key, Order: 80}}
+	m.mu.Lock()
+	pools := make([]*pool, 0, len(m.pools))
+	for _, p := range m.pools {
+		pools = append(pools, p)
+	}
+	m.mu.Unlock()
+	for _, p := range pools {
+		p.mu.Lock()
+		for name := range p.servers {
+			groups = append(groups, tools.Group{Title: name, Area: mcpconfig.Key, Opens: name, Elsewhere: true, Profile: p.profile})
+		}
+		p.mu.Unlock()
+	}
+	return groups
 }

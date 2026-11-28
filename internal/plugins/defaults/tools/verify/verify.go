@@ -9,6 +9,7 @@ import (
 
 func Register(registries *plugins.Registries) {
 	config.Register(registries.Config)
-	ledger := tools.Register(registries.Tools)
+	// The person hears of a ledger file set aside where the session store's notices reach them
+	ledger := tools.Register(registries.Tools, registries.Sessions.Tell)
 	cli.Register(registries.CLI, registries.Config, ledger, registries.Terminal.Host())
 }

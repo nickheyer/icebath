@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/internal/config"
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
 	"github.com/nickheyer/icebath/internal/provider"
+	providerapp "github.com/nickheyer/icebath/internal/provider/app"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
 	"github.com/nickheyer/icebath/internal/tools"
 	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
@@ -30,6 +30,7 @@ import (
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	slashv1 "github.com/nickheyer/icebath/pkg/gen/icebath/slash/v1"
 	toolsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/tools/v1"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
@@ -42,18 +43,19 @@ const (
 	completions = 50
 )
 
-// What an empty chat says while no provider is connected: why the agent can't answer and the way to fix it. Models that run on this
-// computer are connected on the same screen
-const noProvider = "No provider is connected yet, so the agent can't answer. Type /providers to connect one."
+// What an empty chat says while no provider of its profile is ready: why the agent can't answer and the command that fixes it. Models that
+// run on this computer are connected there too
+const noProvider = "No provider is ready yet, so the agent can't answer. Type /providers to connect one."
 
 type chat struct {
 	desk     *desk
 	kit      *tui.Kit
 	composer *cards.Composer
 	markdown *render.Markdown
-	shell    *cards.Terminal
-	sheet    *approval
-	inquiry  *inquiry
+	// Lines the person ran in the session after a mark, such as !, the one running last
+	runs    []*lineRun
+	sheet   *approval
+	inquiry *inquiry
 	// Answer to one of the agent's questions being typed in the prompt
 	typing   *answering
 	commands []*slashv1.Command
@@ -71,10 +73,11 @@ type chat struct {
 	entering bool
 	replying bool
 	// Approval prompt the words typed in the prompt deny, and what became of the last one answered while the reply runs
-	replyTo  string
-	outcome  string
-	unseen   bool
-	stranded bool
+	replyTo string
+	outcome string
+	unseen  bool
+	// Why the agent can't answer in this chat yet, by the one test of whether a provider is ready; empty while it can
+	stranded string
 	// Messages sent while the session is being made, each with its voice flags, sent in order once it is
 	waiting []*agentv1.SendRequest
 	epoch   int
@@ -155,9 +158,17 @@ func newChat(desk *desk, key string, session *sessionsv1.Session, profile string
 	return c
 }
 
-// Text the empty prompt shows: what typing does, and the shell a leading ! runs a line in
+// Text the empty prompt shows: what typing does, and what a line after the mark of a liner runs in, such as the shell after !
 func (c *chat) hint() string {
-	return "Message the agent · / lists commands · ! runs a line in " + filepath.Base(c.kit.Env.Shell().Path)
+	hint := "Message the agent · / lists commands"
+	for _, liner := range c.desk.liners {
+		if liner.Hint != nil {
+			if said := liner.Hint(c.kit.Env); said != "" {
+				hint += " · " + said
+			}
+		}
+	}
+	return hint
 }
 
 func (c *chat) Title() string { return cmp.Or(c.title, "New chat") }
@@ -185,12 +196,13 @@ func (c *chat) Grabs(_, y int) bool {
 }
 
 func (c *chat) Init() tea.Cmd {
+	on := c.on()
 	load := tui.Async(func() func() tea.Cmd {
 		ctx := c.kit.Env.Ctx
 		response, err := c.desk.slash.List(ctx, &slashv1.ListRequest{})
 		listed, listErr := c.desk.tools.List(ctx, &toolsv1.ListRequest{})
 		var thinking string
-		if setting, err := c.desk.settings.Get(ctx, &configv1.GetRequest{Key: agentconfig.Thinking, Profile: c.on()}); err == nil {
+		if setting, err := c.desk.settings.Get(ctx, &configv1.GetRequest{Key: agentconfig.Thinking, Profile: on}); err == nil {
 			yaml.Unmarshal([]byte(setting.GetSetting().GetValue()), &thinking)
 		}
 		return func() tea.Cmd {
@@ -218,39 +230,62 @@ func (c *chat) Init() tea.Cmd {
 	return tea.Batch(load, c.watch())
 }
 
+// Reads whether the agent can answer in this empty chat: the provider new chats use is ready, or for none any provider is, or the model is a
+// shortcut to a server of its own
 func (c *chat) check() tea.Cmd {
+	on := c.on()
 	return tui.Async(func() func() tea.Cmd {
 		ctx := c.kit.Env.Ctx
-		response, err := c.desk.providers.List(ctx, &providerv1.ListRequest{Profile: c.on()})
-		stranded := err == nil && !slices.ContainsFunc(response.GetProviders(), func(provider *providerv1.Provider) bool {
-			return provider.GetUsable() && provider.GetCredentialOrigin() != providerv1.Origin_ORIGIN_UNSPECIFIED
-		})
-		if stranded {
-			var chosen, model string
-			var shortcuts map[string]struct {
-				BaseURL string `yaml:"base_url"`
+		response, err := c.desk.providers.List(ctx, &providerv1.ListRequest{Profile: on})
+		var chosen, model string
+		var shortcuts map[string]struct {
+			BaseURL string `yaml:"base_url"`
+		}
+		get := func(key string, into any) {
+			if setting, err := c.desk.settings.Get(ctx, &configv1.GetRequest{Key: key, Profile: on}); err == nil {
+				yaml.Unmarshal([]byte(setting.GetSetting().GetValue()), into)
 			}
-			get := func(key string, into any) {
-				if setting, err := c.desk.settings.Get(ctx, &configv1.GetRequest{Key: key, Profile: c.on()}); err == nil {
-					yaml.Unmarshal([]byte(setting.GetSetting().GetValue()), into)
-				}
-			}
-			get(agentconfig.Provider, &chosen)
-			get(agentconfig.Model, &model)
-			get(agentconfig.Aliases, &shortcuts)
-			stranded = chosen == ""
-			// A model shortcut naming an endpoint of its own runs with no provider connected
-			for name, shortcut := range shortcuts {
-				if strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(model)) && strings.TrimSpace(shortcut.BaseURL) != "" {
-					stranded = false
-				}
+		}
+		get(agentconfig.Provider, &chosen)
+		get(agentconfig.Model, &model)
+		get(agentconfig.Aliases, &shortcuts)
+		why := ""
+		if err == nil {
+			why = strandedWhy(response.GetProviders(), chosen)
+		}
+		// A model shortcut naming a server of its own runs with no provider ready
+		for name, shortcut := range shortcuts {
+			if strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(model)) && strings.TrimSpace(shortcut.BaseURL) != "" {
+				why = ""
 			}
 		}
 		return func() tea.Cmd {
-			c.stranded = stranded
+			c.stranded = why
 			return nil
 		}
 	})
+}
+
+// Why the agent can't answer on the providers of a profile, by the one test of whether a provider is ready: the provider new chats use,
+// else any; empty when it can
+func strandedWhy(providers []*providerv1.Provider, chosen string) string {
+	if chosen == "" {
+		if slices.ContainsFunc(providers, providerapp.Ready) {
+			return ""
+		}
+		return noProvider
+	}
+	for _, entry := range providers {
+		if entry.GetName() != chosen {
+			continue
+		}
+		if providerapp.Ready(entry) {
+			return ""
+		}
+		// The provider words why it is not ready whole, naming itself
+		return strs.Filled(entry.GetWhy(), entry.GetDisplayName()+", the provider of new chats, isn't ready, so the agent can't answer.")
+	}
+	return "The provider of new chats is gone from this profile, so the agent can't answer. Type /model to pick another model."
 }
 
 func (c *chat) Status() string {
@@ -304,12 +339,14 @@ func (c *chat) status() string {
 	if profile := c.on(); profile != "" {
 		parts = append(parts, "@"+profile)
 	}
-	model := state.GetProvider()
-	if state.GetModel() != "" {
-		model = strings.TrimPrefix(model+"/"+state.GetModel(), "/")
-	}
-	if model != "" {
-		parts = append(parts, model)
+	// The model and the provider that runs it, as a row of Settings names them
+	switch provider := cmp.Or(state.GetProviderTitle(), state.GetProvider()); {
+	case state.GetModel() != "" && provider != "":
+		parts = append(parts, state.GetModel()+" · "+provider)
+	case state.GetModel() != "":
+		parts = append(parts, state.GetModel())
+	case provider != "":
+		parts = append(parts, provider)
 	}
 	switch effort := state.GetReasoningEffort(); effort {
 	case "":
@@ -407,7 +444,7 @@ func (c *chat) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		if msg.Focused {
 			c.unseen = false
 		}
-		if msg.Focused && c.stranded {
+		if msg.Focused && c.stranded != "" {
 			return c, tea.Batch(c.composer.SetFocus(true), c.check(), c.desk.voice.focused(c))
 		}
 		if msg.Focused {
@@ -503,11 +540,16 @@ func (c *chat) action(id string) tea.Cmd {
 		switch {
 		case c.composer.Searching() || c.composer.Completing():
 			return c.composer.Action(id)
+		// A reply of this chat read aloud stops first, which is all the key does once that reply is no longer written
+		case c.desk.voice.hush(c) && !c.log.busy:
+			return nil
 		case c.replying && c.composer.Empty():
 			c.replying, c.composer.Hint = false, c.hint()
 			return c.ask()
 		case c.typing != nil && c.composer.Empty():
 			return c.untype()
+		case c.running() != nil && c.composer.Empty():
+			return c.stopLine()
 		case c.log.busy && !c.replying:
 			return c.interrupt()
 		case !c.log.busy && c.composer.Empty() && c.id != "":
@@ -586,6 +628,11 @@ func (c *chat) complete() {
 		}
 		return
 	}
+	// A name a screen answers that no list shows is offered nothing else, so enter runs it as typed
+	if slices.ContainsFunc(c.kit.Screens(), func(screen tui.Screen) bool { return slices.Contains(screen.Aliases, typed) }) {
+		c.composer.Offer(value, nil, 0)
+		return
+	}
 	var offers []cards.Offer
 	for _, command := range c.catalog() {
 		name := command.GetName()
@@ -607,33 +654,7 @@ func (c *chat) complete() {
 func (c *chat) paths() {
 	value := c.composer.Value()
 	start := strings.LastIndexAny(value, " \t\n") + 1
-	word := value[start:]
-	target := word
-	if rest, home := strings.CutPrefix(word, "~/"); home {
-		if directory, err := os.UserHomeDir(); err == nil {
-			target = directory + string(filepath.Separator) + rest
-		}
-	} else if !filepath.IsAbs(word) {
-		target = c.kit.Env.WorkDir() + string(filepath.Separator) + word
-	}
-	directory, prefix := filepath.Split(target)
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		return
-	}
-	var offers []cards.Offer
-	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasPrefix(name, prefix) || strings.HasPrefix(name, ".") && !strings.HasPrefix(prefix, ".") {
-			continue
-		}
-		if entry.IsDir() {
-			name += "/"
-		}
-		if offers = append(offers, cards.Offer{Text: word[:len(word)-len(prefix)] + name, Display: name}); len(offers) == completions {
-			break
-		}
-	}
+	offers := cards.PathOffers(value[start:], c.kit.Env.WorkDir(), cards.PathFile, completions)
 	c.composer.Offer(value, offers, utf8.RuneCountInString(value[:start]))
 }
 
@@ -662,9 +683,9 @@ func (c *chat) View(w, h int) string {
 		c.width, c.rendered = w, nil
 	}
 	c.kept = map[string][]string{}
-	if c.lines = c.paint(w); len(c.lines) == 0 && c.stranded {
+	if c.lines = c.paint(w); len(c.lines) == 0 && c.stranded != "" {
 		c.lines = []row{{}}
-		for _, line := range strings.Split(render.Wrap(noProvider, max(w-1, 8)), "\n") {
+		for _, line := range strings.Split(render.Wrap(c.stranded, max(w-1, 8)), "\n") {
 			c.lines = append(c.lines, row{text: render.Dim(line, c.kit.Env.Theme)})
 		}
 	}
@@ -696,8 +717,8 @@ func (c *chat) submit(text string) tea.Cmd {
 		c.replying, c.replyTo, c.composer.Hint = false, "", c.hint()
 		return c.decide(request, agentv1.ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED, strings.TrimSpace(text))
 	}
-	if line, shell := strings.CutPrefix(text, "!"); shell && strings.TrimSpace(line) != "" {
-		return c.run(strings.TrimSpace(line))
+	if liner, line, ok := c.desk.liner(text); ok {
+		return c.runLine(liner, line)
 	}
 	// A command the app runs itself is told to the session's pre_command hooks, as one the server runs is
 	id := c.id
@@ -709,22 +730,14 @@ func (c *chat) submit(text string) tea.Cmd {
 		c.observe(id, text)
 		return cmd
 	}
-	// A stop phrase typed alone while voice mode is on ends voice chat instead of going to the model
+	// A stop phrase typed alone while voice input is on turns it off instead of going to the model
 	if c.desk.voice.typedStop(c, text) {
-		return c.desk.voice.stopped()
+		return c.desk.voice.stopped(text)
 	}
 	if c.editing != nil && !strings.HasPrefix(text, "/") {
 		return c.resend(text)
 	}
 	return c.send(text)
-}
-
-func (c *chat) run(line string) tea.Cmd {
-	if c.shell != nil && c.kit.WM.Has(c.shell.Key()) {
-		return c.shell.Run(line)
-	}
-	c.shell = c.kit.Terminal()
-	return tea.Batch(c.kit.WM.OpenHere(c.shell), c.shell.Run(line), c.kit.WM.Focus(c))
 }
 
 // Sends a line to the session: a command, or a message on the voice chat route when the person spoke it; every message tells the model
@@ -776,7 +789,8 @@ func (c *chat) post(request *agentv1.SendRequest) tea.Cmd {
 			if epoch != c.epoch {
 				return nil
 			}
-			var cmds []tea.Cmd
+			// The message went through the session store, which may have something to tell, such as a database it set aside as it opened
+			cmds := []tea.Cmd{c.desk.hear()}
 			if c.starting && id != "" {
 				c.id, c.named, c.profile = id, "", profile
 				cmds = append(cmds, c.watch())
@@ -786,7 +800,7 @@ func (c *chat) post(request *agentv1.SendRequest) tea.Cmd {
 			}
 			c.starting = false
 			if err != nil {
-				said := "**Your message was not sent.** " + tui.Reason(err)
+				said := "**Your message was not sent.** " + strs.Sentence(tui.Reason(err))
 				if c.composer.Empty() {
 					said += " It is back in the message box."
 					cmds = append(cmds, c.composer.SetValue(text))
@@ -845,6 +859,8 @@ func (c *chat) reset() {
 		c.stop()
 	}
 	c.epoch++
+	c.stopLine()
+	c.runs = nil
 	c.id, c.title, c.named, c.left, c.stop, c.starting, c.waiting = "", "", "", "", nil, false, nil
 	c.log, c.folds, c.rendered = transcript{}, map[string]bool{}, nil
 	c.top, c.follow = 0, true
@@ -887,13 +903,15 @@ func (c *chat) received(epoch int, response *agentv1.WatchResponse, replay bool)
 	if epoch != c.epoch {
 		return nil
 	}
+	var kept tea.Cmd
 	if replay {
 		c.log.replay()
+		kept = c.keptLines(epoch)
 	}
 	busy := c.log.busy
 	taken := c.log.apply(response)
 	if !replay {
-		// The reply of a session voice mode belongs to is read aloud as it is written
+		// Voice reads the reply to a message sent from this chat aloud as it is written, by its own rule
 		c.desk.voice.reply(c, response, busy, c.log.busy)
 	}
 	if title := response.GetTitle(); title != "" {
@@ -942,7 +960,7 @@ func (c *chat) received(epoch int, response *agentv1.WatchResponse, replay bool)
 			c.tree.refresh()
 		}
 	}
-	return tea.Batch(append(cmds, c.ask(), c.inquire())...)
+	return tea.Batch(append(cmds, kept, c.ask(), c.inquire())...)
 }
 
 func (c *chat) dropped(epoch int, err error) tea.Cmd {

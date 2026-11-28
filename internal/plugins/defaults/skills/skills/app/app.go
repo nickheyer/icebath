@@ -1,47 +1,60 @@
+// The page of Skills: the categories of skills with how many of each are on, the page of each category with a switch per skill, a search of
+// every skill, the page of each skill, finding and installing skills, bundles, sources, trusted projects, the skills you changed, and the
+// options of the area
 package app
 
 import (
-	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"connectrpc.com/connect/v2"
-	"go.yaml.in/yaml/v3"
 
 	"github.com/nickheyer/icebath/internal/app"
+	configapp "github.com/nickheyer/icebath/internal/config/app"
+	hubconfig "github.com/nickheyer/icebath/internal/plugins/defaults/skills/skills/config"
+	"github.com/nickheyer/icebath/internal/profile"
 	skillsconfig "github.com/nickheyer/icebath/internal/skills/config"
 	configv1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/config/v1/configv1connect"
 	skillsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/skills/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/skills/v1/skillsv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 // Screen of the skills
 const Screen = "skills"
 
-// Keymap context of the skills screen
+// Keymap context of the rows of skills
 const context = "skills"
 
-// Surface of this app, whose own turned off skills ctrl+t sets
+// App whose own turned off skills this app turns on and off
 const surface = "tui"
 
-// Column of a list of skills that holds what each one does, shown whole or not at all
-const aboutColumn = 2
-
-// Headings of the skills in no category, and of what the screen offers besides the skills
+// Headings of the page: the categories, then the options
 const (
-	otherGroup = "Other"
-	moreGroup  = "More"
+	categoriesGroup = "Categories"
+	optionsGroup    = "Options"
 )
 
-// Views of the screen /skills opens on by name, besides the skills
-var views = []string{"hub", "bundles", "sources", "trusted"}
+// Sections under Skills whose settings are a page each, in the order they are listed
+var sections = []string{skillsconfig.Variables, skillsconfig.Values, hubconfig.Hub}
+
+// What the argument of the screen opens over the page, besides the words of /skills
+const (
+	categoryOf = "category:"
+	skillOf    = "skill:"
+	bundleOf   = "bundle:"
+	sectionOf  = "section:"
+	changedArg = "changed"
+)
 
 type screens struct{}
 
@@ -59,16 +72,19 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 		Title: "Skills",
 		Short: "Turn skills on or off and install new ones",
 		Slash: []string{"skills"},
-		Usage: "[list|hub|bundles|sources|trusted|browse [page]|search <words>|inspect <name>|install <name or address>|<words to filter by>]",
-		Where: map[string]string{context: "skills screen", review: "skill hub operation"},
+		Usage: "[@profile] [list|hub|bundles|sources|trusted|browse [page]|search <words>|inspect <name>|install <name or address>|<words to find>]",
+		Area:  skillsconfig.Key,
+		Where: map[string]string{context: "skills page", review: "skill hub operation"},
 		Actions: []keys.Action{
-			{ID: "skills.surface", Context: context, Label: "toggle in this app", Doc: "Turn the highlighted skill on or off in this app only", Default: []string{"ctrl+t"}},
-			{ID: "skills.search", Context: context, Label: "search", Doc: "Search the skill registries", Default: []string{"ctrl+f"}},
+			{ID: "skills.turn", Context: context, Label: "turn on/off", Doc: "Turn the skill in hand on or off", Default: []string{"t"}},
+			{ID: "skills.search", Context: context, Label: "search", Doc: "Search the registries of the skill hub", Default: []string{"ctrl+f"}},
 			{ID: "skills.go", Context: review, Label: "continue", Doc: "Continue what is waiting, such as installing a scanned skill", Default: []string{"enter"}},
 		},
+		Pages: func(kit *tui.Kit, name string) []tui.Page { return skillPages(kit, service, name) },
 		Open: func(kit *tui.Kit, argument string) tea.Cmd {
-			s := &screen{kit: kit, service: service, settings: settings, waiting: map[string]bool{}}
-			return s.slash(argument)
+			name, rest := profile.Split(argument)
+			s := &screen{kit: kit, service: service, settings: settings, profile: name, waiting: map[string]func(){}}
+			return s.open(rest)
 		},
 	}}
 }
@@ -77,592 +93,508 @@ type screen struct {
 	kit      *tui.Kit
 	service  skillsv1connect.SkillsServiceClient
 	settings configv1connect.ConfigServiceClient
-	hub      *cards.Hub
-	root     *cards.List
-	// Search, registry and page the skill hub opens at
+	// Profile the page was opened on, the one in use when empty
+	profile string
+	hub     *cards.Hub
+	root    *cards.List
+	options *configapp.Rows
+	// Search, registry and page the skill hub shows
 	query  string
 	source string
 	page   int
-	// Installs staged by this screen that wait for the user's yes
-	waiting map[string]bool
-	// Skills as last read
-	state  *skillsv1.ListResponse
-	loaded bool
-	err    error
-	rows   []row
+	// Installs staged by this page that wait for the person's yes, each with what its page does once the staged copy is dropped
+	waiting map[string]func()
+	// Skills as last read, with the bundles and sources the rows that open them count
+	state   *skillsv1.ListResponse
+	bundled []*skillsv1.Bundle
+	taps    []*skillsv1.SkillTap
+	loaded  bool
+	err     error
+	rows    []row
+	// Lists of the pages opened over the page, read again with it
+	views cards.Watched
+	// Puts what was just made in hand once the skills are read again, nil for nothing
+	after func()
+	// Updates of skills from the hub that ran on this page, which the page of updates checks them again after
+	updated int
 }
 
-// Row of the skills: a skill, or something else the screen offers
+// Row of the page: a category, a skill a search found, something the page opens or does, an option, a section of options or the row of the
+// advanced options
 type row struct {
-	skill *skillsv1.Skill
-	act   *step
+	category *skillsv1.Category
+	skill    *skillsv1.Skill
+	act      *act
+	setting  *configv1.Setting
+	section  string
+	advanced bool
 }
 
-// Something a row does: its name, what it does and the word on its button
-type step struct {
-	title, about, verb string
-	run                func(l *cards.List) tea.Cmd
+// Something a row does: its name, what it holds or says, what it does, the word on its button, whether it opens a page, and the work
+type act struct {
+	title, value, about, verb string
+	opens                     bool
+	run                       func(l *cards.List) tea.Cmd
 }
 
-// What /skills opens: a view, a verb of the hub, or the skills filtered by the text
-func (s *screen) slash(argument string) tea.Cmd {
-	word, rest := verb(argument)
-	switch word {
-	case "", "list":
-		return s.open("", "")
-	case "hub", "bundles", "sources", "trusted":
-		return s.open(word, "")
-	case "browse":
-		n, ok := pageNumber(rest)
-		if !ok {
-			return tea.Batch(s.open("hub", ""), s.hub.Fail("The page must be a number from 1 up, such as /skills browse 2."))
-		}
-		s.page = n
-		return s.open("hub", "")
-	case "search":
-		if rest == "" {
-			return tea.Batch(s.open("hub", ""), s.hub.Fail("Say what to search for, such as /skills search pdf."))
-		}
-		s.query = rest
-		return s.open("hub", "")
-	case "install":
-		identifier, name, category := installArgs(rest)
-		if identifier == "" {
-			return tea.Batch(s.open("hub", ""), s.hub.Fail("Name the skill to install, such as /skills install pdf-tools."))
-		}
-		return tea.Batch(s.open("hub", ""), s.install(identifier, name, category, func() tea.Cmd { return nil }))
-	case "inspect":
-		if rest == "" {
-			return tea.Batch(s.open("", ""), s.hub.Fail("Name the skill to read, such as /skills inspect pdf-tools."))
-		}
-		return tea.Batch(s.open("", ""), s.inspect(rest))
-	}
-	return s.open("", strings.TrimSpace(argument))
-}
-
-// Scope of the screen: the profile in use, the folder of the session in view
+// Scope of every call: the profile of the page and the folder of the session in view
 func (s *screen) scope() *skillsv1.Scope {
-	return &skillsv1.Scope{Directory: s.kit.Env.WorkDir()}
+	return &skillsv1.Scope{Profile: s.profile, Directory: s.kit.Env.WorkDir()}
 }
 
-// Opens the skills, filtered by the search when given, with a view of the screen over them when one is named
-func (s *screen) open(view, search string) tea.Cmd {
-	s.root = s.skillsList()
-	s.hub = s.kit.Hub(Screen, s.root)
-	s.hub.OnClose(s.discardWaiting)
-	if search != "" {
-		s.root.Filter(search)
-	}
-	cmds := []tea.Cmd{s.kit.WM.ShowOverlay(s.hub)}
-	if slices.Contains(views, view) {
-		cmds = append(cmds, s.hub.Push(s.view(view)))
-	}
-	return tea.Batch(cmds...)
-}
-
-// A view of the screen besides the skills, as a list over them
-func (s *screen) view(name string) *cards.List {
-	var spec cards.ListSpec
-	switch name {
-	case "hub":
-		spec = s.hubPart()
-	case "bundles":
-		spec = s.bundles()
-	case "sources":
-		spec = s.sources()
-	default:
-		spec = s.trusted()
-	}
-	spec.Glyph, spec.Key = s.kit.Env.Theme.Glyphs.Ext, Screen+":"+name
-	if spec.Context == "" {
-		spec.Context = cards.HubContext
-	}
-	spec.Primary = "hub.use"
-	if spec.Free == nil {
-		spec.Free = map[string]bool{}
-	}
-	spec.Free["hub.refresh"] = true
-	list := cards.NewList(s.kit.Env, spec)
-	list.ToggleDetail()
-	return list
-}
-
-// Reads the skills again
-func (s *screen) reload() tea.Cmd {
-	return tui.Async(func() func() tea.Cmd {
-		response, err := s.service.List(s.kit.Env.Ctx, &skillsv1.ListRequest{Scope: s.scope()})
-		return func() tea.Cmd {
-			if err == nil {
-				s.state = response
-			}
-			s.err, s.loaded = err, true
-			if s.root != nil {
-				s.root.Refresh()
-			}
-			return nil
-		}
-	})
-}
-
-// The installed skills under their categories, turned on or off with enter, then what else the screen offers
-func (s *screen) skillsList() *cards.List {
+// Shows the page, then reads the skills and the options, then opens what the argument names over the page
+func (s *screen) open(argument string) tea.Cmd {
 	t := s.kit.Env.Theme
-	var list *cards.List
-	list = cards.NewList(s.kit.Env, cards.ListSpec{
+	s.root = cards.NewList(s.kit.Env, cards.ListSpec{
 		Title:   "Skills",
 		Glyph:   t.Glyphs.Ext,
 		Key:     Screen,
-		Context: context,
-		// The row keys stay in force on every row, those the footer has no room for too
-		Shared:  []string{cards.HubContext},
+		Context: cards.HubContext,
 		Primary: "hub.use",
 		Pick:    true,
-		Bar:     true,
 		Search:  "Search skills",
-		Intro: func() []string {
-			lines := []string{"Skills are instructions the agent loads for certain kinds of work. Turn off the ones you don't want it to use."}
-			if project := s.state.GetUntrustedProject(); project != "" {
-				lines = append(lines, project+" has "+render.Count(int(s.state.GetUntrustedCount()), "skill")+" of its own that load once you trust it.")
-			}
-			return lines
-		},
-		Columns: []render.Column{{}, {}, {Flex: 1, Whole: true}},
+		Intro:   s.intro,
+		Columns: configapp.Columns,
 		Rows: func() [][]string {
-			s.rows = s.order()
+			s.rows = s.order(s.root.Query() != "")
 			cells := make([][]string, len(s.rows))
 			for i, r := range s.rows {
-				if r.act != nil {
-					cells[i] = []string{r.act.title, "", render.Dim(r.act.about, t)}
-					continue
-				}
-				cells[i] = []string{r.skill.GetName(), s.stateOf(r.skill), render.Dim(r.skill.GetDescription(), t)}
+				cells[i] = s.cells(r)
 			}
 			return cells
 		},
-		Group: func(i int) string {
-			switch r := s.rows[i]; {
-			case r.act != nil:
-				return moreGroup
-			case r.skill.GetCategory() == "":
-				return otherGroup
-			}
-			// A category is the name of a folder: said in words
-			return strings.NewReplacer("-", " ", "_", " ").Replace(s.rows[i].skill.GetCategory())
-		},
+		Group: func(i int) string { return s.group(s.rows[i]) },
 		Words: func(i int) string {
 			if skill := s.rows[i].skill; skill != nil {
-				return skill.GetCategory() + " " + skill.GetDescription()
+				return skill.GetDescription() + " " + skill.GetCategoryTitle()
 			}
-			return s.rows[i].act.about
+			return ""
 		},
 		Detail: func(i int) []string {
 			if i < 0 || i >= len(s.rows) {
 				return nil
 			}
-			if act := s.rows[i].act; act != nil {
-				return []string{act.about + "."}
-			}
-			var lines []string
-			if !list.Shows(aboutColumn) {
-				lines = append(lines, s.rows[i].skill.GetDescription())
-			}
-			return append(lines, s.facts(s.rows[i].skill)...)
+			return s.detail(s.rows[i], s.root.Cut(i, 2))
 		},
-		Empty: func() string { return tui.Waiting(s.loaded, s.err, "No skills are installed.") },
-		Free:  map[string]bool{"hub.add": true, "hub.refresh": true},
-		Hints: func(_ *cards.List, i int) []wm.Hint {
-			find := wm.Hint{Action: "hub.add", Label: "find skills"}
-			if i < 0 || i >= len(s.rows) {
-				return []wm.Hint{find}
+		Empty: func() string {
+			if q := s.root.Query(); q != "" {
+				return "No skill matches “" + q + "”."
 			}
-			if act := s.rows[i].act; act != nil {
-				return []wm.Hint{{Action: "hub.use", Label: act.verb}, find}
-			}
-			skill := s.rows[i].skill
-			var hints []wm.Hint
-			switch {
-			case skill.GetEssential():
-				hints = append(hints, wm.Hint{Label: "always on"})
-			case skill.GetEnabled():
-				hints = append(hints, wm.Hint{Action: "hub.use", Label: "turn off"})
-			default:
-				hints = append(hints, wm.Hint{Action: "hub.use", Label: "turn on"})
-			}
-			if skill.GetEnabled() && !skill.GetEssential() {
-				here := "off in this app"
-				if slices.Contains(skill.GetDisabledOn(), surface) {
-					here = "on in this app"
-				}
-				hints = append(hints, wm.Hint{Action: "skills.surface", Label: here})
-			}
-			hints = append(hints, wm.Hint{Action: "hub.edit", Label: "open"})
-			if skill.GetSource() == "hub" {
-				hints = append(hints, wm.Hint{Action: "hub.remove", Label: "uninstall"})
-			}
-			return append(hints, find)
-		},
-		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"hub.use": func(l *cards.List, i int) tea.Cmd {
-				if act := s.rows[i].act; act != nil {
-					return act.run(l)
-				}
-				return s.toggle(s.rows[i].skill, "")
-			},
-			"skills.surface": s.withSkill(func(_ *cards.List, skill *skillsv1.Skill) tea.Cmd { return s.toggle(skill, surface) }),
-			"hub.edit":       s.withSkill(func(_ *cards.List, skill *skillsv1.Skill) tea.Cmd { return s.skillView(skill) }),
-			"hub.remove":     s.withSkill(func(l *cards.List, skill *skillsv1.Skill) tea.Cmd { return s.uninstall(l, skill) }),
-			"hub.add":        func(*cards.List, int) tea.Cmd { return s.hub.Push(s.view("hub")) },
-			"hub.refresh": func(*cards.List, int) tea.Cmd {
-				s.hub.Busy("Reading the skills again…")
-				return tui.Call(s.hub, func() (*skillsv1.ReloadResponse, error) {
-					return s.service.Reload(s.kit.Env.Ctx, &skillsv1.ReloadRequest{Scope: s.scope()})
-				}, func(response *skillsv1.ReloadResponse) tea.Cmd {
-					return tea.Batch(s.hub.Done(reloaded(response)), s.reload())
-				})
-			},
+			return tui.Waiting(s.loaded, s.err, "")
 		},
 		OnFocus: func(*cards.List) tea.Cmd { return s.reload() },
+		Free:    map[string]bool{"hub.add": true, "hub.refresh": true},
+		Hints:   func(_ *cards.List, i int) []wm.Hint { return s.hints(i) },
+		Actions: map[string]func(*cards.List, int) tea.Cmd{
+			"hub.use":     func(l *cards.List, i int) tea.Cmd { return s.use(l, s.rows[i]) },
+			"hub.remove":  func(l *cards.List, i int) tea.Cmd { return s.removeRow(l, s.rows[i]) },
+			"hub.add":     func(*cards.List, int) tea.Cmd { return s.findSkills() },
+			"hub.refresh": func(*cards.List, int) tea.Cmd { return s.readAgain() },
+		},
 	})
-	list.ToggleDetail()
-	return list
+	s.root.ToggleDetail()
+	hub, cmd := s.kit.Show(Screen, s.root)
+	s.hub = hub
+	hub.OnClose(s.discardWaiting)
+	s.options = configapp.NewRows(s.kit, hub, s.settings, s.profile)
+	s.options.Watch(s.root)
+	// What the argument opens may be a section of the options, so they are read first
+	return tea.Batch(cmd, s.options.Load(func() tea.Cmd {
+		return s.read(func() tea.Cmd { return s.slash(strings.TrimSpace(argument)) })
+	}))
 }
 
-// Action on the skill of the row under the cursor, nothing on any other row
-func (s *screen) withSkill(act func(l *cards.List, skill *skillsv1.Skill) tea.Cmd) func(*cards.List, int) tea.Cmd {
-	return func(l *cards.List, i int) tea.Cmd {
-		if i < 0 || i >= len(s.rows) || s.rows[i].skill == nil {
-			return nil
-		}
-		return act(l, s.rows[i].skill)
-	}
-}
-
-// Rows once the skills are read: the skills by category and name, those in none last, then what else the screen offers
-func (s *screen) order() []row {
-	if s.state == nil {
-		return nil
-	}
-	skills := slices.Clone(s.state.GetSkills())
-	slices.SortStableFunc(skills, func(a, b *skillsv1.Skill) int {
-		switch ac, bc := a.GetCategory(), b.GetCategory(); {
-		case ac == bc:
-			return strings.Compare(a.GetName(), b.GetName())
-		case ac == "":
-			return 1
-		case bc == "":
-			return -1
-		default:
-			return strings.Compare(ac, bc)
-		}
-	})
-	rows := make([]row, 0, len(skills)+6)
-	for _, skill := range skills {
-		rows = append(rows, row{skill: skill})
-	}
-	open := func(view string) func(*cards.List) tea.Cmd {
-		return func(*cards.List) tea.Cmd { return s.hub.Push(s.view(view)) }
-	}
-	rows = append(rows, row{act: &step{"Find skills", "Browse and install skills from the skill hub", "open", open("hub")}},
-		row{act: &step{"Bundles", "Several skills loaded at once under one slash command", "open", open("bundles")}},
-		row{act: &step{"Sources", "GitHub repositories the skill hub searches", "open", open("sources")}},
-		row{act: &step{"Trusted projects", "Project folders whose own skills load", "open", open("trusted")}})
-	if project := s.state.GetUntrustedProject(); project != "" {
-		rows = append(rows, row{act: &step{"Trust this project", "Load the " + render.Count(int(s.state.GetUntrustedCount()), "skill") + " of " + project,
-			"trust", func(l *cards.List) tea.Cmd {
-				l.Confirm("Trust "+project+"? Its skills then load for sessions working in it.", func() tea.Cmd {
-					return s.trust(project, false, s.reload)
-				})
-				return nil
-			}}})
-	}
-	return append(rows, row{act: &step{"Manage every skill", "Update, check and scan the skills you installed, and more", "open",
-		func(*cards.List) tea.Cmd { return s.every() }}})
-}
-
-// Whether a skill is on, in words
-func (s *screen) stateOf(skill *skillsv1.Skill) string {
-	t := s.kit.Env.Theme
+// What /skills opens over the page: a view, a verb of the skill hub, a page a search of Settings found, or the skills found by the words
+func (s *screen) slash(argument string) tea.Cmd {
+	word, rest := verb(argument)
 	switch {
-	case skill.GetEssential():
-		return "Always on"
-	case !skill.GetEnabled():
-		return render.Dim("Off", t)
-	case slices.Contains(skill.GetDisabledOn(), surface):
-		return render.Warm("Off in this app", t)
+	case word == "" || word == "list":
+		return nil
+	case word == "hub":
+		return s.findSkills()
+	case word == "bundles":
+		return s.bundles()
+	case word == "sources":
+		return s.sources()
+	case word == "trusted":
+		return s.trusted()
+	case word == changedArg:
+		return s.changed()
+	case word == "browse":
+		n, ok := pageNumber(rest)
+		if !ok {
+			return tea.Batch(s.findSkills(), s.hub.Fail("The page is a number from 1 up, such as /skills browse 2."))
+		}
+		s.page = n
+		return s.findSkills()
+	case word == "search":
+		if rest == "" {
+			return tea.Batch(s.findSkills(), s.hub.Fail("Say what to search for, such as /skills search pdf."))
+		}
+		s.query = rest
+		return s.findSkills()
+	case word == "install":
+		identifier, name, category := installArgs(rest)
+		if identifier == "" {
+			return tea.Batch(s.findSkills(), s.hub.Fail("Name the skill to install, such as /skills install pdf-tools."))
+		}
+		return tea.Batch(s.findSkills(), s.install(identifier, name, category, s.reload))
+	case word == "inspect":
+		if rest == "" {
+			return s.hub.Fail("Name the skill to read, such as /skills inspect pdf-tools.")
+		}
+		return s.inspect(rest)
+	case strings.HasPrefix(word, categoryOf):
+		return s.categoryPage(strings.TrimPrefix(argument, categoryOf))
+	case strings.HasPrefix(word, skillOf):
+		name := strings.TrimPrefix(argument, skillOf)
+		if s.skill(name) == nil {
+			return s.hub.Fail("There is no skill " + name + " now.")
+		}
+		return s.skillPage(name)
+	case strings.HasPrefix(word, bundleOf):
+		return tea.Batch(s.bundles(), s.bundlePage(strings.TrimPrefix(argument, bundleOf)))
+	case strings.HasPrefix(word, sectionOf):
+		return s.sectionPage(strings.TrimPrefix(argument, sectionOf))
 	}
-	return "On"
+	s.root.Filter(argument)
+	return nil
 }
 
-// Where a skill comes from, in a sentence
-func (s *screen) origin(skill *skillsv1.Skill) string {
-	switch skill.GetSource() {
-	case "builtin":
-		if skill.GetModified() {
-			return "Comes with icebath. You changed it, so updates leave it alone."
-		}
-		return "Comes with icebath."
-	case "hub":
-		if trust := trustWords[skill.GetTrust()]; trust != "" {
-			return "Installed from the skill hub. " + trust + "."
-		}
-		return "Installed from the skill hub."
-	case "local":
-		return "Your own skill."
-	case "project":
-		return "Comes with this project."
-	case "create_dir":
-		return "Made in your folder of new skills."
-	case "external":
-		return "From an extra folder in settings."
-	case "plugin":
-		return "Comes with a plugin."
+// First line of the page: what the area is
+func (s *screen) intro() []string {
+	lines := []string{"Instructions the agent loads for certain kinds of work."}
+	// Where a skill the agent writes, or one you add by hand, goes
+	if folder := s.state.GetCreateDir(); folder != "" {
+		lines = append(lines, render.Dim("New skills are made in "+folder+".", s.kit.Env.Theme))
 	}
-	return "From " + skill.GetSource() + "."
+	return lines
 }
 
-// How far the skill hub trusts a skill, in words
-var trustWords = map[string]string{"builtin": "Official", "trusted": "Trusted", "community": "Community"}
+// Reads the skills, the bundles and the sources again
+func (s *screen) reload() tea.Cmd { return s.read(nil) }
 
-// Titles of the apps a skill can be turned off in alone, by name
-func (s *screen) surfaces(names []string) []string {
-	out := make([]string, len(names))
-	for i, name := range names {
-		out[i] = name
-		for _, known := range s.state.GetSurfaces() {
-			if known.GetName() == name {
-				out[i] = known.GetTitle()
+// Reads the skills, the bundles and the sources again, then runs then
+func (s *screen) read(then func() tea.Cmd) tea.Cmd {
+	return tui.Async(func() func() tea.Cmd {
+		ctx := s.kit.Env.Ctx
+		response, err := s.service.List(ctx, &skillsv1.ListRequest{Scope: s.scope(), Surface: surface})
+		var bundled []*skillsv1.Bundle
+		var taps []*skillsv1.SkillTap
+		if err == nil {
+			if listed, failed := s.service.Bundles(ctx, &skillsv1.BundlesRequest{Scope: s.scope()}); failed == nil {
+				bundled = listed.GetBundles()
+			}
+			if listed, failed := s.service.Taps(ctx, &skillsv1.TapsRequest{Scope: s.scope()}); failed == nil {
+				taps = listed.GetTaps()
 			}
 		}
+		return func() tea.Cmd {
+			s.err, s.loaded = err, true
+			if err == nil {
+				s.state, s.bundled, s.taps = response, bundled, taps
+			}
+			s.refresh()
+			if then != nil {
+				return then()
+			}
+			return nil
+		}
+	})
+}
+
+// Shows the skills as last read on the page and on every page opened over it
+func (s *screen) refresh() {
+	s.root.Refresh()
+	s.views.Refresh()
+	if s.after != nil {
+		s.after()
+		s.after = nil
 	}
+}
+
+// Scans the skills folders again and says which slash commands came and went
+func (s *screen) readAgain() tea.Cmd {
+	s.hub.Busy("Reading the skills again…")
+	return tui.Call(s.hub, func() (*skillsv1.ReloadResponse, error) {
+		return s.service.Reload(s.kit.Env.Ctx, &skillsv1.ReloadRequest{Scope: s.scope()})
+	}, func(response *skillsv1.ReloadResponse) tea.Cmd {
+		return tea.Batch(s.hub.Done(reloaded(response)), s.reload(), s.options.Load(nil))
+	})
+}
+
+// Skill of the name as last read, nil for none
+func (s *screen) skill(name string) *skillsv1.Skill {
+	for _, skill := range s.state.GetSkills() {
+		if skill.GetName() == name {
+			return skill
+		}
+	}
+	return nil
+}
+
+// Category of the name as last read, nil for none
+func (s *screen) category(name string) *skillsv1.Category {
+	for _, category := range s.state.GetCategories() {
+		if category.GetName() == name {
+			return category
+		}
+	}
+	return nil
+}
+
+// Skills of a category by name
+func (s *screen) skillsOf(category string) []*skillsv1.Skill {
+	var out []*skillsv1.Skill
+	for _, skill := range s.state.GetSkills() {
+		if skill.GetCategory() == category {
+			out = append(out, skill)
+		}
+	}
+	slices.SortFunc(out, func(a, b *skillsv1.Skill) int { return strings.Compare(a.GetName(), b.GetName()) })
 	return out
 }
 
-// Facts about a skill: where it comes from, whether it is on, its slash command, how it was used, what holds it and its file
-func (s *screen) facts(skill *skillsv1.Skill) []string {
-	t := s.kit.Env.Theme
-	lines := []string{s.origin(skill)}
+// Rows of the page once the skills are read: the categories, what the page opens, the options and the sections of options and the row of
+// the advanced ones; while searched, every skill, each with its state
+func (s *screen) order(searching bool) []row {
+	if !s.loaded || s.err != nil {
+		return nil
+	}
+	var rows []row
+	if searching {
+		for _, category := range s.state.GetCategories() {
+			for _, skill := range s.skillsOf(category.GetName()) {
+				rows = append(rows, row{skill: skill})
+			}
+		}
+		return rows
+	}
+	for _, category := range s.state.GetCategories() {
+		rows = append(rows, row{category: category})
+	}
+	for _, a := range s.acts() {
+		rows = append(rows, row{act: a})
+	}
+	everyday, _ := s.options.Section(skillsconfig.Key)
+	for _, setting := range everyday {
+		rows = append(rows, row{setting: setting})
+	}
+	for _, key := range sections {
+		if s.holds(key) {
+			rows = append(rows, row{section: key})
+		}
+	}
+	if _, _, ok := s.options.Advanced(skillsconfig.Key); ok {
+		rows = append(rows, row{advanced: true})
+	}
+	return rows
+}
+
+// Whether a section of options holds a setting to change
+func (s *screen) holds(key string) bool {
+	if s.options.Info(key) == nil {
+		return false
+	}
+	everyday, advanced := s.options.Own(key)
+	return len(everyday)+len(advanced) > 0
+}
+
+// What the page opens and does besides the categories: finding skills, the bundles, the sources, the trusted projects, trusting the project
+// of the session while it is not, and the skills you changed
+func (s *screen) acts() []*act {
+	out := []*act{
+		{title: "Find skills", about: "Browse, search and install skills from the registries of the skill hub.", verb: "open", opens: true,
+			run: func(*cards.List) tea.Cmd { return s.findSkills() }},
+		{title: "Bundles", value: counted(len(s.bundled), "bundle"), about: "Several skills loaded at once with one slash command.", verb: "open",
+			opens: true, run: func(*cards.List) tea.Cmd { return s.bundles() }},
+		{title: "Sources", value: counted(len(s.taps), "source"), about: "GitHub repositories the skill hub searches besides its registries.",
+			verb: "open", opens: true, run: func(*cards.List) tea.Cmd { return s.sources() }},
+		{title: "Trusted projects", value: counted(len(s.state.GetTrusted()), "folder"), about: "Project folders whose own skills load.",
+			verb: "open", opens: true, run: func(*cards.List) tea.Cmd { return s.trusted() }},
+	}
+	if a := s.trustThis(); a != nil {
+		out = append(out, a)
+	}
+	return append(out, &act{title: "Skills you changed", value: counted(len(s.yours()), "skill"),
+		about: "Built-in skills you edited, and skills you made yourself.", verb: "open", opens: true,
+		run: func(*cards.List) tea.Cmd { return s.changed() }})
+}
+
+// A count of things in words, None for none
+func counted(n int, noun string) string {
+	if n == 0 {
+		return "None"
+	}
+	return render.Count(n, noun)
+}
+
+// Trusting the project the session works in, nil while it is trusted or there is none
+func (s *screen) trustThis() *act {
+	project := s.state.GetProject()
+	if project == "" || s.state.GetProjectTrusted() {
+		return nil
+	}
+	about := "Lets the skills " + project + " keeps in its own folder load. It keeps none yet."
+	if n := int(s.state.GetProjectSkills()); n > 0 {
+		about = "Lets the " + render.Count(n, "skill") + " " + project + " keeps in its own folder load."
+	}
+	return &act{title: "Trust this project", about: about, verb: "trust", run: func(l *cards.List) tea.Cmd {
+		l.Confirm(cards.Question{Text: "Trust " + project + "? Its own skills then load for sessions working in it, and they can tell the agent what to do.",
+			Verb: "Trust"}, func() tea.Cmd { return s.trust(project, false, nil) })
+		return nil
+	}}
+}
+
+// Skills you changed or made: built-in ones you edited, then your own
+func (s *screen) yours() []*skillsv1.Skill {
+	var edited, made []*skillsv1.Skill
+	for _, skill := range s.state.GetSkills() {
+		switch {
+		case skill.GetSource() == "builtin" && skill.GetModified():
+			edited = append(edited, skill)
+		case skill.GetSource() == "local" || skill.GetSource() == "create_dir":
+			made = append(made, skill)
+		}
+	}
+	return append(edited, made...)
+}
+
+// Heading a row is listed under: the categories theirs, what the page opens none so it sits with them, the options theirs, a skill found
+// none
+func (s *screen) group(r row) string {
 	switch {
-	case skill.GetEssential():
-		lines = append(lines, render.Good("Always on, because the agent's instructions point at it.", t))
-	case !skill.GetEnabled():
-		lines = append(lines, render.Dim("Off for the agent everywhere.", t))
-	case len(skill.GetDisabledOn()) > 0:
-		lines = append(lines, render.Warm("Off in "+strings.Join(s.surfaces(skill.GetDisabledOn()), ", ")+".", t))
+	case r.category != nil:
+		return categoriesGroup
+	case r.setting != nil, r.section != "", r.advanced:
+		return optionsGroup
 	}
-	if command := skill.GetCommand(); command != "" {
-		lines = append(lines, "Slash command: /"+command)
-	} else if note := skill.GetCommandNote(); note != "" {
-		lines = append(lines, render.Warm(note, t))
-	}
-	if skill.GetUseCount()+skill.GetViewCount()+skill.GetPatchCount() > 0 {
-		usage := fmt.Sprintf("Used %s, read %s, changed %s.", render.Count(int(skill.GetUseCount()), "time"), render.Count(int(skill.GetViewCount()), "time"),
-			render.Count(int(skill.GetPatchCount()), "time"))
-		if last := skill.GetLastActivity(); last != "" {
-			usage += " Last on " + last + "."
-		}
-		lines = append(lines, render.Dim(usage, t))
-	}
-	if skill.GetPinned() {
-		lines = append(lines, "Pinned, so it is never put away as unused.")
-	}
-	if skill.GetLocked() {
-		lines = append(lines, "Locked, so the agent can't change it.")
-	}
-	switch skill.GetState() {
-	case "stale":
-		lines = append(lines, render.Warm("Not used for a long time.", t))
-	case "archived":
-		lines = append(lines, render.Warm("Put away as unused.", t))
-	}
-	return append(lines, render.Dim("File: "+skill.GetPath(), t))
+	return ""
 }
 
-// Turns a skill on or off for the agent everywhere, or in this app alone
-func (s *screen) toggle(skill *skillsv1.Skill, where string) tea.Cmd {
-	if skill.GetEssential() {
-		return s.hub.Fail(skill.GetName() + " stays on, because the agent's instructions point at it.")
-	}
-	on, place := !skill.GetEnabled(), ""
-	if where != "" {
-		on, place = slices.Contains(skill.GetDisabledOn(), where), " in this app"
-	}
-	s.hub.Busy("Saving…")
-	return tui.Call(s.hub, func() (*skillsv1.ToggleResponse, error) {
-		return s.service.Toggle(s.kit.Env.Ctx, &skillsv1.ToggleRequest{Scope: s.scope(), Names: []string{skill.GetName()}, Enabled: on, Surface: where})
-	}, func(*skillsv1.ToggleResponse) tea.Cmd {
-		state := "off"
-		if on {
-			state = "on"
-		}
-		return tea.Batch(s.hub.Done(skill.GetName()+" is now "+state+place+"."), s.reload())
-	})
-}
-
-// Skill as last read, the one given when it is gone
-func (s *screen) current(skill *skillsv1.Skill) *skillsv1.Skill {
-	for _, now := range s.state.GetSkills() {
-		if now.GetName() == skill.GetName() {
-			return now
-		}
-	}
-	return skill
-}
-
-// One skill over the list: what it is and how it stands, then what can be done to it by where it comes from
-func (s *screen) skillView(skill *skillsv1.Skill) tea.Cmd {
+// Cells of a row: its name, the mark of a changed value or of a row that opens, and its state or value
+func (s *screen) cells(r row) []string {
 	t := s.kit.Env.Theme
-	steps := func() []step {
-		now := s.current(skill)
-		out := []step{{"Read", "What it tells the agent, and its files", "read", func(*cards.List) tea.Cmd { return s.read(now.GetName()) }}}
-		if !now.GetEssential() {
-			toggle := step{"Turn off", "For the agent everywhere", "turn off", func(*cards.List) tea.Cmd { return s.toggle(now, "") }}
-			if !now.GetEnabled() {
-				toggle = step{"Turn on", "For the agent everywhere", "turn on", func(*cards.List) tea.Cmd { return s.toggle(now, "") }}
-			}
-			out = append(out, toggle)
-			if now.GetEnabled() {
-				here := step{"Turn off in this app", "Only here, while other apps keep it", "turn off", func(*cards.List) tea.Cmd { return s.toggle(now, surface) }}
-				if slices.Contains(now.GetDisabledOn(), surface) {
-					here = step{"Turn on in this app", "It is off here alone", "turn on", func(*cards.List) tea.Cmd { return s.toggle(now, surface) }}
-				}
-				out = append(out, here)
-			}
-		}
-		switch now.GetSource() {
-		case "local", "create_dir":
-			out = append(out, step{"Publish", "Share it as a pull request to a repository of skills", "publish", func(*cards.List) tea.Cmd { return s.publish(now) }})
-		case "hub":
-			out = append(out, step{"Update", "Get its newest version", "update", func(*cards.List) tea.Cmd { return s.update(now.GetName(), false, s.reload) }},
-				step{"Update over your changes", "Get its newest version, replacing changes you made to it", "update",
-					func(*cards.List) tea.Cmd { return s.update(now.GetName(), true, s.reload) }})
-			if now.GetTrust() == "builtin" {
-				out = append(out, step{"Restore", "Put the official copy back, keeping yours aside", "restore", func(*cards.List) tea.Cmd { return s.restore(now) }})
-			}
-			out = append(out, step{"Uninstall", "Delete it", "uninstall", func(l *cards.List) tea.Cmd { return s.uninstall(l, now) }})
-		case "builtin":
-			out = append(out, step{"See changes", "How your copy differs from the one icebath ships", "open", func(*cards.List) tea.Cmd { return s.diff(now.GetName()) }},
-				step{"Reset", "Take updates again, or put the copy icebath ships back", "reset", func(*cards.List) tea.Cmd { return s.reset(now) }})
-		}
-		return out
+	opens := render.Dim(t.Glyphs.Forward, t)
+	switch {
+	case r.category != nil:
+		return []string{r.category.GetTitle(), "", r.category.GetState()}
+	case r.skill != nil:
+		sep := " " + t.Glyphs.Forward + " "
+		return []string{render.Dim(r.skill.GetCategoryTitle()+sep, t) + r.skill.GetName(), "", skillState(r.skill.GetShown(), t)}
+	case r.act != nil && r.act.opens:
+		return []string{r.act.title, opens, render.Dim(r.act.value, t)}
+	case r.act != nil:
+		return []string{r.act.title, "", ""}
+	case r.setting != nil:
+		return s.options.Cells(r.setting)
+	case r.section != "":
+		return []string{s.options.Info(r.section).GetTitle(), opens, render.Dim(s.inside(r.section), t)}
 	}
-	var shown []step
-	var list *cards.List
-	list = cards.NewList(s.kit.Env, cards.ListSpec{
-		Title:   skill.GetName(),
-		Glyph:   t.Glyphs.Ext,
-		Key:     Screen + ":skill:" + skill.GetName(),
-		Context: cards.HubContext,
-		Primary: "hub.use",
-		Intro: func() []string {
-			now := s.current(skill)
-			return append([]string{now.GetDescription()}, s.facts(now)...)
-		},
-		Columns: []render.Column{{}, {Flex: 1, Whole: true}},
-		Rows: func() [][]string {
-			shown = steps()
-			cells := make([][]string, len(shown))
-			for i, st := range shown {
-				cells[i] = []string{st.title, render.Dim(st.about, t)}
-			}
-			return cells
-		},
-		Detail: func(i int) []string {
-			if list.Shows(1) || i < 0 || i >= len(shown) {
-				return nil
-			}
-			return []string{shown[i].about + "."}
-		},
-		Hints: func(_ *cards.List, i int) []wm.Hint {
-			if i < 0 || i >= len(shown) {
-				return nil
-			}
-			return []wm.Hint{{Action: "hub.use", Label: shown[i].verb}}
-		},
-		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"hub.use": func(l *cards.List, i int) tea.Cmd { return shown[i].run(l) },
-		},
-	})
-	list.ToggleDetail()
-	return s.hub.Push(list)
+	cells, _, _ := s.options.Advanced(skillsconfig.Key)
+	return cells
 }
 
-// A page of the skill as the agent loads it: its content, what it still needs, its files and how it is written
-func (s *screen) read(name string) tea.Cmd {
-	return tui.Call(s.hub, func() (*skillsv1.ShowResponse, error) {
-		return s.service.Show(s.kit.Env.Ctx, &skillsv1.ShowRequest{Scope: s.scope(), Name: name})
-	}, func(response *skillsv1.ShowResponse) tea.Cmd { return s.readPage(name, response) })
-}
-
-// The page of a skill as the agent loads it
-func (s *screen) readPage(name string, response *skillsv1.ShowResponse) tea.Cmd {
-	t := s.kit.Env.Theme
-	page := cards.NewPage(s.kit.Env, cards.PageSpec{Title: name, Key: Screen + ":read", Lines: func(int) []string {
-		var lines []string
-		if note := response.GetSetupNote(); note != "" {
-			lines = append(lines, render.Warm(note, t), "")
-		}
-		if tags := response.GetTags(); len(tags) > 0 {
-			lines = append(lines, render.Dim("Tags: "+strings.Join(tags, ", "), t))
-		}
-		if related := response.GetRelated(); len(related) > 0 {
-			lines = append(lines, render.Dim("Related skills: "+strings.Join(related, ", "), t))
-		}
-		if files := response.GetFiles(); len(files) > 0 {
-			lines = append(lines, render.Dim("Files: "+strings.Join(files, ", "), t))
-		}
-		if b := response.GetBlueprint(); b != nil {
-			line := "Sets up a task that runs on the schedule " + b.GetSchedule()
-			if b.GetDeliver() != "origin" {
-				line += " and sends its result to " + b.GetDeliver()
-			}
-			if b.GetNoAgent() {
-				line += ", without the agent"
-			}
-			lines = append(lines, render.Cool(line+".", t))
-		}
-		if problem := response.GetBlueprintError(); problem != "" {
-			lines = append(lines, render.Bad("The task it sets up can't be read: "+problem, t))
-		}
-		if findings := response.GetFindings(); len(findings) > 0 {
-			lines = append(lines, "", render.Heading("How it is written", t))
-			for _, f := range findings {
-				lines = append(lines, render.Dim(f.GetSeverity()+" · "+f.GetRule()+": ", t)+f.GetMessage())
-			}
-		}
-		lines = append(lines, "", render.Heading("SKILL.md", t))
-		return append(lines, strings.Split(response.GetContent(), "\n")...)
-	}})
-	return s.hub.Push(page)
-}
-
-// Lets a built in skill take updates again, or puts the shipped copy back
-func (s *screen) reset(skill *skillsv1.Skill) tea.Cmd {
-	choices := []tui.Choice{
-		{ID: "follow", Title: "Take updates again", Detail: "Your copy stays until the next update of " + skill.GetName() + " replaces it"},
-		{ID: "restore", Title: "Put the shipped copy back", Detail: "Deletes your copy now and copies the one icebath ships"},
+// State of a skill in its words, in the colour of what it means
+func skillState(state string, t theme.Theme) string {
+	switch state {
+	case "Off":
+		return render.Dim(state, t)
+	case "Off in this app":
+		return render.Warm(state, t)
 	}
-	return s.kit.Pick(s.hub, "Reset "+skill.GetName(), "reset", choices, "", func(choice tui.Choice) tea.Cmd {
-		s.hub.Busy("Resetting " + skill.GetName() + "…")
-		return tui.Call(s.hub, func() (*skillsv1.ResetResponse, error) {
-			return s.service.Reset(s.kit.Env.Ctx, &skillsv1.ResetRequest{Scope: s.scope(), Name: skill.GetName(), Restore: choice.ID == "restore"})
-		}, func(response *skillsv1.ResetResponse) tea.Cmd {
-			return tea.Batch(s.hub.Done(response.GetMessage()), s.reload())
-		})
-	})
+	return state
 }
 
-// Puts the official copy of a skill from the hub back, the user's copy kept aside
-func (s *screen) restore(skill *skillsv1.Skill) tea.Cmd {
-	s.hub.Busy("Restoring " + skill.GetName() + "…")
-	return tui.Call(s.hub, func() (*skillsv1.RepairResponse, error) {
-		return s.service.Repair(s.kit.Env.Ctx, &skillsv1.RepairRequest{Scope: s.scope(), Name: skill.GetName(), Restore: true})
-	}, func(response *skillsv1.RepairResponse) tea.Cmd {
-		note := "Put the official copy of " + skill.GetName() + " back."
-		if backed := response.GetBackedUp(); len(backed) > 0 {
-			note += " Your copy of " + strings.Join(backed, ", ") + " is kept in " + response.GetBackupDir() + "."
+// How many settings a row that opens a section holds, and how many were changed
+func (s *screen) inside(key string) string {
+	everyday, advanced := s.options.Own(key)
+	all := append(everyday, advanced...)
+	changed := 0
+	for _, setting := range all {
+		if setting.GetSource() == configv1.Source_SOURCE_FILE {
+			changed++
 		}
-		return tea.Batch(s.hub.Done(note), s.reload())
-	})
+	}
+	said := render.Count(len(all), "setting")
+	if changed > 0 {
+		said += ", " + strconv.Itoa(changed) + " changed"
+	}
+	return said
+}
+
+// Lines under the list about the row in hand, never what the row or the first line says
+func (s *screen) detail(r row, cut bool) []string {
+	switch {
+	case r.category != nil:
+		var names []string
+		for _, skill := range s.skillsOf(r.category.GetName()) {
+			names = append(names, skill.GetName())
+		}
+		if about := r.category.GetAbout(); about != "" {
+			return []string{described(about), render.Dim(strs.And(names)+".", s.kit.Env.Theme)}
+		}
+		return []string{strs.And(names) + "."}
+	case r.skill != nil:
+		return []string{described(r.skill.GetDescription())}
+	case r.act != nil:
+		return []string{r.act.about}
+	case r.setting != nil:
+		return s.options.Detail(r.setting, cut)
+	case r.section != "":
+		return []string{described(s.options.Info(r.section).GetDescription())}
+	}
+	return []string{"Settings that few people change."}
+}
+
+// Buttons for the row in hand: what enter does, uninstall on a skill from the hub, reset on a changed option, then find skills
+func (s *screen) hints(i int) []wm.Hint {
+	find := wm.Hint{Action: "hub.add", Label: "find skills"}
+	if i < 0 || i >= len(s.rows) {
+		return []wm.Hint{find}
+	}
+	switch r := s.rows[i]; {
+	case r.skill != nil:
+		hints := []wm.Hint{{Action: "hub.use", Label: "open"}}
+		if r.skill.GetSource() == "hub" {
+			hints = append(hints, wm.Hint{Action: "hub.remove", Label: "uninstall"})
+		}
+		return append(hints, find)
+	case r.act != nil:
+		return []wm.Hint{{Action: "hub.use", Label: r.act.verb}, find}
+	case r.setting != nil:
+		return append(s.options.Hints(r.setting), find)
+	}
+	return []wm.Hint{{Action: "hub.use", Label: "open"}, find}
+}
+
+// What enter does on a row
+func (s *screen) use(l *cards.List, r row) tea.Cmd {
+	switch {
+	case r.category != nil:
+		return s.categoryPage(r.category.GetName())
+	case r.skill != nil:
+		return s.skillPage(r.skill.GetName())
+	case r.act != nil:
+		return r.act.run(l)
+	case r.setting != nil:
+		return s.options.Change(r.setting)
+	case r.section != "":
+		return s.sectionPage(r.section)
+	}
+	_, open, _ := s.options.Advanced(skillsconfig.Key)
+	return open()
+}
+
+// What ctrl+d does on a row: uninstalls a skill from the hub after a question, or puts a changed option back to its default
+func (s *screen) removeRow(l *cards.List, r row) tea.Cmd {
+	switch {
+	case r.skill != nil && r.skill.GetSource() == "hub":
+		return s.uninstall(l, r.skill)
+	case r.setting != nil:
+		return s.options.Reset(l, r.setting)
+	}
+	return nil
 }
 
 // What a reload changed, in a sentence or two
@@ -671,221 +603,62 @@ func reloaded(response *skillsv1.ReloadResponse) string {
 		return "Read the skills again. No slash command came or went."
 	}
 	var parts []string
-	if added := response.GetAdded(); len(added) > 0 {
-		names := make([]string, len(added))
-		for i, c := range added {
+	for _, group := range []struct {
+		label    string
+		commands []*skillsv1.Command
+	}{{"New", response.GetAdded()}, {"Gone", response.GetRemoved()}} {
+		if len(group.commands) == 0 {
+			continue
+		}
+		names := make([]string, len(group.commands))
+		for i, c := range group.commands {
 			names[i] = "/" + c.GetName()
 		}
-		parts = append(parts, "New: "+strings.Join(names, ", ")+".")
-	}
-	if removed := response.GetRemoved(); len(removed) > 0 {
-		names := make([]string, len(removed))
-		for i, c := range removed {
-			names[i] = "/" + c.GetName()
-		}
-		parts = append(parts, "Gone: "+strings.Join(names, ", ")+".")
+		parts = append(parts, group.label+": "+strings.Join(names, ", ")+".")
 	}
 	return "Read the skills again. " + strings.Join(parts, " ")
 }
 
-// Bundles: several skills loaded under one slash command, made, changed and removed here
-func (s *screen) bundles() cards.ListSpec {
-	var (
-		state  *skillsv1.BundlesResponse
-		loaded bool
-		failed error
-		list   *cards.List
-	)
-	rows := func() []*skillsv1.Bundle { return state.GetBundles() }
-	reload := func() tea.Cmd {
-		return tui.Async(func() func() tea.Cmd {
-			response, err := s.service.Bundles(s.kit.Env.Ctx, &skillsv1.BundlesRequest{Scope: s.scope()})
-			return func() tea.Cmd {
-				if err == nil {
-					state = response
-				}
-				failed, loaded = err, true
-				if list != nil {
-					list.Refresh()
-				}
-				return nil
-			}
-		})
-	}
-	t := s.kit.Env.Theme
-	return cards.ListSpec{
-		Title:   "Bundles",
-		Search:  "Search bundles",
-		Intro:   func() []string { return []string{"A bundle loads several skills at once under one slash command."} },
-		Columns: []render.Column{{}, {}, {Flex: 1, Whole: true}},
-		Rows: func() [][]string {
-			out := make([][]string, len(rows()))
-			for i, b := range rows() {
-				out[i] = []string{"/" + b.GetSlug(), render.Count(len(b.GetSkills()), "skill"), render.Dim(b.GetDescription(), t)}
-			}
-			return out
-		},
-		Detail: func(i int) []string {
-			if i < 0 || i >= len(rows()) {
-				return nil
-			}
-			b := rows()[i]
-			var lines []string
-			if !list.Shows(aboutColumn) && b.GetDescription() != "" {
-				lines = append(lines, b.GetDescription())
-			}
-			lines = append(lines, "Loads "+strings.Join(b.GetSkills(), ", ")+".")
-			if b.GetInstruction() != "" {
-				lines = append(lines, "Tells the agent: "+b.GetInstruction())
-			}
-			return append(lines, render.Dim("File: "+b.GetPath(), t))
-		},
-		Empty: func() string {
-			return tui.Waiting(loaded, failed, "No bundles yet. "+s.kit.Env.Keys.Display("hub.add")+" makes one.")
-		},
-		Free: map[string]bool{"hub.add": true},
-		Hints: func(_ *cards.List, i int) []wm.Hint {
-			add := wm.Hint{Action: "hub.add", Label: "add"}
-			if i < 0 {
-				return []wm.Hint{add}
-			}
-			return []wm.Hint{{Action: "hub.use", Label: "change"}, add, {Action: "hub.remove", Label: "remove"}}
-		},
-		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"hub.add": func(*cards.List, int) tea.Cmd { return s.editBundle(nil, reload) },
-			"hub.use": func(_ *cards.List, i int) tea.Cmd { return s.editBundle(rows()[i], reload) },
-			"hub.remove": func(l *cards.List, i int) tea.Cmd {
-				b := rows()[i]
-				l.Confirm("Remove /"+b.GetSlug()+"? The slash command goes away, and the skills stay.", func() tea.Cmd {
-					return tui.Call(s.hub, func() (*skillsv1.DeleteBundleResponse, error) {
-						return s.service.DeleteBundle(s.kit.Env.Ctx, &skillsv1.DeleteBundleRequest{Scope: s.scope(), Name: b.GetName()})
-					}, func(*skillsv1.DeleteBundleResponse) tea.Cmd {
-						return tea.Batch(s.hub.Done("Removed /"+b.GetSlug()+"."), reload())
-					})
-				})
-				return nil
-			},
-			"hub.refresh": func(*cards.List, int) tea.Cmd { return reload() },
-		},
-		OnFocus: func(l *cards.List) tea.Cmd {
-			list = l
-			return reload()
-		},
-	}
+// The verb of /skills and the rest of its line
+func verb(argument string) (string, string) {
+	word, rest, _ := strings.Cut(strings.TrimSpace(argument), " ")
+	return word, strings.TrimSpace(rest)
 }
 
-// Form that makes a bundle, or changes the one given
-func (s *screen) editBundle(b *skillsv1.Bundle, reload func() tea.Cmd) tea.Cmd {
-	title, submit := "New bundle", "Add"
-	if b != nil {
-		title, submit = "/"+b.GetSlug(), "Save"
-	}
-	var form *cards.Form
-	form = cards.NewForm(s.kit.Env, cards.FormSpec{
-		Title: title,
-		Intro: []string{"A bundle loads several skills at once under one slash command."},
-		Fields: []cards.Field{
-			{ID: "name", Label: "Name", Value: b.GetName(), Required: true, Help: "Its slash command is the name in lower case, with hyphens for spaces."},
-			{ID: "skills", Label: "Skills", Value: strings.Join(b.GetSkills(), ", "), Required: true, Help: "The skills it loads, separated by commas."},
-			{ID: "description", Label: "Description", Value: b.GetDescription(), Help: "What it is for, shown beside its slash command."},
-			{ID: "instruction", Label: "Instruction", Value: b.GetInstruction(), Help: "What the agent is told along with the skills."},
-		},
-		Submit: submit,
-		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
-			var names []string
-			for _, name := range strings.Split(values["skills"], ",") {
-				if name = strings.TrimSpace(name); name != "" {
-					names = append(names, name)
+// Skill, name and category of the line of /skills install
+func installArgs(rest string) (string, string, string) {
+	fields := strings.Fields(rest)
+	var identifier, name, category string
+	for i := 0; i < len(fields); i++ {
+		switch fields[i] {
+		case "--name", "--category":
+			if i+1 < len(fields) {
+				if fields[i] == "--name" {
+					name = fields[i+1]
+				} else {
+					category = fields[i+1]
 				}
+				i++
 			}
-			s.hub.Busy("Saving…")
-			return tui.Call(s.hub, func() (*skillsv1.SaveBundleResponse, error) {
-				if b != nil && !strings.EqualFold(strings.TrimSpace(values["name"]), b.GetName()) {
-					if _, err := s.service.DeleteBundle(s.kit.Env.Ctx, &skillsv1.DeleteBundleRequest{Scope: s.scope(), Name: b.GetName()}); err != nil {
-						return nil, err
-					}
-				}
-				return s.service.SaveBundle(s.kit.Env.Ctx, &skillsv1.SaveBundleRequest{
-					Scope: s.scope(), Name: values["name"], Skills: names, Description: strings.TrimSpace(values["description"]),
-					Instruction: strings.TrimSpace(values["instruction"]), Overwrite: b != nil,
-				})
-			}, func(response *skillsv1.SaveBundleResponse) tea.Cmd {
-				told := "Added /" + response.GetBundle().GetSlug() + "."
-				if b != nil {
-					told = "Saved /" + response.GetBundle().GetSlug() + "."
-				}
-				return tea.Batch(s.hub.Close(form), s.hub.Done(told), reload())
-			})
-		},
-	})
-	return s.hub.Push(form)
+		default:
+			if identifier == "" {
+				identifier = fields[i]
+			}
+		}
+	}
+	return identifier, name, category
 }
 
-// Trusted projects: folders whose own skills load, the session's folder offered first
-func (s *screen) trusted() cards.ListSpec {
-	var (
-		trusted []string
-		loaded  bool
-		failed  error
-		list    *cards.List
-	)
-	reload := func() tea.Cmd {
-		return tui.Async(func() func() tea.Cmd {
-			var folders []string
-			response, err := s.settings.Get(s.kit.Env.Ctx, &configv1.GetRequest{Key: skillsconfig.TrustedProjectDirs})
-			if err == nil {
-				err = yaml.Unmarshal([]byte(response.GetSetting().GetValue()), &folders)
-			}
-			return func() tea.Cmd {
-				trusted, failed, loaded = folders, err, true
-				if list != nil {
-					list.Refresh()
-				}
-				return nil
-			}
-		})
+// Page number of /skills browse, false when it is no positive number
+func pageNumber(text string) (int, bool) {
+	if text == "" {
+		return 1, true
 	}
-	return cards.ListSpec{
-		Title: "Trusted projects",
-		Intro: func() []string {
-			return []string{"The skills of a trusted project load for sessions working in it. They sit in its .icebath/skills or .agents/skills folder."}
-		},
-		Columns: []render.Column{{Flex: 1}},
-		Rows: func() [][]string {
-			out := make([][]string, len(trusted))
-			for i, folder := range trusted {
-				out[i] = []string{folder}
-			}
-			return out
-		},
-		Empty: func() string {
-			return tui.Waiting(loaded, failed, "No trusted projects yet. "+s.kit.Env.Keys.Display("hub.add")+" trusts one.")
-		},
-		Free: map[string]bool{"hub.add": true},
-		Hints: func(_ *cards.List, i int) []wm.Hint {
-			add := wm.Hint{Action: "hub.add", Label: "trust"}
-			if i < 0 {
-				return []wm.Hint{add}
-			}
-			return []wm.Hint{{Action: "hub.remove", Label: "stop trusting"}, add}
-		},
-		Actions: map[string]func(*cards.List, int) tea.Cmd{
-			"hub.add": func(*cards.List, int) tea.Cmd {
-				return s.kit.Ask(s.hub, "Trust a project", cards.Field{Label: "Folder", Value: s.kit.Env.WorkDir(),
-					Help: "The folder of the project. Its skills load for sessions working in it."}, "Trust", func(folder string) tea.Cmd {
-					return s.trust(folder, false, reload)
-				})
-			},
-			"hub.remove": func(l *cards.List, i int) tea.Cmd {
-				folder := trusted[i]
-				l.Confirm("Stop trusting "+folder+"? Its skills no longer load.", func() tea.Cmd { return s.trust(folder, true, reload) })
-				return nil
-			},
-			"hub.refresh": func(*cards.List, int) tea.Cmd { return reload() },
-		},
-		OnFocus: func(l *cards.List) tea.Cmd {
-			list = l
-			return reload()
-		},
-	}
+	n, err := strconv.Atoi(text)
+	return n, err == nil && n >= 1
+}
+
+// Text an author wrote, such as a skill's description, as one line that ends as a sentence
+func described(text string) string {
+	return strs.Full(strings.Join(strings.Fields(text), " "))
 }

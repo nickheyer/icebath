@@ -22,7 +22,8 @@ func (services) Services() []generation.Service {
 		Setup: generation.Setup{Badge: "paid", Key: falconfig.APIKey, Prompt: "FAL API key", Link: falconfig.KeyLink},
 		Images: &generation.Images{
 			About:    "Many image models with edits, needs a FAL API key",
-			Settings: []string{falconfig.APIKey, falconfig.KeyID, falconfig.KeySecret, falconfig.RunHost},
+			Section:  falconfig.Key,
+			Model:    falconfig.Model,
 			Models:   imageModels,
 			Default:  func(context.Context, *config.Config) string { return defaultPicture },
 			Takes:    imageTakes,
@@ -30,7 +31,7 @@ func (services) Services() []generation.Service {
 		},
 		Videos: &generation.Videos{
 			About:    "Many video models from text or an image, needs a FAL API key",
-			Settings: []string{falconfig.VideoModel, falconfig.APIKey},
+			Section:  falconfig.VideoKey,
 			Model:    falconfig.VideoModel,
 			Models:   videoModels,
 			Default:  func(context.Context, *config.Config) string { return defaultFamily },

@@ -116,7 +116,7 @@ func trustCell(skill *skillsv1.HubSkill, official string) string {
 	if trust == "" {
 		return "Unknown"
 	}
-	return strings.ToUpper(trust[:1]) + trust[1:]
+	return strs.Capital(trust)
 }
 
 func hubCommands(service skillsv1connect.SkillsServiceClient) []*cobra.Command {
@@ -137,7 +137,7 @@ func browse(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				return err
 			}
 			c := cli.NewConsole(cmd)
-			stream, err := service.Browse(cmd.Context(), &skillsv1.BrowseRequest{Scope: here(), Page: int32(page), Size: int32(size), Source: source})
+			stream, err := service.Browse(cmd.Context(), &skillsv1.BrowseRequest{Scope: here(cmd.Context()), Page: int32(page), Size: int32(size), Source: source})
 			if err != nil {
 				return err
 			}
@@ -251,7 +251,7 @@ func search(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				fmt.Fprintln(c.Out())
 				say(c, skillsv1.Tone_TONE_HEADING, "Searching for “%s”…", args[0])
 			}
-			response, err := service.Search(cmd.Context(), &skillsv1.SearchRequest{Scope: here(), Query: args[0], Source: source, Limit: int32(limit)})
+			response, err := service.Search(cmd.Context(), &skillsv1.SearchRequest{Scope: here(cmd.Context()), Query: args[0], Source: source, Limit: int32(limit)})
 			if err != nil {
 				return err
 			}
@@ -301,7 +301,7 @@ var categoryName = regexp.MustCompile(`^[a-z][a-z0-9_/-]*$`)
 // it was not installed
 func installSkill(c *cli.Console, service skillsv1connect.SkillsServiceClient, identifier string, o installOptions) (skillsv1.Outcome, error) {
 	ctx := c.Context()
-	request := &skillsv1.StageRequest{Scope: here(), Identifier: identifier, Category: o.category, Name: o.name, Force: o.force, Yes: o.yes}
+	request := &skillsv1.StageRequest{Scope: here(ctx), Identifier: identifier, Category: o.category, Name: o.name, Force: o.force, Yes: o.yes}
 	for {
 		stream, err := service.Stage(ctx, request)
 		if err != nil {
@@ -391,7 +391,7 @@ func commit(c *cli.Console, service skillsv1connect.SkillsServiceClient, pending
 		say(c, skillsv1.Tone_TONE_DIM, "Nothing was installed.")
 		return discard()
 	}
-	stream, err := service.Commit(ctx, &skillsv1.CommitRequest{Scope: here(), Id: pending.GetId(), Category: category})
+	stream, err := service.Commit(ctx, &skillsv1.CommitRequest{Scope: here(ctx), Id: pending.GetId(), Category: category})
 	if err != nil {
 		return skillsv1.Outcome_OUTCOME_FAILED, err
 	}
@@ -439,7 +439,7 @@ func inspect(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := cli.NewConsole(cmd)
-			stream, err := service.Inspect(cmd.Context(), &skillsv1.InspectRequest{Scope: here(), Identifier: args[0]})
+			stream, err := service.Inspect(cmd.Context(), &skillsv1.InspectRequest{Scope: here(cmd.Context()), Identifier: args[0]})
 			if err != nil {
 				return err
 			}
@@ -477,7 +477,7 @@ func check(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := cli.NewConsole(cmd)
-			response, err := service.Check(cmd.Context(), &skillsv1.CheckRequest{Scope: here(), Name: strs.First(args)})
+			response, err := service.Check(cmd.Context(), &skillsv1.CheckRequest{Scope: here(cmd.Context()), Name: strs.First(args)})
 			if err != nil {
 				return err
 			}
@@ -519,7 +519,7 @@ func update(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 		Long:  "Updates every skill you installed from the hub, or the one you name. Skills you edited are skipped unless you pass --force.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			stream, err := service.Update(cmd.Context(), &skillsv1.UpdateRequest{Scope: here(), Name: strs.First(args), Force: force})
+			stream, err := service.Update(cmd.Context(), &skillsv1.UpdateRequest{Scope: here(cmd.Context()), Name: strs.First(args), Force: force})
 			if err != nil {
 				return err
 			}
@@ -547,7 +547,7 @@ func audit(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			"analyzes the code of Python files.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			stream, err := service.Audit(cmd.Context(), &skillsv1.AuditRequest{Scope: here(), Name: strs.First(args), Deep: deep})
+			stream, err := service.Audit(cmd.Context(), &skillsv1.AuditRequest{Scope: here(cmd.Context()), Name: strs.First(args), Deep: deep})
 			if err != nil {
 				return err
 			}
@@ -576,7 +576,7 @@ func uninstall(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 					return nil
 				}
 			}
-			response, err := service.Uninstall(cmd.Context(), &skillsv1.UninstallRequest{Scope: here(), Name: args[0]})
+			response, err := service.Uninstall(cmd.Context(), &skillsv1.UninstallRequest{Scope: here(cmd.Context()), Name: args[0]})
 			if err != nil {
 				return err
 			}
@@ -584,7 +584,7 @@ func uninstall(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 				say(c, skillsv1.Tone_TONE_BAD, "✗ %s", response.GetMessage())
 				return cli.Exit(1)
 			}
-			say(c, skillsv1.Tone_TONE_GOOD, "%s", response.GetMessage())
+			say(c, skillsv1.Tone_TONE_GOOD, "✓ %s", response.GetMessage())
 			return nil
 		},
 	}
@@ -605,7 +605,7 @@ func publish(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			if to != "github" && to != "clawhub" {
 				return fmt.Errorf("--to takes github or clawhub, not “%s”.", to)
 			}
-			stream, err := service.Publish(cmd.Context(), &skillsv1.PublishRequest{Scope: here(), Path: args[0], To: to, Repo: repo})
+			stream, err := service.Publish(cmd.Context(), &skillsv1.PublishRequest{Scope: here(cmd.Context()), Path: args[0], To: to, Repo: repo})
 			if err != nil {
 				return err
 			}
@@ -632,7 +632,7 @@ func snapshot(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := cli.NewConsole(cmd)
-			response, err := service.Export(cmd.Context(), &skillsv1.ExportRequest{Scope: here()})
+			response, err := service.Export(cmd.Context(), &skillsv1.ExportRequest{Scope: here(cmd.Context())})
 			if err != nil {
 				return err
 			}
@@ -687,7 +687,7 @@ func importSnapshot(c *cli.Console, service skillsv1connect.SkillsServiceClient,
 	if len(snap.Taps) > 0 {
 		for _, tap := range snap.Taps {
 			if tap.Repo != "" {
-				if _, err := service.Tap(ctx, &skillsv1.TapRequest{Scope: here(), Repo: tap.Repo}); err != nil {
+				if _, err := service.Tap(ctx, &skillsv1.TapRequest{Scope: here(ctx), Repo: tap.Repo}); err != nil {
 					return err
 				}
 			}
@@ -734,7 +734,7 @@ func taps(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c := cli.NewConsole(cmd)
-			response, err := service.Taps(cmd.Context(), &skillsv1.TapsRequest{Scope: here()})
+			response, err := service.Taps(cmd.Context(), &skillsv1.TapsRequest{Scope: here(cmd.Context())})
 			if err != nil {
 				return err
 			}
@@ -760,7 +760,7 @@ func taps(service skillsv1connect.SkillsServiceClient) *cobra.Command {
 			Args:    cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				c := cli.NewConsole(cmd)
-				response, err := service.Tap(cmd.Context(), &skillsv1.TapRequest{Scope: here(), Repo: args[0], Remove: remove})
+				response, err := service.Tap(cmd.Context(), &skillsv1.TapRequest{Scope: here(cmd.Context()), Repo: args[0], Remove: remove})
 				if err != nil {
 					return err
 				}
@@ -797,7 +797,7 @@ func trust(service skillsv1connect.SkillsServiceClient, action string) *cobra.Co
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := cli.NewConsole(cmd)
-			response, err := service.Trust(cmd.Context(), &skillsv1.TrustRequest{Scope: here(), Path: strs.First(args), Untrust: action == "untrust"})
+			response, err := service.Trust(cmd.Context(), &skillsv1.TrustRequest{Scope: here(cmd.Context()), Path: strs.First(args), Untrust: action == "untrust"})
 			if err != nil {
 				return err
 			}

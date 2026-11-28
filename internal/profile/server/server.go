@@ -74,7 +74,8 @@ func message(info profile.Info) *profilev1.Profile {
 	return &profilev1.Profile{Name: info.Name, Active: info.Active, Default: info.Default, Path: info.Path, Sticky: info.Sticky, Model: info.Model,
 		Provider: info.Provider, Skills: int32(info.Skills), HasEnv: info.HasEnv, HasSoul: info.HasSoul, Distribution: info.Distribution,
 		DistributionVersion: info.DistributionVersion, DistributionSource: info.DistributionSource, Description: info.Description,
-		DescriptionAuto: info.DescriptionAuto, DisplayName: info.DisplayName, BotTitle: info.BotTitle, PreviousNames: info.PreviousNames}
+		DescriptionAuto: info.DescriptionAuto, DisplayName: info.DisplayName, BotTitle: info.BotTitle, PreviousNames: info.PreviousNames,
+		Bundled: info.Bundled, SyncImports: info.SyncImports}
 }
 
 func (s *service) show(name string) (*profilev1.Profile, error) {
@@ -125,7 +126,7 @@ func (s *service) Delete(_ context.Context, request *profilev1.DeleteRequest) (*
 	if err != nil {
 		return nil, refusal(err)
 	}
-	return &profilev1.DeleteResponse{Path: done.Path, Lines: done.Lines, Later: done.Later, Settled: done.Settled, Failure: done.Failure}, nil
+	return &profilev1.DeleteResponse{Path: done.Path, Done: done.Done, Failed: done.Failed, Settled: done.Settled, Failure: done.Failure}, nil
 }
 
 func (s *service) Use(_ context.Context, request *profilev1.UseRequest) (*profilev1.UseResponse, error) {
@@ -144,7 +145,7 @@ func (s *service) Rename(_ context.Context, request *profilev1.RenameRequest) (*
 	if err != nil {
 		return nil, refusal(err)
 	}
-	return &profilev1.RenameResponse{Path: done.Path, Lines: done.Lines, Later: done.Later, Settled: done.Settled}, nil
+	return &profilev1.RenameResponse{Path: done.Path, Name: done.Name, Done: done.Done, Failed: done.Failed, Settled: done.Settled}, nil
 }
 
 // Text the profile's helper model writes for the prompt, on the models of that profile
@@ -169,6 +170,13 @@ func (s *service) Describe(ctx context.Context, request *profilev1.DescribeReque
 		return nil, connect.NewError(connect.CodeInvalidArgument, "icebath profile describe needs a profile name, or --all with --auto.")
 	case request.GetText() != "" && request.GetAuto():
 		return nil, connect.NewError(connect.CodeInvalidArgument, "icebath profile describe takes --text or --auto, not both.")
+	}
+	// A description replaced by no text is taken away
+	if !request.GetAuto() && request.GetText() == "" && request.GetOverwrite() {
+		if err := s.profiles.SetDescription(name, ""); err != nil {
+			return nil, refusal(err)
+		}
+		return &profilev1.DescribeResponse{Outcomes: []*profilev1.Outcome{{Name: name, Ok: true, Reason: "cleared"}}}, nil
 	}
 	if !request.GetAuto() && request.GetText() == "" {
 		canon, err := profile.Canon(name)
@@ -212,7 +220,7 @@ func (s *service) PurgeIdentity(_ context.Context, request *profilev1.PurgeIdent
 	if err != nil {
 		return nil, refusal(err)
 	}
-	return &profilev1.PurgeIdentityResponse{Lines: done.Lines, Settled: done.Settled}, nil
+	return &profilev1.PurgeIdentityResponse{Failed: done.Failed, Settled: done.Settled}, nil
 }
 
 func (s *service) MigrateIdentity(_ context.Context, request *profilev1.MigrateIdentityRequest) (*profilev1.MigrateIdentityResponse, error) {
@@ -220,7 +228,7 @@ func (s *service) MigrateIdentity(_ context.Context, request *profilev1.MigrateI
 	if err != nil {
 		return nil, refusal(err)
 	}
-	return &profilev1.MigrateIdentityResponse{Lines: done.Lines, Settled: done.Settled}, nil
+	return &profilev1.MigrateIdentityResponse{Done: done.Done, Failed: done.Failed, Settled: done.Settled}, nil
 }
 
 func (s *service) Export(_ context.Context, request *profilev1.ExportRequest) (*profilev1.ExportResponse, error) {
@@ -302,4 +310,20 @@ func (s *service) Info(_ context.Context, request *profilev1.InfoRequest) (*prof
 		return &profilev1.InfoResponse{}, nil
 	}
 	return &profilev1.InfoResponse{Found: true, Manifest: manifest(found, nil)}, nil
+}
+
+func (s *service) Bundled(_ context.Context, request *profilev1.BundledRequest) (*profilev1.BundledResponse, error) {
+	note, err := s.profiles.SetBundled(request.GetName(), request.GetOn())
+	if err != nil {
+		return nil, refusal(err)
+	}
+	return &profilev1.BundledResponse{Note: note}, nil
+}
+
+func (s *service) SyncImports(_ context.Context, request *profilev1.SyncImportsRequest) (*profilev1.SyncImportsResponse, error) {
+	note, err := s.profiles.SetSyncImports(request.GetName(), request.GetOn())
+	if err != nil {
+		return nil, refusal(err)
+	}
+	return &profilev1.SyncImportsResponse{Note: note}, nil
 }

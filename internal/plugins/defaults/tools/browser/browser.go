@@ -15,7 +15,7 @@ func Register(registries *plugins.Registries) {
 	packages.Register(registries.Packages)
 	b := tools.Register(registries.Tools, registries.Sessions, registries.Profile, registries.Config, registries.Browser.Host(),
 		registries.Desktop.Host(), registries.Terminal.Host(), registries.Vault.Host(), registries.Packages.Host())
-	server.Register(registries.Server, registries.Config, b)
+	server.Register(registries.Server, registries.Config, b, registries.Browser.Host())
 	app.Register(registries.App)
 	cli.Register(registries.CLI, tools.Browsers())
 }

@@ -487,6 +487,10 @@ func (s *service) RetitleSkills(ctx context.Context, request *sessionsv1.Retitle
 	return response, nil
 }
 
+func (s *service) Notices(context.Context, *sessionsv1.NoticesRequest) (*sessionsv1.NoticesResponse, error) {
+	return &sessionsv1.NoticesResponse{Notices: s.sessions.Notices()}, nil
+}
+
 func (s *service) Watch(ctx context.Context, _ *sessionsv1.WatchRequest, stream sessionsv1connect.SessionServiceWatchServerStream) error {
 	store, err := s.store()
 	if err != nil {

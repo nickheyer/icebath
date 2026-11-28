@@ -31,7 +31,7 @@ func Register(cfg *config.Config) {
 			{Key: LoopbackHostAlias, Title: "Docker host name", About: "The name that a Camofox server in Docker uses to reach this computer.",
 				Default: "host.docker.internal", Zero: "host.docker.internal", Env: []string{LoopbackHostAliasEnv}, Advanced: true},
 			{Key: CookiesDir, Title: "Cookie files folder", About: "The folder that cookies.txt files are imported from.", Default: "~/.camofox/cookies",
-				Zero: "~/.camofox/cookies", Advanced: true},
+				Zero: "~/.camofox/cookies", Path: &config.Path{Kind: config.PathFolder}, Advanced: true},
 		},
 	}})
 }

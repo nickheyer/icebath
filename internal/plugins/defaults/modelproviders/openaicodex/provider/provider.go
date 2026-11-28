@@ -19,6 +19,7 @@ func (specs) Specs() []provider.Spec {
 	base := openaicodexconfig.BaseURL
 	return []provider.Spec{{
 		Name:               openaicodexconfig.Name,
+		SignIn:             true,
 		Native:             native,
 		DisplayName:        openaicodexconfig.Title,
 		Rank:               1,

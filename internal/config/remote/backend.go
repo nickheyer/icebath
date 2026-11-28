@@ -12,6 +12,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -356,14 +357,11 @@ func (p *Profile) Doc() map[string]any {
 	return cloneDoc(p.doc)
 }
 
-// Level that locks the dotted key or a key above it, false when none does
-func (p *Profile) Locked(key string) (string, bool) {
+// Keys the levels above the profile lock, a copy
+func (p *Profile) Locks() []Lock {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if lock, ok := covering(p.locks, FromDotted(key)); ok {
-		return lock.Level, true
-	}
-	return "", false
+	return slices.Clone(p.locks)
 }
 
 // Fetches the settings again when they changed, an error leaving them as they were

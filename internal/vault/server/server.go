@@ -41,6 +41,10 @@ func item(listed vault.Listed) *vaultv1.Item {
 		Local: listed.Local, Otp: listed.OTP}
 }
 
+func field(f vault.Field) *vaultv1.Field {
+	return &vaultv1.Field{Key: f.Key, Required: f.Required, Secret: f.Secret, Choices: f.Choices}
+}
+
 func key(view vault.KeyView) *vaultv1.Key {
 	return &vaultv1.Key{Storage: view.Storage, Path: view.Path, Service: view.Service, Account: view.Account, Configured: view.Configured,
 		Keychain: view.Keychain, KeychainLeft: view.Left}
@@ -50,6 +54,20 @@ func (s *service) List(ctx context.Context, request *vaultv1.ListRequest) (*vaul
 	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
+	}
+	if request.GetBare() {
+		response := &vaultv1.ListResponse{}
+		items, err := s.vault.Store(cfg).Items()
+		if err != nil {
+			return nil, refusal(err)
+		}
+		for _, own := range items {
+			response.Items = append(response.Items, item(vault.Listed{Item: own, Source: vault.OwnTitle, Local: true}))
+		}
+		for _, backend := range s.vault.Backends() {
+			response.Sources = append(response.Sources, &vaultv1.Source{Name: backend.Name, DisplayName: backend.Title})
+		}
+		return response, nil
 	}
 	rows, locked, err := s.vault.Listing(ctx, cfg)
 	if err != nil {
@@ -64,12 +82,13 @@ func (s *service) List(ctx context.Context, request *vaultv1.ListRequest) (*vaul
 		response.Items = append(response.Items, item(row))
 	}
 	for _, source := range s.vault.Sources(cfg) {
-		response.Sources = append(response.Sources, &vaultv1.Source{Name: source.Name, DisplayName: source.Title, State: source.State, Locked: source.Locked})
+		response.Sources = append(response.Sources, &vaultv1.Source{Name: source.Name, DisplayName: source.Title, State: source.State, Locked: source.Locked,
+			Ready: source.Ready})
 	}
 	for _, kind := range vault.Kinds {
 		message := &vaultv1.Kind{Kind: kind}
-		for _, field := range vault.KindFields(kind) {
-			message.Fields = append(message.Fields, &vaultv1.Field{Key: field.Key, Required: field.Required, Secret: field.Secret, Choices: field.Choices})
+		for _, each := range vault.KindFields(kind) {
+			message.Fields = append(message.Fields, field(each))
 		}
 		response.Kinds = append(response.Kinds, message)
 	}
@@ -88,12 +107,40 @@ func (s *service) Add(_ context.Context, request *vaultv1.AddRequest) (*vaultv1.
 	return &vaultv1.AddResponse{Item: item(vault.Listed{Item: added, Source: vault.OwnTitle, Local: true})}, nil
 }
 
-func (s *service) Remove(_ context.Context, request *vaultv1.RemoveRequest) (*vaultv1.RemoveResponse, error) {
+func (s *service) Item(ctx context.Context, request *vaultv1.ItemRequest) (*vaultv1.ItemResponse, error) {
 	cfg, err := server.Profile(s.config, request.GetProfile())
 	if err != nil {
 		return nil, err
 	}
-	removed, err := s.vault.Store(cfg).Remove(request.GetHandle())
+	listed, fields, err := s.vault.Item(ctx, cfg, request.GetHandle())
+	if err != nil {
+		return nil, refusal(err)
+	}
+	response := &vaultv1.ItemResponse{Item: item(listed)}
+	for _, shown := range fields {
+		response.Values = append(response.Values, &vaultv1.Value{Field: field(shown.Field), Value: shown.Value, Set: shown.Set})
+	}
+	return response, nil
+}
+
+func (s *service) Change(ctx context.Context, request *vaultv1.ChangeRequest) (*vaultv1.AddResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	changed, err := s.vault.Change(ctx, cfg, request.GetHandle(), request.GetField(), request.GetValue())
+	if err != nil {
+		return nil, refusal(err)
+	}
+	return &vaultv1.AddResponse{Item: item(vault.Listed{Item: changed, Source: vault.OwnTitle, Local: true})}, nil
+}
+
+func (s *service) Remove(ctx context.Context, request *vaultv1.RemoveRequest) (*vaultv1.RemoveResponse, error) {
+	cfg, err := server.Profile(s.config, request.GetProfile())
+	if err != nil {
+		return nil, err
+	}
+	removed, err := s.vault.Remove(ctx, cfg, request.GetHandle())
 	if err != nil {
 		return nil, refusal(err)
 	}
@@ -140,6 +187,8 @@ func (s *service) Lock(_ context.Context, request *vaultv1.LockRequest) (*vaultv
 	if err != nil {
 		return nil, err
 	}
-	s.vault.Lock(cfg, request.GetName())
+	if _, err := s.vault.Lock(cfg, request.GetName()); err != nil {
+		return nil, refusal(err)
+	}
 	return &vaultv1.LockResponse{}, nil
 }

@@ -29,25 +29,31 @@ func (c *chat) exhausted(event *agentv1.LoginExhausted) tea.Cmd {
 	kit := c.kit
 	t := kit.Env.Theme
 	id := cmp.Or(event.GetSessionId(), c.id)
-	name, at := event.GetLogin().GetName(), event.GetProvider()
+	// The provider by its name in the profile for the server, by the name a person knows it for the words
+	name, at, title := event.GetLogin().GetName(), event.GetProvider(), cmp.Or(event.GetProviderTitle(), event.GetProvider())
 	when := ""
 	if event.GetResets() != nil {
 		when = event.GetResets().AsTime().Local().Format("15:04")
 	}
 	var hub *cards.Hub
 	settle := func(done string) tea.Cmd { return tea.Batch(kit.WM.DismissCard(hub), wm.Notify(done, wm.Success)) }
-	setLogin := func(request *agentv1.SetLoginRequest, done string) tea.Cmd {
+	// Through the server's one function for the account a session is held to, saying what it says, then what else was done
+	setLogin := func(request *agentv1.SetLoginRequest, then string) tea.Cmd {
 		hub.Busy("Switching accounts…")
 		return tui.Async(func() func() tea.Cmd {
 			response, err := c.desk.agents.SetLogin(kit.Env.Ctx, request)
 			return func() tea.Cmd {
 				switch {
 				case err != nil:
-					return hub.Fail("The account was not switched. " + tui.Reason(err))
+					return hub.Fail(tui.Reason(err))
 				case response.GetWarning() != "":
 					return hub.Fail(response.GetWarning())
 				}
-				return settle(done)
+				// What else was done is said only when it was: the last message goes again when the server sent it again
+				if !response.GetRetried() {
+					return settle(response.GetSaid())
+				}
+				return settle(strings.TrimSpace(response.GetSaid() + " " + then))
 			}
 		})
 	}
@@ -57,9 +63,13 @@ func (c *chat) exhausted(event *agentv1.LoginExhausted) tea.Cmd {
 			return func() tea.Cmd {
 				switch {
 				case err != nil:
-					return hub.Fail("Your last message was not sent again. " + tui.Reason(err))
+					return hub.Fail(tui.Reason(err))
 				case response.GetState() == "idle":
 					return hub.Fail("The provider did not say when the account resets. Retry now, or switch to another account.")
+				}
+				// The time the server armed the retry for, where it differs from the reset the question named
+				if at := response.GetRetryAt(); !now && at != nil {
+					return settle("Your last message is sent again at " + at.AsTime().Local().Format("15:04") + ".")
 				}
 				return settle(done)
 			}
@@ -69,8 +79,7 @@ func (c *chat) exhausted(event *agentv1.LoginExhausted) tea.Cmd {
 	for _, ready := range event.GetReady() {
 		login, other := ready.GetId(), cmp.Or(ready.GetName(), ready.GetId())
 		acts = append(acts, loginAction{"Switch to " + other, "Use this account for the session and send your last message again", "switch", func() tea.Cmd {
-			return setLogin(&agentv1.SetLoginRequest{SessionId: id, Provider: at, Login: login, Retry: true},
-				"This session now uses the account "+other+". Your last message is sent again.")
+			return setLogin(&agentv1.SetLoginRequest{SessionId: id, Provider: at, Login: login, Retry: true}, "Your last message is sent again.")
 		}})
 	}
 	if when != "" {
@@ -85,25 +94,26 @@ func (c *chat) exhausted(event *agentv1.LoginExhausted) tea.Cmd {
 		acts = append(acts,
 			loginAction{"Take turns for this session", "Move this session on to the next of your accounts that take turns", "take turns", func() tea.Cmd {
 				return setLogin(&agentv1.SetLoginRequest{SessionId: id, Provider: at, OnExhausted: providerconfig.Rotate, Retry: true},
-					"This session now takes turns between your accounts.")
+					"Your last message is sent again.")
 			}},
-			loginAction{"Always move on at " + at, "Set When accounts run out to Move on, so icebath switches without asking", "move on", func() tea.Cmd {
+			loginAction{"Always move on at " + title, "Move on to the next account by itself from now on, in every chat", "move on", func() tea.Cmd {
+				on := c.menuProfile()
 				return tui.Async(func() func() tea.Cmd {
-					_, err := c.desk.settings.Set(kit.Env.Ctx, &configv1.SetRequest{Profile: c.on(), Value: providerconfig.Rotate,
+					_, err := c.desk.settings.Set(kit.Env.Ctx, &configv1.SetRequest{Profile: on, Value: providerconfig.Rotate,
 						Key: providerconfig.Key + "." + at + "." + providerconfig.OnExhausted})
 					return func() tea.Cmd {
 						if err != nil {
-							return hub.Fail("When accounts run out was not changed. " + tui.Reason(err))
+							return hub.Fail(tui.Reason(err))
 						}
-						return wait(true, "When accounts run out is now Move on for "+at+". Your last message is sent again.")
+						return wait(true, "When an account runs out is now Move on for "+title+". Your last message is sent again.")
 					}
 				})
 			}})
 	}
-	acts = append(acts, loginAction{"Add an account", "Sign in to another account at " + at, "add", func() tea.Cmd {
-		return tea.Batch(kit.WM.DismissCard(hub), kit.Open(providerapp.Screen, profile.Join(c.on(), providerapp.LoginsOf+at)))
+	acts = append(acts, loginAction{"Add an account", "Sign in to another account at " + title, "add", func() tea.Cmd {
+		return tea.Batch(kit.WM.DismissCard(hub), kit.Open(providerapp.Screen, profile.Join(c.menuProfile(), providerapp.LoginsOf+at)))
 	}})
-	intro := []string{"Your account " + name + " at " + at + " reached its limit."}
+	intro := []string{"Your account " + name + " at " + title + " reached its limit."}
 	if reason := strings.TrimSpace(event.GetReason()); reason != "" {
 		intro = append(intro, reason)
 	}
@@ -117,7 +127,7 @@ func (c *chat) exhausted(event *agentv1.LoginExhausted) tea.Cmd {
 		Key:     "tui:login:exhausted",
 		Context: cards.HubContext,
 		Primary: "hub.use",
-		Intro:   func() []string { return []string{strings.Join(intro, " "), "What should happen now?"} },
+		Intro:   func() []string { return []string{strings.Join(intro, " ")} },
 		Columns: []render.Column{{}, {Flex: 1, Whole: true}},
 		Rows: func() [][]string {
 			rows := make([][]string, len(acts))

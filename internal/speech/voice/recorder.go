@@ -27,7 +27,7 @@ func recordings() string { return filepath.Join(os.TempDir(), "icebath_voice") }
 func recordingPath(ext string) (string, error) {
 	dir := recordings()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
+		return "", fmt.Errorf("The folder recordings are kept in could not be made. The error was: %s.", strings.TrimSuffix(err.Error(), "."))
 	}
 	return filepath.Join(dir, "recording_"+time.Now().Format("20060102_150405.000")+"."+ext), nil
 }
@@ -106,7 +106,7 @@ func (r *termuxRecorder) start(context.Context, func()) error {
 			"then install or update the Termux:API app for Android.")
 	}
 	if !termuxApp() {
-		return errors.New("Recording on Termux needs the Termux:API app for Android. Install or update it, then run /voice on again.")
+		return errors.New("Recording on Termux needs the Termux:API app for Android. Install or update it.")
 	}
 	r.mu.Lock()
 	if r.active {
@@ -388,11 +388,11 @@ func (r *audioRecorder) start(ctx context.Context, silenced func()) error {
 	switch {
 	case err == nil:
 	case missingLibrary(err):
-		return errors.New(portaudioMissing())
+		return errors.New(portaudioProblem().Sentence())
 	case unloadable(err):
-		return errors.New("Voice mode needs PortAudio, the sound library icebath records with. " + capital(captureHint(err)) + ".")
+		return errors.New(captureProblem(err).Sentence())
 	default:
-		return err
+		return fmt.Errorf("The sound system did not start. The error was: %s.", strings.TrimSuffix(err.Error(), "."))
 	}
 	r.mu.Lock()
 	if r.active {

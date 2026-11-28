@@ -951,3 +951,59 @@ func (r *registrant) realProfileCDP(ctx context.Context, cfg *config.Config) (st
 	}
 	return r.launchReal(ctx, cfg, browser)
 }
+
+// Names of the browsers as people know them, by key
+var productTitles = map[string]string{"chrome": "Google Chrome", "chromium": "Chromium", "brave": "Brave", "brave-origin": "Brave Origin",
+	"edge": "Microsoft Edge"}
+
+// A browser installed on this computer
+type Installed struct {
+	Title, Path string
+}
+
+// Every Chromium browser installed on this computer, by its name and its program
+func InstalledBrowsers() []Installed {
+	var out []Installed
+	for _, p := range products {
+		if path := realExecutable(p.key); path != "" {
+			out = append(out, Installed{Title: productTitles[p.key], Path: path})
+		}
+	}
+	return out
+}
+
+// A profile of the browser your own profile is copied from
+type OwnProfile struct {
+	// Folder inside the browser's data, such as Default or Profile 2, and the name the browser shows for it
+	Folder, Name string
+	// The one the browser used last
+	Last bool
+}
+
+// Title of the default browser and its profiles, those its Local State names that are there; no title for a default icebath knows not
+func OwnProfiles() (string, []OwnProfile) {
+	browser := defaultChromium()
+	src := realDataDir(browser)
+	if src == "" {
+		return "", nil
+	}
+	last := lastUsed(src)
+	var state struct {
+		Profile struct {
+			Cache map[string]struct {
+				Name string `json:"name"`
+			} `json:"info_cache"`
+		} `json:"profile"`
+	}
+	if raw, err := os.ReadFile(filepath.Join(src, "Local State")); err == nil {
+		json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &state)
+	}
+	var out []OwnProfile
+	for folder, info := range state.Profile.Cache {
+		if fsx.IsDir(filepath.Join(src, folder)) {
+			out = append(out, OwnProfile{Folder: folder, Name: cmp.Or(info.Name, folder), Last: folder == last})
+		}
+	}
+	slices.SortFunc(out, func(a, b OwnProfile) int { return strings.Compare(a.Folder, b.Folder) })
+	return productTitles[browser], out
+}

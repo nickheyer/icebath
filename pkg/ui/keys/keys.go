@@ -32,6 +32,9 @@ type Action struct {
 	Overlay bool
 	// Stays out of the palette, for editing and movement keys
 	Quiet bool
+	// Why the action may not take a chord of the map, empty when it may, such as a key the terminal keeps for itself or another action holds
+	// where the action is pressed. Asked each time its keys are set, so the refusal is said where the key is recorded
+	Refuse func(m *Map, chord string) string
 }
 
 // LabelText is the legend word of the action in the language of the application, the registered word when the application has none
@@ -231,9 +234,10 @@ func (m *Map) Holder(id, chord string) string {
 	return ""
 }
 
-// Replaces every chord of the action with the given ones
+// Replaces every chord of the action with the given ones, refused when one is held by another action of its context or the action refuses it
 func (m *Map) Set(id string, chords []string) error {
-	if _, ok := m.Action(id); !ok {
+	a, ok := m.Action(id)
+	if !ok {
 		return fmt.Errorf("keys: unknown action %q", id)
 	}
 	out := make([]string, 0, len(chords))
@@ -244,6 +248,11 @@ func (m *Map) Set(id string, chords []string) error {
 		}
 		if h := m.Holder(id, c); h != "" {
 			return fmt.Errorf("keys: %s is bound to %s", Format(c), h)
+		}
+		if a.Refuse != nil {
+			if why := a.Refuse(m, c); why != "" {
+				return errors.New(why)
+			}
 		}
 		if !slices.Contains(out, c) {
 			out = append(out, c)

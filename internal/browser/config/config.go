@@ -43,6 +43,13 @@ const (
 // Values of browser.cloud_provider that keep pages on this machine
 const Local = "local"
 
+// Kinds of the pickers of the browser: where pages open, the browser program, and the profile of your own browser the agent copies
+const (
+	PickPlace   = "browser place"
+	PickProgram = "browser program"
+	PickProfile = "browser profile"
+)
+
 // Engines
 const (
 	Chromium   = "auto"

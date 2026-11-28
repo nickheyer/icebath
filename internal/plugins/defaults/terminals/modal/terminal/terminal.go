@@ -42,9 +42,9 @@ func (r registrant) Backends() []terminal.Backend {
 		Home:      terminal.SandboxProfile,
 		Secrets:   []string{"MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"},
 		Check:     check,
-		Setup:     setup,
 		Doctor:    doctor,
 		Prepare:   prepare,
+		Readies:   "Builds the sandbox image on Modal, so the first command waits for no build.",
 		Create: func(ctx context.Context, spec *terminal.Spec) (terminal.Environment, error) {
 			return create(ctx, spec, r.skills)
 		},
@@ -85,32 +85,30 @@ const unavailable = "Modal backend selected but no direct Modal credentials/conf
 
 func check(cfg *config.Config) error {
 	if !credentialed(cfg) {
-		return errors.New("No Modal token is set and ~/.modal.toml holds none. Set Token ID and Token secret in /settings under Terminal › " +
-			"Modal, or choose another place to run commands in /backends.")
+		return errors.New("No Modal token is set and ~/.modal.toml holds none. Set Token ID and Token secret on the Modal page of /sandbox, or " +
+			"choose another place to run commands there.")
 	}
 	_, err := terminal.SandboxResources(cfg)
 	return err
 }
 
-func setup(cfg *config.Config) []string {
-	lines := []string{
-		"Cloud sandboxes that start when needed. Each session gets a container of its own.",
-		"Runs on your own Modal account at https://modal.com.",
-		"Get a token ID and secret at https://modal.com/settings and set Token ID and Token secret in /settings under Terminal › Modal, or export " +
-			"MODAL_TOKEN_ID and MODAL_TOKEN_SECRET. You can also sign in with the modal program so ~/.modal.toml holds them.",
-		"Preparing Modal on this screen builds the sandbox image on Modal before the first command needs it.",
+// The token Modal is reached with, and whether sandbox files are kept
+func doctor(cfg *config.Config) []terminal.Check {
+	checks := []terminal.Check{{OK: true, Label: "Modal account", State: "Ready", Detail: "Sandboxes run on your own Modal account."}}
+	if id, secret := token(cfg); id == "" || secret == "" {
+		checks[0].Detail = "Sandboxes run on the Modal account of ~/.modal.toml."
+		if !credentialed(cfg) {
+			checks[0] = terminal.Check{Label: "Modal account", State: "No token", Detail: "No Modal token is set, and ~/.modal.toml holds none.",
+				Fix:     "Get a token ID and secret at modal.com/settings and set Token ID and Token secret, or sign in with the modal program.",
+				Setting: modalconfig.TokenID}
+		}
 	}
 	if cfg.GetBool(terminalconfig.ContainerPersistent) {
-		lines = append(lines, "Sandbox files are kept. A session's files are saved when its sandbox stops and brought back when the session returns.")
+		return append(checks, terminal.Check{OK: true, Label: "Sandbox files", State: "Kept", Detail: "A session's files are saved when its " +
+			"sandbox stops and brought back when the session returns."})
 	}
-	return lines
-}
-
-func doctor(cfg *config.Config) []terminal.Check {
-	if credentialed(cfg) {
-		return []terminal.Check{{OK: true, Label: "A Modal token is set."}}
-	}
-	return []terminal.Check{{OK: false, Label: "No Modal token is set.", Detail: "Commands run on Modal only once one is."}}
+	return append(checks, terminal.Check{OK: true, Label: "Sandbox files", State: "Not kept", Detail: "Each session gets a container of its " +
+		"own, and its files go with it."})
 }
 
 // Builds the sandbox image on Modal, so the first command waits for no build

@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/internal/profile"
 	agentv1 "github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
@@ -185,7 +186,7 @@ func (c *chat) openTree(index int, loaded *agentv1.SpawnTree) tea.Cmd {
 			if i < 0 || i >= len(s.nodes) {
 				return nil
 			}
-			return s.detail(s.nodes[i], false)
+			return s.detail(s.nodes[i], i)
 		},
 		Empty: func() string {
 			if s.replay() {
@@ -381,7 +382,7 @@ func subtree(node *spawnNode) []*agentv1.Subagent {
 	return out
 }
 
-// Stops the subagents, after a yes for more than one
+// Stops the subagents after a question, as their runs cannot be started again
 func (s *spawnScreen) kill(agents []*agentv1.Subagent) tea.Cmd {
 	if len(agents) == 0 {
 		return s.hub.Fail("Nothing is running there to stop.")
@@ -419,10 +420,11 @@ func (s *spawnScreen) kill(agents []*agentv1.Subagent) tea.Cmd {
 			}
 		})
 	}
+	q := cards.Question{Text: "Stop " + render.Count(len(agents), "subagent") + "? What they did so far still comes back to the agent.", Verb: "Stop"}
 	if len(agents) == 1 {
-		return stop()
+		q.Text = "Stop " + name + "? What it did so far still comes back to the agent."
 	}
-	s.list.Confirm("Stop "+render.Count(len(agents), "subagent")+"? Their work so far is kept.", stop)
+	s.list.Confirm(q, stop)
 	return nil
 }
 
@@ -433,10 +435,7 @@ func (s *spawnScreen) pause() tea.Cmd {
 		response, err := s.chat.desk.agents.Pause(kit.Env.Ctx, &agentv1.PauseRequest{Paused: paused})
 		return func() tea.Cmd {
 			if err != nil {
-				if paused {
-					return s.hub.Fail("New subagents were not held back. " + tui.Reason(err))
-				}
-				return s.hub.Fail("New subagents are still held back. " + tui.Reason(err))
+				return s.hub.Fail(tui.Reason(err))
 			}
 			if s.status == nil {
 				s.status = &agentv1.SubagentsResponse{}
@@ -454,13 +453,19 @@ func (s *spawnScreen) pause() tea.Cmd {
 
 // Asks for the note to steer the subagent with and sends it
 func (s *spawnScreen) steer(a *agentv1.Subagent) tea.Cmd {
+	// One that is finishing reads no more notes, as the server says of those it runs
+	for _, live := range s.status.GetSubagents() {
+		if live.GetId() == a.GetId() && !live.GetSteering() {
+			return s.hub.Fail("This subagent is finishing, so it reads no more notes.")
+		}
+	}
 	kit := s.chat.kit
 	var form *cards.Form
 	form = cards.NewForm(kit.Env, cards.FormSpec{
 		Title:  "Steer",
 		Intro:  []string{"Send “" + cmp.Or(oneLine(a.GetGoal()), a.GetId()) + "” a note. It reads the note after its next tool call, without stopping."},
 		Submit: "Send",
-		Fields: []cards.Field{{ID: "text", Label: "Note", Required: true, Help: "For example, what to look at first or what to leave alone."}},
+		Fields: []cards.Field{{ID: "text", Label: "Note", Required: true, Help: "What the subagent should know, such as which file to look at first."}},
 		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
 			text := strings.TrimSpace(values["text"])
 			return tea.Batch(s.hub.Close(form), tui.Async(func() func() tea.Cmd {
@@ -468,7 +473,7 @@ func (s *spawnScreen) steer(a *agentv1.Subagent) tea.Cmd {
 				return func() tea.Cmd {
 					switch {
 					case err != nil:
-						return s.hub.Fail("The note was not sent. " + tui.Reason(err))
+						return s.hub.Fail(tui.Reason(err))
 					case !response.GetQueued():
 						return s.hub.Fail(cmp.Or(response.GetReason(), "The subagent did not take the note."))
 					}
@@ -561,22 +566,34 @@ func (s *spawnScreen) banner() string {
 	return said + " " + newest + "."
 }
 
-// What is known of the subagent; in full for its own page, else the short form the detail pane shows
-func (s *spawnScreen) detail(n *spawnNode, full bool) []string {
+// What is known of the subagent: in full for its own page, a row below zero, else the short form the detail pane shows, which leaves out
+// what the row in hand already says
+func (s *spawnScreen) detail(n *spawnNode, row int) []string {
 	t := s.chat.kit.Env.Theme
 	a := n.agent
-	lines := []string{render.Heading(cmp.Or(oneLine(a.GetGoal()), "Subagent"), t)}
-	meta := []string{statusWord(a.GetStatus()), "Model: " + cmp.Or(a.GetModel(), "the same as the agent")}
+	full := row < 0
+	var lines, meta []string
+	if full || s.list.Cut(row, 0) {
+		lines = append(lines, render.Heading(cmp.Or(oneLine(a.GetGoal()), "Subagent"), t))
+	}
+	if full {
+		meta = append(meta, statusWord(a.GetStatus()))
+	}
+	if full || !s.list.Shows(2) {
+		meta = append(meta, "Model: "+cmp.Or(a.GetModel(), "the same as the agent"))
+	}
 	if depth := a.GetDepth(); depth > 0 {
 		meta = append(meta, fmt.Sprintf("%d levels down", depth))
 	}
-	if seconds, ok := elapsed(a, time.Now()); ok {
+	if seconds, ok := elapsed(a, time.Now()); ok && (full || !s.list.Shows(4)) {
 		meta = append(meta, "Ran for "+spawnDuration(seconds))
 	}
 	if calls := a.GetApiCalls(); calls > 0 {
 		meta = append(meta, render.Count(int(calls), "step"))
 	}
-	lines = append(lines, render.Dim(strings.Join(meta, " · "), t))
+	if len(meta) > 0 {
+		lines = append(lines, render.Dim(strings.Join(meta, " · "), t))
+	}
 	tokens := fmt.Sprintf("Tokens: %s read, %s written", spawnTokens(a.GetInputTokens()), spawnTokens(a.GetOutputTokens()))
 	if a.GetReasoningTokens() > 0 {
 		tokens += ", " + spawnTokens(a.GetReasoningTokens()) + " reasoning"
@@ -658,9 +675,6 @@ func (s *spawnScreen) detail(n *spawnNode, full bool) []string {
 			lines = append(lines, "  "+line)
 		}
 	}
-	if !full {
-		lines = append(lines, "", render.Dim(s.chat.kit.Env.Keys.Display("agent.spawntree.detail")+" shows all of it on a page of its own.", t))
-	}
 	return lines
 }
 
@@ -671,7 +685,7 @@ func (s *spawnScreen) page(n *spawnNode) tea.Cmd {
 		Key:   "tui:agents:" + n.agent.GetId(),
 		Lines: func(w int) []string {
 			var out []string
-			for _, line := range s.detail(n, true) {
+			for _, line := range s.detail(n, -1) {
 				out = append(out, render.Wrap(line, max(w, 1)))
 			}
 			return strings.Split(strings.Join(out, "\n"), "\n")
@@ -768,16 +782,20 @@ func (c *chat) replayTree(argument string) (tea.Cmd, bool) {
 	lower := strings.ToLower(raw)
 	switch {
 	case lower == "list" || lower == "ls":
-		return c.savedTrees(), true
+		return c.savedTrees(false), true
+	// The trees saved for every session of the profile, not only this one's
+	case lower == "all" || lower == "list all" || lower == "ls all":
+		return c.savedTrees(true), true
 	case strings.HasPrefix(lower, "load"):
-		path := strings.TrimSpace(raw[len("load"):])
-		if path == "" {
-			return wm.Notify("Usage: /replay load <path>. The path is that of a saved spawn tree, as /replay list shows it.", wm.Warn), true
+		// With no file named, the saved trees are where one is picked
+		if path := strings.TrimSpace(raw[len("load"):]); path != "" {
+			return c.loadTree(path), true
 		}
-		return c.loadTree(path), true
+		return c.savedTrees(false), true
 	}
+	// With no tree finished in this chat, those saved for the session are the ones there are
 	if len(c.spawn.trees) == 0 {
-		return wm.Notify("No spawn tree has finished in this chat yet. /replay list shows those saved for this session.", wm.Info), true
+		return c.savedTrees(false), true
 	}
 	index := 1
 	if raw != "" && lower != "last" {
@@ -790,16 +808,20 @@ func (c *chat) replayTree(argument string) (tea.Cmd, bool) {
 	return c.openTree(index, nil), true
 }
 
-// The spawn trees kept on disk for the session, newest first, each opened on enter
-func (c *chat) savedTrees() tea.Cmd {
+// The spawn trees kept on disk for the session, or for every session of its profile, newest first, each opened on enter
+func (c *chat) savedTrees(every bool) tea.Cmd {
 	none := "No spawn trees are saved for this session yet. A tree is saved once its reply ends."
+	if every {
+		none = "No spawn trees are saved yet. A tree is saved once its reply ends."
+	}
 	if c.id == "" {
 		return wm.Notify(none, wm.Info)
 	}
 	kit := c.kit
 	t := kit.Env.Theme
+	id := c.id
 	return tui.Async(func() func() tea.Cmd {
-		response, err := c.desk.agents.Trees(kit.Env.Ctx, &agentv1.TreesRequest{SessionId: c.id, Limit: 30})
+		response, err := c.desk.agents.Trees(kit.Env.Ctx, &agentv1.TreesRequest{SessionId: id, Every: every, Limit: 30})
 		return func() tea.Cmd {
 			if err != nil {
 				return wm.Notify("The saved spawn trees could not be read. "+tui.Reason(err), wm.Error)
@@ -835,13 +857,13 @@ func (c *chat) savedTrees() tea.Cmd {
 					return rows
 				},
 				Words: func(i int) string { return trees[i].GetPath() },
+				// What the row in hand does not say: its whole label where the row cuts it, and its file
 				Detail: func(i int) []string {
-					lines := []string{cmp.Or(trees[i].GetLabel(), "A spawn tree")}
-					facts := "Finished " + trees[i].GetFinished().AsTime().Local().Format("Jan 2 15:04")
-					if n := count(i); n != "" {
-						facts += " · " + n
+					var lines []string
+					if list.Cut(i, 2) {
+						lines = append(lines, trees[i].GetLabel())
 					}
-					return append(lines, render.Dim(facts, t), render.Dim("File: "+tilde(trees[i].GetPath()), t))
+					return append(lines, render.Dim("File: "+profile.Tilde(trees[i].GetPath()), t))
 				},
 				Hints: func(_ *cards.List, i int) []wm.Hint {
 					if i < 0 {

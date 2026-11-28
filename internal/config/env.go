@@ -88,7 +88,7 @@ func (c *Config) layer() Environment {
 // Settings of the same profile whose variables come from its .env and this process alone: what an Environment reads its own settings
 // through
 func (c *Config) Plain() *Config {
-	return &Config{core: c.core, profile: c.profile, plain: true}
+	return &Config{core: c.core, profile: c.profile, plain: true, making: c.making}
 }
 
 // Value of the variable for the profile: what the administrator's .env sets, else what the stores of its settings supply, else its .env,
@@ -277,7 +277,7 @@ func (c *Config) readableEnv() error {
 	if err == nil {
 		return nil
 	}
-	pin, _ := c.pinnedAt(pinnedBackend)
+	pin, _ := c.pinnedAt(registered(pinnedBackend))
 	if backend, _ := pin.(string); !errors.Is(err, fs.ErrPermission) || strings.TrimSpace(backend) == "" {
 		return fmt.Errorf("The keys file %s can't be read: %v. %s", path, err, readFix(err))
 	}

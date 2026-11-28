@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package icebath.plugins.lines.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Lines a person runs in a chat after a !, in their own shell in the chat's folder: what each prints, shown as it comes and kept beside the
+// session for its transcript, never read by the model
+service LineService {
+  // Runs the line, each piece of output told as it comes and how it ended last; ending the call stops it
+  rpc Run(RunRequest) returns (stream RunEvent);
+  // Lines run in the session, oldest first
+  rpc List(ListRequest) returns (ListResponse);
+}
+
+message RunRequest {
+  // Session of the chat, empty before it has one
+  string session_id = 1;
+  // Profile of the chat, the one in use when empty
+  string profile = 2;
+  string line = 3;
+  // Folder of a chat that has no session yet
+  string folder = 4;
+  // The person's shell, the server's own when empty or not found there
+  string shell = 5;
+}
+
+message RunEvent {
+  oneof kind {
+    // Output as it comes, stdout and stderr in the order written
+    string output = 1;
+    // How the line ended, its output as kept
+    Line done = 2;
+  }
+}
+
+// One line run and what it printed
+message Line {
+  google.protobuf.Timestamp time = 1;
+  string command = 2;
+  // What it printed, its secrets masked; only its end when it printed more than is kept
+  string output = 3;
+  bool cut = 4;
+  int32 code = 5;
+  // The person stopped it
+  bool stopped = 6;
+  // Why it could not run, empty when it ran
+  string error = 7;
+  string folder = 8;
+}
+
+message ListRequest {
+  string session_id = 1;
+  string profile = 2;
+}
+
+message ListResponse {
+  repeated Line lines = 1;
+}

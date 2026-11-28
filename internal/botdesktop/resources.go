@@ -138,5 +138,5 @@ func blocker(m Memory, need int) string {
 		limit = " of " + strs.Counted(float64(m.Limit), "MB")
 	}
 	return fmt.Sprintf("There is not enough free memory for the agent desktop: %s is free%s, and it needs %s. Free some memory, or lower Memory "+
-		"needed in /settings under Agent desktop.", strs.Counted(float64(m.Available), "MB"), limit, strs.Counted(float64(need), "MB"))
+		"needed, an option of Agent desktop.", strs.Counted(float64(m.Available), "MB"), limit, strs.Counted(float64(need), "MB"))
 }

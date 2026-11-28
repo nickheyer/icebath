@@ -22,6 +22,7 @@ import (
 
 	"github.com/nickheyer/icebath/internal/git"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Files of a distribution: its manifest, the template of its .env, and what that template is kept as in the profile
@@ -203,11 +204,11 @@ func ReadManifest(dir string) (*Manifest, error) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, distError("%s can't be read: %s", path, sentence(err.Error()))
+		return nil, distError("%s can't be read: %s", path, strs.Sentence(err.Error()))
 	}
 	var doc any
 	if err := yaml.Unmarshal([]byte(strings.TrimPrefix(string(data), "\xef\xbb\xbf")), &doc); err != nil {
-		return nil, distError("%s can't be read: %s", path, sentence(err.Error()))
+		return nil, distError("%s can't be read: %s", path, strs.Sentence(err.Error()))
 	}
 	if doc == nil {
 		doc = map[string]any{}
@@ -325,7 +326,8 @@ type Plan struct {
 	// The profile is there already
 	Existing bool
 	// The profile already being a distribution, rather than another profile installed over
-	Distribution    bool
+	Distribution bool
+	// The profile's config.yaml is left as it is, as an update leaves it unless told otherwise; an install writes the distribution's
 	PreservesConfig bool
 	HasCron         bool
 	// Of each variable the manifest needs, whether the environment or the profile's .env sets it
@@ -351,7 +353,7 @@ func (p *Profiles) stage(ctx context.Context, source, workdir string) (string, s
 			return "", "", err
 		}
 		if result.Code != 0 {
-			return "", "", distError("git could not copy the repository: %s", sentence(result.Stderr))
+			return "", "", distError("git could not copy the repository: %s", strs.Sentence(result.Stderr))
 		}
 		if err := os.RemoveAll(filepath.Join(staged, ".git")); err != nil {
 			return "", "", err
@@ -425,8 +427,8 @@ func (p *Profiles) Plan(ctx context.Context, source, workdir, name string) (*Pla
 	target := p.Dir(canon)
 	existing := fsx.IsDir(target)
 	plan := &Plan{Manifest: manifest, Staged: staged, Provenance: provenance, Target: target, Existing: existing,
-		Distribution: fsx.IsFile(filepath.Join(target, ManifestFile)), PreservesConfig: existing,
-		HasCron: fsx.IsFile(filepath.Join(append([]string{staged}, cronStore...)...)), Set: map[string]bool{}}
+		Distribution: fsx.IsFile(filepath.Join(target, ManifestFile)), HasCron: fsx.IsFile(filepath.Join(append([]string{staged}, cronStore...)...)),
+		Set: map[string]bool{}}
 	// Set in this process, or for a profile already there in what it reads: its .env and its secret stores
 	for _, r := range manifest.Env {
 		_, set := os.LookupEnv(r.Name)

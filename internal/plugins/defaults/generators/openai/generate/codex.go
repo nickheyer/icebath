@@ -60,7 +60,7 @@ func (s services) drawCodex(ctx context.Context, job *generation.Job, request ge
 	if !ok {
 		return generation.Call{Provider: openaiconfig.Codex, Aspect: aspect}.Fail(codexNoAuth, "auth_required")
 	}
-	t := pick(tiers, cfg.GetString(openaiconfig.CodexModel), false, request.Model)
+	t := pick(tiers, request.Model, false)
 	call := generation.Call{Provider: openaiconfig.Codex, Model: t.id, Prompt: prompt, Aspect: aspect}
 	size := generation.Size(aspect)
 	var images []any

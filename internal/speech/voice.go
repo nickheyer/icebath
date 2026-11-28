@@ -20,6 +20,8 @@ type Voice struct {
 	Label string
 	// Runs on this machine
 	Local bool
+	// A program of yours, which the settings hold
+	Program bool
 	// Whether it can speak with the profile's settings now, its key or engine there, never installing anything
 	Ready func(job *Job) bool
 	// Most characters one request takes, which longer text is split under; tts.<name>.max_text_length wins over it
@@ -41,20 +43,41 @@ type Voice struct {
 	Picker *Picker
 	// What a person sets up to use it
 	Setup Setup
-	// Settings of it a person picks from a list in the voice setup, such as its voice or model
+	// Settings of it a person picks from a list on its page in Voice, such as its voice or model
 	Choices []Choices
 }
 
-// Values a person may pick for one setting of a service in the voice setup
+// Values a person may pick for one setting of a service on its page in Voice, listed when the list is opened
 type Choices struct {
 	Setting string
-	// Values in the order offered, the setting's own value among them or not; none when they can't be listed now
-	List func(ctx context.Context, job *Job) []string
+	// Values in the order offered, the setting's own value among them or not; none, with why, when they can't be listed now
+	List func(ctx context.Context, job *Job) ([]Pick, error)
+}
+
+// One value a setting of a service may be picked as, with the name a person knows it by and what it is, both empty for a value that says
+// it all
+type Pick struct {
+	Value, Title, About string
 }
 
 // Fixed values of a setting
 func Fixed(setting string, values ...string) Choices {
-	return Choices{Setting: setting, List: func(context.Context, *Job) []string { return values }}
+	picks := make([]Pick, len(values))
+	for i, value := range values {
+		picks[i] = Pick{Value: value}
+	}
+	return Choices{Setting: setting, List: func(context.Context, *Job) ([]Pick, error) { return picks, nil }}
+}
+
+// Values of a setting read when the list is opened, such as the models a catalog holds
+func Listed(setting string, list func(ctx context.Context, job *Job) []string) Choices {
+	return Choices{Setting: setting, List: func(ctx context.Context, job *Job) ([]Pick, error) {
+		var picks []Pick
+		for _, value := range list(ctx, job) {
+			picks = append(picks, Pick{Value: value})
+		}
+		return picks, nil
+	}}
 }
 
 // Voices the model may pick from, per call
@@ -89,7 +112,7 @@ const (
 type Setup struct {
 	// Variables of the profile's environment that hold its key, the first taking a key pasted in setup
 	Keys []string
-	// Provider kind whose sign in serves it in place of a key, connected in /providers
+	// Provider kind whose sign in serves it in place of a key, connected in Providers
 	SignIn string
 	// Python set it runs in, installed on request
 	Extra string
@@ -99,6 +122,9 @@ type Setup struct {
 	Link string
 	// What it costs and whether it is the one to start with, as the setup lists it: recommended · free, paid, free tier, free
 	Badge string
+	// What it needs to run when none of the rest says, after Needs, such as a whisper program; empty for a service that runs once the rest is
+	// there
+	Needs string
 }
 
 // One piece of speech a voice is asked to write
@@ -174,15 +200,18 @@ func Number(value any) float64 {
 	return cast.ToFloat64(value)
 }
 
-// Speed a service speaks at: the call's own, then the service's setting, then tts.speed; false when none is set
+// Speed a service speaks at: the call's own, else the service's setting or tts.speed by the one rule of values kept both ways; false when
+// none is set
 func (j *Job) Speed(request Request, own string) (float64, bool) {
-	switch {
-	case request.Speed > 0:
+	if request.Speed > 0 {
 		return request.Speed, true
-	case own != "" && j.Float(own) > 0:
-		return j.Float(own), true
-	case j.Float(speedKey) > 0:
-		return j.Float(speedKey), true
+	}
+	ownSpeed := 0.0
+	if own != "" {
+		ownSpeed = j.Float(own)
+	}
+	if speed := Either(max(0, ownSpeed), max(0, j.Float(speedKey))); speed > 0 {
+		return speed, true
 	}
 	return 1, false
 }

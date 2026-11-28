@@ -75,8 +75,8 @@ func (p *Page) Closed() tea.Cmd {
 	return nil
 }
 
-// Asks a yes or no question along the bottom, running yes on a yes, as a list asks its own
-func (p *Page) Confirm(text string, yes func() tea.Cmd) { p.ask = &question{text: text, yes: yes} }
+// Asks a question along the bottom, its act running yes, as a list asks its own
+func (p *Page) Confirm(q Question, yes func() tea.Cmd) { p.ask = &question{Question: q, yes: yes} }
 
 func (p *Page) Contexts() []string {
 	if p.ask != nil {
@@ -90,7 +90,7 @@ func (p *Page) Contexts() []string {
 
 func (p *Page) Hints() []wm.Hint {
 	if p.ask != nil {
-		return []wm.Hint{{Action: "confirm.yes"}, {Action: "confirm.no"}}
+		return p.ask.hints()
 	}
 	if p.spec.Hints == nil {
 		return nil
@@ -189,9 +189,7 @@ func (p *Page) View(w, h int) string {
 	// The question takes the last rows, wrapped so it is read whole
 	var foot []string
 	if p.ask != nil {
-		for _, part := range wrapWords(p.ask.text, max(w-2, 8)) {
-			foot = append(foot, render.Fit(" "+render.Bad(part, p.env.Theme), w, p.env.Theme))
-		}
+		foot = p.ask.lines(w, p.env.Theme)
 		foot = foot[:min(len(foot), max(h-1, 1))]
 		h = max(h-len(foot), 0)
 	}

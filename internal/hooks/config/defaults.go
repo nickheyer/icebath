@@ -36,7 +36,7 @@ func Register(cfg *config.Config) {
 			{Key: SpillPreviewTail, Title: "Preview end", About: "How much of the end of saved output the preview keeps.", Default: 500,
 				Counts: "characters", Least: config.Num(0), Advanced: true},
 			{Key: SpillDirectory, Title: "Folder", About: "The folder that long output is saved in.", Help: "By default a folder named hook_outputs in the profile's folder.",
-				Default: "", Zero: "Profile's hook_outputs", Advanced: true},
+				Default: "", Zero: "Profile's hook_outputs", Advanced: true, Path: &config.Path{Kind: config.PathFolder}},
 		},
 	}})
 }

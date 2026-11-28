@@ -576,12 +576,14 @@ type Scope struct {
 	*Store
 	Directory string
 	Refusal   string
+	// Profile whose settings and store these are
+	Profile string
 }
 
 // Checkpoints of a session of the profile working in the folder, with the terminal backend the profile picked
 func For(cfg *config.Config, directory string, host *terminal.Terminal) *Scope {
 	store := Open(cfg)
-	scope := &Scope{Store: store, Directory: store.Project(directory)}
+	scope := &Scope{Store: store, Directory: store.Project(directory), Profile: cfg.Profile()}
 	if backend, err := host.Configured(cfg); err == nil {
 		scope.Refusal = Refusal(backend)
 	}

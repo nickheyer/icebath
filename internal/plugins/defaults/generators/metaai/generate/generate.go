@@ -37,11 +37,11 @@ func (s services) Services() []generation.Service {
 		Name:  metaaiconfig.Name,
 		Title: "Meta AI",
 		Ready: func(cfg *config.Config) bool { _, ok := s.route(cfg); return ok },
-		Setup: generation.Setup{Badge: "paid", Prompt: "Meta Model API key", Link: "https://api.meta.ai", Provider: metaaiprovider.Name},
+		Setup: generation.Setup{Badge: "paid", Prompt: "Meta Model API key", Link: "https://api.meta.ai", Providers: []string{metaaiprovider.Name}},
 		Images: &generation.Images{
-			About:    "Images from Meta's Muse model, needs a Meta API key",
-			Settings: []string{metaaiconfig.Model},
-			Model:    metaaiconfig.Model,
+			About:   "Images from Meta's Muse model, needs a Meta API key",
+			Section: metaaiconfig.Key,
+			Model:   metaaiconfig.Model,
 			Models: func(context.Context, *config.Config) []generation.Model {
 				return []generation.Model{{ID: metaaiconfig.DefaultModel, Title: "Muse Image 1.0", Speed: "About 10 seconds", Strengths: "Images from the Meta Model API", Price: "$0.01 an image"}}
 			},
@@ -50,11 +50,6 @@ func (s services) Services() []generation.Service {
 			Generate: s.draw,
 		},
 	}}
-}
-
-// Model the call draws with: the one image_gen.meta-ai.model names as it is, else the default, which Image model may name too
-func model(cfg *config.Config) string {
-	return strs.Filled(cfg.GetString(metaaiconfig.Model), metaaiconfig.DefaultModel)
 }
 
 // Draws from text through Meta's OpenAI compatible images API and keeps the WebP picture in the cache
@@ -66,10 +61,11 @@ func (s services) draw(ctx context.Context, job *generation.Job, request generat
 	}
 	route, ok := s.route(cfg)
 	if !ok {
-		return generation.Call{Provider: metaaiconfig.Name, Aspect: aspect}.Fail(metaaiprovider.MetaModelAPIKeyEnv+" not set. Connect Meta in /providers, or pick "+
-			"another image service with /imagegen.", "auth_required")
+		return generation.Call{Provider: metaaiconfig.Name, Aspect: aspect}.Fail(metaaiprovider.MetaModelAPIKeyEnv+" not set. The user connects Meta in "+
+			"/providers, or picks another image service with /images.", "auth_required")
 	}
-	id := model(cfg)
+	// The model image_gen.meta-ai.model names as it is, else the default
+	id := strs.Filled(request.Model, metaaiconfig.DefaultModel)
 	size := generation.Size(aspect)
 	call := generation.Call{Provider: metaaiconfig.Name, Model: id, Prompt: prompt, Aspect: aspect}
 	reply, err := generation.OpenAI{BaseURL: route.BaseURL, Key: route.APIKey}.Images(ctx, map[string]any{"model": id, "prompt": prompt, "size": size, "n": 1})

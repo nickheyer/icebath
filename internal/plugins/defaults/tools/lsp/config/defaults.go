@@ -12,36 +12,24 @@ func Register(cfg *config.Config) {
 		Key:    Key,
 		Parent: toolsconfig.Key,
 		Title:  "Language servers",
-		About:  "Checks for errors in the code that the agent edits",
-		Order:  70,
+		About:  "Programs that check the code the agent writes for errors",
+		Area:   true,
+		Group:  config.GroupAbilities,
+		Order:  14,
 		Settings: []config.Setting{
 			{Key: Enabled, Title: "Check code", About: "Check the files the agent edits for problems, using language servers.", Default: true},
+			{Key: InstallWhenNeeded, Title: "Install when needed", About: "Install a missing language server the first time a file needs it.",
+				Help: "When off, only the servers you installed are used.", Default: true},
 			{Key: WaitMode, Title: "What to wait for", About: "How much a check waits for after an edit before it reports problems.", Default: WaitDocument,
 				Options: config.Options(
 					config.Option{Value: WaitDocument, Title: "Edited file", About: "A shorter wait, for the edited file alone"},
 					config.Option{Value: WaitFull, Title: "Full result", About: "A longer wait, for a fuller result"},
 				)},
-			{Key: InstallStrategy, Title: "Install servers", About: "Whether missing language servers are installed for you.", Default: InstallAuto,
-				Options: config.Options(
-					config.Option{Value: InstallAuto, Title: "Automatic", About: "A missing server is installed when a file needs it"},
-					config.Option{Value: InstallManual, Title: "Manual", About: "Only servers you installed yourself are used"},
-				)},
 			{Key: ExcludeRoots, Title: "Skipped folders", About: "Folders where code is never checked.",
-				Help: "Glob patterns such as ~/big-monorepo or /srv/*/vendor.", Default: []string{}},
-			{Key: Servers, Title: "Servers", About: "Language servers you add, and changes to the built-in ones.",
-				Help: "A new server needs a command and the file extensions that it checks.", Default: map[string]any{},
-				Entry: &config.Entry{Noun: "server", Name: "Server ID", Fields: []config.Setting{
-					{Key: "command", Title: "Command", About: "The program that starts the server, then its arguments.", Default: []string{}},
-					{Key: "extensions", Title: "File extensions", About: "The file extensions that a server you add checks, such as .go.",
-						Default: []string{}},
-					{Key: "root_markers", Title: "Project markers", About: "Files that mark the top folder of a project, such as go.mod.",
-						Default: []string{}},
-					{Key: "language_id", Title: "Language ID", About: "The language name that the server is told for each file.", Default: ""},
-					{Key: "description", Title: "Description", About: "A short account of the server, shown in /lsp.", Default: ""},
-					{Key: "env", Title: "Variables", About: "Variables set for the server, by name.", Default: map[string]any{}},
-					{Key: "initialization_options", Title: "Start options", About: "Options handed to the server as it starts.", Default: map[string]any{}},
-					{Key: "disabled", Title: "Turned off", About: "Never start this server.", Default: false},
-				}}},
+				Help: "A folder or a pattern, such as ~/big-monorepo or /srv/*/vendor.", Default: []string{}, Entry: &config.Entry{Noun: "folder"},
+				Path: &config.Path{Kind: config.PathFolder}},
+			{Key: Servers, Title: "Servers", About: "Language servers you added, and your changes to the others.", Default: map[string]any{}, Custom: true,
+				Entry: &config.Entry{Noun: "server"}},
 			{Key: WaitTimeout, Title: "Check wait", About: "How long a check waits for problems after an edit.", Default: 5 * time.Second, Advanced: true},
 			{Key: WarmupTimeout, Title: "Start-up wait", About: "How long a check waits for a server that has not started yet.",
 				Help: "Only counts when longer than Check wait.", Default: time.Duration(0), Zero: "No extra wait", Advanced: true},
@@ -56,7 +44,45 @@ func Register(cfg *config.Config) {
 					config.Option{Value: "yarn", Title: "yarn", About: "Install with yarn"},
 				), Advanced: true},
 			{Key: PowerShellBundle, Title: "PowerShell editor services", About: "The folder of the bundle that the PowerShell language server runs.",
-				Default: "", Zero: "Profile's lsp folder", Env: []string{"PSES_BUNDLE_PATH"}, Advanced: true},
+				Default: "", Zero: "Profile's lsp folder", Env: []string{"PSES_BUNDLE_PATH"}, Advanced: true, Path: &config.Path{Kind: config.PathFolder}},
 		},
 	}})
+}
+
+// Settings of one server, each a field of its entry under Servers, which its page shows as option rows; whether it is off is the page's
+// to change with its own row. Program is the name its program goes by, for the example of its command. Added is a server a person added,
+// whose command is the whole command line and whose file types and project files are theirs to give
+func Fields(prefix, program string, added bool) []config.Setting {
+	command := config.Setting{Key: prefix + "." + Command, Title: "Command", About: "The program to run in place of the one icebath finds.",
+		Help: "Such as /usr/local/bin/" + program + ".", Default: "", Zero: "The one icebath finds", Path: &config.Path{Kind: config.PathProgram, Exists: true}}
+	if added {
+		// A whole command line, which is no path
+		command.About, command.Help, command.Zero, command.Path = "The command that starts the server.", "It is split as a shell splits a line.", "", nil
+	}
+	fields := []config.Setting{command,
+		{Key: prefix + "." + Env, Title: "Variables", About: "Variables the server gets as it starts.", Default: map[string]any{},
+			Entry: &config.Entry{Noun: "variable", Name: "Variable name", Fields: []config.Setting{
+				{Title: "Value", About: "The text that the variable holds.", Default: ""},
+			}}},
+		{Key: prefix + "." + Init, Title: "Start options", About: "Options handed to the server as it starts.",
+			Help: "Such as the ones its own documentation lists. A group of options opens as a list of its own.", Default: map[string]any{},
+			Entry: &config.Entry{Noun: "option", Name: "Option name"}},
+		{Key: prefix + "." + Disabled, Title: "Off", About: "Never start this server.", Default: false, Custom: true},
+	}
+	if !added {
+		return fields
+	}
+	return append(fields,
+		config.Setting{Key: prefix + "." + Extensions, Title: "File types", About: "The file endings the server checks.",
+			Help: "Such as .go or .mod, or the whole name of a file such as Dockerfile.", Default: []string{},
+			Entry: &config.Entry{Noun: "file type"}},
+		config.Setting{Key: prefix + "." + RootMarkers, Title: "Project files", About: "Files that mark the top folder of a project.",
+			Help: "Such as go.mod. The folder that holds one is where the server starts.", Default: []string{},
+			Entry: &config.Entry{Noun: "project file"}},
+		config.Setting{Key: prefix + "." + LanguageID, Title: "Language name", About: "The name of the language the server is told for each file.",
+			Help: "Such as go. Leave it empty and icebath tells it the name it knows for the file type.", Default: "", Zero: "Known from the file type",
+			Advanced: true},
+		config.Setting{Key: prefix + "." + Description, Title: "Description", About: "A few words about the server, shown with it.", Default: "",
+			Advanced: true},
+	)
 }

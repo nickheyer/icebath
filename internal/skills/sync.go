@@ -678,7 +678,7 @@ func (s *Scope) Repair(name string, restore bool) (*Repaired, error) {
 		}
 		if len(targets) == 0 {
 			if len(all) == 0 {
-				return nil, errors.New("The folder of optional skills is missing. Set Source folder in /settings under Skills › Optional skills.")
+				return nil, errors.New("The folder of optional skills is missing. Point Optional skills folder, or ICEBATH_OPTIONAL_SKILLS, at it.")
 			}
 			return nil, errors.New("There is no optional skill named " + name + ".")
 		}
@@ -786,11 +786,11 @@ func (s *Scope) Reset(ctx context.Context, name string, restore bool) (string, *
 	}
 	switch {
 	case !restore:
-		return fmt.Sprintf("✓ %s takes updates again, starting from your copy as it is now.", name), synced, nil
+		return fmt.Sprintf("%s takes updates again, starting from your copy as it is now.", name), synced, nil
 	case deleted:
-		return fmt.Sprintf("✓ Replaced your copy of %s with the built-in version.", name), synced, nil
+		return fmt.Sprintf("Replaced your copy of %s with the built-in version.", name), synced, nil
 	}
-	return fmt.Sprintf("✓ Copied the built-in version of %s, since you had no copy of it.", name), synced, nil
+	return fmt.Sprintf("Copied the built-in version of %s, since you had no copy of it.", name), synced, nil
 }
 
 // Built in skill an install identifier names: a bare name, or a path of this project's own bundled skills; none otherwise
@@ -952,8 +952,8 @@ func textLines(text string) []string {
 	return out
 }
 
-// Opts the profile out of the seeded skills, or back in: what changed, as the user reads it
-func (s *Scope) OptOut(on bool) (string, error) {
+// Opts the profile out of the seeded skills, or back in: what changed, as the user reads it, and whether anything did
+func (s *Scope) OptOut(on bool) (string, bool, error) {
 	marker := filepath.Join(s.Home(), optOutMarker)
 	had := fsx.Exists(marker)
 	var err error
@@ -964,17 +964,17 @@ func (s *Scope) OptOut(on bool) (string, error) {
 		err = os.Remove(marker)
 	}
 	if err != nil {
-		return "", fmt.Errorf("The marker file %s could not be changed: %s.", marker, pathError(err))
+		return "", false, fmt.Errorf("The marker file %s could not be changed: %s.", marker, pathError(err))
 	}
 	switch {
 	case on && !had:
-		return "✓ icebath no longer copies built-in skills into this profile.", nil
+		return "icebath no longer copies built-in skills into this profile.", true, nil
 	case on:
-		return "icebath already does not copy built-in skills into this profile.", nil
+		return "icebath already does not copy built-in skills into this profile.", false, nil
 	case had:
-		return "✓ icebath copies built-in skills into this profile again, the next time it starts or when you run icebath skills opt-in --sync.", nil
+		return "icebath copies built-in skills into this profile again, the next time it starts or when you run icebath skills opt-in --sync.", true, nil
 	}
-	return "icebath already copies built-in skills into this profile.", nil
+	return "icebath already copies built-in skills into this profile.", false, nil
 }
 
 // One built in skill a removal kept, and why

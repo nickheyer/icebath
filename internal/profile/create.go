@@ -9,9 +9,12 @@ import (
 	"strings"
 	"sync"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/provider"
 	"github.com/nickheyer/icebath/pkg/fsx"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Folders every new profile has from the start
@@ -36,7 +39,7 @@ const noSkillsMarker = ".no-bundled-skills"
 const placeholderEnv = "# Per-profile secrets for this icebath profile.\n# API keys and tokens set here override the shell environment.\n" +
 	"# Behavioral settings belong in config.yaml, not here.\n"
 
-// Everything a create can be asked for, the zero value a fresh profile taking the keys, logins and model of the profile it is made from
+// Everything a create can be asked for, the zero value a fresh profile taking the keys, sign-ins and model of the profile it is made from
 type Request struct {
 	Name string
 	// Copies the settings, keys and skills of a profile: the one named by From, else the one in use
@@ -52,7 +55,7 @@ type Request struct {
 	NoSkills    bool
 	Description string
 	Soul        string
-	// Takes no keys, logins or model from the profile it is made from
+	// Takes no keys, sign-ins or model: from the profile it is made from for a fresh one, from the source for a copy
 	NoCredentials bool
 	// Profile the request came from, the one in use when empty
 	Launch string
@@ -97,9 +100,6 @@ func (p *Profiles) source(r Request) (string, string, error) {
 func refuseRequest(r Request) error {
 	cloning := r.Clone || r.From != "" || r.All
 	switch {
-	case cloning && r.NoCredentials:
-		return &ValueError{"--no-credentials can't go with --clone, --clone-from or --clone-all, because a copy takes the keys of the profile it " +
-			"copies. Leave out one of them."}
 	case r.NoSkills && cloning:
 		return &ValueError{"--no-skills can't go with --clone, --clone-from or --clone-all, because a copy takes the skills of the profile it " +
 			"copies. Leave out one of them."}
@@ -166,13 +166,19 @@ func (p *Profiles) Create(r Request) (Made, error) {
 			os.RemoveAll(staging)
 		}
 	}()
+	bare := cloning && r.NoCredentials
 	if r.All {
-		err = cloneAll(sourceDir, staging)
+		err = cloneAll(sourceDir, staging, bare)
 	} else {
-		err = bootstrap(sourceDir, staging, r.SyncImports)
+		err = bootstrap(sourceDir, staging, r.SyncImports, bare)
 	}
 	if err != nil {
 		return Made{}, err
+	}
+	if bare {
+		if err := forgetKeys(p.config.In(label), staging); err != nil {
+			return Made{}, err
+		}
 	}
 	if err := finish(staging, r); err != nil {
 		return Made{}, err
@@ -206,15 +212,15 @@ func (p *Profiles) Create(r Request) (Made, error) {
 func warnings(err error) []string {
 	var out []string
 	for _, one := range failures(err) {
-		out = append(out, sentence(failure(one)))
+		out = append(out, strs.Sentence(failure(one)))
 	}
 	return out
 }
 
 // Copies every file of the source but its history and the files of its runs
-func cloneAll(source, dest string) error {
+func cloneAll(source, dest string, bare bool) error {
 	if err := copyTree(source, dest, func(rel string, entry fs.DirEntry) bool {
-		return !strings.Contains(rel, "/") && history[rel] || unexportable(entry)
+		return !strings.Contains(rel, "/") && history[rel] || unexportable(entry) || bare && credentialStore(rel)
 	}); err != nil {
 		return err
 	}
@@ -248,7 +254,7 @@ func cloneAll(source, dest string) error {
 }
 
 // Fresh layout, with the settings, keys, skills, memory files and plugins of the source when there is one
-func bootstrap(source, dest string, syncImports bool) error {
+func bootstrap(source, dest string, syncImports, bare bool) error {
 	for _, dir := range layout {
 		if err := os.MkdirAll(filepath.Join(dest, dir), 0o755); err != nil {
 			return err
@@ -262,6 +268,9 @@ func bootstrap(source, dest string, syncImports bool) error {
 		files = append(files, "import-sync.json")
 	}
 	for _, rel := range files {
+		if bare && credentialStore(rel) {
+			continue
+		}
 		if err := copyFile(source, dest, rel); err != nil {
 			return err
 		}
@@ -269,7 +278,7 @@ func bootstrap(source, dest string, syncImports bool) error {
 	for _, tree := range []string{"skills", "plugins"} {
 		if fsx.IsDir(filepath.Join(source, tree)) {
 			if err := copyTree(filepath.Join(source, tree), filepath.Join(dest, tree), func(rel string, entry fs.DirEntry) bool {
-				return unexportable(entry) || tree == "plugins" && !strings.Contains(rel, "/") && entry.IsDir() &&
+				return unexportable(entry) || bare && credentialStore(tree+"/"+rel) || tree == "plugins" && !strings.Contains(rel, "/") && entry.IsDir() &&
 					(strings.HasPrefix(rel, ".install-") || strings.HasPrefix(rel, ".update-"))
 			}); err != nil {
 				return err
@@ -334,6 +343,28 @@ func finish(dir string, r Request) error {
 		return WriteMeta(dir, MetaUpdate{Description: &description, DescriptionAuto: &auto})
 	}
 	return nil
+}
+
+// Takes the keys and sign-ins out of a copy of a profile before it is published: its keys file goes, to be made again as a new profile's
+// is, and its settings file keeps everything but its credentials, told by the settings of the profile it was copied from, whose providers
+// and accounts declare what theirs are
+func forgetKeys(source *config.Config, dir string) error {
+	if err := os.Remove(filepath.Join(dir, ".env")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	path := filepath.Join(dir, "config.yaml")
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	stripped, err := config.Without(data, func(settings *yaml.Node) { stripSecrets(source, settings, "") })
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, stripped, 0o600)
 }
 
 // Copies the launch profile's .env into a new profile whose .env is still the stub it starts with, never over keys of its own

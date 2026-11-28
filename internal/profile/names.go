@@ -129,15 +129,6 @@ func ValidAlias(name string) error {
 	return nil
 }
 
-// Text that ends as a sentence: trimmed, with a period added when it ends in no mark of its own
-func sentence(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" || strings.HasSuffix(text, ".") || strings.HasSuffix(text, "!") || strings.HasSuffix(text, "?") {
-		return text
-	}
-	return text + "."
-}
-
 // Display name of a profile followed by its name in parentheses, the name alone when they are the same or it has none
 func Label(name, display string) string {
 	if display = strings.TrimSpace(display); display != "" && display != name {

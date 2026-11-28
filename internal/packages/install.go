@@ -177,7 +177,7 @@ func (h *Packages) LazyAllowed(cfg *config.Config) bool {
 // Refusal of an install on demand the settings forbid, recorded in the receipt being written
 func refuseLazy(ctx context.Context, name, what string) *InstallError {
 	err := Failure(name, "It needs "+what+", and downloads when needed are off.",
-		"Turn on Download when needed in /settings under Downloads, or run `icebath pm install "+name+"`.")
+		"Turn on Download when needed, the option of Downloads, or run icebath pm install "+name+".")
 	receiptOf(ctx).refuse("lazy-install", err.Error())
 	return err
 }
@@ -595,7 +595,7 @@ func (h *Packages) Ensure(ctx context.Context, cfg *config.Config, name string, 
 		for i, p := range missing {
 			names[i] = p.Name
 		}
-		return nil, refuseLazy(ctx, name, joined(names, "and")+" installed")
+		return nil, refuseLazy(ctx, name, strs.And(names)+" installed")
 	}
 	if len(missing) > 0 {
 		f, err := readFacts(s.root, false)

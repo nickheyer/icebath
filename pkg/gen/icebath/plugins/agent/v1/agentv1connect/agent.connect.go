@@ -70,6 +70,14 @@ const (
 	AgentServiceFinalizeProcedure = "/icebath.plugins.agent.v1.AgentService/Finalize"
 	// AgentServiceObserveProcedure is the procedure name of the AgentService's Observe RPC.
 	AgentServiceObserveProcedure = "/icebath.plugins.agent.v1.AgentService/Observe"
+	// AgentServiceChatProcedure is the procedure name of the AgentService's Chat RPC.
+	AgentServiceChatProcedure = "/icebath.plugins.agent.v1.AgentService/Chat"
+	// AgentServiceSetModelProcedure is the procedure name of the AgentService's SetModel RPC.
+	AgentServiceSetModelProcedure = "/icebath.plugins.agent.v1.AgentService/SetModel"
+	// AgentServiceSetEffortProcedure is the procedure name of the AgentService's SetEffort RPC.
+	AgentServiceSetEffortProcedure = "/icebath.plugins.agent.v1.AgentService/SetEffort"
+	// AgentServiceSetBusyProcedure is the procedure name of the AgentService's SetBusy RPC.
+	AgentServiceSetBusyProcedure = "/icebath.plugins.agent.v1.AgentService/SetBusy"
 )
 
 var (
@@ -234,6 +242,34 @@ var (
 			Procedure:  AgentServiceObserveProcedure,
 		}
 	})
+	agentServiceChatSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Chat"),
+			Procedure:  AgentServiceChatProcedure,
+		}
+	})
+	agentServiceSetModelSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("SetModel"),
+			Procedure:  AgentServiceSetModelProcedure,
+		}
+	})
+	agentServiceSetEffortSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("SetEffort"),
+			Procedure:  AgentServiceSetEffortProcedure,
+		}
+	})
+	agentServiceSetBusySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("SetBusy"),
+			Procedure:  AgentServiceSetBusyProcedure,
+		}
+	})
 )
 
 // AgentServiceClient is a client for the icebath.plugins.agent.v1.AgentService service.
@@ -281,6 +317,14 @@ type AgentServiceClient interface {
 	Finalize(context.Context, *v1.FinalizeRequest) (*v1.FinalizeResponse, error)
 	// Tells the session's pre_command hooks of a slash command the app runs itself
 	Observe(context.Context, *v1.ObserveRequest) (*v1.ObserveResponse, error)
+	// What the session keeps for itself over the settings of new chats, with what is in effect for it
+	Chat(context.Context, *v1.ChatRequest) (*v1.ChatResponse, error)
+	// Holds the session to a model of a provider of its profile, or lets it take the model of new chats again
+	SetModel(context.Context, *v1.SetModelRequest) (*v1.SetModelResponse, error)
+	// Sets how hard the session's model thinks, or lets it take the effort of new chats again
+	SetEffort(context.Context, *v1.SetEffortRequest) (*v1.SetEffortResponse, error)
+	// Sets what a message sent while the session's agent works does, or lets it take the choice of new chats again
+	SetBusy(context.Context, *v1.SetBusyRequest) (*v1.SetBusyResponse, error)
 }
 
 // NewAgentServiceClient constructs a client for the icebath.plugins.agent.v1.AgentService service.
@@ -354,6 +398,14 @@ type AgentServiceHandler interface {
 	Finalize(context.Context, *v1.FinalizeRequest) (*v1.FinalizeResponse, error)
 	// Tells the session's pre_command hooks of a slash command the app runs itself
 	Observe(context.Context, *v1.ObserveRequest) (*v1.ObserveResponse, error)
+	// What the session keeps for itself over the settings of new chats, with what is in effect for it
+	Chat(context.Context, *v1.ChatRequest) (*v1.ChatResponse, error)
+	// Holds the session to a model of a provider of its profile, or lets it take the model of new chats again
+	SetModel(context.Context, *v1.SetModelRequest) (*v1.SetModelResponse, error)
+	// Sets how hard the session's model thinks, or lets it take the effort of new chats again
+	SetEffort(context.Context, *v1.SetEffortRequest) (*v1.SetEffortResponse, error)
+	// Sets what a message sent while the session's agent works does, or lets it take the choice of new chats again
+	SetBusy(context.Context, *v1.SetBusyRequest) (*v1.SetBusyResponse, error)
 }
 
 // RegisterAgentServiceHandler registers svc as the icebath.plugins.agent.v1.AgentService
@@ -384,6 +436,10 @@ func RegisterAgentServiceHandler(server *connect.Server, svc AgentServiceHandler
 		connect.Method{Spec: agentServiceWaitLoginSpec(), Handler: adapter.waitLogin},
 		connect.Method{Spec: agentServiceFinalizeSpec(), Handler: adapter.finalize},
 		connect.Method{Spec: agentServiceObserveSpec(), Handler: adapter.observe},
+		connect.Method{Spec: agentServiceChatSpec(), Handler: adapter.chat},
+		connect.Method{Spec: agentServiceSetModelSpec(), Handler: adapter.setModel},
+		connect.Method{Spec: agentServiceSetEffortSpec(), Handler: adapter.setEffort},
+		connect.Method{Spec: agentServiceSetBusySpec(), Handler: adapter.setBusy},
 	)
 }
 
@@ -495,6 +551,22 @@ func (UnimplementedAgentServiceHandler) Finalize(context.Context, *v1.FinalizeRe
 
 func (UnimplementedAgentServiceHandler) Observe(context.Context, *v1.ObserveRequest) (*v1.ObserveResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Observe is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Chat(context.Context, *v1.ChatRequest) (*v1.ChatResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Chat is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) SetModel(context.Context, *v1.SetModelRequest) (*v1.SetModelResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.SetModel is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) SetEffort(context.Context, *v1.SetEffortRequest) (*v1.SetEffortResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.SetEffort is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) SetBusy(context.Context, *v1.SetBusyRequest) (*v1.SetBusyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.SetBusy is not implemented")
 }
 
 type agentServiceClient struct {
@@ -680,6 +752,38 @@ func (c *agentServiceClient) Finalize(ctx context.Context, req *v1.FinalizeReque
 func (c *agentServiceClient) Observe(ctx context.Context, req *v1.ObserveRequest) (*v1.ObserveResponse, error) {
 	var res v1.ObserveResponse
 	if err := c.client.CallUnary(ctx, agentServiceObserveSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Chat(ctx context.Context, req *v1.ChatRequest) (*v1.ChatResponse, error) {
+	var res v1.ChatResponse
+	if err := c.client.CallUnary(ctx, agentServiceChatSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) SetModel(ctx context.Context, req *v1.SetModelRequest) (*v1.SetModelResponse, error) {
+	var res v1.SetModelResponse
+	if err := c.client.CallUnary(ctx, agentServiceSetModelSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) SetEffort(ctx context.Context, req *v1.SetEffortRequest) (*v1.SetEffortResponse, error) {
+	var res v1.SetEffortResponse
+	if err := c.client.CallUnary(ctx, agentServiceSetEffortSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) SetBusy(ctx context.Context, req *v1.SetBusyRequest) (*v1.SetBusyResponse, error) {
+	var res v1.SetBusyResponse
+	if err := c.client.CallUnary(ctx, agentServiceSetBusySpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -953,6 +1057,54 @@ func (h agentServiceHandler) observe(ctx context.Context, _ connect.Spec, stream
 		return err
 	}
 	res, err := h.svc.Observe(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) chat(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ChatRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Chat(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) setModel(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetModelRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetModel(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) setEffort(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetEffortRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetEffort(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) setBusy(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetBusyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetBusy(ctx, &req)
 	if err != nil {
 		return err
 	}

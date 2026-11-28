@@ -18,9 +18,6 @@ const (
 	TokenExpires = "token_expires"
 )
 
-// Settings of a provider, below its name
-const AdoptExternalLogins = "adopt_external_logins"
-
 const (
 	APIKeyEnv     = "ANTHROPIC_API_KEY"
 	TokenEnv      = "ANTHROPIC_TOKEN"

@@ -30,3 +30,13 @@ const (
 	MirrorCatalogURL  = "https://raw.githubusercontent.com/nickheyer/icebath/main/internal/models/model-catalog.json"
 	DefaultCatalogTTL = 20
 )
+
+// Names of what an entry of the overrides sets for a model, and the name of the entry for every model of a provider
+const (
+	OverrideContext   = "context_window"
+	OverrideTools     = "supports_tools"
+	OverrideVision    = "supports_vision"
+	OverrideReasoning = "supports_reasoning"
+	OverrideFamily    = "model_family"
+	EveryModel        = "_default"
+)

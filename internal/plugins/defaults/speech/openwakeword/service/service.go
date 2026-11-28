@@ -20,7 +20,7 @@ func Register(registry *speech.Registry) {
 			reason, known := sp.Packages().ExtraUnsupported(config.Extra)
 			return known && reason == ""
 		},
-		Installed: func(sp *speech.Speech) bool {
+		Installed: func(sp *speech.Speech, _ map[string]string) bool {
 			_, ok := sp.Packages().ExtraModule(config.Extra, "pyopen_wakeword")
 			return ok
 		},
@@ -32,11 +32,10 @@ func Register(registry *speech.Registry) {
 func open(_ context.Context, wake *speech.Wake) (speech.Hotword, error) {
 	model := wake.Setting(config.Model)
 	if model == "" {
-		return nil, fmt.Errorf("openWakeWord hears only the phrase its model file was trained for, and it has no model file. Set Model file in "+
-			"/settings under Wake word › openWakeWord, or set Listener to Automatic so a listener that hears any phrase listens for “%s”.", wake.Phrase)
+		return nil, fmt.Errorf("openWakeWord has no model file for “%s”. Give it one on its page under Listener, or pick Automatic there.", wake.Phrase)
 	}
 	if _, ok := wake.Speech.Packages().ExtraPython(config.Extra); !ok {
-		return nil, errors.New("openWakeWord is not installed. Run " + packages.InstallHint(config.Extra) + " to install it.")
+		return nil, errors.New("openWakeWord is not installed. Its page under Listener installs it.")
 	}
 	dir, ok := wake.Speech.Packages().ExtraModule(config.Extra, "pyopen_wakeword")
 	if !ok {

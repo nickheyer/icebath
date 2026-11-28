@@ -21,6 +21,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/nickheyer/icebath/internal/cli"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	"github.com/nickheyer/icebath/pkg/strs"
 	"github.com/nickheyer/icebath/pkg/tui"
@@ -397,7 +398,7 @@ func addImport(parent *cobra.Command, at func(*cobra.Command) *run) {
 				}
 				parsed, err := parseForeign(tool, filepath.Clean(path))
 				if err != nil {
-					return fmt.Errorf("The session file %s can't be read: %s", path, sentence(err.Error()))
+					return fmt.Errorf("The session file %s can't be read: %s", path, strs.Sentence(err.Error()))
 				}
 				if parsed.turns() == 0 {
 					return fmt.Errorf("%s holds no messages between you and the agent.", path)
@@ -512,12 +513,13 @@ func (r *run) importForeign(f *foreign) error {
 		}
 	}
 	response, err := r.service.Import(r.ctx(), &sessionsv1.ImportRequest{Transcripts: []*sessionsv1.Transcript{{
-		Session: &sessionsv1.Session{Id: id, Source: f.tool, Directory: cwd, Created: created, Title: "Imported from " + label + ": " + first,
-			TitleSource: "user", Peer: &sessionsv1.Peer{Origin: string(origin)}, EndReason: "imported"},
+		// The session is of the profile -p picked, the one in use for none
+		Session: &sessionsv1.Session{Id: id, Profile: picked.Picked(r.ctx()), Source: f.tool, Directory: cwd, Created: created,
+			Title: "Imported from " + label + ": " + first, TitleSource: "user", Peer: &sessionsv1.Peer{Origin: string(origin)}, EndReason: "imported"},
 		Messages: f.messages,
 	}}})
 	if err != nil {
-		return errors.New(sentence(tui.Reason(err)))
+		return errors.New(strs.Sentence(tui.Reason(err)))
 	}
 	if len(response.GetIds()) == 0 {
 		return errors.New("The session was not imported.")

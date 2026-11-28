@@ -16,6 +16,7 @@ func (specs) Specs() []provider.Spec {
 	base := qwenoauthconfig.BaseURL
 	return []provider.Spec{{
 		Name:               qwenoauthconfig.Name,
+		SignIn:             true,
 		Messages:           messages,
 		ExtraBody:          extraBody,
 		Shape:              shape,
@@ -37,8 +38,6 @@ func (specs) Specs() []provider.Spec {
 		VisionToolMessages: true,
 		DefaultMaxTokens:   65536,
 		ModelsDevID:        "alibaba",
-		Settings: []config.Setting{{Key: qwenoauthconfig.AdoptExternalLogins, Title: "Use Qwen CLI sign-in",
-			About: "Use the Qwen CLI sign-in on this computer when there is one.", Default: true}},
 		Account: []config.Setting{
 			{Key: qwenoauthconfig.AccessToken, Title: "Access token", About: "Your Qwen sign-in token.", Default: "", Secret: true, Internal: true},
 			{Key: qwenoauthconfig.RefreshToken, Title: "Refresh token", About: "Your token that renews the sign-in before it expires.", Default: "", Secret: true,

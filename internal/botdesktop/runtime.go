@@ -138,6 +138,8 @@ type Status struct {
 	Available, Limit int
 	// gateway, or terminal:<backend>
 	Placement string
+	// Title of the place of the agent's commands it runs in, for a screen in their sandbox
+	Sandbox string
 	// Image change of the sandbox it waits on, nil for none
 	Switch *terminal.Switch
 	Lease  Lease
@@ -601,10 +603,13 @@ func (d *Desktop) sandboxStatus(ctx context.Context, cfg *config.Config, where P
 	}
 	st := Status{Profile: cfg.Profile(), Supported: true, Installed: true, Missing: missing, Running: published["DISPLAY"] != "",
 		Display: published["DISPLAY"], Geometry: geometry(cfg), Available: -1, Limit: -1, Placement: Terminal + ":" + where.Backend,
-		Lease: d.Lease(cfg)}
+		Sandbox: where.Backend, Lease: d.Lease(cfg)}
+	if backend, ok := d.terminal.Named(cfg, where.Backend); ok {
+		st.Sandbox = backend.Title
+	}
 	if len(missing) > 0 {
-		st.Blocker = fmt.Sprintf("The sandbox where the agent's commands run lacks %s. %s Or set Location in /settings under Agent desktop to "+
-			"This computer.", strings.Join(missing, ", "), d.imageAdvice(cfg, where.Backend))
+		st.Blocker = fmt.Sprintf("The sandbox where the agent's commands run lacks %s. %s Or set Location, an option of Agent desktop, "+
+			"to This computer.", strings.Join(missing, ", "), d.imageAdvice(cfg, where.Backend))
 		if backend, ok := d.terminal.Named(cfg, where.Backend); ok && backend.Switch != nil {
 			if sw := backend.Switch(cfg); sw != nil {
 				st.Switch = sw

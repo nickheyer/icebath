@@ -16,8 +16,10 @@ import (
 
 	"github.com/nickheyer/icebath/internal/cli"
 	"github.com/nickheyer/icebath/internal/packages"
+	picked "github.com/nickheyer/icebath/internal/profile"
 	packagesv1 "github.com/nickheyer/icebath/pkg/gen/icebath/packages/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/packages/v1/packagesv1connect"
+	"github.com/nickheyer/icebath/pkg/strs"
 )
 
 // Exit status a command ends with, its lines already printed
@@ -55,14 +57,6 @@ func (commands) Commands(conn *connect.Client) []*cobra.Command {
 	root.AddCommand(lock(service), install(service), env(service), doctor(service), repair(service), environment(service), gc(service), status(service),
 		update(service))
 	return []*cobra.Command{root}
-}
-
-// Choices joined the way a sentence lists them, the last after "or"
-func choices(items []string) string {
-	if len(items) < 2 {
-		return strings.Join(items, "")
-	}
-	return strings.Join(items[:len(items)-1], ", ") + " or " + items[len(items)-1]
 }
 
 // Refusal of a command line on standard error, status 2: the sentence, then the words of the command as its Use names them
@@ -195,7 +189,7 @@ func lock(service packagesv1connect.PackageServiceClient) *cobra.Command {
 		Example: "  icebath pm lock\n  icebath pm lock --bump uv 0.8.4",
 		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			request := &packagesv1.LockRequest{}
+			request := &packagesv1.LockRequest{Profile: picked.Picked(cmd.Context())}
 			if cmd.Flags().Changed("bump") {
 				request.Bump = &bump
 			}
@@ -228,7 +222,7 @@ func install(service packagesv1connect.PackageServiceClient) *cobra.Command {
 		Example: "  icebath pm install\n  icebath pm install chromium\n  icebath pm install --without cua-driver",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return streamed(cmd, func(t *packagesv1.Terminal) (packagesv1connect.PackageServiceInstallClientStream, error) {
-				return service.Install(cmd.Context(), &packagesv1.InstallRequest{Terminal: t, Names: args, Extras: extras, Without: without, ToolsOnly: toolsOnly,
+				return service.Install(cmd.Context(), &packagesv1.InstallRequest{Profile: picked.Picked(cmd.Context()), Terminal: t, Names: args, Extras: extras, Without: without, ToolsOnly: toolsOnly,
 					TrustRecorded: trust, Target: target})
 			})
 		},
@@ -273,7 +267,7 @@ func doctor(service packagesv1connect.PackageServiceClient) *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return streamed(cmd, func(t *packagesv1.Terminal) (packagesv1connect.PackageServiceDoctorClientStream, error) {
-				return service.Doctor(cmd.Context(), &packagesv1.DoctorRequest{Terminal: t, Repair: fix})
+				return service.Doctor(cmd.Context(), &packagesv1.DoctorRequest{Profile: picked.Picked(cmd.Context()), Terminal: t, Repair: fix})
 			})
 		},
 	}
@@ -290,7 +284,7 @@ func repair(service packagesv1connect.PackageServiceClient) *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return streamed(cmd, func(t *packagesv1.Terminal) (packagesv1connect.PackageServiceRepairClientStream, error) {
-				return service.Repair(cmd.Context(), &packagesv1.RepairRequest{Terminal: t})
+				return service.Repair(cmd.Context(), &packagesv1.RepairRequest{Profile: picked.Picked(cmd.Context()), Terminal: t})
 			})
 		},
 	}
@@ -308,7 +302,7 @@ func environment(service packagesv1connect.PackageServiceClient) *cobra.Command 
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s := newScreen(cmd.ErrOrStderr())
-			stream, err := service.Environment(cmd.Context(), &packagesv1.EnvironmentRequest{Terminal: s.terminal(), Name: args[0], Extras: extras,
+			stream, err := service.Environment(cmd.Context(), &packagesv1.EnvironmentRequest{Profile: picked.Picked(cmd.Context()), Terminal: s.terminal(), Name: args[0], Extras: extras,
 				Requirements: requirements})
 			if err != nil {
 				return err
@@ -335,7 +329,7 @@ func gc(service packagesv1connect.PackageServiceClient) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return streamed(cmd, func(t *packagesv1.Terminal) (packagesv1connect.PackageServiceCollectClientStream, error) {
-				return service.Collect(cmd.Context(), &packagesv1.CollectRequest{Terminal: t})
+				return service.Collect(cmd.Context(), &packagesv1.CollectRequest{Profile: picked.Picked(cmd.Context()), Terminal: t})
 			})
 		},
 	}
@@ -348,9 +342,14 @@ func status(service packagesv1connect.PackageServiceClient) *cobra.Command {
 		Long:  "Prints, as JSON, what the last pm command did: each step, any warning or refusal, and how it ended.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			response, err := service.Status(cmd.Context(), &packagesv1.StatusRequest{})
+			response, err := service.Status(cmd.Context(), &packagesv1.StatusRequest{Profile: picked.Picked(cmd.Context())})
 			if err != nil {
 				return err
+			}
+			// With no record kept, the text is why, which is no JSON to print as the record
+			if !response.GetFound() {
+				fmt.Fprintln(cmd.ErrOrStderr(), response.GetText())
+				return cli.Exit(1)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), response.GetText())
 			return nil
@@ -372,11 +371,11 @@ func update(service packagesv1connect.PackageServiceClient) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, t := range skip {
 				if !slices.Contains(packages.Targets, t) {
-					return usageError(cmd, "“"+t+"” is not a platform --skip-target takes. It takes "+choices(packages.Targets)+".")
+					return usageError(cmd, "“"+t+"” is not a platform --skip-target takes. It takes "+strs.Or(packages.Targets)+".")
 				}
 			}
 			return streamed(cmd, func(t *packagesv1.Terminal) (packagesv1connect.PackageServiceUpdateClientStream, error) {
-				return service.Update(cmd.Context(), &packagesv1.UpdateRequest{Terminal: t, Names: args, Check: check, Target: target, SkipTargets: skip, Uv: uv,
+				return service.Update(cmd.Context(), &packagesv1.UpdateRequest{Profile: picked.Picked(cmd.Context()), Terminal: t, Names: args, Check: check, Target: target, SkipTargets: skip, Uv: uv,
 					Npm: npm, Termux: termux})
 			})
 		},

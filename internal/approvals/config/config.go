@@ -46,3 +46,9 @@ const Task = "approval"
 
 // Variable that turns the confirmation of destructive slash commands off when it is true
 const NoConfirmEnv = "ICEBATH_TUI_NO_CONFIRM"
+
+// Name of the switch that skips approvals in one chat, what /yolo flips, as the Approvals page, the notes and /status say it
+const SkipTitle = "Skip approvals in this chat"
+
+// Refusal of skipping approvals in a chat that has no session yet
+const NoSession = "This chat has no session yet. Send a message first, then skip approvals in it."

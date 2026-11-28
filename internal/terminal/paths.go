@@ -11,13 +11,14 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	terminalconfig "github.com/nickheyer/icebath/internal/terminal/config"
+	"github.com/nickheyer/icebath/pkg/fsx"
 )
 
 // Host folder sandboxes keep their files in, the sandbox folder setting over the profile's sandboxes folder
 func SandboxDir(cfg *config.Config) (string, error) {
 	dir := filepath.Join(cfg.ProfileDir(cfg.Profile()), "sandboxes")
 	if custom := strings.TrimSpace(cfg.GetString(terminalconfig.SandboxDir)); custom != "" {
-		dir = ExpandPath(custom)
+		dir = fsx.ExpandHome(custom)
 	}
 	return dir, os.MkdirAll(dir, 0o755)
 }
@@ -90,8 +91,8 @@ func mountedHost(cwd, host string) bool {
 	if cwd == "" || host == "" {
 		return false
 	}
-	left, err1 := filepath.Abs(ExpandUser(cwd))
-	right, err2 := filepath.Abs(ExpandUser(host))
+	left, err1 := filepath.Abs(fsx.ExpandHome(cwd))
+	right, err2 := filepath.Abs(fsx.ExpandHome(host))
 	return err1 == nil && err2 == nil && filepath.Clean(left) == filepath.Clean(right)
 }
 

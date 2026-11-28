@@ -1364,7 +1364,7 @@ func (s *Scope) ConfigSettings() []config.Setting {
 		if v.Description != v.Prompt {
 			help = v.Description
 		}
-		out = append(out, config.Setting{Key: configKey(v.Key), Title: v.Key, About: sentence(v.Prompt), Help: help, Skill: v.Skill, Default: fallback})
+		out = append(out, config.Setting{Key: configKey(v.Key), Title: v.Key, About: strs.Sentence(v.Prompt), Help: help, Skill: v.Skill, Default: fallback})
 	}
 	return out
 }

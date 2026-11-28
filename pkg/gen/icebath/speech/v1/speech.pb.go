@@ -7,6 +7,7 @@
 package speechv1
 
 import (
+	v1 "github.com/nickheyer/icebath/pkg/gen/icebath/config/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -21,6 +22,205 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Kind of thing that fixes a hindrance
+type Lack int32
+
+const (
+	// Nothing a page of Voice does
+	Lack_LACK_UNSPECIFIED Lack = 0
+	// Its Python set, which its page installs
+	Lack_LACK_INSTALL Lack = 1
+	// An API key, which its page takes
+	Lack_LACK_KEY Lack = 2
+	// A sign-in at a provider
+	Lack_LACK_SIGN_IN Lack = 3
+	// A program of the system, which the install command installs
+	Lack_LACK_PROGRAM Lack = 4
+	// A build for this computer, so another service is needed
+	Lack_LACK_BUILD Lack = 5
+	// A setting of its own, set on its page
+	Lack_LACK_SETUP Lack = 6
+	// The switch that turns it on
+	Lack_LACK_SWITCH Lack = 7
+	// A service: the one chosen does not exist, or none is chosen and none is ready
+	Lack_LACK_SERVICE Lack = 8
+)
+
+// Enum value maps for Lack.
+var (
+	Lack_name = map[int32]string{
+		0: "LACK_UNSPECIFIED",
+		1: "LACK_INSTALL",
+		2: "LACK_KEY",
+		3: "LACK_SIGN_IN",
+		4: "LACK_PROGRAM",
+		5: "LACK_BUILD",
+		6: "LACK_SETUP",
+		7: "LACK_SWITCH",
+		8: "LACK_SERVICE",
+	}
+	Lack_value = map[string]int32{
+		"LACK_UNSPECIFIED": 0,
+		"LACK_INSTALL":     1,
+		"LACK_KEY":         2,
+		"LACK_SIGN_IN":     3,
+		"LACK_PROGRAM":     4,
+		"LACK_BUILD":       5,
+		"LACK_SETUP":       6,
+		"LACK_SWITCH":      7,
+		"LACK_SERVICE":     8,
+	}
+)
+
+func (x Lack) Enum() *Lack {
+	p := new(Lack)
+	*p = x
+	return p
+}
+
+func (x Lack) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Lack) Descriptor() protoreflect.EnumDescriptor {
+	return file_icebath_speech_v1_speech_proto_enumTypes[0].Descriptor()
+}
+
+func (Lack) Type() protoreflect.EnumType {
+	return &file_icebath_speech_v1_speech_proto_enumTypes[0]
+}
+
+func (x Lack) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Lack.Descriptor instead.
+func (Lack) EnumDescriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{0}
+}
+
+// Voices or recognizers
+type Kind int32
+
+const (
+	Kind_KIND_UNSPECIFIED Kind = 0
+	Kind_KIND_VOICE       Kind = 1
+	Kind_KIND_RECOGNIZER  Kind = 2
+)
+
+// Enum value maps for Kind.
+var (
+	Kind_name = map[int32]string{
+		0: "KIND_UNSPECIFIED",
+		1: "KIND_VOICE",
+		2: "KIND_RECOGNIZER",
+	}
+	Kind_value = map[string]int32{
+		"KIND_UNSPECIFIED": 0,
+		"KIND_VOICE":       1,
+		"KIND_RECOGNIZER":  2,
+	}
+)
+
+func (x Kind) Enum() *Kind {
+	p := new(Kind)
+	*p = x
+	return p
+}
+
+func (x Kind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Kind) Descriptor() protoreflect.EnumDescriptor {
+	return file_icebath_speech_v1_speech_proto_enumTypes[1].Descriptor()
+}
+
+func (Kind) Type() protoreflect.EnumType {
+	return &file_icebath_speech_v1_speech_proto_enumTypes[1]
+}
+
+func (x Kind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Kind.Descriptor instead.
+func (Kind) EnumDescriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{1}
+}
+
+// What keeps a part of voice from working, and the kind of thing that fixes it
+type Hindrance struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What is wrong, a clause in a person's words, such as Local Whisper is not installed
+	Cause string `protobuf:"bytes,1,opt,name=cause,proto3" json:"cause,omitempty"`
+	Lack  Lack   `protobuf:"varint,2,opt,name=lack,proto3,enum=icebath.speech.v1.Lack" json:"lack,omitempty"`
+	// Service it is about, empty for none in particular
+	Service string `protobuf:"bytes,3,opt,name=service,proto3" json:"service,omitempty"`
+	// Command that installs the program of the system it lacks
+	Install       string `protobuf:"bytes,4,opt,name=install,proto3" json:"install,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Hindrance) Reset() {
+	*x = Hindrance{}
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Hindrance) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Hindrance) ProtoMessage() {}
+
+func (x *Hindrance) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Hindrance.ProtoReflect.Descriptor instead.
+func (*Hindrance) Descriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *Hindrance) GetCause() string {
+	if x != nil {
+		return x.Cause
+	}
+	return ""
+}
+
+func (x *Hindrance) GetLack() Lack {
+	if x != nil {
+		return x.Lack
+	}
+	return Lack_LACK_UNSPECIFIED
+}
+
+func (x *Hindrance) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *Hindrance) GetInstall() string {
+	if x != nil {
+		return x.Install
+	}
+	return ""
+}
+
 type VoiceRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Profile of the settings, the one in use when empty
@@ -31,7 +231,7 @@ type VoiceRequest struct {
 
 func (x *VoiceRequest) Reset() {
 	*x = VoiceRequest{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[0]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -43,7 +243,7 @@ func (x *VoiceRequest) String() string {
 func (*VoiceRequest) ProtoMessage() {}
 
 func (x *VoiceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[0]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -56,7 +256,7 @@ func (x *VoiceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VoiceRequest.ProtoReflect.Descriptor instead.
 func (*VoiceRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{0}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *VoiceRequest) GetProfile() string {
@@ -79,7 +279,7 @@ type VoiceReply struct {
 
 func (x *VoiceReply) Reset() {
 	*x = VoiceReply{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[1]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -91,7 +291,7 @@ func (x *VoiceReply) String() string {
 func (*VoiceReply) ProtoMessage() {}
 
 func (x *VoiceReply) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[1]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -104,7 +304,7 @@ func (x *VoiceReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VoiceReply.ProtoReflect.Descriptor instead.
 func (*VoiceReply) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{1}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *VoiceReply) GetProfile() string {
@@ -142,15 +342,13 @@ func (x *VoiceReply) GetWake() *Wake {
 	return nil
 }
 
-// Settings of voice mode
+// Settings of voice input
 type Mode struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Voice input is on
 	Input bool `protobuf:"varint,1,opt,name=input,proto3" json:"input,omitempty"`
 	// Replies are read aloud
 	Speak bool `protobuf:"varint,2,opt,name=speak,proto3" json:"speak,omitempty"`
-	// Chord that starts and stops a recording, empty for the leader key alone
-	RecordKey string `protobuf:"bytes,3,opt,name=record_key,json=recordKey,proto3" json:"record_key,omitempty"`
 	// direct sends a transcript, draft puts it in the prompt to edit
 	SubmitMode string `protobuf:"bytes,4,opt,name=submit_mode,json=submitMode,proto3" json:"submit_mode,omitempty"`
 	// Speaking over a reply cuts it off
@@ -163,7 +361,7 @@ type Mode struct {
 	Beep bool `protobuf:"varint,8,opt,name=beep,proto3" json:"beep,omitempty"`
 	// Loudness of the beeps, 0 to 1
 	BeepVolume float64 `protobuf:"fixed64,9,opt,name=beep_volume,json=beepVolume,proto3" json:"beep_volume,omitempty"`
-	// Voice mode traces itself on standard error
+	// Voice input traces itself on standard error
 	Debug bool `protobuf:"varint,10,opt,name=debug,proto3" json:"debug,omitempty"`
 	// Longest recording in seconds, 0 for no cap
 	MaxRecording float64 `protobuf:"fixed64,11,opt,name=max_recording,json=maxRecording,proto3" json:"max_recording,omitempty"`
@@ -183,7 +381,7 @@ type Mode struct {
 
 func (x *Mode) Reset() {
 	*x = Mode{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[2]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -195,7 +393,7 @@ func (x *Mode) String() string {
 func (*Mode) ProtoMessage() {}
 
 func (x *Mode) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[2]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -208,7 +406,7 @@ func (x *Mode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mode.ProtoReflect.Descriptor instead.
 func (*Mode) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{2}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Mode) GetInput() bool {
@@ -223,13 +421,6 @@ func (x *Mode) GetSpeak() bool {
 		return x.Speak
 	}
 	return false
-}
-
-func (x *Mode) GetRecordKey() string {
-	if x != nil {
-		return x.RecordKey
-	}
-	return ""
 }
 
 func (x *Mode) GetSubmitMode() string {
@@ -328,19 +519,28 @@ type Recognition struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// stt.enabled
 	Enabled bool `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	// Recognizer in use, none when nothing can transcribe
+	// Recognizer in use: the one chosen, its fallback while that one can't and the fallback can, else the first that is ready; none when
+	// none is chosen and none is ready
 	Provider string `protobuf:"bytes,2,opt,name=provider,proto3" json:"provider,omitempty"`
-	// Its title, empty when nothing can transcribe
+	// Its short name for the logs, empty for none
 	Label string `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
 	// Recordings stream to it as they are made
-	Live          bool `protobuf:"varint,4,opt,name=live,proto3" json:"live,omitempty"`
+	Live bool `protobuf:"varint,4,opt,name=live,proto3" json:"live,omitempty"`
+	// stt.provider as written, empty for Automatic
+	Chosen string `protobuf:"bytes,5,opt,name=chosen,proto3" json:"chosen,omitempty"`
+	// Title of the recognizer in use, empty for none
+	Title string `protobuf:"bytes,6,opt,name=title,proto3" json:"title,omitempty"`
+	// Its state in the words every page shows
+	State string `protobuf:"bytes,7,opt,name=state,proto3" json:"state,omitempty"`
+	// What keeps speech from being turned into text, unset while nothing does
+	Hindrance     *Hindrance `protobuf:"bytes,8,opt,name=hindrance,proto3" json:"hindrance,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Recognition) Reset() {
 	*x = Recognition{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[3]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -352,7 +552,7 @@ func (x *Recognition) String() string {
 func (*Recognition) ProtoMessage() {}
 
 func (x *Recognition) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[3]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -365,7 +565,7 @@ func (x *Recognition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Recognition.ProtoReflect.Descriptor instead.
 func (*Recognition) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{3}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Recognition) GetEnabled() bool {
@@ -396,6 +596,34 @@ func (x *Recognition) GetLive() bool {
 	return false
 }
 
+func (x *Recognition) GetChosen() string {
+	if x != nil {
+		return x.Chosen
+	}
+	return ""
+}
+
+func (x *Recognition) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Recognition) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Recognition) GetHindrance() *Hindrance {
+	if x != nil {
+		return x.Hindrance
+	}
+	return nil
+}
+
 // How the profile's voice stands
 type Speaking struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -407,14 +635,18 @@ type Speaking struct {
 	// It streams PCM while it speaks
 	Streams bool `protobuf:"varint,4,opt,name=streams,proto3" json:"streams,omitempty"`
 	// Smallest piece of a reply in characters spoken at once, tts.streaming.min_len
-	Least         int32 `protobuf:"varint,5,opt,name=least,proto3" json:"least,omitempty"`
+	Least int32 `protobuf:"varint,5,opt,name=least,proto3" json:"least,omitempty"`
+	// Its state in the words every page shows
+	State string `protobuf:"bytes,6,opt,name=state,proto3" json:"state,omitempty"`
+	// What keeps replies from being read aloud, unset while nothing does
+	Hindrance     *Hindrance `protobuf:"bytes,7,opt,name=hindrance,proto3" json:"hindrance,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Speaking) Reset() {
 	*x = Speaking{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[4]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -426,7 +658,7 @@ func (x *Speaking) String() string {
 func (*Speaking) ProtoMessage() {}
 
 func (x *Speaking) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[4]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -439,7 +671,7 @@ func (x *Speaking) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Speaking.ProtoReflect.Descriptor instead.
 func (*Speaking) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{4}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Speaking) GetVoice() string {
@@ -477,6 +709,20 @@ func (x *Speaking) GetLeast() int32 {
 	return 0
 }
 
+func (x *Speaking) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Speaking) GetHindrance() *Hindrance {
+	if x != nil {
+		return x.Hindrance
+	}
+	return nil
+}
+
 // Wake word settings of the profile, which the client that owns the microphone listens with
 type Wake struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
@@ -487,7 +733,8 @@ type Wake struct {
 	InputDevice string `protobuf:"bytes,3,opt,name=input_device,json=inputDevice,proto3" json:"input_device,omitempty"`
 	// Engine as wake_word.provider names it, auto for the automatic choice
 	Provider string `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`
-	Phrase   string `protobuf:"bytes,5,opt,name=phrase,proto3" json:"phrase,omitempty"`
+	// Phrase in effect: the one set, else hey and the profile's name while each profile has its own, else hey icebath
+	Phrase string `protobuf:"bytes,5,opt,name=phrase,proto3" json:"phrase,omitempty"`
 	// 0 to 1, higher catching more
 	Sensitivity float64 `protobuf:"fixed64,6,opt,name=sensitivity,proto3" json:"sensitivity,omitempty"`
 	// Over threshold frames in a row that fire, 1 to 10
@@ -508,7 +755,7 @@ type Wake struct {
 
 func (x *Wake) Reset() {
 	*x = Wake{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[5]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -520,7 +767,7 @@ func (x *Wake) String() string {
 func (*Wake) ProtoMessage() {}
 
 func (x *Wake) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[5]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -533,7 +780,7 @@ func (x *Wake) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Wake.ProtoReflect.Descriptor instead.
 func (*Wake) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{5}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Wake) GetEnabled() bool {
@@ -630,7 +877,7 @@ type Phrase struct {
 
 func (x *Phrase) Reset() {
 	*x = Phrase{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[6]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -642,7 +889,7 @@ func (x *Phrase) String() string {
 func (*Phrase) ProtoMessage() {}
 
 func (x *Phrase) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[6]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -655,7 +902,7 @@ func (x *Phrase) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Phrase.ProtoReflect.Descriptor instead.
 func (*Phrase) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{6}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Phrase) GetProfile() string {
@@ -675,7 +922,8 @@ func (x *Phrase) GetPhrase() string {
 type SpeakRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
-	Text    string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	// Speech text, cleaned with the whole of the reply it was cut from: read as it is
+	Text string `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
 	// PCM while it is made when the voice streams
 	Live          bool `protobuf:"varint,3,opt,name=live,proto3" json:"live,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -684,7 +932,7 @@ type SpeakRequest struct {
 
 func (x *SpeakRequest) Reset() {
 	*x = SpeakRequest{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[7]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -696,7 +944,7 @@ func (x *SpeakRequest) String() string {
 func (*SpeakRequest) ProtoMessage() {}
 
 func (x *SpeakRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[7]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -709,7 +957,7 @@ func (x *SpeakRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SpeakRequest.ProtoReflect.Descriptor instead.
 func (*SpeakRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{7}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SpeakRequest) GetProfile() string {
@@ -747,7 +995,7 @@ type Audio struct {
 
 func (x *Audio) Reset() {
 	*x = Audio{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[8]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -759,7 +1007,7 @@ func (x *Audio) String() string {
 func (*Audio) ProtoMessage() {}
 
 func (x *Audio) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[8]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -772,7 +1020,7 @@ func (x *Audio) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Audio.ProtoReflect.Descriptor instead.
 func (*Audio) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{8}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Audio) GetPart() isAudio_Part {
@@ -828,7 +1076,7 @@ type Clip struct {
 
 func (x *Clip) Reset() {
 	*x = Clip{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[9]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -840,7 +1088,7 @@ func (x *Clip) String() string {
 func (*Clip) ProtoMessage() {}
 
 func (x *Clip) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[9]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -853,7 +1101,7 @@ func (x *Clip) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Clip.ProtoReflect.Descriptor instead.
 func (*Clip) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{9}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Clip) GetFormat() string {
@@ -883,7 +1131,7 @@ type TranscribeRequest struct {
 
 func (x *TranscribeRequest) Reset() {
 	*x = TranscribeRequest{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[10]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -895,7 +1143,7 @@ func (x *TranscribeRequest) String() string {
 func (*TranscribeRequest) ProtoMessage() {}
 
 func (x *TranscribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[10]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -908,7 +1156,7 @@ func (x *TranscribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TranscribeRequest.ProtoReflect.Descriptor instead.
 func (*TranscribeRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{10}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TranscribeRequest) GetProfile() string {
@@ -953,7 +1201,7 @@ type Transcript struct {
 
 func (x *Transcript) Reset() {
 	*x = Transcript{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[11]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -965,7 +1213,7 @@ func (x *Transcript) String() string {
 func (*Transcript) ProtoMessage() {}
 
 func (x *Transcript) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[11]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -978,7 +1226,7 @@ func (x *Transcript) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Transcript.ProtoReflect.Descriptor instead.
 func (*Transcript) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{11}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Transcript) GetSuccess() bool {
@@ -1048,7 +1296,7 @@ type ListenRequest struct {
 
 func (x *ListenRequest) Reset() {
 	*x = ListenRequest{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[12]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1060,7 +1308,7 @@ func (x *ListenRequest) String() string {
 func (*ListenRequest) ProtoMessage() {}
 
 func (x *ListenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[12]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1073,7 +1321,7 @@ func (x *ListenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListenRequest.ProtoReflect.Descriptor instead.
 func (*ListenRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{12}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListenRequest) GetProfile() string {
@@ -1104,7 +1352,7 @@ type Heard struct {
 
 func (x *Heard) Reset() {
 	*x = Heard{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[13]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1116,7 +1364,7 @@ func (x *Heard) String() string {
 func (*Heard) ProtoMessage() {}
 
 func (x *Heard) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[13]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1129,7 +1377,7 @@ func (x *Heard) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heard.ProtoReflect.Descriptor instead.
 func (*Heard) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{13}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Heard) GetEvent() isHeard_Event {
@@ -1201,7 +1449,7 @@ type Opened struct {
 
 func (x *Opened) Reset() {
 	*x = Opened{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[14]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1213,7 +1461,7 @@ func (x *Opened) String() string {
 func (*Opened) ProtoMessage() {}
 
 func (x *Opened) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[14]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1226,7 +1474,7 @@ func (x *Opened) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Opened.ProtoReflect.Descriptor instead.
 func (*Opened) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{14}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Opened) GetId() string {
@@ -1259,7 +1507,7 @@ type FeedRequest struct {
 
 func (x *FeedRequest) Reset() {
 	*x = FeedRequest{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[15]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1271,7 +1519,7 @@ func (x *FeedRequest) String() string {
 func (*FeedRequest) ProtoMessage() {}
 
 func (x *FeedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[15]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1284,7 +1532,7 @@ func (x *FeedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FeedRequest.ProtoReflect.Descriptor instead.
 func (*FeedRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{15}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FeedRequest) GetId() string {
@@ -1330,7 +1578,7 @@ type FeedReply struct {
 
 func (x *FeedReply) Reset() {
 	*x = FeedReply{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[16]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1342,7 +1590,7 @@ func (x *FeedReply) String() string {
 func (*FeedReply) ProtoMessage() {}
 
 func (x *FeedReply) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[16]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1355,7 +1603,7 @@ func (x *FeedReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FeedReply.ProtoReflect.Descriptor instead.
 func (*FeedReply) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{16}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{17}
 }
 
 type LeaseRequest struct {
@@ -1371,7 +1619,7 @@ type LeaseRequest struct {
 
 func (x *LeaseRequest) Reset() {
 	*x = LeaseRequest{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[17]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1383,7 +1631,7 @@ func (x *LeaseRequest) String() string {
 func (*LeaseRequest) ProtoMessage() {}
 
 func (x *LeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[17]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1396,7 +1644,7 @@ func (x *LeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseRequest.ProtoReflect.Descriptor instead.
 func (*LeaseRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{17}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *LeaseRequest) GetProfile() string {
@@ -1428,7 +1676,7 @@ type LeaseReply struct {
 
 func (x *LeaseReply) Reset() {
 	*x = LeaseReply{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[18]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1440,7 +1688,7 @@ func (x *LeaseReply) String() string {
 func (*LeaseReply) ProtoMessage() {}
 
 func (x *LeaseReply) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[18]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1453,7 +1701,7 @@ func (x *LeaseReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseReply.ProtoReflect.Descriptor instead.
 func (*LeaseReply) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{18}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{19}
 }
 
 type ServicesRequest struct {
@@ -1465,7 +1713,7 @@ type ServicesRequest struct {
 
 func (x *ServicesRequest) Reset() {
 	*x = ServicesRequest{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[19]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1477,7 +1725,7 @@ func (x *ServicesRequest) String() string {
 func (*ServicesRequest) ProtoMessage() {}
 
 func (x *ServicesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[19]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1490,7 +1738,7 @@ func (x *ServicesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServicesRequest.ProtoReflect.Descriptor instead.
 func (*ServicesRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{19}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ServicesRequest) GetProfile() string {
@@ -1504,16 +1752,18 @@ type ServicesReply struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Voices      []*Service             `protobuf:"bytes,1,rep,name=voices,proto3" json:"voices,omitempty"`
 	Recognizers []*Service             `protobuf:"bytes,2,rep,name=recognizers,proto3" json:"recognizers,omitempty"`
-	// Voice tts.provider names and recognizer stt.provider names
-	Voice         string `protobuf:"bytes,3,opt,name=voice,proto3" json:"voice,omitempty"`
-	Recognizer    string `protobuf:"bytes,4,opt,name=recognizer,proto3" json:"recognizer,omitempty"`
+	// Voice tts.provider names and recognizer stt.provider names, empty for Automatic
+	Voice      string `protobuf:"bytes,3,opt,name=voice,proto3" json:"voice,omitempty"`
+	Recognizer string `protobuf:"bytes,4,opt,name=recognizer,proto3" json:"recognizer,omitempty"`
+	// Recognizer Automatic stands for now, empty while none is ready
+	Automatic     string `protobuf:"bytes,5,opt,name=automatic,proto3" json:"automatic,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ServicesReply) Reset() {
 	*x = ServicesReply{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[20]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1525,7 +1775,7 @@ func (x *ServicesReply) String() string {
 func (*ServicesReply) ProtoMessage() {}
 
 func (x *ServicesReply) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[20]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1538,7 +1788,7 @@ func (x *ServicesReply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServicesReply.ProtoReflect.Descriptor instead.
 func (*ServicesReply) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{20}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ServicesReply) GetVoices() []*Service {
@@ -1569,6 +1819,13 @@ func (x *ServicesReply) GetRecognizer() string {
 	return ""
 }
 
+func (x *ServicesReply) GetAutomatic() string {
+	if x != nil {
+		return x.Automatic
+	}
+	return ""
+}
+
 // A voice or recognizer and how it stands
 type Service struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1579,18 +1836,30 @@ type Service struct {
 	Local bool `protobuf:"varint,4,opt,name=local,proto3" json:"local,omitempty"`
 	// Can run now
 	Ready bool `protobuf:"varint,5,opt,name=ready,proto3" json:"ready,omitempty"`
-	// Why it can't, for a recognizer
+	// What it says it lacks, in its own words; empty when it lacks nothing
 	Missing string `protobuf:"bytes,6,opt,name=missing,proto3" json:"missing,omitempty"`
 	Setup   *Setup `protobuf:"bytes,7,opt,name=setup,proto3" json:"setup,omitempty"`
 	// Settings of it picked from a list, such as its voice or model
-	Choices       []*Choice `protobuf:"bytes,8,rep,name=choices,proto3" json:"choices,omitempty"`
+	Choices []*Choice `protobuf:"bytes,8,rep,name=choices,proto3" json:"choices,omitempty"`
+	// State in the words every page shows: In use, Ready, Free, Not installed, Needs an API key, Needs a sign-in, Needs and a program, Can't
+	// run here
+	State string `protobuf:"bytes,9,opt,name=state,proto3" json:"state,omitempty"`
+	// What keeps it from running, unset while nothing does
+	Hindrance *Hindrance `protobuf:"bytes,10,opt,name=hindrance,proto3" json:"hindrance,omitempty"`
+	// The profile uses it now
+	InUse bool `protobuf:"varint,11,opt,name=in_use,json=inUse,proto3" json:"in_use,omitempty"`
+	// A program of yours, its entry's fields with their values in fields
+	Program bool          `protobuf:"varint,12,opt,name=program,proto3" json:"program,omitempty"`
+	Fields  []*v1.Setting `protobuf:"bytes,13,rep,name=fields,proto3" json:"fields,omitempty"`
+	// Section of its own settings, empty when it has none
+	Section       string `protobuf:"bytes,14,opt,name=section,proto3" json:"section,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Service) Reset() {
 	*x = Service{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[21]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1602,7 +1871,7 @@ func (x *Service) String() string {
 func (*Service) ProtoMessage() {}
 
 func (x *Service) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[21]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1615,7 +1884,7 @@ func (x *Service) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Service.ProtoReflect.Descriptor instead.
 func (*Service) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{21}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Service) GetName() string {
@@ -1674,11 +1943,481 @@ func (x *Service) GetChoices() []*Choice {
 	return nil
 }
 
-// Values one setting of a service may be picked from
+func (x *Service) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Service) GetHindrance() *Hindrance {
+	if x != nil {
+		return x.Hindrance
+	}
+	return nil
+}
+
+func (x *Service) GetInUse() bool {
+	if x != nil {
+		return x.InUse
+	}
+	return false
+}
+
+func (x *Service) GetProgram() bool {
+	if x != nil {
+		return x.Program
+	}
+	return false
+}
+
+func (x *Service) GetFields() []*v1.Setting {
+	if x != nil {
+		return x.Fields
+	}
+	return nil
+}
+
+func (x *Service) GetSection() string {
+	if x != nil {
+		return x.Section
+	}
+	return ""
+}
+
+type AddProgramRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Kind          Kind                   `protobuf:"varint,2,opt,name=kind,proto3,enum=icebath.speech.v1.Kind" json:"kind,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Command       string                 `protobuf:"bytes,4,opt,name=command,proto3" json:"command,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddProgramRequest) Reset() {
+	*x = AddProgramRequest{}
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddProgramRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddProgramRequest) ProtoMessage() {}
+
+func (x *AddProgramRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddProgramRequest.ProtoReflect.Descriptor instead.
+func (*AddProgramRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *AddProgramRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *AddProgramRequest) GetKind() Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return Kind_KIND_UNSPECIFIED
+}
+
+func (x *AddProgramRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AddProgramRequest) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+type ChangeProgramRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Kind    Kind                   `protobuf:"varint,2,opt,name=kind,proto3,enum=icebath.speech.v1.Kind" json:"kind,omitempty"`
+	Name    string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	// Field of its entry and its value as YAML, null putting the field's default back; none when it is renamed
+	Field string `protobuf:"bytes,4,opt,name=field,proto3" json:"field,omitempty"`
+	Value string `protobuf:"bytes,5,opt,name=value,proto3" json:"value,omitempty"`
+	// New name, empty to keep it
+	Rename        string `protobuf:"bytes,6,opt,name=rename,proto3" json:"rename,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangeProgramRequest) Reset() {
+	*x = ChangeProgramRequest{}
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeProgramRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeProgramRequest) ProtoMessage() {}
+
+func (x *ChangeProgramRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeProgramRequest.ProtoReflect.Descriptor instead.
+func (*ChangeProgramRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ChangeProgramRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ChangeProgramRequest) GetKind() Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return Kind_KIND_UNSPECIFIED
+}
+
+func (x *ChangeProgramRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ChangeProgramRequest) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+func (x *ChangeProgramRequest) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *ChangeProgramRequest) GetRename() string {
+	if x != nil {
+		return x.Rename
+	}
+	return ""
+}
+
+type RemoveProgramRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Kind          Kind                   `protobuf:"varint,2,opt,name=kind,proto3,enum=icebath.speech.v1.Kind" json:"kind,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveProgramRequest) Reset() {
+	*x = RemoveProgramRequest{}
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveProgramRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveProgramRequest) ProtoMessage() {}
+
+func (x *RemoveProgramRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveProgramRequest.ProtoReflect.Descriptor instead.
+func (*RemoveProgramRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *RemoveProgramRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *RemoveProgramRequest) GetKind() Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return Kind_KIND_UNSPECIFIED
+}
+
+func (x *RemoveProgramRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ProgramReply struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name the program has now
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The settings chose it, and a removal or a rename moved the choice with it
+	Chosen        bool `protobuf:"varint,2,opt,name=chosen,proto3" json:"chosen,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProgramReply) Reset() {
+	*x = ProgramReply{}
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProgramReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProgramReply) ProtoMessage() {}
+
+func (x *ProgramReply) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProgramReply.ProtoReflect.Descriptor instead.
+func (*ProgramReply) Descriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ProgramReply) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ProgramReply) GetChosen() bool {
+	if x != nil {
+		return x.Chosen
+	}
+	return false
+}
+
+type MicrophonesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MicrophonesRequest) Reset() {
+	*x = MicrophonesRequest{}
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MicrophonesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MicrophonesRequest) ProtoMessage() {}
+
+func (x *MicrophonesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MicrophonesRequest.ProtoReflect.Descriptor instead.
+func (*MicrophonesRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{27}
+}
+
+type MicrophonesReply struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Microphones []*Microphone          `protobuf:"bytes,1,rep,name=microphones,proto3" json:"microphones,omitempty"`
+	// Why none could be listed, empty when they were
+	Error         string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MicrophonesReply) Reset() {
+	*x = MicrophonesReply{}
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MicrophonesReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MicrophonesReply) ProtoMessage() {}
+
+func (x *MicrophonesReply) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MicrophonesReply.ProtoReflect.Descriptor instead.
+func (*MicrophonesReply) Descriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *MicrophonesReply) GetMicrophones() []*Microphone {
+	if x != nil {
+		return x.Microphones
+	}
+	return nil
+}
+
+func (x *MicrophonesReply) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+// An input device
+type Microphone struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Sound system it is reached through, such as ALSA
+	Host string `protobuf:"bytes,2,opt,name=host,proto3" json:"host,omitempty"`
+	// The device the system records with by default
+	Default bool `protobuf:"varint,3,opt,name=default,proto3" json:"default,omitempty"`
+	// What wake_word.input_device holds to name it: its name, with its sound system where another device has the same name
+	Value         string `protobuf:"bytes,4,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Microphone) Reset() {
+	*x = Microphone{}
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Microphone) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Microphone) ProtoMessage() {}
+
+func (x *Microphone) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Microphone.ProtoReflect.Descriptor instead.
+func (*Microphone) Descriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *Microphone) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Microphone) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *Microphone) GetDefault() bool {
+	if x != nil {
+		return x.Default
+	}
+	return false
+}
+
+func (x *Microphone) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+// One setting of a service picked from a list, which Values reads when it is opened
 type Choice struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Setting string                 `protobuf:"bytes,1,opt,name=setting,proto3" json:"setting,omitempty"`
-	Values  []string               `protobuf:"bytes,2,rep,name=values,proto3" json:"values,omitempty"`
 	// Value it holds now
 	Value string `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
 	// Title and description of the setting
@@ -1690,7 +2429,7 @@ type Choice struct {
 
 func (x *Choice) Reset() {
 	*x = Choice{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[22]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1702,7 +2441,7 @@ func (x *Choice) String() string {
 func (*Choice) ProtoMessage() {}
 
 func (x *Choice) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[22]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1715,7 +2454,7 @@ func (x *Choice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Choice.ProtoReflect.Descriptor instead.
 func (*Choice) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{22}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *Choice) GetSetting() string {
@@ -1723,13 +2462,6 @@ func (x *Choice) GetSetting() string {
 		return x.Setting
 	}
 	return ""
-}
-
-func (x *Choice) GetValues() []string {
-	if x != nil {
-		return x.Values
-	}
-	return nil
 }
 
 func (x *Choice) GetValue() string {
@@ -1777,14 +2509,16 @@ type Setup struct {
 	// Programs it needs that this machine lacks
 	Absent []*Program `protobuf:"bytes,10,rep,name=absent,proto3" json:"absent,omitempty"`
 	// What it costs and whether it is the one to start with, such as ★ recommended · free
-	Badge         string `protobuf:"bytes,11,opt,name=badge,proto3" json:"badge,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Badge string `protobuf:"bytes,11,opt,name=badge,proto3" json:"badge,omitempty"`
+	// Provider of the profile of the kind whose sign-in serves it, empty while the profile has none
+	SignInProvider string `protobuf:"bytes,12,opt,name=sign_in_provider,json=signInProvider,proto3" json:"sign_in_provider,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Setup) Reset() {
 	*x = Setup{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[23]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1796,7 +2530,7 @@ func (x *Setup) String() string {
 func (*Setup) ProtoMessage() {}
 
 func (x *Setup) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[23]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1809,7 +2543,7 @@ func (x *Setup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Setup.ProtoReflect.Descriptor instead.
 func (*Setup) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{23}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *Setup) GetKeys() []string {
@@ -1889,6 +2623,13 @@ func (x *Setup) GetBadge() string {
 	return ""
 }
 
+func (x *Setup) GetSignInProvider() string {
+	if x != nil {
+		return x.SignInProvider
+	}
+	return ""
+}
+
 // A program of the machine and the command that installs it
 type Program struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1900,7 +2641,7 @@ type Program struct {
 
 func (x *Program) Reset() {
 	*x = Program{}
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[24]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1912,7 +2653,7 @@ func (x *Program) String() string {
 func (*Program) ProtoMessage() {}
 
 func (x *Program) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_speech_v1_speech_proto_msgTypes[24]
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1925,7 +2666,7 @@ func (x *Program) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Program.ProtoReflect.Descriptor instead.
 func (*Program) Descriptor() ([]byte, []int) {
-	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{24}
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *Program) GetName() string {
@@ -1942,11 +2683,199 @@ func (x *Program) GetInstall() string {
 	return ""
 }
 
+type ValuesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Profile       string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	Kind          Kind                   `protobuf:"varint,2,opt,name=kind,proto3,enum=icebath.speech.v1.Kind" json:"kind,omitempty"`
+	Service       string                 `protobuf:"bytes,3,opt,name=service,proto3" json:"service,omitempty"`
+	Setting       string                 `protobuf:"bytes,4,opt,name=setting,proto3" json:"setting,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ValuesRequest) Reset() {
+	*x = ValuesRequest{}
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValuesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValuesRequest) ProtoMessage() {}
+
+func (x *ValuesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValuesRequest.ProtoReflect.Descriptor instead.
+func (*ValuesRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *ValuesRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ValuesRequest) GetKind() Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return Kind_KIND_UNSPECIFIED
+}
+
+func (x *ValuesRequest) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *ValuesRequest) GetSetting() string {
+	if x != nil {
+		return x.Setting
+	}
+	return ""
+}
+
+type ValuesReply struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Values []*Value               `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
+	// Why the values could not be read, empty when they were
+	Error         string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ValuesReply) Reset() {
+	*x = ValuesReply{}
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValuesReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValuesReply) ProtoMessage() {}
+
+func (x *ValuesReply) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValuesReply.ProtoReflect.Descriptor instead.
+func (*ValuesReply) Descriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ValuesReply) GetValues() []*Value {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+func (x *ValuesReply) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+// One value a setting may be picked as
+type Value struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Value string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	// Name a person knows it by and what it is, empty for a value that says it all
+	Title         string `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	About         string `protobuf:"bytes,3,opt,name=about,proto3" json:"about,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Value) Reset() {
+	*x = Value{}
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Value) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Value) ProtoMessage() {}
+
+func (x *Value) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_speech_v1_speech_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Value.ProtoReflect.Descriptor instead.
+func (*Value) Descriptor() ([]byte, []int) {
+	return file_icebath_speech_v1_speech_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *Value) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *Value) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Value) GetAbout() string {
+	if x != nil {
+		return x.About
+	}
+	return ""
+}
+
 var File_icebath_speech_v1_speech_proto protoreflect.FileDescriptor
 
 const file_icebath_speech_v1_speech_proto_rawDesc = "" +
 	"\n" +
-	"\x1eicebath/speech/v1/speech.proto\x12\x11icebath.speech.v1\"(\n" +
+	"\x1eicebath/speech/v1/speech.proto\x12\x11icebath.speech.v1\x1a\x1eicebath/config/v1/config.proto\"\x82\x01\n" +
+	"\tHindrance\x12\x14\n" +
+	"\x05cause\x18\x01 \x01(\tR\x05cause\x12+\n" +
+	"\x04lack\x18\x02 \x01(\x0e2\x17.icebath.speech.v1.LackR\x04lack\x12\x18\n" +
+	"\aservice\x18\x03 \x01(\tR\aservice\x12\x18\n" +
+	"\ainstall\x18\x04 \x01(\tR\ainstall\"(\n" +
 	"\fVoiceRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\"\xfb\x01\n" +
 	"\n" +
@@ -1955,12 +2884,10 @@ const file_icebath_speech_v1_speech_proto_rawDesc = "" +
 	"\x04mode\x18\x02 \x01(\v2\x17.icebath.speech.v1.ModeR\x04mode\x12@\n" +
 	"\vrecognition\x18\x03 \x01(\v2\x1e.icebath.speech.v1.RecognitionR\vrecognition\x127\n" +
 	"\bspeaking\x18\x04 \x01(\v2\x1b.icebath.speech.v1.SpeakingR\bspeaking\x12+\n" +
-	"\x04wake\x18\x05 \x01(\v2\x17.icebath.speech.v1.WakeR\x04wake\"\xa0\x04\n" +
+	"\x04wake\x18\x05 \x01(\v2\x17.icebath.speech.v1.WakeR\x04wake\"\x93\x04\n" +
 	"\x04Mode\x12\x14\n" +
 	"\x05input\x18\x01 \x01(\bR\x05input\x12\x14\n" +
-	"\x05speak\x18\x02 \x01(\bR\x05speak\x12\x1d\n" +
-	"\n" +
-	"record_key\x18\x03 \x01(\tR\trecordKey\x12\x1f\n" +
+	"\x05speak\x18\x02 \x01(\bR\x05speak\x12\x1f\n" +
 	"\vsubmit_mode\x18\x04 \x01(\tR\n" +
 	"submitMode\x12\x19\n" +
 	"\bbarge_in\x18\x05 \x01(\bR\abargeIn\x12$\n" +
@@ -1976,18 +2903,25 @@ const file_icebath_speech_v1_speech_proto_rawDesc = "" +
 	"\x11silence_threshold\x18\r \x01(\x05R\x10silenceThreshold\x12!\n" +
 	"\fstop_phrases\x18\x0e \x03(\tR\vstopPhrases\x12%\n" +
 	"\x0ethinking_sound\x18\x0f \x01(\bR\rthinkingSound\x12)\n" +
-	"\x10echo_transcripts\x18\x10 \x01(\bR\x0fechoTranscripts\"m\n" +
+	"\x10echo_transcripts\x18\x10 \x01(\bR\x0fechoTranscriptsJ\x04\b\x03\x10\x04R\n" +
+	"record_key\"\xed\x01\n" +
 	"\vRecognition\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12\x14\n" +
 	"\x05label\x18\x03 \x01(\tR\x05label\x12\x12\n" +
-	"\x04live\x18\x04 \x01(\bR\x04live\"|\n" +
+	"\x04live\x18\x04 \x01(\bR\x04live\x12\x16\n" +
+	"\x06chosen\x18\x05 \x01(\tR\x06chosen\x12\x14\n" +
+	"\x05title\x18\x06 \x01(\tR\x05title\x12\x14\n" +
+	"\x05state\x18\a \x01(\tR\x05state\x12:\n" +
+	"\thindrance\x18\b \x01(\v2\x1c.icebath.speech.v1.HindranceR\thindrance\"\xce\x01\n" +
 	"\bSpeaking\x12\x14\n" +
 	"\x05voice\x18\x01 \x01(\tR\x05voice\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
 	"\x05ready\x18\x03 \x01(\bR\x05ready\x12\x18\n" +
 	"\astreams\x18\x04 \x01(\bR\astreams\x12\x14\n" +
-	"\x05least\x18\x05 \x01(\x05R\x05least\"\xdc\x03\n" +
+	"\x05least\x18\x05 \x01(\x05R\x05least\x12\x14\n" +
+	"\x05state\x18\x06 \x01(\tR\x05state\x12:\n" +
+	"\thindrance\x18\a \x01(\v2\x1c.icebath.speech.v1.HindranceR\thindrance\"\xdc\x03\n" +
 	"\x04Wake\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x18\n" +
 	"\asurface\x18\x02 \x01(\tR\asurface\x12!\n" +
@@ -2060,14 +2994,15 @@ const file_icebath_speech_v1_speech_proto_rawDesc = "" +
 	"\n" +
 	"LeaseReply\"+\n" +
 	"\x0fServicesRequest\x12\x18\n" +
-	"\aprofile\x18\x01 \x01(\tR\aprofile\"\xb7\x01\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\"\xd5\x01\n" +
 	"\rServicesReply\x122\n" +
 	"\x06voices\x18\x01 \x03(\v2\x1a.icebath.speech.v1.ServiceR\x06voices\x12<\n" +
 	"\vrecognizers\x18\x02 \x03(\v2\x1a.icebath.speech.v1.ServiceR\vrecognizers\x12\x14\n" +
 	"\x05voice\x18\x03 \x01(\tR\x05voice\x12\x1e\n" +
 	"\n" +
 	"recognizer\x18\x04 \x01(\tR\n" +
-	"recognizer\"\xf4\x01\n" +
+	"recognizer\x12\x1c\n" +
+	"\tautomatic\x18\x05 \x01(\tR\tautomatic\"\xc5\x03\n" +
 	"\aService\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
@@ -2076,13 +3011,48 @@ const file_icebath_speech_v1_speech_proto_rawDesc = "" +
 	"\x05ready\x18\x05 \x01(\bR\x05ready\x12\x18\n" +
 	"\amissing\x18\x06 \x01(\tR\amissing\x12.\n" +
 	"\x05setup\x18\a \x01(\v2\x18.icebath.speech.v1.SetupR\x05setup\x123\n" +
-	"\achoices\x18\b \x03(\v2\x19.icebath.speech.v1.ChoiceR\achoices\"|\n" +
+	"\achoices\x18\b \x03(\v2\x19.icebath.speech.v1.ChoiceR\achoices\x12\x14\n" +
+	"\x05state\x18\t \x01(\tR\x05state\x12:\n" +
+	"\thindrance\x18\n" +
+	" \x01(\v2\x1c.icebath.speech.v1.HindranceR\thindrance\x12\x15\n" +
+	"\x06in_use\x18\v \x01(\bR\x05inUse\x12\x18\n" +
+	"\aprogram\x18\f \x01(\bR\aprogram\x122\n" +
+	"\x06fields\x18\r \x03(\v2\x1a.icebath.config.v1.SettingR\x06fields\x12\x18\n" +
+	"\asection\x18\x0e \x01(\tR\asection\"\x88\x01\n" +
+	"\x11AddProgramRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12+\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x17.icebath.speech.v1.KindR\x04kind\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x18\n" +
+	"\acommand\x18\x04 \x01(\tR\acommand\"\xb5\x01\n" +
+	"\x14ChangeProgramRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12+\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x17.icebath.speech.v1.KindR\x04kind\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x14\n" +
+	"\x05field\x18\x04 \x01(\tR\x05field\x12\x14\n" +
+	"\x05value\x18\x05 \x01(\tR\x05value\x12\x16\n" +
+	"\x06rename\x18\x06 \x01(\tR\x06rename\"q\n" +
+	"\x14RemoveProgramRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12+\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x17.icebath.speech.v1.KindR\x04kind\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\":\n" +
+	"\fProgramReply\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06chosen\x18\x02 \x01(\bR\x06chosen\"\x14\n" +
+	"\x12MicrophonesRequest\"i\n" +
+	"\x10MicrophonesReply\x12?\n" +
+	"\vmicrophones\x18\x01 \x03(\v2\x1d.icebath.speech.v1.MicrophoneR\vmicrophones\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"d\n" +
+	"\n" +
+	"Microphone\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04host\x18\x02 \x01(\tR\x04host\x12\x18\n" +
+	"\adefault\x18\x03 \x01(\bR\adefault\x12\x14\n" +
+	"\x05value\x18\x04 \x01(\tR\x05value\"r\n" +
 	"\x06Choice\x12\x18\n" +
-	"\asetting\x18\x01 \x01(\tR\asetting\x12\x16\n" +
-	"\x06values\x18\x02 \x03(\tR\x06values\x12\x14\n" +
+	"\asetting\x18\x01 \x01(\tR\asetting\x12\x14\n" +
 	"\x05value\x18\x03 \x01(\tR\x05value\x12\x14\n" +
 	"\x05title\x18\x04 \x01(\tR\x05title\x12\x14\n" +
-	"\x05about\x18\x05 \x01(\tR\x05about\"\xb0\x02\n" +
+	"\x05about\x18\x05 \x01(\tR\x05aboutJ\x04\b\x02\x10\x03R\x06values\"\xda\x02\n" +
 	"\x05Setup\x12\x12\n" +
 	"\x04keys\x18\x01 \x03(\tR\x04keys\x12\x17\n" +
 	"\asign_in\x18\x02 \x01(\tR\x06signIn\x12\x14\n" +
@@ -2095,10 +3065,40 @@ const file_icebath_speech_v1_speech_proto_rawDesc = "" +
 	"\vunsupported\x18\t \x01(\tR\vunsupported\x122\n" +
 	"\x06absent\x18\n" +
 	" \x03(\v2\x1a.icebath.speech.v1.ProgramR\x06absent\x12\x14\n" +
-	"\x05badge\x18\v \x01(\tR\x05badge\"7\n" +
+	"\x05badge\x18\v \x01(\tR\x05badge\x12(\n" +
+	"\x10sign_in_provider\x18\f \x01(\tR\x0esignInProvider\"7\n" +
 	"\aProgram\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
-	"\ainstall\x18\x02 \x01(\tR\ainstall2\x9a\x04\n" +
+	"\ainstall\x18\x02 \x01(\tR\ainstall\"\x8a\x01\n" +
+	"\rValuesRequest\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12+\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x17.icebath.speech.v1.KindR\x04kind\x12\x18\n" +
+	"\aservice\x18\x03 \x01(\tR\aservice\x12\x18\n" +
+	"\asetting\x18\x04 \x01(\tR\asetting\"U\n" +
+	"\vValuesReply\x120\n" +
+	"\x06values\x18\x01 \x03(\v2\x18.icebath.speech.v1.ValueR\x06values\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"I\n" +
+	"\x05Value\x12\x14\n" +
+	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
+	"\x05about\x18\x03 \x01(\tR\x05about*\xa3\x01\n" +
+	"\x04Lack\x12\x14\n" +
+	"\x10LACK_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fLACK_INSTALL\x10\x01\x12\f\n" +
+	"\bLACK_KEY\x10\x02\x12\x10\n" +
+	"\fLACK_SIGN_IN\x10\x03\x12\x10\n" +
+	"\fLACK_PROGRAM\x10\x04\x12\x0e\n" +
+	"\n" +
+	"LACK_BUILD\x10\x05\x12\x0e\n" +
+	"\n" +
+	"LACK_SETUP\x10\x06\x12\x0f\n" +
+	"\vLACK_SWITCH\x10\a\x12\x10\n" +
+	"\fLACK_SERVICE\x10\b*A\n" +
+	"\x04Kind\x12\x14\n" +
+	"\x10KIND_UNSPECIFIED\x10\x00\x12\x0e\n" +
+	"\n" +
+	"KIND_VOICE\x10\x01\x12\x13\n" +
+	"\x0fKIND_RECOGNIZER\x10\x022\xcc\a\n" +
 	"\rSpeechService\x12G\n" +
 	"\x05Voice\x12\x1f.icebath.speech.v1.VoiceRequest\x1a\x1d.icebath.speech.v1.VoiceReply\x12D\n" +
 	"\x05Speak\x12\x1f.icebath.speech.v1.SpeakRequest\x1a\x18.icebath.speech.v1.Audio0\x01\x12Q\n" +
@@ -2107,7 +3107,13 @@ const file_icebath_speech_v1_speech_proto_rawDesc = "" +
 	"\x06Listen\x12 .icebath.speech.v1.ListenRequest\x1a\x18.icebath.speech.v1.Heard0\x01\x12D\n" +
 	"\x04Feed\x12\x1e.icebath.speech.v1.FeedRequest\x1a\x1c.icebath.speech.v1.FeedReply\x12G\n" +
 	"\x05Lease\x12\x1f.icebath.speech.v1.LeaseRequest\x1a\x1d.icebath.speech.v1.LeaseReply\x12P\n" +
-	"\bServices\x12\".icebath.speech.v1.ServicesRequest\x1a .icebath.speech.v1.ServicesReplyB\xcb\x01\n" +
+	"\bServices\x12\".icebath.speech.v1.ServicesRequest\x1a .icebath.speech.v1.ServicesReply\x12S\n" +
+	"\n" +
+	"AddProgram\x12$.icebath.speech.v1.AddProgramRequest\x1a\x1f.icebath.speech.v1.ProgramReply\x12Y\n" +
+	"\rChangeProgram\x12'.icebath.speech.v1.ChangeProgramRequest\x1a\x1f.icebath.speech.v1.ProgramReply\x12Y\n" +
+	"\rRemoveProgram\x12'.icebath.speech.v1.RemoveProgramRequest\x1a\x1f.icebath.speech.v1.ProgramReply\x12Y\n" +
+	"\vMicrophones\x12%.icebath.speech.v1.MicrophonesRequest\x1a#.icebath.speech.v1.MicrophonesReply\x12J\n" +
+	"\x06Values\x12 .icebath.speech.v1.ValuesRequest\x1a\x1e.icebath.speech.v1.ValuesReplyB\xcb\x01\n" +
 	"\x15com.icebath.speech.v1B\vSpeechProtoP\x01Z?github.com/nickheyer/icebath/pkg/gen/icebath/speech/v1;speechv1\xa2\x02\x03ISX\xaa\x02\x11Icebath.Speech.V1\xca\x02\x11Icebath\\Speech\\V1\xe2\x02\x1dIcebath\\Speech\\V1\\GPBMetadata\xea\x02\x13Icebath::Speech::V1b\x06proto3"
 
 var (
@@ -2122,69 +3128,105 @@ func file_icebath_speech_v1_speech_proto_rawDescGZIP() []byte {
 	return file_icebath_speech_v1_speech_proto_rawDescData
 }
 
-var file_icebath_speech_v1_speech_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_icebath_speech_v1_speech_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_icebath_speech_v1_speech_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_icebath_speech_v1_speech_proto_goTypes = []any{
-	(*VoiceRequest)(nil),      // 0: icebath.speech.v1.VoiceRequest
-	(*VoiceReply)(nil),        // 1: icebath.speech.v1.VoiceReply
-	(*Mode)(nil),              // 2: icebath.speech.v1.Mode
-	(*Recognition)(nil),       // 3: icebath.speech.v1.Recognition
-	(*Speaking)(nil),          // 4: icebath.speech.v1.Speaking
-	(*Wake)(nil),              // 5: icebath.speech.v1.Wake
-	(*Phrase)(nil),            // 6: icebath.speech.v1.Phrase
-	(*SpeakRequest)(nil),      // 7: icebath.speech.v1.SpeakRequest
-	(*Audio)(nil),             // 8: icebath.speech.v1.Audio
-	(*Clip)(nil),              // 9: icebath.speech.v1.Clip
-	(*TranscribeRequest)(nil), // 10: icebath.speech.v1.TranscribeRequest
-	(*Transcript)(nil),        // 11: icebath.speech.v1.Transcript
-	(*ListenRequest)(nil),     // 12: icebath.speech.v1.ListenRequest
-	(*Heard)(nil),             // 13: icebath.speech.v1.Heard
-	(*Opened)(nil),            // 14: icebath.speech.v1.Opened
-	(*FeedRequest)(nil),       // 15: icebath.speech.v1.FeedRequest
-	(*FeedReply)(nil),         // 16: icebath.speech.v1.FeedReply
-	(*LeaseRequest)(nil),      // 17: icebath.speech.v1.LeaseRequest
-	(*LeaseReply)(nil),        // 18: icebath.speech.v1.LeaseReply
-	(*ServicesRequest)(nil),   // 19: icebath.speech.v1.ServicesRequest
-	(*ServicesReply)(nil),     // 20: icebath.speech.v1.ServicesReply
-	(*Service)(nil),           // 21: icebath.speech.v1.Service
-	(*Choice)(nil),            // 22: icebath.speech.v1.Choice
-	(*Setup)(nil),             // 23: icebath.speech.v1.Setup
-	(*Program)(nil),           // 24: icebath.speech.v1.Program
-	nil,                       // 25: icebath.speech.v1.Wake.SettingsEntry
+	(Lack)(0),                    // 0: icebath.speech.v1.Lack
+	(Kind)(0),                    // 1: icebath.speech.v1.Kind
+	(*Hindrance)(nil),            // 2: icebath.speech.v1.Hindrance
+	(*VoiceRequest)(nil),         // 3: icebath.speech.v1.VoiceRequest
+	(*VoiceReply)(nil),           // 4: icebath.speech.v1.VoiceReply
+	(*Mode)(nil),                 // 5: icebath.speech.v1.Mode
+	(*Recognition)(nil),          // 6: icebath.speech.v1.Recognition
+	(*Speaking)(nil),             // 7: icebath.speech.v1.Speaking
+	(*Wake)(nil),                 // 8: icebath.speech.v1.Wake
+	(*Phrase)(nil),               // 9: icebath.speech.v1.Phrase
+	(*SpeakRequest)(nil),         // 10: icebath.speech.v1.SpeakRequest
+	(*Audio)(nil),                // 11: icebath.speech.v1.Audio
+	(*Clip)(nil),                 // 12: icebath.speech.v1.Clip
+	(*TranscribeRequest)(nil),    // 13: icebath.speech.v1.TranscribeRequest
+	(*Transcript)(nil),           // 14: icebath.speech.v1.Transcript
+	(*ListenRequest)(nil),        // 15: icebath.speech.v1.ListenRequest
+	(*Heard)(nil),                // 16: icebath.speech.v1.Heard
+	(*Opened)(nil),               // 17: icebath.speech.v1.Opened
+	(*FeedRequest)(nil),          // 18: icebath.speech.v1.FeedRequest
+	(*FeedReply)(nil),            // 19: icebath.speech.v1.FeedReply
+	(*LeaseRequest)(nil),         // 20: icebath.speech.v1.LeaseRequest
+	(*LeaseReply)(nil),           // 21: icebath.speech.v1.LeaseReply
+	(*ServicesRequest)(nil),      // 22: icebath.speech.v1.ServicesRequest
+	(*ServicesReply)(nil),        // 23: icebath.speech.v1.ServicesReply
+	(*Service)(nil),              // 24: icebath.speech.v1.Service
+	(*AddProgramRequest)(nil),    // 25: icebath.speech.v1.AddProgramRequest
+	(*ChangeProgramRequest)(nil), // 26: icebath.speech.v1.ChangeProgramRequest
+	(*RemoveProgramRequest)(nil), // 27: icebath.speech.v1.RemoveProgramRequest
+	(*ProgramReply)(nil),         // 28: icebath.speech.v1.ProgramReply
+	(*MicrophonesRequest)(nil),   // 29: icebath.speech.v1.MicrophonesRequest
+	(*MicrophonesReply)(nil),     // 30: icebath.speech.v1.MicrophonesReply
+	(*Microphone)(nil),           // 31: icebath.speech.v1.Microphone
+	(*Choice)(nil),               // 32: icebath.speech.v1.Choice
+	(*Setup)(nil),                // 33: icebath.speech.v1.Setup
+	(*Program)(nil),              // 34: icebath.speech.v1.Program
+	(*ValuesRequest)(nil),        // 35: icebath.speech.v1.ValuesRequest
+	(*ValuesReply)(nil),          // 36: icebath.speech.v1.ValuesReply
+	(*Value)(nil),                // 37: icebath.speech.v1.Value
+	nil,                          // 38: icebath.speech.v1.Wake.SettingsEntry
+	(*v1.Setting)(nil),           // 39: icebath.config.v1.Setting
 }
 var file_icebath_speech_v1_speech_proto_depIdxs = []int32{
-	2,  // 0: icebath.speech.v1.VoiceReply.mode:type_name -> icebath.speech.v1.Mode
-	3,  // 1: icebath.speech.v1.VoiceReply.recognition:type_name -> icebath.speech.v1.Recognition
-	4,  // 2: icebath.speech.v1.VoiceReply.speaking:type_name -> icebath.speech.v1.Speaking
-	5,  // 3: icebath.speech.v1.VoiceReply.wake:type_name -> icebath.speech.v1.Wake
-	25, // 4: icebath.speech.v1.Wake.settings:type_name -> icebath.speech.v1.Wake.SettingsEntry
-	6,  // 5: icebath.speech.v1.Wake.profiles:type_name -> icebath.speech.v1.Phrase
-	9,  // 6: icebath.speech.v1.Audio.clip:type_name -> icebath.speech.v1.Clip
-	14, // 7: icebath.speech.v1.Heard.opened:type_name -> icebath.speech.v1.Opened
-	11, // 8: icebath.speech.v1.Heard.final:type_name -> icebath.speech.v1.Transcript
-	21, // 9: icebath.speech.v1.ServicesReply.voices:type_name -> icebath.speech.v1.Service
-	21, // 10: icebath.speech.v1.ServicesReply.recognizers:type_name -> icebath.speech.v1.Service
-	23, // 11: icebath.speech.v1.Service.setup:type_name -> icebath.speech.v1.Setup
-	22, // 12: icebath.speech.v1.Service.choices:type_name -> icebath.speech.v1.Choice
-	24, // 13: icebath.speech.v1.Setup.absent:type_name -> icebath.speech.v1.Program
-	0,  // 14: icebath.speech.v1.SpeechService.Voice:input_type -> icebath.speech.v1.VoiceRequest
-	7,  // 15: icebath.speech.v1.SpeechService.Speak:input_type -> icebath.speech.v1.SpeakRequest
-	10, // 16: icebath.speech.v1.SpeechService.Transcribe:input_type -> icebath.speech.v1.TranscribeRequest
-	12, // 17: icebath.speech.v1.SpeechService.Listen:input_type -> icebath.speech.v1.ListenRequest
-	15, // 18: icebath.speech.v1.SpeechService.Feed:input_type -> icebath.speech.v1.FeedRequest
-	17, // 19: icebath.speech.v1.SpeechService.Lease:input_type -> icebath.speech.v1.LeaseRequest
-	19, // 20: icebath.speech.v1.SpeechService.Services:input_type -> icebath.speech.v1.ServicesRequest
-	1,  // 21: icebath.speech.v1.SpeechService.Voice:output_type -> icebath.speech.v1.VoiceReply
-	8,  // 22: icebath.speech.v1.SpeechService.Speak:output_type -> icebath.speech.v1.Audio
-	11, // 23: icebath.speech.v1.SpeechService.Transcribe:output_type -> icebath.speech.v1.Transcript
-	13, // 24: icebath.speech.v1.SpeechService.Listen:output_type -> icebath.speech.v1.Heard
-	16, // 25: icebath.speech.v1.SpeechService.Feed:output_type -> icebath.speech.v1.FeedReply
-	18, // 26: icebath.speech.v1.SpeechService.Lease:output_type -> icebath.speech.v1.LeaseReply
-	20, // 27: icebath.speech.v1.SpeechService.Services:output_type -> icebath.speech.v1.ServicesReply
-	21, // [21:28] is the sub-list for method output_type
-	14, // [14:21] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	0,  // 0: icebath.speech.v1.Hindrance.lack:type_name -> icebath.speech.v1.Lack
+	5,  // 1: icebath.speech.v1.VoiceReply.mode:type_name -> icebath.speech.v1.Mode
+	6,  // 2: icebath.speech.v1.VoiceReply.recognition:type_name -> icebath.speech.v1.Recognition
+	7,  // 3: icebath.speech.v1.VoiceReply.speaking:type_name -> icebath.speech.v1.Speaking
+	8,  // 4: icebath.speech.v1.VoiceReply.wake:type_name -> icebath.speech.v1.Wake
+	2,  // 5: icebath.speech.v1.Recognition.hindrance:type_name -> icebath.speech.v1.Hindrance
+	2,  // 6: icebath.speech.v1.Speaking.hindrance:type_name -> icebath.speech.v1.Hindrance
+	38, // 7: icebath.speech.v1.Wake.settings:type_name -> icebath.speech.v1.Wake.SettingsEntry
+	9,  // 8: icebath.speech.v1.Wake.profiles:type_name -> icebath.speech.v1.Phrase
+	12, // 9: icebath.speech.v1.Audio.clip:type_name -> icebath.speech.v1.Clip
+	17, // 10: icebath.speech.v1.Heard.opened:type_name -> icebath.speech.v1.Opened
+	14, // 11: icebath.speech.v1.Heard.final:type_name -> icebath.speech.v1.Transcript
+	24, // 12: icebath.speech.v1.ServicesReply.voices:type_name -> icebath.speech.v1.Service
+	24, // 13: icebath.speech.v1.ServicesReply.recognizers:type_name -> icebath.speech.v1.Service
+	33, // 14: icebath.speech.v1.Service.setup:type_name -> icebath.speech.v1.Setup
+	32, // 15: icebath.speech.v1.Service.choices:type_name -> icebath.speech.v1.Choice
+	2,  // 16: icebath.speech.v1.Service.hindrance:type_name -> icebath.speech.v1.Hindrance
+	39, // 17: icebath.speech.v1.Service.fields:type_name -> icebath.config.v1.Setting
+	1,  // 18: icebath.speech.v1.AddProgramRequest.kind:type_name -> icebath.speech.v1.Kind
+	1,  // 19: icebath.speech.v1.ChangeProgramRequest.kind:type_name -> icebath.speech.v1.Kind
+	1,  // 20: icebath.speech.v1.RemoveProgramRequest.kind:type_name -> icebath.speech.v1.Kind
+	31, // 21: icebath.speech.v1.MicrophonesReply.microphones:type_name -> icebath.speech.v1.Microphone
+	34, // 22: icebath.speech.v1.Setup.absent:type_name -> icebath.speech.v1.Program
+	1,  // 23: icebath.speech.v1.ValuesRequest.kind:type_name -> icebath.speech.v1.Kind
+	37, // 24: icebath.speech.v1.ValuesReply.values:type_name -> icebath.speech.v1.Value
+	3,  // 25: icebath.speech.v1.SpeechService.Voice:input_type -> icebath.speech.v1.VoiceRequest
+	10, // 26: icebath.speech.v1.SpeechService.Speak:input_type -> icebath.speech.v1.SpeakRequest
+	13, // 27: icebath.speech.v1.SpeechService.Transcribe:input_type -> icebath.speech.v1.TranscribeRequest
+	15, // 28: icebath.speech.v1.SpeechService.Listen:input_type -> icebath.speech.v1.ListenRequest
+	18, // 29: icebath.speech.v1.SpeechService.Feed:input_type -> icebath.speech.v1.FeedRequest
+	20, // 30: icebath.speech.v1.SpeechService.Lease:input_type -> icebath.speech.v1.LeaseRequest
+	22, // 31: icebath.speech.v1.SpeechService.Services:input_type -> icebath.speech.v1.ServicesRequest
+	25, // 32: icebath.speech.v1.SpeechService.AddProgram:input_type -> icebath.speech.v1.AddProgramRequest
+	26, // 33: icebath.speech.v1.SpeechService.ChangeProgram:input_type -> icebath.speech.v1.ChangeProgramRequest
+	27, // 34: icebath.speech.v1.SpeechService.RemoveProgram:input_type -> icebath.speech.v1.RemoveProgramRequest
+	29, // 35: icebath.speech.v1.SpeechService.Microphones:input_type -> icebath.speech.v1.MicrophonesRequest
+	35, // 36: icebath.speech.v1.SpeechService.Values:input_type -> icebath.speech.v1.ValuesRequest
+	4,  // 37: icebath.speech.v1.SpeechService.Voice:output_type -> icebath.speech.v1.VoiceReply
+	11, // 38: icebath.speech.v1.SpeechService.Speak:output_type -> icebath.speech.v1.Audio
+	14, // 39: icebath.speech.v1.SpeechService.Transcribe:output_type -> icebath.speech.v1.Transcript
+	16, // 40: icebath.speech.v1.SpeechService.Listen:output_type -> icebath.speech.v1.Heard
+	19, // 41: icebath.speech.v1.SpeechService.Feed:output_type -> icebath.speech.v1.FeedReply
+	21, // 42: icebath.speech.v1.SpeechService.Lease:output_type -> icebath.speech.v1.LeaseReply
+	23, // 43: icebath.speech.v1.SpeechService.Services:output_type -> icebath.speech.v1.ServicesReply
+	28, // 44: icebath.speech.v1.SpeechService.AddProgram:output_type -> icebath.speech.v1.ProgramReply
+	28, // 45: icebath.speech.v1.SpeechService.ChangeProgram:output_type -> icebath.speech.v1.ProgramReply
+	28, // 46: icebath.speech.v1.SpeechService.RemoveProgram:output_type -> icebath.speech.v1.ProgramReply
+	30, // 47: icebath.speech.v1.SpeechService.Microphones:output_type -> icebath.speech.v1.MicrophonesReply
+	36, // 48: icebath.speech.v1.SpeechService.Values:output_type -> icebath.speech.v1.ValuesReply
+	37, // [37:49] is the sub-list for method output_type
+	25, // [25:37] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_icebath_speech_v1_speech_proto_init() }
@@ -2192,11 +3234,11 @@ func file_icebath_speech_v1_speech_proto_init() {
 	if File_icebath_speech_v1_speech_proto != nil {
 		return
 	}
-	file_icebath_speech_v1_speech_proto_msgTypes[8].OneofWrappers = []any{
+	file_icebath_speech_v1_speech_proto_msgTypes[9].OneofWrappers = []any{
 		(*Audio_Clip)(nil),
 		(*Audio_Data)(nil),
 	}
-	file_icebath_speech_v1_speech_proto_msgTypes[13].OneofWrappers = []any{
+	file_icebath_speech_v1_speech_proto_msgTypes[14].OneofWrappers = []any{
 		(*Heard_Opened)(nil),
 		(*Heard_Partial)(nil),
 		(*Heard_Final)(nil),
@@ -2206,13 +3248,14 @@ func file_icebath_speech_v1_speech_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_speech_v1_speech_proto_rawDesc), len(file_icebath_speech_v1_speech_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   26,
+			NumEnums:      2,
+			NumMessages:   37,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_icebath_speech_v1_speech_proto_goTypes,
 		DependencyIndexes: file_icebath_speech_v1_speech_proto_depIdxs,
+		EnumInfos:         file_icebath_speech_v1_speech_proto_enumTypes,
 		MessageInfos:      file_icebath_speech_v1_speech_proto_msgTypes,
 	}.Build()
 	File_icebath_speech_v1_speech_proto = out.File
